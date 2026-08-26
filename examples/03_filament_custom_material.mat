@@ -1,0 +1,53 @@
+// examples/03_filament_custom_material.mat
+// Google Filament Material Definition
+// Compile to .filamat using: matc -p all -a all -o custom_pbr.filamat 03_filament_custom_material.mat
+
+material {
+    name : CustomFilamentPBR,
+    shadingModel : lit,
+    blending : opaque,
+    parameters : [
+        {
+            type : float3,
+            name : baseColor
+        },
+        {
+            type : float,
+            name : roughness
+        },
+        {
+            type : float,
+            name : metallic
+        },
+        {
+            type : float,
+            name : clearCoat
+        },
+        {
+            type : float,
+            name : clearCoatRoughness
+        }
+    ],
+    requires : [
+        uv0,
+        color
+    ]
+}
+
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+
+        // Core Filament PBR Inputs
+        material.baseColor.rgb = materialParams.baseColor;
+        material.roughness = materialParams.roughness;
+        material.metallic = materialParams.metallic;
+
+        // Optional Multi-Layer Clearcoat
+        material.clearCoat = materialParams.clearCoat;
+        material.clearCoatRoughness = materialParams.clearCoatRoughness;
+
+        // Microfacet Normal perturbation (if normal map attached)
+        // material.normal = texture(materialParams_normalMap, getUV0()).xyz * 2.0 - 1.0;
+    }
+}

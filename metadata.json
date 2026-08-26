@@ -1,0 +1,6 @@
+{
+  "name": "C/C++ to JS/WASM Graphics Engine Studio",
+  "description": "Google Filament & C++ graphics pipeline workbench with zero-allocation performance, First-Person & Orbit cameras, robust bitmask input politics, and mesh/manifest export tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

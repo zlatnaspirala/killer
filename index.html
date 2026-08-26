@@ -1,0 +1,1040 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Google Filament &amp; C++ Native Graphics Pipeline</title>
+    <meta name="description" content="Pure Native C++ Engine runtime, zero allocations per frame, Filament PBR renderer, First-Person & Orbit Camera, OBJ/JSON export." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body class="app-body">
+    <div id="app-root">
+      <!-- Top Navigation / Header -->
+      <header class="app-header">
+        <div class="header-left">
+          <div class="logo-badge">
+            <span class="logo-symbol">FILAMENT / C++</span>
+          </div>
+          <div class="header-title-group">
+            <h1 class="header-title">Native C/C++ Engine</h1>
+            <p class="header-sub">Filament PBR Pipeline &amp; Graphics Architecture</p>
+          </div>
+        </div>
+        <div class="header-right">
+          <div class="status-pill" id="engine-status-pill">
+            <span class="status-dot"></span>
+            <span class="status-text">Engine: ACTIVE</span>
+          </div>
+          <div class="status-pill backend-pill" id="backend-status-pill">
+            <span class="status-dot"></span>
+            <span class="status-text" id="backend-status-text">Backend: Connecting...</span>
+          </div>
+          <div class="fps-badge" id="fps-counter">60.0 FPS</div>
+          <button id="btn-fullscreen" class="btn-action" title="Toggle Fullscreen">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Global Top-Level Navigation Tabs Bar -->
+      <nav class="app-tabs-nav" id="app-tabs-nav">
+        <button class="tab-btn active" data-tab="viewport">
+          <span class="tab-icon">🖥️</span>
+          <span>3D Viewport</span>
+        </button>
+        <button class="tab-btn" data-tab="project">
+          <span class="tab-icon">📁</span>
+          <span>Project</span>
+        </button>
+        <button class="tab-btn" data-tab="controls">
+          <span class="tab-icon">⚙️</span>
+          <span>Controls &amp; Demos</span>
+        </button>
+        <button class="tab-btn" data-tab="live-editor">
+          <span class="tab-icon">⚡</span>
+          <span>C++ Source &amp; Compiler</span>
+        </button>
+        <button class="tab-btn" data-tab="generated-js">
+          <span class="tab-icon">⚙️</span>
+          <span>Generated JS / WASM</span>
+        </button>
+        <button class="tab-btn" data-tab="filament-demos">
+          <span class="tab-icon">📂</span>
+          <span>Filament Demos</span>
+        </button>
+        <button class="tab-btn" data-tab="platform-export">
+          <span class="tab-icon">🚀</span>
+          <span>WASM &amp; Export</span>
+        </button>
+        <button class="tab-btn" data-tab="headers">
+          <span class="tab-icon">📄</span>
+          <span>Headers (.hpp)</span>
+        </button>
+      </nav>
+
+      <!-- Full-Page Main Tab Viewport Container -->
+      <main class="main-tab-viewport">
+        <!-- Tab 1: Full-Page 3D Render Viewport -->
+        <div class="tab-content active" id="tab-viewport">
+          <div class="canvas-container" id="canvas-container" tabindex="0">
+            <canvas id="engine-canvas"></canvas>
+            
+            <!-- FPS Shooter Center Crosshair & Hitmarker HUD Overlay -->
+            <div class="fps-crosshair-overlay" id="fps-crosshair-overlay" style="display: none;">
+              <div class="fps-reticle">
+                <div class="fps-reticle-dot"></div>
+                <div class="fps-reticle-line top"></div>
+                <div class="fps-reticle-line bottom"></div>
+                <div class="fps-reticle-line left"></div>
+                <div class="fps-reticle-line right"></div>
+              </div>
+              <div class="fps-hitmarker" id="fps-hitmarker"></div>
+            </div>
+
+            <!-- Floating 3D Damage Indicator Container -->
+            <div class="damage-container" id="damage-container"></div>
+
+            <!-- FPS Shooter Pointer Lock Prompt / Banner -->
+            <div class="fps-pointerlock-banner" id="fps-pointerlock-banner" style="display: none;">
+              <span>🎯 <b>FPS Shooter Active</b>: Click viewport to Lock Mouse Look (No Mouse-Down needed!) &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click</b> / Space to Shoot</span>
+            </div>
+
+            <!-- FPS Weapon HUD -->
+            <div class="fps-weapon-hud" id="fps-weapon-hud" style="display: none;">
+              <span class="weapon-title">⚡ Plasma Bolt Rifle</span>
+              <div class="weapon-stats">
+                <span>DMG: <b id="hud-weapon-dmg">25 HP</b></span>
+                <span>VEL: <b id="hud-weapon-vel">50 m/s</b></span>
+                <span>AMMO: <b style="color:#10b981;">&infin; POOL</b></span>
+              </div>
+            </div>
+
+            <!-- Viewport Overlay HUD -->
+            <div class="viewport-hud">
+              <div class="hud-item">
+                <span class="hud-label">DRAW CALLS</span>
+                <span class="hud-value" id="hud-drawcalls">1</span>
+              </div>
+              <div class="hud-item">
+                <span class="hud-label">VERTICES</span>
+                <span class="hud-value" id="hud-vertices">1,200</span>
+              </div>
+              <div class="hud-item">
+                <span class="hud-label">TRIANGLES</span>
+                <span class="hud-value" id="hud-triangles">2,400</span>
+              </div>
+              <div class="hud-item">
+                <span class="hud-label">MEMORY ALLOC</span>
+                <span class="hud-value highlight">0 B / frame</span>
+              </div>
+              <div class="hud-item">
+                <span class="hud-label">PIPELINE</span>
+                <span class="hud-value highlight">GLES3 / Filament</span>
+              </div>
+            </div>
+
+            <!-- Mobile Touch Virtual Joystick & Controls HUD Overlay -->
+            <div class="mobile-touch-overlay" id="mobile-touch-overlay">
+              <!-- Left Virtual Joystick for WASD Movement / Camera Strafe -->
+              <div class="joystick-container" id="joystick-left-container">
+                <div class="joystick-base" id="joystick-left-base">
+                  <div class="joystick-crosshair">
+                    <span class="j-axis j-n">W</span>
+                    <span class="j-axis j-s">S</span>
+                    <span class="j-axis j-w">A</span>
+                    <span class="j-axis j-e">D</span>
+                  </div>
+                  <div class="joystick-knob" id="joystick-left-knob"></div>
+                </div>
+                <span class="joystick-label">JOYSTICK (WASD)</span>
+              </div>
+
+              <!-- Right Touch Look Zone Hint -->
+              <div class="touch-look-hint" id="touch-look-hint">
+                <span class="touch-look-text">👆 SWIPE CANVAS TO LOOK / ROTATE</span>
+              </div>
+
+              <!-- Mobile Quick Action Pad (Elevate Up/Down, Sprint, Camera Toggle, Reset) -->
+              <div class="mobile-action-pad" id="mobile-action-pad">
+                <button class="btn-touch-action btn-touch-up" id="btn-touch-up" title="Elevate Up / Jump (E / Space)">▲ UP</button>
+                <button class="btn-touch-action btn-touch-down" id="btn-touch-down" title="Descend / Crouch (Q)">▼ DOWN</button>
+                <button class="btn-touch-action btn-touch-sprint" id="btn-touch-sprint" title="Toggle 2.5x Sprint Boost">⚡ SPRINT</button>
+                <button class="btn-touch-action btn-touch-cam" id="btn-touch-cam" title="Toggle FP / Orbit Camera">🎥 CAM</button>
+                <button class="btn-touch-action btn-touch-reset" id="btn-touch-reset" title="Reset Camera View">🎯 RESET</button>
+              </div>
+            </div>
+
+            <!-- Viewport Controls Overlay -->
+            <div class="viewport-toolbar">
+              <span class="hint-text">&#128433; Orbit: Left Drag &bull; Pan: Right Drag &bull; FP: WASD + QE &bull; Touch: Joystick</span>
+              <div class="viewport-toolbar-right">
+                <button id="btn-toggle-joystick" class="btn-hud" title="Toggle Mobile Virtual Joystick on/off">🎮 Joystick: AUTO</button>
+                <button id="btn-toggle-console" class="btn-hud" title="Toggle Bottom Console Log">📟 Console Log</button>
+                <button id="btn-reset-cam" class="btn-hud">Reset Camera</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Console / Telemetry & Backend Shell Log -->
+          <div class="console-card" id="viewport-console-card">
+            <div class="card-header">
+              <div class="console-tab-group">
+                <button class="console-tab-btn active" id="tab-btn-engine" data-console-mode="engine">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  <span>Engine Stream</span>
+                </button>
+                <button class="console-tab-btn" id="tab-btn-terminal" data-console-mode="terminal">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                  <span>Backend Shell Terminal</span>
+                </button>
+              </div>
+              <div class="card-actions">
+                <button id="btn-refresh-sysinfo" class="btn-xs" title="Query host environment and toolchain">Host Info</button>
+                <button id="btn-clear-log" class="btn-xs">Clear</button>
+                <button id="btn-minimize-console" class="btn-xs" title="Minimize / Hide console">✕ Close</button>
+              </div>
+            </div>
+
+            <!-- Engine Logs View -->
+            <div class="console-body" id="console-logs"></div>
+
+            <!-- Backend Terminal View -->
+            <div class="console-body terminal-view" id="terminal-body" style="display: none;">
+              <div class="terminal-output" id="terminal-output">
+                <div class="term-line info font-mono">[Backend Server Connected] Ready to execute native commands in project root.</div>
+                <div class="term-line muted font-mono">Type a shell command below or click quick action chips to run.</div>
+              </div>
+              
+              <!-- Quick Command Chips -->
+              <div class="quick-cmd-bar">
+                <span class="quick-cmd-label">Quick Cmds:</span>
+                <button class="chip-cmd" data-cmd="cmake --version">cmake --version</button>
+                <button class="chip-cmd" data-cmd="gcc --version || clang --version">gcc/clang --version</button>
+                <button class="chip-cmd" data-cmd="ls -lah">ls -lah</button>
+                <button class="chip-cmd" data-cmd="./build_wasm.sh">./build_wasm.sh</button>
+                <button class="chip-cmd" data-cmd="./build_desktop.sh">./build_desktop.sh</button>
+                <button class="chip-cmd" data-cmd="make --version">make --version</button>
+                <button class="chip-cmd" data-cmd="uname -a">uname -a</button>
+              </div>
+
+              <!-- Terminal Input Bar -->
+              <div class="terminal-input-row">
+                <span class="terminal-prompt font-mono">native@filament:~$</span>
+                <input type="text" id="terminal-cmd-input" class="terminal-input font-mono" placeholder="Enter shell command (e.g. cmake --version, ls -la, git status)..." autocomplete="off" spellcheck="false" />
+                <button id="btn-terminal-exec" class="btn-exec">
+                  <span>Execute</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Full-Page Controls & Live Demos -->
+        <div class="tab-content" id="tab-controls">
+          <div class="tab-scroll-pane">
+            <div class="controls-grid">
+              <!-- Column 1: Demo & Camera -->
+              <div class="controls-col">
+                <div class="panel-section">
+                  <h3 class="section-title">Active Live Demo Scene</h3>
+                  <div class="select-group">
+                    <label for="demo-scene-select" class="hud-label">Select Demo:</label>
+                    <select id="demo-scene-select" class="input-select">
+                      <option value="01_pbr_material_preview.cpp">Demo 01: PBR Material Preview (01_pbr_material_preview.cpp)</option>
+                      <option value="02_metallic_roughness_matrix.cpp">Demo 02: Metallic Roughness Matrix (02_metallic_roughness_matrix.cpp)</option>
+                      <option value="03_trefoil_studio.cpp">Demo 03: Trefoil Studio Lighting (03_trefoil_studio.cpp)</option>
+                      <option value="04_wasm_webgl_wrapper.cpp">Demo 04: WASM WebGL Wrapper (04_wasm_webgl_wrapper.cpp)</option>
+                      <option value="05_desktop_standalone_app.cpp">Demo 05: Desktop Standalone SDL2 App (05_desktop_standalone_app.cpp)</option>
+                      <option value="06_glb_character_collision_player.cpp">Demo 06: GLB Character, Collision &amp; Player Controller (06_glb_character_collision_player.cpp)</option>
+                      <option value="07_fps_shooter_damage_system.cpp" selected>Demo 07: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="panel-section">
+                  <h3 class="section-title">Camera System &amp; Input Politics</h3>
+                  <div class="select-group">
+                    <label for="camera-mode-select" class="hud-label">Camera Controller:</label>
+                    <select id="camera-mode-select" class="input-select">
+                      <option value="0">Arc Orbit Camera (Left Drag Orbit, Right Drag Pan, Scroll Zoom)</option>
+                      <option value="1">First-Person Camera (Drag to Look)</option>
+                      <option value="2">6-DOF Free-Fly Camera (Full Pitch/Yaw WASD + Shift Sprint)</option>
+                      <option value="3" selected>First-Person Shooter (FPS Pointer Lock / Direct Look - No Mouse Down Needed!)</option>
+                    </select>
+                  </div>
+
+                  <div class="checkbox-group" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+                      <input type="checkbox" id="chk-invert-mouse-x" checked />
+                      <span>Invert Mouse Look Horizontal (Left / Right)</span>
+                    </label>
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+                      <input type="checkbox" id="chk-invert-mouse-y" />
+                      <span>Invert Mouse Look Vertical (Up / Down)</span>
+                    </label>
+                  </div>
+
+                  <div class="key-help-box" id="fp-help" style="display: block;">
+                    <div class="key-row"><span class="key-badge">Mouse</span> Direct camera look without holding mouse down (Pointer Lock)</div>
+                    <div class="key-row"><span class="key-badge">L-Click / Space</span> Fire high-velocity projectile &amp; emit onDamage events</div>
+                    <div class="key-row"><span class="key-badge">W/A/S/D</span> Move horizontally relative to camera forward/strafe</div>
+                    <div class="key-row"><span class="key-badge">Q / E</span> Descend / Ascend height</div>
+                    <div class="key-row"><span class="key-badge">SHIFT</span> 2.5x Sprint Speed Boost</div>
+                    <div class="key-row"><span class="key-badge">ESC</span> Unlock mouse cursor</div>
+                  </div>
+                </div>
+
+                <div class="panel-section">
+                  <h3 class="section-title">Staff Preview &amp; Export Tools</h3>
+                  <div class="export-grid">
+                    <button id="btn-export-obj" class="btn-export" title="Export Wavefront OBJ mesh">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      <span>Export .OBJ</span>
+                    </button>
+                    <button id="btn-export-shot" class="btn-export" title="Capture high-res PNG frame">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                      <span>Snapshot .PNG</span>
+                    </button>
+                    <button id="btn-export-json" class="btn-export" title="Export scene manifest JSON">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      <span>Manifest .JSON</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Column 2: Materials & Shading -->
+              <div class="controls-col">
+                <div class="panel-section" id="mesh-selection-panel">
+                  <h3 class="section-title">Procedural Mesh Geometry (C++)</h3>
+                  <div class="mesh-grid">
+                    <button class="btn-mesh active" data-mesh="0">
+                      <span class="mesh-icon">&#9673;</span>
+                      <span class="mesh-title">Torus Ring</span>
+                    </button>
+                    <button class="btn-mesh" data-mesh="1">
+                      <span class="mesh-icon">&#9632;</span>
+                      <span class="mesh-title">Cube</span>
+                    </button>
+                    <button class="btn-mesh" data-mesh="2">
+                      <span class="mesh-icon">&#9672;</span>
+                      <span class="mesh-title">Icosahedron</span>
+                    </button>
+                    <button class="btn-mesh" data-mesh="3">
+                      <span class="mesh-icon">&#10041;</span>
+                      <span class="mesh-title">Trefoil Knot</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="panel-section">
+                  <h3 class="section-title">Filament PBR Shader Program</h3>
+                  <div class="select-group">
+                    <label for="shader-select" class="hud-label">Active Program:</label>
+                    <select id="shader-select" class="input-select">
+                      <option value="0">Filament Standard PBR (Cook-Torrance GGX / Schlick-Smith + IBL)</option>
+                      <option value="1">GLES3 Standard Derivatives (Wireframe HUD)</option>
+                      <option value="2">Normal Vector Visualizer</option>
+                      <option value="3">Fresnel Hologram Pulse</option>
+                    </select>
+                  </div>
+
+                  <div class="slider-group">
+                    <div class="slider-row">
+                      <span class="slider-label">Roughness</span>
+                      <span class="slider-val" id="val-roughness">0.35</span>
+                    </div>
+                    <input type="range" id="slider-roughness" min="0.05" max="1.0" step="0.01" value="0.35" class="range-input">
+                  </div>
+
+                  <div class="slider-group">
+                    <div class="slider-row">
+                      <span class="slider-label">Metallic (Conductor / Dielectric)</span>
+                      <span class="slider-val" id="val-metallic">0.80</span>
+                    </div>
+                    <input type="range" id="slider-metallic" min="0.0" max="1.0" step="0.01" value="0.80" class="range-input">
+                  </div>
+
+                  <div class="slider-group">
+                    <div class="slider-row">
+                      <span class="slider-label">Auto-Rotation Speed (rad/s)</span>
+                      <span class="slider-val" id="val-speed">0.80</span>
+                    </div>
+                    <input type="range" id="slider-speed" min="0.0" max="3.0" step="0.05" value="0.80" class="range-input">
+                  </div>
+
+                  <div class="color-picker-row">
+                    <span class="slider-label">Albedo Base Color</span>
+                    <div class="color-preset-group">
+                      <button class="color-dot active" style="background:#2563eb;" data-color="0.15,0.40,0.95"></button>
+                      <button class="color-dot" style="background:#10b981;" data-color="0.06,0.72,0.51"></button>
+                      <button class="color-dot" style="background:#f59e0b;" data-color="0.96,0.62,0.04"></button>
+                      <button class="color-dot" style="background:#ec4899;" data-color="0.93,0.28,0.60"></button>
+                      <button class="color-dot" style="background:#8b5cf6;" data-color="0.55,0.36,0.96"></button>
+                      <button class="color-dot" style="background:#e2e8f0;" data-color="0.9,0.9,0.95"></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Column 3: Flags & Specifications -->
+              <div class="controls-col">
+                <div class="panel-section">
+                  <h3 class="section-title">Engine Flags</h3>
+                  <div class="toggle-list">
+                    <label class="toggle-row">
+                      <span>Auto Rotate Matrix</span>
+                      <input type="checkbox" id="toggle-autorotate" checked>
+                    </label>
+                    <label class="toggle-row">
+                      <span>Depth Testing (GL_DEPTH_TEST)</span>
+                      <input type="checkbox" id="toggle-depth" checked>
+                    </label>
+                    <label class="toggle-row">
+                      <span>Backface Culling (GL_CULL_FACE)</span>
+                      <input type="checkbox" id="toggle-cull" checked>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="panel-section">
+                  <h3 class="section-title">Google Filament Engine Architecture</h3>
+                  
+                  <div class="arch-card">
+                    <span class="arch-badge">PHYSICS ENGINE</span>
+                    <h4 class="arch-header">Does Google Filament have physics?</h4>
+                    <p class="arch-text">
+                      <strong>No.</strong> Filament is strictly a real-time physically based rendering (PBR) engine designed for Android, iOS, Windows, Linux, macOS, and WebAssembly. It deliberately excludes physics to remain hyper-lean and embeddable.
+                    </p>
+                    <p class="arch-text">
+                      To add physics to a Filament-based engine, games pair it with <strong>Bullet Physics</strong>, <strong>Jolt Physics</strong>, <strong>PhysX</strong>, or <strong>Rapier (Wasm)</strong>.
+                    </p>
+                  </div>
+
+                  <div class="arch-card">
+                    <span class="arch-badge">NETWORKING</span>
+                    <h4 class="arch-header">Does Google Filament have networking?</h4>
+                    <p class="arch-text">
+                      <strong>No.</strong> Filament contains zero networking code. Multiplayer is handled separately using <strong>WebRTC</strong>, <strong>WebTransport</strong>, or native sockets.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Full-Page Live C++ Source & Compiler -->
+        <div class="tab-content" id="tab-live-editor">
+          <div class="editor-page-container">
+            <div class="section-header-row">
+              <div>
+                <h3 class="section-title">C++ Source Code &amp; Native Compiler</h3>
+                <p class="section-desc">Edit authoritative C/C++ engine sources, headers &amp; shaders. Compile natively to WebAssembly/JS runtime.</p>
+              </div>
+            </div>
+
+            <!-- Editor File Selection & Action Bar -->
+            <div class="editor-full-toolbar">
+              <div class="select-group">
+                <label for="live-editor-file-select" class="hud-label">Select C/C++ Source File:</label>
+                <select id="live-editor-file-select" class="input-select font-mono">
+                  <option value="examples/01_pbr_material_preview.cpp">examples/01_pbr_material_preview.cpp (Demo 01: PBR Material Preview)</option>
+                  <option value="examples/02_metallic_roughness_matrix.cpp">examples/02_metallic_roughness_matrix.cpp (Demo 02: Metallic Roughness Matrix)</option>
+                  <option value="examples/03_trefoil_studio.cpp">examples/03_trefoil_studio.cpp (Demo 03: Trefoil Studio Lighting)</option>
+                  <option value="examples/04_wasm_webgl_wrapper.cpp">examples/04_wasm_webgl_wrapper.cpp (Demo 04: WASM WebGL Wrapper)</option>
+                  <option value="examples/05_desktop_standalone_app.cpp">examples/05_desktop_standalone_app.cpp (Demo 05: Desktop Standalone SDL2 App)</option>
+                  <option value="examples/06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 06: GLB Character, Collision &amp; Player Controller)</option>
+                  <option value="examples/07_fps_shooter_damage_system.cpp" selected>examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
+                  <option value="src/core/Engine.cpp">src/core/Engine.cpp (Engine Core C++)</option>
+                  <option value="src/core/Renderer.cpp">src/core/Renderer.cpp (Filament GLES3 Pipeline C++)</option>
+                  <option value="src/core/Bindings.cpp">src/core/Bindings.cpp (Emscripten Embind Bindings C++)</option>
+                  <option value="include/engine/Engine.hpp">include/engine/Engine.hpp (Engine Header)</option>
+                  <option value="include/engine/Camera.hpp">include/engine/Camera.hpp (Camera Math Header)</option>
+                  <option value="include/engine/Collision.hpp">include/engine/Collision.hpp (Collision System Header)</option>
+                  <option value="include/engine/PlayerController.hpp">include/engine/PlayerController.hpp (Player Controller Header)</option>
+                  <option value="include/engine/DamageSystem.hpp">include/engine/DamageSystem.hpp (Damage System &amp; Events Header)</option>
+                  <option value="include/engine/Projectile.hpp">include/engine/Projectile.hpp (FPS Projectile System Header)</option>
+                  <option value="include/engine/GLBLoader.hpp">include/engine/GLBLoader.hpp (GLB &amp; Animation Header)</option>
+                  <option value="include/engine/Renderer.hpp">include/engine/Renderer.hpp (Renderer Header)</option>
+                  <option value="include/engine/Input.hpp">include/engine/Input.hpp (Input Header)</option>
+                  <option value="shaders/pbr.frag.glsl">shaders/pbr.frag.glsl (Cook-Torrance PBR Shader)</option>
+                  <option value="shaders/pbr.vert.glsl">shaders/pbr.vert.glsl (Vertex Pipeline Shader)</option>
+                  <option value="CMakeLists.txt">CMakeLists.txt (Native Build Configuration)</option>
+                </select>
+              </div>
+
+              <div class="editor-action-bar">
+                <button id="btn-apply-live-code" class="btn-live-apply" title="Compile C++ code and apply to WASM runtime">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  <span>⚡ Compile C++ &amp; Run</span>
+                </button>
+                <button id="btn-save-disk-code" class="btn-xs" title="Save C++ file to disk">💾 Save to Disk</button>
+                <button id="btn-reset-live-code" class="btn-xs" title="Reload original C++ source">Reload</button>
+                <button id="btn-copy-live-code" class="btn-xs" title="Copy C++ source">Copy</button>
+              </div>
+            </div>
+
+            <!-- Live Status Banner -->
+            <div class="live-status-badge success" id="live-code-status">
+              <span class="status-indicator">●</span>
+              <span id="live-status-text">C++ Source ready. Edit and click "⚡ Compile C++ &amp; Run" to build WASM.</span>
+            </div>
+
+            <!-- Full-Height Code Editor Window -->
+            <div class="live-editor-container full-page-editor">
+              <div class="editor-line-numbers font-mono" id="editor-line-numbers">1</div>
+              <textarea id="live-code-textarea" class="live-code-textarea font-mono" spellcheck="false" autocomplete="off" wrap="off" placeholder="// Authoritative C/C++ Source Code..."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Full-Page Generated JS & WASM (Auto-Generated Artifact) -->
+        <div class="tab-content" id="tab-generated-js">
+          <div class="editor-page-container">
+            <div class="section-header-row">
+              <div>
+                <h3 class="section-title">Auto-Generated JavaScript &amp; WASM Artifacts</h3>
+                <p class="section-desc">Target artifacts automatically generated by Emscripten / Clang LLVM from C++ source files.</p>
+              </div>
+            </div>
+
+            <div class="source-header">
+              <select id="generated-artifact-select" class="input-select font-mono">
+                <option value="engine.js">dist/engine.js (Emscripten Auto-Generated JS Glue)</option>
+                <option value="engine.wasm">build_wasm/engine.wasm (Compiled WebAssembly Binary Disassembly)</option>
+                <option value="bindings_map.json">dist/bindings_map.json (C++ Embind Reflection Table)</option>
+              </select>
+              <button id="btn-copy-generated" class="btn-xs">Copy Artifact</button>
+            </div>
+
+            <div class="live-status-badge info" style="margin-bottom: 8px;">
+              <span class="status-indicator">⚙️</span>
+              <span>Auto-Generated Target (Read-Only Generated Output from C++ sources).</span>
+            </div>
+
+            <pre class="code-view full-page-code"><code id="generated-display" class="font-mono"></code></pre>
+          </div>
+        </div>
+
+        <!-- Tab 5: Full-Page Filament Examples Source Viewer -->
+        <div class="tab-content" id="tab-filament-demos">
+          <div class="editor-page-container">
+            <div class="section-header-row">
+              <div>
+                <h3 class="section-title">Filament C++ &amp; Shader Examples</h3>
+                <p class="section-desc">Zero-allocation C++ host loops and Filament shader material implementations.</p>
+              </div>
+            </div>
+            <div class="source-header">
+              <select id="filament-examples-select" class="input-select font-mono">
+                <option value="01_pbr_material_preview.cpp">examples/01_pbr_material_preview.cpp (Demo 01: PBR Material Preview)</option>
+                <option value="02_metallic_roughness_matrix.cpp">examples/02_metallic_roughness_matrix.cpp (Demo 02: Metallic Roughness Matrix)</option>
+                <option value="03_trefoil_studio.cpp">examples/03_trefoil_studio.cpp (Demo 03: Trefoil Studio Lighting)</option>
+                <option value="03_filament_custom_material.mat">examples/03_filament_custom_material.mat (Filament matc Material)</option>
+                <option value="04_wasm_webgl_wrapper.cpp">examples/04_wasm_webgl_wrapper.cpp (Demo 04: WASM WebGL Wrapper)</option>
+                <option value="05_desktop_standalone_app.cpp">examples/05_desktop_standalone_app.cpp (Demo 05: Desktop Standalone SDL2 App)</option>
+                <option value="06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 06: GLB Character, Collision &amp; Player Controller)</option>
+                <option value="07_fps_shooter_damage_system.cpp" selected>examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
+              </select>
+              <button id="btn-copy-example" class="btn-xs">Copy Example</button>
+            </div>
+            <pre class="code-view full-page-code"><code id="example-display" class="font-mono"></code></pre>
+          </div>
+        </div>
+
+        <!-- Tab 6: Full-Page WASM & Cross-Platform Export Procedures -->
+        <div class="tab-content" id="tab-platform-export">
+          <div class="tab-scroll-pane">
+            <div class="controls-grid">
+              <div class="controls-col">
+                <!-- Backend Build Runner Panel -->
+                <div class="panel-section">
+                  <h3 class="section-title">Backend Native Build Engine</h3>
+                  <p class="section-desc">Trigger real-time C++ compilation &amp; packaging scripts directly on the backend container.</p>
+                  
+                  <div class="build-btn-grid">
+                    <button class="btn-build" data-build-target="wasm">
+                      <span class="btn-build-icon">🚀</span>
+                      <div class="btn-build-info">
+                        <span class="btn-build-title">Build WASM Package</span>
+                        <span class="btn-build-sub">Runs build_wasm.sh (Emscripten)</span>
+                      </div>
+                    </button>
+
+                    <button class="btn-build" data-build-target="desktop">
+                      <span class="btn-build-icon">🖥️</span>
+                      <div class="btn-build-info">
+                        <span class="btn-build-title">Build Desktop Standalone</span>
+                        <span class="btn-build-sub">Runs build_desktop.sh (CMake)</span>
+                      </div>
+                    </button>
+
+                    <button class="btn-build" data-build-target="android">
+                      <span class="btn-build-icon">📱</span>
+                      <div class="btn-build-info">
+                        <span class="btn-build-title">Build Android NDK</span>
+                        <span class="btn-build-sub">Runs build_android.sh (ARM64)</span>
+                      </div>
+                    </button>
+
+                    <button class="btn-build" data-build-target="clean">
+                      <span class="btn-build-icon">🧹</span>
+                      <div class="btn-build-info">
+                        <span class="btn-build-title">Clean Build Dirs</span>
+                        <span class="btn-build-sub">rm -rf build_* dist</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Host Toolchain Status Panel -->
+                <div class="panel-section">
+                  <div class="section-header-row">
+                    <h3 class="section-title">Host Toolchain &amp; Compilers</h3>
+                    <button id="btn-inspect-toolchain" class="btn-xs">Check Tools</button>
+                  </div>
+                  <div class="toolchain-table" id="toolchain-display">
+                    <div class="tool-row"><span class="tool-name">CMake</span><span class="tool-val" id="tool-cmake">Checking...</span></div>
+                    <div class="tool-row"><span class="tool-name">GCC / G++</span><span class="tool-val" id="tool-gcc">Checking...</span></div>
+                    <div class="tool-row"><span class="tool-name">Clang / LLVM</span><span class="tool-val" id="tool-clang">Checking...</span></div>
+                    <div class="tool-row"><span class="tool-name">Emscripten (emcc)</span><span class="tool-val" id="tool-emcc">Checking...</span></div>
+                    <div class="tool-row"><span class="tool-name">Node.js</span><span class="tool-val" id="tool-node">Checking...</span></div>
+                    <div class="tool-row"><span class="tool-name">Host Platform</span><span class="tool-val" id="tool-platform">Checking...</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="controls-col">
+                <div class="panel-section">
+                  <h3 class="section-title">Cross-Platform Build &amp; Export Scripts</h3>
+                  <div class="source-header">
+                    <select id="export-scripts-select" class="input-select font-mono">
+                      <option value="build_wasm.sh">build_wasm.sh (Emscripten / WASM Export)</option>
+                      <option value="build_desktop.sh">build_desktop.sh (Linux / macOS / Windows)</option>
+                      <option value="build_android.sh">build_android.sh (Android NDK ARM64/x86_64)</option>
+                      <option value="BUILD_PROCEDURES.md">docs/BUILD_PROCEDURES.md (Full Guide)</option>
+                      <option value="CMakeLists.txt">CMakeLists.txt (Build Config)</option>
+                    </select>
+                    <button id="btn-copy-export" class="btn-xs">Copy</button>
+                  </div>
+                  <pre class="code-view"><code id="export-display" class="font-mono"></code></pre>
+                </div>
+
+                <div class="panel-section">
+                  <h3 class="section-title">Emscripten (WASM) Quick Command</h3>
+                  <div class="key-help-box">
+                    <div class="key-row"><span class="key-badge">1</span> <code>source /path/to/emsdk/emsdk_env.sh</code></div>
+                    <div class="key-row"><span class="key-badge">2</span> <code>emcmake cmake .. -DCMAKE_BUILD_TYPE=Release</code></div>
+                    <div class="key-row"><span class="key-badge">3</span> <code>emmake make -j$(nproc)</code></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 7: Full-Page C++ Headers Viewer -->
+        <div class="tab-content" id="tab-headers">
+          <div class="editor-page-container">
+            <div class="section-header-row">
+              <div>
+                <h3 class="section-title">Native C++ Engine Header Interfaces</h3>
+                <p class="section-desc">C++17 zero-allocation headers for Engine, Camera, Input, and Filament Renderer.</p>
+              </div>
+            </div>
+            <div class="source-header">
+              <select id="hpp-file-select" class="input-select font-mono">
+                <option value="Engine.hpp">include/engine/Engine.hpp</option>
+                <option value="Camera.hpp">include/engine/Camera.hpp</option>
+                <option value="Collision.hpp">include/engine/Collision.hpp</option>
+                <option value="PlayerController.hpp">include/engine/PlayerController.hpp</option>
+                <option value="DamageSystem.hpp">include/engine/DamageSystem.hpp</option>
+                <option value="Projectile.hpp">include/engine/Projectile.hpp</option>
+                <option value="GLBLoader.hpp">include/engine/GLBLoader.hpp</option>
+                <option value="Input.hpp">include/engine/Input.hpp</option>
+                <option value="Renderer.hpp">include/engine/Renderer.hpp</option>
+              </select>
+              <button id="btn-copy-header" class="btn-xs">Copy Header</button>
+            </div>
+            <pre class="code-view full-page-code"><code id="header-display" class="font-mono"></code></pre>
+          </div>
+        </div>
+        <!-- Tab 8: PROJECT WORKSPACE TAB (Scene Objects, Player Controller, Collision Register, FPS Damage System, C++ Bridge) -->
+        <div class="tab-content" id="tab-project">
+          <div class="project-page-layout">
+            <!-- Project Sub-Nav Bar -->
+            <div class="project-subnav" id="project-subnav">
+              <button class="proj-subtab-btn active" data-subtab="scene-objects">
+                <span class="subtab-icon">📦</span>
+                <span>Scene Objects &amp; Hierarchy</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="player-controller">
+                <span class="subtab-icon">🕹️</span>
+                <span>Player Controller</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="collision-register">
+                <span class="subtab-icon">🛡️</span>
+                <span>Collision Register</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="fps-damage">
+                <span class="subtab-icon">🎯</span>
+                <span>FPS Shooter &amp; Damage Group</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="cpp-bridge">
+                <span class="subtab-icon">⚡</span>
+                <span>C++ Code Bridge</span>
+              </button>
+            </div>
+
+            <!-- Subtab 1: Scene Objects & Hierarchy -->
+            <div class="proj-subcontent active" id="subtab-scene-objects">
+              <div class="scene-objects-grid">
+                <!-- Left Column: Scene Hierarchy Tree -->
+                <div class="hierarchy-panel">
+                  <div class="hierarchy-header">
+                    <span class="hierarchy-title">Scene Graph (<span id="scene-obj-count">9</span> Entities)</span>
+                    <button class="btn-xs" id="btn-refresh-hierarchy" title="Refresh scene hierarchy">⟳ Refresh</button>
+                  </div>
+                  <div class="hierarchy-tree" id="hierarchy-tree-list">
+                    <!-- Dynamic entity items will be populated by main.js -->
+                  </div>
+                </div>
+
+                <!-- Right Column: Selected Object Inspector Card -->
+                <div class="object-inspector-panel" id="object-inspector-panel">
+                  <div class="inspector-card-header">
+                    <div class="inspector-name-group">
+                      <h3 class="inspector-title" id="inspector-obj-name">Player_Character</h3>
+                      <span class="inspector-type-pill" id="inspector-obj-type">Kinematic Controller</span>
+                    </div>
+                    <div class="card-actions">
+                      <button class="btn-xs" id="btn-focus-obj" title="Align camera to object">🎯 Focus Cam</button>
+                    </div>
+                  </div>
+
+                  <!-- Transform Section -->
+                  <div class="inspector-section">
+                    <span class="inspector-section-title">Transform (World Space)</span>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Position (X, Y, Z):</span>
+                      <div class="vec3-triad">
+                        <div class="axis-input-cell"><span class="axis-label x">X</span><input type="number" step="0.1" id="insp-pos-x" class="axis-val" value="0.0"></div>
+                        <div class="axis-input-cell"><span class="axis-label y">Y</span><input type="number" step="0.1" id="insp-pos-y" class="axis-val" value="0.0"></div>
+                        <div class="axis-input-cell"><span class="axis-label z">Z</span><input type="number" step="0.1" id="insp-pos-z" class="axis-val" value="2.0"></div>
+                      </div>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Scale / Dimensions:</span>
+                      <div class="vec3-triad">
+                        <div class="axis-input-cell"><span class="axis-label x">W</span><input type="number" step="0.1" id="insp-scale-x" class="axis-val" value="0.8"></div>
+                        <div class="axis-input-cell"><span class="axis-label y">H</span><input type="number" step="0.1" id="insp-scale-y" class="axis-val" value="1.8"></div>
+                        <div class="axis-input-cell"><span class="axis-label z">D</span><input type="number" step="0.1" id="insp-scale-z" class="axis-val" value="0.8"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Material & Shading Section -->
+                  <div class="inspector-section">
+                    <span class="inspector-section-title">Filament PBR Material Parameters</span>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Roughness:</span>
+                      <span class="hud-value" id="insp-roughness-val">0.35</span>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Metallic:</span>
+                      <span class="hud-value" id="insp-metallic-val">0.80</span>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Albedo Color:</span>
+                      <span class="hud-value highlight" id="insp-color-val">RGB(0.15, 0.40, 0.95)</span>
+                    </div>
+                  </div>
+
+                  <!-- Collider & Bounds Section -->
+                  <div class="inspector-section">
+                    <span class="inspector-section-title">Collider Configuration</span>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Shape Type:</span>
+                      <span class="hud-value highlight" id="insp-collider-shape">Swept Sphere (r=0.4m, h=1.8m)</span>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Collision Layer:</span>
+                      <span class="hud-value" id="insp-collider-layer">Layer_Player (Mask: Obstacle | Ground)</span>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Is Trigger Volume:</span>
+                      <span class="hud-value" id="insp-collider-trigger">false</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subtab 2: Player Controller -->
+            <div class="proj-subcontent" id="subtab-player-controller">
+              <div class="player-controller-grid">
+                <!-- Locomotion Settings Panel -->
+                <div class="panel-section">
+                  <h3 class="section-title">Character Locomotion &amp; Kinematics (C++)</h3>
+                  
+                  <div class="select-group">
+                    <label for="player-cam-view-select" class="hud-label">Camera Perspective Mode:</label>
+                    <select id="player-cam-view-select" class="input-select">
+                      <option value="third-person" selected>Third-Person Follow (Spring Arm with Collision Occlusion Avoidance)</option>
+                      <option value="first-person">First-Person View (Eye Height 1.65m)</option>
+                      <option value="free-fly">Free-Fly Spectator (6-DOF WASD/QE)</option>
+                    </select>
+                  </div>
+
+                  <div class="slider-group">
+                    <div class="slider-row">
+                      <span class="slider-label">Walk Velocity (m/s)</span>
+                      <span class="slider-val" id="val-player-walk-speed">5.50</span>
+                    </div>
+                    <input type="range" id="slider-player-walk" min="2.0" max="15.0" step="0.25" value="5.50" class="range-input">
+                  </div>
+
+                  <div class="slider-group">
+                    <div class="slider-row">
+                      <span class="slider-label">Sprint Velocity (m/s)</span>
+                      <span class="slider-val" id="val-player-sprint-speed">11.00</span>
+                    </div>
+                    <input type="range" id="slider-player-sprint" min="6.0" max="25.0" step="0.5" value="11.00" class="range-input">
+                  </div>
+
+                  <div class="slider-group">
+                    <div class="slider-row">
+                      <span class="slider-label">Jump Impulse Force (m/s)</span>
+                      <span class="slider-val" id="val-player-jump">8.50</span>
+                    </div>
+                    <input type="range" id="slider-player-jump" min="4.0" max="18.0" step="0.5" value="8.50" class="range-input">
+                  </div>
+
+                  <div class="slider-group">
+                    <div class="slider-row">
+                      <span class="slider-label">World Gravity (m/s&sup2;)</span>
+                      <span class="slider-val" id="val-player-gravity">-22.00</span>
+                    </div>
+                    <input type="range" id="slider-player-gravity" min="-50.0" max="-5.0" step="1.0" value="-22.00" class="range-input">
+                  </div>
+
+                  <div class="card-actions" style="margin-top: 14px; gap: 8px;">
+                    <button id="btn-player-jump" class="btn-action" style="padding: 8px 16px;">⚡ Trigger Jump</button>
+                    <button id="btn-player-reset-pos" class="btn-action" style="padding: 8px 16px;">🎯 Reset Spawn Pose</button>
+                  </div>
+                </div>
+
+                <!-- Live Physics & Locomotion Telemetry Panel -->
+                <div class="panel-section">
+                  <h3 class="section-title">Real-Time Locomotion Telemetry</h3>
+                  <div class="telemetry-metrics-grid">
+                    <div class="telemetry-card highlight">
+                      <span class="telemetry-label">Locomotion State</span>
+                      <span class="telemetry-val emerald" id="telem-state">IDLE</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Grounded Contact</span>
+                      <span class="telemetry-val" id="telem-grounded">TRUE</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Horizontal Speed</span>
+                      <span class="telemetry-val cyan" id="telem-speed">0.00 m/s</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Vertical Velocity (Vy)</span>
+                      <span class="telemetry-val" id="telem-vy">0.00 m/s</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Active GLB Animation</span>
+                      <span class="telemetry-val amber" id="telem-anim">Idle (0.0s)</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Coyote Timer</span>
+                      <span class="telemetry-val" id="telem-coyote">0.15 s</span>
+                    </div>
+                  </div>
+
+                  <div class="inspector-section" style="margin-top: 14px;">
+                    <span class="inspector-section-title">Current Player Position &amp; Orientation</span>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Position Vector (X, Y, Z):</span>
+                      <span class="hud-value font-mono" id="telem-pos-vec">(0.00, 0.00, 2.00)</span>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Yaw &bull; Pitch Angle:</span>
+                      <span class="hud-value font-mono" id="telem-rot-vec">Yaw: 0.0&deg; | Pitch: 0.0&deg;</span>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Ground Surface Normal:</span>
+                      <span class="hud-value font-mono highlight" id="telem-normal-vec">(0.00, 1.00, 0.00)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subtab 3: Collision Register -->
+            <div class="proj-subcontent" id="subtab-collision-register">
+              <div class="collision-table-wrapper">
+                <div class="collision-summary-bar">
+                  <div class="collision-pill-group">
+                    <span class="hud-label">COLLISION WORLD:</span>
+                    <span class="status-pill"><span class="status-dot"></span><span class="status-text" id="col-count-badge">8 Colliders Active</span></span>
+                    <span class="status-pill"><span class="status-text">Broadphase: Spatial AABB</span></span>
+                    <span class="status-pill"><span class="status-text">Solve Time: &lt; 0.03 ms</span></span>
+                  </div>
+                  <label class="toggle-row" style="margin: 0;">
+                    <span>Debug Wireframes in Viewport</span>
+                    <input type="checkbox" id="toggle-debug-colliders" checked>
+                  </label>
+                </div>
+
+                <div style="overflow-x: auto;">
+                  <table class="collision-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Center Position</th>
+                        <th>Half Extents / Radius</th>
+                        <th>Layer Mask</th>
+                        <th>Trigger</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="collision-register-tbody">
+                      <!-- Dynamic collider rows will be populated by main.js -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subtab 4: FPS Shooter & Damage Group Dashboard -->
+            <div class="proj-subcontent" id="subtab-fps-damage">
+              <div class="player-controller-grid">
+                <!-- Weapon Tuning & Firing Controls -->
+                <div class="panel-section">
+                  <h3 class="section-title">FPS Ballistic Projectile &amp; Weapon System</h3>
+                  <p class="section-desc">Tune muzzle physics, damage coefficients, projectile pooling, and real-time raycast/swept collision detection.</p>
+                  
+                  <div class="select-group" style="margin-top: 10px;">
+                    <label for="fps-weapon-type" class="hud-label">Select Weapon Type:</label>
+                    <select id="fps-weapon-type" class="input-select">
+                      <option value="plasma" selected>⚡ High-Yield Plasma Bolt (Cyan Plasma, 50 m/s, 25 DMG)</option>
+                      <option value="kinetic">💥 Heavy Kinetic Slug (Amber Tracer, 75 m/s, 40 DMG)</option>
+                      <option value="railgun">🔮 Quantum Railgun Pulse (Violet Beam, 120 m/s, 75 DMG)</option>
+                    </select>
+                  </div>
+
+                  <div class="slider-group">
+                    <div class="slider-row">
+                      <span class="slider-label">Damage Per Shot (HP)</span>
+                      <span class="slider-val highlight" id="val-fps-dmg">25.0</span>
+                    </div>
+                    <input type="range" id="slider-fps-dmg" min="5.0" max="100.0" step="5.0" value="25.0" class="range-input">
+                  </div>
+
+                  <div class="slider-group">
+                    <div class="slider-row">
+                      <span class="slider-label">Muzzle Velocity (m/s)</span>
+                      <span class="slider-val" id="val-fps-speed">50.0</span>
+                    </div>
+                    <input type="range" id="slider-fps-speed" min="15.0" max="150.0" step="5.0" value="50.0" class="range-input">
+                  </div>
+
+                  <div class="slider-group">
+                    <div class="slider-row">
+                      <span class="slider-label">Active Projectile Lifetime (s)</span>
+                      <span class="slider-val" id="val-fps-lifetime">3.0</span>
+                    </div>
+                    <input type="range" id="slider-fps-lifetime" min="0.5" max="6.0" step="0.5" value="3.0" class="range-input">
+                  </div>
+
+                  <div class="card-actions" style="margin-top: 14px; gap: 8px;">
+                    <button id="btn-fire-test-projectile" class="btn-action" style="padding: 8px 16px;">⚡ Fire Test Projectile</button>
+                    <button id="btn-reset-damage-targets" class="btn-action" style="padding: 8px 16px;">⟳ Reset All Targets &amp; HP</button>
+                  </div>
+                </div>
+
+                <!-- DAMAGE Group Actors & Live Health Monitor -->
+                <div class="panel-section">
+                  <div class="section-header-row">
+                    <h3 class="section-title">DAMAGE Group Target Roster</h3>
+                    <span class="status-pill" style="font-size: 11px;"><span class="status-dot"></span><span id="active-damageables-count">4 Targets In Group</span></span>
+                  </div>
+                  <p class="section-desc">Entities registered in Layer_Damageable (Bitmask 1 &lt;&lt; 6). When hit by projectiles, triggers onDamage event callbacks.</p>
+
+                  <div class="damage-actors-grid" id="damage-actors-roster">
+                    <!-- Dynamic Target Actor Cards populated by main.js -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- Real-Time Damage Events Emission Stream Log -->
+              <div class="collision-table-wrapper" style="margin-top: 16px;">
+                <div class="collision-summary-bar">
+                  <div class="collision-pill-group">
+                    <span class="hud-label">EMITTED onDamage EVENTS:</span>
+                    <span class="status-pill"><span class="status-dot"></span><span class="status-text" id="damage-events-count">0 Events Logged</span></span>
+                    <span class="status-pill"><span class="status-text">Dispatcher: EngineCore::DamageSystem</span></span>
+                    <span class="status-pill"><span class="status-text">Signal: onDamage(DamageEvent)</span></span>
+                  </div>
+                  <button id="btn-clear-damage-log" class="btn-xs">Clear Events Log</button>
+                </div>
+
+                <div style="overflow-x: auto; max-height: 240px;">
+                  <table class="damage-events-log-table">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Target Name</th>
+                        <th>Damage Group</th>
+                        <th>Damage Dealt</th>
+                        <th>Remaining HP</th>
+                        <th>Hit Point (X, Y, Z)</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="damage-events-tbody">
+                      <tr>
+                        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 18px;">
+                          No onDamage events emitted yet. Switch to First-Person Shooter camera mode and fire projectiles at targets!
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subtab 5: C++ Code Bridge -->
+            <div class="proj-subcontent" id="subtab-cpp-bridge">
+              <div class="cpp-bridge-box">
+                <div class="cpp-bridge-header">
+                  <div>
+                    <h3 class="section-title">Native C++ Code Bridge</h3>
+                    <p class="section-desc">Exact C++ code equivalents for scene creation, collision world setup, and player locomotion.</p>
+                  </div>
+                  <button class="btn-xs" id="btn-copy-cpp-bridge">Copy C++ Code</button>
+                </div>
+                <div class="cpp-snippet-container">
+                  <pre class="code-view"><code id="cpp-bridge-code" class="font-mono"></code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Plain Pure Native ECMAScript Driver (No React, No TS) -->
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
