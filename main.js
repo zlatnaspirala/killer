@@ -1024,9 +1024,11 @@ void main() {
 `;
 
 const FS_PBR = `#version 300 es
+// Cook-Torrance GGX Specular Microfacet BRDF with Procedural PBR Texture Synthesizer
+// Filament Lighting Model & Material Profiling (GLES 3.0 / WebGL 2.0)
 precision highp float;
 
-#define PI 3.14159265359
+#define PI 3.14159265358979323846
 
 in vec3 v_worldPos;
 in vec3 v_normal;
@@ -1038,85 +1040,460 @@ uniform float u_roughness;
 uniform float u_metallic;
 uniform float u_time;
 
+// Filament Advanced Material Controls
+uniform int u_matType;        // 0..15 material type (Wood, Rock, Metal, Marble, etc.)
+uniform float u_noiseScale;   // texture frequency
+uniform float u_clearCoat;    // clearcoat reflection layer
+uniform float u_anisotropy;   // anisotropic specular highlight
+uniform float u_bumpStrength; // procedural bump normal intensity
+uniform int u_useTexMaps;     // 1 to sample 2D texture samplers
+
+uniform vec3 u_lightDir;
+uniform vec3 u_lightColor;
+uniform vec3 u_fillLightDir;
+uniform vec3 u_fillLightColor;
+
+uniform sampler2D u_albedoMap;
+uniform sampler2D u_pbrMap;
+
 out vec4 fragColor;
 
-// Filament GGX Normal Distribution Function (D)
-float D_GGX(float NoH, float roughness) {
+// -------------------------------------------------------------
+// NOISE & PROCEDURAL TEXTURE SYNTHESIS PRIMITIVES
+// -------------------------------------------------------------
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float hash13(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
+}
+
+vec2 hash22(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+float noise2d(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash12(i);
+    float b = hash12(i + vec2(1.0, 0.0));
+    float c = hash12(i + vec2(0.0, 1.0));
+    float d = hash12(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float noise3d(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash13(i);
+    float b = hash13(i + vec3(1.0, 0.0, 0.0));
+    float c = hash13(i + vec3(0.0, 1.0, 0.0));
+    float d = hash13(i + vec3(1.0, 1.0, 0.0));
+    float e = hash13(i + vec3(0.0, 0.0, 1.0));
+    float f1 = hash13(i + vec3(1.0, 0.0, 1.0));
+    float g = hash13(i + vec3(0.0, 1.0, 1.0));
+    float h = hash13(i + vec3(1.0, 1.0, 1.0));
+    return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
+               mix(mix(e, f1, f.x), mix(g, h, f.x), f.y), f.z);
+}
+
+float fbm3d(vec3 p, int octaves) {
+    float v = 0.0;
+    float a = 0.5;
+    vec3 shift = vec3(100.0);
+    for (int i = 0; i < 4; ++i) {
+        if (i >= octaves) break;
+        v += a * noise3d(p);
+        p = p * 2.02 + shift;
+        a *= 0.5;
+    }
+    return v;
+}
+
+vec2 voronoi2d(vec2 x) {
+    vec2 n = floor(x);
+    vec2 f = fract(x);
+    vec2 mg, mr;
+    float md = 8.0;
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            vec2 g = vec2(float(i), float(j));
+            vec2 o = hash22(n + g);
+            vec2 r = g + o - f;
+            float d = dot(r, r);
+            if (d < md) {
+                md = d;
+                mr = r;
+                mg = g;
+            }
+        }
+    }
+    return vec2(sqrt(md), hash12(n + mg));
+}
+
+// Tangent space normal perturbation from analytical height gradient
+vec3 perturbNormal(vec3 N, vec3 pos, float height, float bumpScale) {
+    vec3 dPdx = dFdx(pos);
+    vec3 dPdy = dFdy(pos);
+    float dhdx = dFdx(height);
+    float dhdy = dFdy(height);
+    vec3 r1 = cross(dPdy, N);
+    vec3 r2 = cross(N, dPdx);
+    float det = dot(dPdx, r1);
+    if (abs(det) < 1e-7) return N;
+    vec3 grad = (r1 * dhdx + r2 * dhdy) / det;
+    return normalize(N - grad * bumpScale);
+}
+
+// -------------------------------------------------------------
+// BRDF LIGHTING MATHEMATICS
+// -------------------------------------------------------------
+float DistributionGGX(float NoH, float roughness) {
     float a = roughness * roughness;
     float a2 = a * a;
     float d = (NoH * a2 - NoH) * NoH + 1.0;
     return a2 / (PI * d * d + 1e-7);
 }
 
-// Filament Smith GGX Correlated Visibility Function (V = G / (4 * NoV * NoL))
-float V_SmithGGXCorrelated(float NoV, float NoL, float roughness) {
-    float a = roughness * roughness;
-    float GGXV = NoL * (NoV * (1.0 - a) + a);
-    float GGXL = NoV * (NoL * (1.0 - a) + a);
-    return 0.5 / (GGXV + GGXL + 1e-7);
+float GeometrySchlickGGX(float NdotV, float roughness) {
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+    return NdotV / (NdotV * (1.0 - k) + k);
 }
 
-// Filament Schlick Fresnel (F)
-vec3 F_Schlick(float VoH, vec3 f0) {
+float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+    return ggx1 * ggx2;
+}
+
+vec3 FresnelSchlick(float VoH, vec3 f0) {
     return f0 + (vec3(1.0) - f0) * pow(clamp(1.0 - VoH, 0.0, 1.0), 5.0);
 }
 
 void main() {
     vec3 N = normalize(v_normal);
     vec3 V = normalize(u_camPos - v_worldPos);
-    float NoV = abs(dot(N, V)) + 1e-5;
+    float NoV_base = abs(dot(N, V)) + 1e-5;
 
-    // Filament base material parameters
-    float roughness = clamp(u_roughness, 0.045, 1.0);
-    float metallic = clamp(u_metallic, 0.0, 1.0);
-    vec3 diffuseColor = (1.0 - metallic) * u_baseColor;
-    vec3 f0 = mix(vec3(0.04), u_baseColor, metallic);
-
-    // Directional Key Light + Soft Fill Light
-    vec3 lightDirs[2];
-    vec3 lightColors[2];
-    lightDirs[0] = normalize(vec3(2.5, 4.0, 3.0));
-    lightColors[0] = vec3(2.8, 2.7, 2.5);
-    lightDirs[1] = normalize(vec3(-3.0, -1.0, -2.0));
-    lightColors[1] = vec3(0.6, 0.8, 1.1) * 0.7;
-
-    vec3 directLighting = vec3(0.0);
-
-    for (int i = 0; i < 2; i++) {
-        vec3 L = lightDirs[i];
-        vec3 H = normalize(V + L);
-        float NoL = clamp(dot(N, L), 0.0, 1.0);
-        float NoH = clamp(dot(N, H), 0.0, 1.0);
-        float VoH = clamp(dot(V, H), 0.0, 1.0);
-
-        if (NoL > 0.0) {
-            // Cook-Torrance BRDF Specular
-            float D = D_GGX(NoH, roughness);
-            float V_corr = V_SmithGGXCorrelated(NoV, NoL, roughness);
-            vec3 F = F_Schlick(VoH, f0);
-            vec3 Fr = (D * V_corr) * F;
-
-            // Lambertian Diffuse (Energy-conserved)
-            vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
-            vec3 Fd = kD * (diffuseColor / PI);
-
-            directLighting += (Fd + Fr) * lightColors[i] * NoL;
-        }
+    // Use triplanar / UV coordinates for uniform scale across all 3D geometries
+    vec3 p = v_worldPos;
+    float scale = (u_noiseScale > 0.1) ? u_noiseScale : 18.0;
+    vec2 uv = v_uv * scale;
+    if (length(v_uv) < 0.001) {
+        uv = (abs(N.y) > 0.6) ? p.xz * scale : ((abs(N.x) > 0.6) ? p.yz * scale : p.xy * scale);
     }
 
-    // Filament-style Image-Based Lighting (IBL) ambient approximation
+    vec3 albedo = u_baseColor;
+    float roughness = clamp(u_roughness, 0.04, 1.0);
+    float metallic = clamp(u_metallic, 0.0, 1.0);
+    float clearCoat = u_clearCoat;
+    float clearCoatRoughness = 0.08;
+    vec3 emissive = vec3(0.0);
+    float ao = 1.0;
+    float bumpScale = (u_bumpStrength > 0.0 ? u_bumpStrength : 1.2) * 0.035;
+
+    // -------------------------------------------------------------
+    // PROCEDURAL MATERIAL SYNTHESIZERS (u_matType)
+    // -------------------------------------------------------------
+    if (u_matType == 1) {
+        // 1. PROCEDURAL DARK WALNUT WOOD
+        vec3 woodP = p * (scale * 0.35);
+        float ringDist = length(woodP.xz) * 6.0 + fbm3d(woodP * 1.5, 3) * 3.5;
+        float ring = pow(sin(ringDist * 3.14159) * 0.5 + 0.5, 0.6);
+        float grain = noise2d(vec2(woodP.x * 35.0, woodP.y * 3.0)) * 0.5 + 0.5;
+        float pores = pow(noise2d(vec2(woodP.x * 90.0, woodP.y * 12.0)), 3.0);
+
+        vec3 darkWalnut = vec3(0.22, 0.11, 0.05);
+        vec3 lightAmber = vec3(0.55, 0.32, 0.16);
+        vec3 poreColor  = vec3(0.12, 0.06, 0.02);
+
+        vec3 woodColor = mix(darkWalnut, lightAmber, ring * 0.65 + grain * 0.35);
+        woodColor = mix(woodColor, poreColor, pores * 0.7);
+        albedo = woodColor * (u_baseColor / max(vec3(0.38, 0.22, 0.12), vec3(0.01)));
+
+        float woodHeight = ring * 0.6 + grain * 0.25 - pores * 0.3;
+        N = perturbNormal(N, v_worldPos, woodHeight, bumpScale * 1.6);
+        roughness = mix(0.32, 0.68, ring * 0.7 + pores * 0.3);
+        metallic = 0.0;
+    }
+    else if (u_matType == 2) {
+        // 2. PROCEDURAL BASALT & GRANITE CRAG ROCK
+        vec3 rockP = p * (scale * 0.3);
+        vec2 vCell = voronoi2d(uv * 0.8);
+        float rockFbm = fbm3d(rockP * 2.0, 4);
+        float specks = hash13(floor(rockP * 40.0));
+
+        vec3 basaltColor = vec3(0.18, 0.19, 0.22);
+        vec3 graniteFleck = vec3(0.48, 0.50, 0.54);
+        vec3 quartzSpeck = vec3(0.75, 0.76, 0.80);
+
+        vec3 rockColor = mix(basaltColor, graniteFleck, rockFbm * 0.8 + (1.0 - vCell.x) * 0.4);
+        if (specks > 0.85) rockColor = mix(rockColor, quartzSpeck, 0.6);
+
+        albedo = rockColor * (u_baseColor / max(vec3(0.32, 0.32, 0.35), vec3(0.01)));
+        float rockHeight = (1.0 - vCell.x) * 0.7 + rockFbm * 0.5;
+        N = perturbNormal(N, v_worldPos, rockHeight, bumpScale * 2.5);
+        roughness = clamp(0.75 + rockFbm * 0.2 - (specks > 0.85 ? 0.3 : 0.0), 0.2, 1.0);
+        ao = clamp(vCell.x * 1.4, 0.3, 1.0);
+        metallic = 0.0;
+    }
+    else if (u_matType == 3) {
+        // 3. BRUSHED AEROSPACE TITANIUM
+        vec2 metalUV = uv * 2.0;
+        float brushLines = sin(metalUV.y * 120.0 + noise2d(metalUV * 25.0) * 6.0) * 0.5 + 0.5;
+        float scratches = pow(noise2d(metalUV * vec2(4.0, 180.0)), 4.0);
+
+        vec3 titaniumBase = vec3(0.78, 0.82, 0.88);
+        albedo = mix(titaniumBase * 0.85, titaniumBase * 1.15, brushLines * 0.4 - scratches * 0.3);
+        albedo *= (u_baseColor / max(vec3(0.72, 0.76, 0.82), vec3(0.01)));
+
+        float metalHeight = brushLines * 0.3 + scratches * 0.5;
+        N = perturbNormal(N, v_worldPos, metalHeight, bumpScale * 1.4);
+        roughness = mix(0.18, 0.38, scratches);
+        metallic = 0.96;
+    }
+    else if (u_matType == 4) {
+        // 4. CALACATTA MARBLE
+        vec3 marbleP = p * (scale * 0.25);
+        float turb = fbm3d(marbleP * 2.5, 4);
+        float veins = sin(marbleP.x * 4.0 + marbleP.y * 2.0 + turb * 8.0);
+        veins = abs(veins);
+        float veinMask = smoothstep(0.12, 0.0, veins);
+        float subVein = smoothstep(0.3, 0.0, abs(sin(marbleP.z * 3.0 + turb * 5.0))) * 0.5;
+
+        vec3 marbleWhite = vec3(0.96, 0.97, 0.98);
+        vec3 veinGold    = vec3(0.68, 0.55, 0.38);
+        vec3 veinCharcoal = vec3(0.22, 0.23, 0.26);
+
+        vec3 veinCol = mix(veinCharcoal, veinGold, turb);
+        albedo = mix(marbleWhite, veinCol, clamp(veinMask + subVein, 0.0, 1.0));
+        albedo *= (u_baseColor / max(vec3(0.92, 0.92, 0.94), vec3(0.01)));
+
+        float marbleHeight = (1.0 - veinMask) * 0.15;
+        N = perturbNormal(N, v_worldPos, marbleHeight, bumpScale * 0.4);
+        roughness = mix(0.12, 0.35, veinMask);
+        metallic = 0.0;
+        clearCoat = 0.95;
+    }
+    else if (u_matType == 5) {
+        // 5. TWILL WEAVE CARBON FIBER
+        vec2 cUv = uv * 3.5;
+        vec2 cell = fract(cUv);
+        vec2 id = floor(cUv);
+        float pattern = mod(id.x + id.y, 2.0);
+        float strand = (pattern > 0.5) ? sin(cell.x * PI * 2.0) : sin(cell.y * PI * 2.0);
+        strand = strand * 0.5 + 0.5;
+
+        vec3 carbonWeave = mix(vec3(0.08, 0.09, 0.11), vec3(0.24, 0.26, 0.30), strand);
+        albedo = carbonWeave * (u_baseColor / max(vec3(0.12, 0.13, 0.15), vec3(0.01)));
+
+        float weaveHeight = strand * 0.6;
+        N = perturbNormal(N, v_worldPos, weaveHeight, bumpScale * 1.8);
+        roughness = 0.32;
+        metallic = 0.55;
+        clearCoat = 0.95;
+    }
+    else if (u_matType == 6) {
+        // 6. CORRODED IRON & RUST
+        vec3 rustP = p * (scale * 0.35);
+        float rustNoise = fbm3d(rustP * 2.2, 4);
+        float rustMask = smoothstep(0.38, 0.62, rustNoise);
+
+        vec3 cleanSteel = vec3(0.72, 0.75, 0.80);
+        vec3 orangeRust = vec3(0.68, 0.28, 0.12);
+        vec3 darkPit    = vec3(0.28, 0.12, 0.06);
+        vec3 rustColor  = mix(orangeRust, darkPit, noise3d(rustP * 8.0));
+
+        albedo = mix(cleanSteel, rustColor, rustMask);
+        albedo *= (u_baseColor / max(vec3(0.65, 0.28, 0.16), vec3(0.01)));
+
+        float rustHeight = rustMask * 0.8 + (1.0 - rustMask) * 0.1;
+        N = perturbNormal(N, v_worldPos, rustHeight, bumpScale * 2.2);
+        roughness = mix(0.18, 0.88, rustMask);
+        metallic  = mix(0.95, 0.05, rustMask);
+    }
+    else if (u_matType == 7) {
+        // 7. VOLCANIC MAGMA & LAVA CRUST
+        vec2 lCell = voronoi2d(uv * 0.5 + vec2(u_time * 0.04, 0.0));
+        float crack = smoothstep(0.0, 0.22, lCell.x);
+        float heatPulse = sin(u_time * 2.5 + lCell.y * 6.28) * 0.5 + 0.5;
+
+        vec3 basaltCrust = vec3(0.08, 0.07, 0.07);
+        vec3 magmaYellow = vec3(1.0, 0.85, 0.2);
+        vec3 magmaOrange = vec3(1.0, 0.28, 0.04);
+        vec3 magmaRed    = vec3(0.6, 0.05, 0.01);
+
+        vec3 glowCol = mix(magmaYellow, magmaOrange, lCell.x * 4.0);
+        glowCol = mix(glowCol, magmaRed, heatPulse * 0.3);
+
+        albedo = mix(glowCol, basaltCrust, crack);
+        emissive = glowCol * (1.0 - crack) * (2.8 + heatPulse * 1.5);
+
+        float lavaHeight = crack * 0.7;
+        N = perturbNormal(N, v_worldPos, lavaHeight, bumpScale * 2.0);
+        roughness = mix(0.1, 0.9, crack);
+        metallic = 0.0;
+    }
+    else if (u_matType == 8) {
+        // 8. FLAKE METALLIC CAR PAINT
+        float flake = hash13(floor(p * (scale * 8.0)));
+        float flakeGlint = (flake > 0.72) ? pow((flake - 0.72) / 0.28, 2.0) : 0.0;
+
+        vec3 candyColor = u_baseColor;
+        vec3 glintColor = vec3(1.0, 0.95, 0.85);
+
+        albedo = mix(candyColor, glintColor, flakeGlint * 0.75);
+        roughness = 0.18;
+        metallic = 0.85;
+        clearCoat = 1.0;
+        clearCoatRoughness = 0.04;
+    }
+    else if (u_matType == 9) {
+        // 9. OPTICAL DIELECTRIC GLASS & CHROMATIC DISPERSION
+        float fresnelGlass = pow(1.0 - NoV_base, 3.5);
+        vec3 glassBody = vec3(0.92, 0.96, 1.0);
+        albedo = mix(glassBody * 0.15, glassBody, fresnelGlass);
+        roughness = 0.03;
+        metallic = 0.0;
+        clearCoat = 0.95;
+    }
+    else if (u_matType == 10) {
+        // 10. SHEEN MICROFIBER VELVET CLOTH
+        float sheenRim = pow(1.0 - NoV_base, 2.2);
+        vec3 sheenCol = vec3(1.0, 0.45, 0.65);
+        albedo = u_baseColor + sheenCol * sheenRim * 0.65;
+        roughness = 0.78;
+        metallic = 0.0;
+    }
+    else if (u_matType == 11) {
+        // 11. QUANTUM HOLOGRAPHIC MATRIX
+        float holoFresnel = pow(1.0 - NoV_base, 2.5);
+        float scanline = sin(v_worldPos.y * 45.0 - u_time * 7.0) * 0.5 + 0.5;
+        scanline = pow(scanline, 4.0);
+        float grid = step(0.92, fract(uv.x * 2.0)) + step(0.92, fract(uv.y * 2.0));
+
+        emissive = u_baseColor * (holoFresnel * 1.8 + scanline * 1.2 + grid * 0.8 + 0.2);
+        albedo = u_baseColor * 0.2;
+        roughness = 0.08;
+        metallic = 0.0;
+    }
+    else if (u_matType == 12) {
+        // 12. SUPERCHARGED EMISSIVE NEON
+        float pulse = sin(u_time * 4.0) * 0.15 + 0.85;
+        emissive = u_baseColor * pulse * 3.5;
+        albedo = u_baseColor;
+        roughness = 0.05;
+        metallic = 0.0;
+    }
+    else if (u_matType == 13) {
+        // 13. TROCHOIDAL RIPPLE WATER
+        vec2 wUv = uv * 0.4;
+        float wave1 = sin(wUv.x * 6.0 + wUv.y * 4.0 - u_time * 2.5);
+        float wave2 = cos(wUv.x * 4.0 - wUv.y * 7.0 + u_time * 2.0);
+        float waveHeight = (wave1 + wave2) * 0.5;
+        N = perturbNormal(N, v_worldPos, waveHeight, bumpScale * 2.8);
+        albedo = mix(vec3(0.05, 0.25, 0.55), vec3(0.15, 0.55, 0.85), waveHeight * 0.5 + 0.5);
+        roughness = 0.06;
+        metallic = 0.1;
+        clearCoat = 0.95;
+    }
+    else if (u_matType == 14) {
+        // 14. PEBBLE GRAIN LEATHER
+        vec2 lPebble = voronoi2d(uv * 2.5);
+        float leatherHeight = (1.0 - lPebble.x) * 0.8;
+        N = perturbNormal(N, v_worldPos, leatherHeight, bumpScale * 1.9);
+        albedo = mix(u_baseColor * 0.75, u_baseColor * 1.1, lPebble.x);
+        roughness = 0.58;
+        metallic = 0.0;
+    }
+
+    // Blend optional 2D Texture Maps if active
+    if (u_useTexMaps > 0) {
+        vec4 texAlb = texture(u_albedoMap, v_uv * scale);
+        vec4 texPbr = texture(u_pbrMap, v_uv * scale);
+        albedo *= texAlb.rgb;
+        roughness *= texPbr.r;
+        metallic = mix(metallic, texPbr.g, 0.8);
+    }
+
+    // -------------------------------------------------------------
+    // PBR LIGHTING EVALUATION
+    // -------------------------------------------------------------
+    float NoV = abs(dot(N, V)) + 1e-5;
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    vec3 Lo = vec3(0.0);
+
+    // 1. Direct Key Light
+    vec3 L1 = (length(u_lightDir) > 0.001) ? normalize(u_lightDir) : normalize(vec3(2.5, 4.0, 3.0));
+    vec3 lCol1 = (length(u_lightColor) > 0.001) ? u_lightColor : vec3(2.8, 2.7, 2.5);
+    vec3 H1 = normalize(V + L1);
+    float NdotL1 = max(dot(N, L1), 0.0);
+
+    if (NdotL1 > 0.0) {
+        float NDF = DistributionGGX(max(dot(N, H1), 0.0), max(roughness, 0.04));
+        float G = GeometrySmith(N, V, L1, max(roughness, 0.04));
+        vec3 F = FresnelSchlick(max(dot(H1, V), 0.0), F0);
+
+        vec3 specular = (NDF * G * F) / (4.0 * NoV * NdotL1 + 0.0001);
+        if (clearCoat > 0.0) {
+            float NDFc = DistributionGGX(max(dot(N, H1), 0.0), clearCoatRoughness);
+            float Gc = GeometrySmith(N, V, L1, clearCoatRoughness);
+            vec3 Fc = FresnelSchlick(max(dot(H1, V), 0.0), vec3(0.04)) * clearCoat;
+            specular += (NDFc * Gc * Fc) / (4.0 * NoV * NdotL1 + 0.0001);
+        }
+
+        vec3 kS = F;
+        vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
+        Lo += (kD * albedo / PI + specular) * lCol1 * NdotL1;
+    }
+
+    // 2. Secondary Fill Light
+    vec3 L2 = (length(u_fillLightDir) > 0.001) ? normalize(u_fillLightDir) : normalize(vec3(-3.0, -1.0, -2.0));
+    vec3 lCol2 = (length(u_fillLightColor) > 0.001) ? u_fillLightColor : vec3(0.4, 0.55, 0.75);
+    vec3 H2 = normalize(V + L2);
+    float NdotL2 = max(dot(N, L2), 0.0);
+
+    if (NdotL2 > 0.0) {
+        float NDF2 = DistributionGGX(max(dot(N, H2), 0.0), max(roughness, 0.04));
+        float G2 = GeometrySmith(N, V, L2, max(roughness, 0.04));
+        vec3 F2 = FresnelSchlick(max(dot(H2, V), 0.0), F0);
+
+        vec3 specular2 = (NDF2 * G2 * F2) / (4.0 * NoV * NdotL2 + 0.0001);
+        vec3 kS2 = F2;
+        vec3 kD2 = (vec3(1.0) - kS2) * (1.0 - metallic);
+        Lo += (kD2 * albedo / PI + specular2) * lCol2 * NdotL2 * 0.45;
+    }
+
+    // 3. Filament IBL Hemisphere Ambient
     vec3 R = reflect(-V, N);
-    vec3 skyColor = mix(vec3(0.04, 0.06, 0.10), vec3(0.2, 0.35, 0.6), clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
-    vec3 groundColor = vec3(0.05, 0.04, 0.03);
-    vec3 iblDiffuse = mix(groundColor, skyColor, N.y * 0.5 + 0.5) * diffuseColor;
+    vec3 skyColor = mix(vec3(0.06, 0.08, 0.14), vec3(0.35, 0.50, 0.75), clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
+    vec3 groundColor = vec3(0.07, 0.05, 0.04);
+    vec3 iblDiffuse = mix(groundColor, skyColor, N.y * 0.5 + 0.5) * albedo * (1.0 - metallic) * ao;
 
-    vec3 iblSpecularColor = mix(vec3(0.1, 0.15, 0.25), vec3(0.8, 0.9, 1.0), clamp(R.y * 0.5 + 0.5, 0.0, 1.0));
-    vec3 iblFresnel = F_Schlick(NoV, f0);
-    vec3 iblSpecular = iblSpecularColor * iblFresnel * (1.0 - roughness * 0.8);
+    vec3 iblSpecularColor = mix(vec3(0.12, 0.16, 0.28), vec3(0.85, 0.92, 1.0), clamp(R.y * 0.5 + 0.5, 0.0, 1.0));
+    vec3 iblFresnel = FresnelSchlick(NoV, F0);
+    vec3 iblSpecular = iblSpecularColor * iblFresnel * (1.0 - roughness * 0.75);
 
-    vec3 color = directLighting + (iblDiffuse + iblSpecular) * 0.45;
+    if (clearCoat > 0.0) {
+        vec3 clearCoatFresnel = FresnelSchlick(NoV, vec3(0.04)) * clearCoat;
+        iblSpecular += iblSpecularColor * clearCoatFresnel * 0.8;
+    }
 
-    // ACES / Reinhard Tone Mapping + sRGB gamma
+    vec3 color = Lo + (iblDiffuse + iblSpecular) * 0.55 + emissive;
+
+    // HDR Reinhard Tone Mapping & Gamma Correction
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0 / 2.2));
 
@@ -1899,6 +2276,842 @@ function createIcosahedron(radius = 1.3) {
   return { name: "Icosahedron", positions, normals, uvs, barys, indices: rawIdx };
 }
 
+function createSphere(radius = 1.0, latBands = 24, longBands = 24) {
+  const positions = [], normals = [], uvs = [], barys = [], indices = [];
+  for (let lat = 0; lat <= latBands; lat++) {
+    const theta = (lat * Math.PI) / latBands;
+    const sinTheta = Math.sin(theta);
+    const cosTheta = Math.cos(theta);
+
+    for (let lon = 0; lon <= longBands; lon++) {
+      const phi = (lon * 2 * Math.PI) / longBands;
+      const sinPhi = Math.sin(phi);
+      const cosPhi = Math.cos(phi);
+
+      const x = cosPhi * sinTheta;
+      const y = cosTheta;
+      const z = sinPhi * sinTheta;
+
+      positions.push(radius * x, radius * y, radius * z);
+      normals.push(x, y, z);
+      uvs.push(lon / longBands, lat / latBands);
+      barys.push((lat + lon) % 3 === 0 ? 1 : 0, (lat + lon) % 3 === 1 ? 1 : 0, (lat + lon) % 3 === 2 ? 1 : 0);
+    }
+  }
+
+  for (let lat = 0; lat < latBands; lat++) {
+    for (let lon = 0; lon < longBands; lon++) {
+      const first = lat * (longBands + 1) + lon;
+      const second = first + longBands + 1;
+      indices.push(first, second, first + 1);
+      indices.push(second, second + 1, first + 1);
+    }
+  }
+  return { name: "Sphere", positions, normals, uvs, barys, indices };
+}
+
+// Retro Web Audio Synthesizer (Instant procedural audio feedback for FPS gameplay)
+class RetroSoundSynth {
+  constructor() {
+    this.ctx = null;
+  }
+
+  init() {
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        this.ctx = new AudioCtx();
+      }
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+
+  play(type) {
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+
+      if (type === 'health' || type === 'health_small' || type === 'health_medium') {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, t);
+        osc.frequency.exponentialRampToValueAtTime(880, t + 0.15);
+        gain.gain.setValueAtTime(0.2, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.2);
+      } else if (type === 'health_mega') {
+        [440, 554, 659, 880, 1108].forEach((freq, i) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, t + i * 0.05);
+          gain.gain.setValueAtTime(0.22, t + i * 0.05);
+          gain.gain.exponentialRampToValueAtTime(0.01, t + i * 0.05 + 0.28);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(t + i * 0.05);
+          osc.stop(t + i * 0.05 + 0.28);
+        });
+      } else if (type === 'armor' || type === 'armor_green' || type === 'armor_yellow' || type === 'armor_red' || type === 'armor_heavy') {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, t);
+        osc.frequency.exponentialRampToValueAtTime(660, t + 0.18);
+        gain.gain.setValueAtTime(0.18, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.22);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.22);
+      } else if (type === 'ammo') {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(520, t);
+        osc.frequency.setValueAtTime(780, t + 0.06);
+        gain.gain.setValueAtTime(0.15, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.18);
+      } else if (type === 'powerup' || type === 'powerup_quad' || type === 'powerup_haste' || type === 'powerup_regen') {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(160, t);
+        osc.frequency.exponentialRampToValueAtTime(1280, t + 0.35);
+        gain.gain.setValueAtTime(0.3, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.45);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.45);
+      }
+    } catch(e) {}
+  }
+}
+
+// 4 Iconic Quake Arena Maps with Dynamic Geometry, Player Spawns, and Item Spawns
+const QUAKE_MAP_DEFINITIONS = {
+  dm6: {
+    id: "dm6",
+    name: "The Dark Zone (DM6 / Arena Spire)",
+    quakeTitle: "Q1DM6 / The Dark Zone",
+    environment: "Gothic Spire",
+    style: "Gothic Arena",
+    tag: "DM6 ARENA",
+    desc: "Gothic cathedral arena featuring 4 massive fluted stone pillars, high perimeter catwalk rings, sunken center quad pedestal, dual teleporter gates, and vertical jump pads.",
+    ambientColor: 0.45,
+    floorScale: [32.0, 0.5, 32.0],
+    floorColor: [0.22, 0.24, 0.28],
+    floorRoughness: 0.85,
+    floorMetallic: 0.15,
+    groundFloor: { pos: [0, -0.5, 0], scale: [32.0, 0.5, 32.0], color: [0.22, 0.24, 0.28], roughness: 0.85, metallic: 0.15 },
+    staticGeometry: [
+      // Central Octagonal Dais & Quad Obelisk Spire
+      { id: 2, name: "Spire_Quad_Pedestal", type: "Gothic Dais", pos: [0.0, 0.35, 0.0], scale: [4.2, 0.7, 4.2], roughness: 0.30, metallic: 0.75, color: [0.35, 0.38, 0.45], collider: "AABB Box (4.2x0.7x4.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Quad Dais", contact: false },
+      { id: 3, name: "Spire_Obelisk_Pillar", type: "Gothic Monolith", pos: [0.0, 3.2, 0.0], scale: [1.4, 5.0, 1.4], roughness: 0.20, metallic: 0.95, color: [0.85, 0.35, 0.20], collider: "AABB Box (1.4x5x1.4m)", layer: "Layer_Obstacle", trigger: false, badge: "Spire Monolith", contact: false },
+      
+      // High Perimeter Catwalks (North, West, East Mezzanine)
+      { id: 4, name: "Catwalk_North_Main", type: "Catwalk Platform", pos: [0.0, 3.8, -10.5], scale: [18.0, 0.5, 3.5], roughness: 0.35, metallic: 0.85, color: [0.28, 0.32, 0.38], collider: "AABB Box (18x0.5x3.5m)", layer: "Layer_Obstacle", trigger: false, badge: "High Catwalk", contact: false },
+      { id: 5, name: "Catwalk_North_Railing", type: "Balustrade", pos: [0.0, 4.4, -12.0], scale: [18.0, 0.8, 0.3], roughness: 0.25, metallic: 0.90, color: [0.18, 0.22, 0.28], collider: "AABB Box (18x0.8x0.3m)", layer: "Layer_Obstacle", trigger: false, badge: "Railing", contact: false },
+      { id: 6, name: "Catwalk_West_Bridge", type: "Catwalk Platform", pos: [-10.5, 3.8, 0.0], scale: [3.5, 0.5, 18.0], roughness: 0.35, metallic: 0.85, color: [0.28, 0.32, 0.38], collider: "AABB Box (3.5x0.5x18m)", layer: "Layer_Obstacle", trigger: false, badge: "West Catwalk", contact: false },
+      { id: 7, name: "Catwalk_East_Mezzanine", type: "Catwalk Platform", pos: [10.5, 3.8, -2.0], scale: [4.0, 0.5, 12.0], roughness: 0.35, metallic: 0.85, color: [0.28, 0.32, 0.38], collider: "AABB Box (4x0.5x12m)", layer: "Layer_Obstacle", trigger: false, badge: "East Mezzanine", contact: false },
+      
+      // 4 Massive Gothic Support Columns
+      { id: 8, name: "Pillar_Gothic_NW", type: "Fluted Stone Pillar", pos: [-6.5, 3.2, -6.5], scale: [1.8, 6.4, 1.8], roughness: 0.45, metallic: 0.55, color: [0.42, 0.40, 0.38], collider: "AABB Box (1.8x6.4x1.8m)", layer: "Layer_Obstacle", trigger: false, badge: "Gothic Pillar", contact: false },
+      { id: 9, name: "Pillar_Gothic_NE", type: "Fluted Stone Pillar", pos: [6.5, 3.2, -6.5], scale: [1.8, 6.4, 1.8], roughness: 0.45, metallic: 0.55, color: [0.42, 0.40, 0.38], collider: "AABB Box (1.8x6.4x1.8m)", layer: "Layer_Obstacle", trigger: false, badge: "Gothic Pillar", contact: false },
+      { id: 10, name: "Pillar_Gothic_SW", type: "Fluted Stone Pillar", pos: [-6.5, 3.2, 6.5], scale: [1.8, 6.4, 1.8], roughness: 0.45, metallic: 0.55, color: [0.42, 0.40, 0.38], collider: "AABB Box (1.8x6.4x1.8m)", layer: "Layer_Obstacle", trigger: false, badge: "Gothic Pillar", contact: false },
+      { id: 11, name: "Pillar_Gothic_SE", type: "Fluted Stone Pillar", pos: [6.5, 3.2, 6.5], scale: [1.8, 6.4, 1.8], roughness: 0.45, metallic: 0.55, color: [0.42, 0.40, 0.38], collider: "AABB Box (1.8x6.4x1.8m)", layer: "Layer_Obstacle", trigger: false, badge: "Gothic Pillar", contact: false },
+      
+      // Access Stairs / Slanted Ramps
+      { id: 12, name: "Ramp_East_Stairs", type: "Stone Ramp", pos: [8.5, 1.8, 5.5], scale: [2.5, 0.6, 6.5], roughness: 0.40, metallic: 0.50, color: [0.32, 0.35, 0.40], collider: "AABB Box (2.5x0.6x6.5m)", layer: "Layer_Obstacle", trigger: false, badge: "East Ramp", contact: false },
+      { id: 13, name: "Ramp_West_Stairs", type: "Stone Ramp", pos: [-8.5, 1.8, 5.5], scale: [2.5, 0.6, 6.5], roughness: 0.40, metallic: 0.50, color: [0.32, 0.35, 0.40], collider: "AABB Box (2.5x0.6x6.5m)", layer: "Layer_Obstacle", trigger: false, badge: "West Ramp", contact: false },
+      
+      // Teleporter Gateways & Jump Pad Pedestal
+      { id: 14, name: "Teleport_Gate_West", type: "Energy Teleport Portal", pos: [-12.0, 2.0, -5.0], scale: [0.6, 3.5, 3.0], roughness: 0.10, metallic: 0.95, color: [0.10, 0.75, 0.95], collider: "AABB Box (0.6x3.5x3m)", layer: "Layer_Obstacle", trigger: false, badge: "Teleport Portal", contact: false },
+      { id: 15, name: "Teleport_Gate_East", type: "Energy Teleport Portal", pos: [12.0, 2.0, -5.0], scale: [0.6, 3.5, 3.0], roughness: 0.10, metallic: 0.95, color: [0.10, 0.75, 0.95], collider: "AABB Box (0.6x3.5x3m)", layer: "Layer_Obstacle", trigger: false, badge: "Teleport Portal", contact: false },
+      { id: 16, name: "JumpPad_Platform_East", type: "Jump Pad Thrust Pad", pos: [0.0, 0.25, 8.5], scale: [3.2, 0.4, 3.2], roughness: 0.15, metallic: 0.95, color: [0.06, 0.85, 0.95], collider: "AABB Box (3.2x0.4x3.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Jump Pad", contact: false },
+      
+      // Castle Battlement Perimeter Walls
+      { id: 17, name: "Perimeter_Wall_North", type: "Fortified Castle Wall", pos: [0.0, 3.5, -15.5], scale: [32.0, 7.0, 1.2], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (32x7x1.2m)", layer: "Layer_Obstacle", trigger: false, badge: "North Wall", contact: false },
+      { id: 18, name: "Perimeter_Wall_South", type: "Fortified Castle Wall", pos: [0.0, 3.5, 15.5], scale: [32.0, 7.0, 1.2], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (32x7x1.2m)", layer: "Layer_Obstacle", trigger: false, badge: "South Wall", contact: false },
+      { id: 19, name: "Perimeter_Wall_West", type: "Fortified Castle Wall", pos: [-15.5, 3.5, 0.0], scale: [1.2, 7.0, 32.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (1.2x7x32m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
+      { id: 20, name: "Perimeter_Wall_East", type: "Fortified Castle Wall", pos: [15.5, 3.5, 0.0], scale: [1.2, 7.0, 32.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (1.2x7x32m)", layer: "Layer_Obstacle", trigger: false, badge: "East Wall", contact: false },
+      { id: 21, name: "High_Sniper_Roost", type: "Sniper Balcony", pos: [0.0, 5.8, -13.5], scale: [6.0, 0.4, 2.5], roughness: 0.30, metallic: 0.85, color: [0.45, 0.35, 0.25], collider: "AABB Box (6x0.4x2.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Sniper Roost", contact: false }
+    ],
+    playerSpawns: [
+      { id: 1, name: "Courtyard Center (Primary)", type: "FFA Primary", pos: [0.0, 0.0, 6.0], yaw: 0.0, desc: "Lower center courtyard facing the Quad spire." },
+      { id: 2, name: "High Balcony Catwalk", type: "High Perch", pos: [-6.0, 4.1, -10.5], yaw: 2.35, desc: "North-West elevated balcony next to MegaHealth." },
+      { id: 3, name: "East Jump Pad Platform", type: "Booster Ledge", pos: [6.5, 0.0, 2.0], yaw: 3.14, desc: "East perimeter near kinetic slugs and jump pad." },
+      { id: 4, name: "West Crypt Alcove", type: "Sunken Crypt", pos: [-6.5, 0.0, 2.0], yaw: 1.57, desc: "West low alcove near plasma energy cell." }
+    ],
+    itemSpawns: [
+      { id: 201, itemKey: "megahealth", name: "MegaHealth (+100 HP)", category: "health", pos: [-6.0, 4.5, -10.5], respawnDelay: 60.0, respawnTimer: 0.0, active: true, color: [0.06, 0.92, 0.95], scale: [0.55, 0.55, 0.55], meshType: 'sphere', effect: '+100 HP Overheal' },
+      { id: 202, itemKey: "armor_red", name: "Red Heavy Battle Armor (+100 AP)", category: "armor", pos: [0.0, 4.4, -10.5], respawnDelay: 30.0, respawnTimer: 0.0, active: true, color: [0.95, 0.20, 0.30], scale: [0.6, 0.6, 0.6], meshType: 'cube', effect: '+100 Armor (75% Absorb)' },
+      { id: 203, itemKey: "powerup_quad", name: "Quad Damage Rune (4x DMG)", category: "powerup", pos: [0.0, 1.3, 0.0], respawnDelay: 120.0, respawnTimer: 0.0, active: true, color: [0.20, 0.55, 1.0], scale: [0.65, 0.65, 0.65], meshType: 'gem', effect: '4x Projectile Damage (30s)' },
+      { id: 204, itemKey: "ammo_plasma", name: "Plasma Energy Cells (+50)", category: "ammo", pos: [-6.0, 0.8, 3.5], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.06, 0.85, 0.95], scale: [0.45, 0.45, 0.45], meshType: 'cube', effect: '+50 Energy Cells' },
+      { id: 205, itemKey: "ammo_slugs", name: "Heavy Kinetic Slugs (+30)", category: "ammo", pos: [6.0, 0.8, -3.5], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.95, 0.65, 0.15], scale: [0.45, 0.45, 0.45], meshType: 'cube', effect: '+30 Kinetic Slugs' },
+      { id: 206, itemKey: "health_small", name: "Small Health Vial (+15 HP)", category: "health", pos: [3.5, 0.8, 6.5], respawnDelay: 15.0, respawnTimer: 0.0, active: true, color: [0.15, 0.95, 0.65], scale: [0.35, 0.35, 0.35], meshType: 'sphere', effect: '+15 HP' }
+    ]
+  },
+  q3dm17: {
+    id: "q3dm17",
+    name: "The Longest Yard (Q3DM17 / Void Float)",
+    quakeTitle: "Q3DM17 / The Longest Yard",
+    environment: "Cosmic Void",
+    style: "Void Space",
+    tag: "Q3DM17 VOID",
+    desc: "Suspended cosmic platform arena floating over an infinite abyss. High-altitude sniper railgun bridge, jump pads, and exposed outer powerup island.",
+    ambientColor: 0.30,
+    floorScale: [20.0, 0.6, 20.0],
+    floorColor: [0.15, 0.16, 0.22],
+    floorRoughness: 0.90,
+    floorMetallic: 0.40,
+    groundFloor: { pos: [0, -0.5, 0], scale: [20.0, 0.6, 20.0], color: [0.15, 0.16, 0.22], roughness: 0.90, metallic: 0.40 },
+    staticGeometry: [
+      // Central 2-Tier Launch Courtyard
+      { id: 2, name: "Central_Upper_Dais", type: "Raised Octagon", pos: [0.0, 0.6, 0.0], scale: [8.5, 0.6, 8.5], roughness: 0.25, metallic: 0.85, color: [0.22, 0.20, 0.35], collider: "AABB Box (8.5x0.6x8.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Center Platform", contact: false },
+      
+      // Giant High Sniper Railgun Bridge & Reflector Wall
+      { id: 3, name: "Sniper_Rail_Bridge", type: "High Railgun Bridge", pos: [0.0, 5.0, -10.0], scale: [10.0, 0.5, 5.0], roughness: 0.20, metallic: 0.95, color: [0.35, 0.25, 0.50], collider: "AABB Box (10x0.5x5m)", layer: "Layer_Obstacle", trigger: false, badge: "Sniper Bridge", contact: false },
+      { id: 4, name: "Sniper_Back_Wall", type: "Energy Reflector Wall", pos: [0.0, 7.2, -12.5], scale: [12.0, 4.5, 0.8], roughness: 0.15, metallic: 0.95, color: [0.20, 0.15, 0.35], collider: "AABB Box (12x4.5x0.8m)", layer: "Layer_Obstacle", trigger: false, badge: "Reflector Wall", contact: false },
+      { id: 5, name: "Sniper_Pylon_Left", type: "Support Truss", pos: [-4.5, 2.5, -9.0], scale: [0.8, 5.0, 0.8], roughness: 0.30, metallic: 0.90, color: [0.45, 0.30, 0.60], collider: "AABB Box (0.8x5x0.8m)", layer: "Layer_Obstacle", trigger: false, badge: "Bridge Truss", contact: false },
+      { id: 6, name: "Sniper_Pylon_Right", type: "Support Truss", pos: [4.5, 2.5, -9.0], scale: [0.8, 5.0, 0.8], roughness: 0.30, metallic: 0.90, color: [0.45, 0.30, 0.60], collider: "AABB Box (0.8x5x0.8m)", layer: "Layer_Obstacle", trigger: false, badge: "Bridge Truss", contact: false },
+      
+      // Floating Outer Void Quad Island
+      { id: 7, name: "Outer_Void_Quad_Island", type: "Floating Island", pos: [0.0, 2.2, -18.0], scale: [6.0, 0.6, 6.0], roughness: 0.15, metallic: 0.95, color: [0.30, 0.15, 0.55], collider: "AABB Box (6x0.6x6m)", layer: "Layer_Obstacle", trigger: false, badge: "Void Island", contact: false },
+      
+      // Floating Bounce Pad Wings (West and East)
+      { id: 8, name: "West_Bounce_Pad_Wing", type: "Jump Pad Island", pos: [-13.0, 1.4, 0.0], scale: [5.0, 0.5, 5.0], roughness: 0.20, metallic: 0.90, color: [0.10, 0.75, 0.95], collider: "AABB Box (5x0.5x5m)", layer: "Layer_Obstacle", trigger: false, badge: "West Jump Pad", contact: false },
+      { id: 9, name: "East_Bounce_Pad_Wing", type: "Jump Pad Island", pos: [13.0, 1.4, 0.0], scale: [5.0, 0.5, 5.0], roughness: 0.20, metallic: 0.90, color: [0.10, 0.75, 0.95], collider: "AABB Box (5x0.5x5m)", layer: "Layer_Obstacle", trigger: false, badge: "East Jump Pad", contact: false },
+      
+      // Void Obelisks & Launch Ramps
+      { id: 10, name: "Void_Obelisk_NW", type: "Cosmic Crystal Monolith", pos: [-6.0, 2.6, -4.5], scale: [1.2, 3.8, 1.2], roughness: 0.10, metallic: 0.95, color: [0.75, 0.35, 0.95], collider: "AABB Box (1.2x3.8x1.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Crystal Obelisk", contact: false },
+      { id: 11, name: "Void_Obelisk_NE", type: "Cosmic Crystal Monolith", pos: [6.0, 2.6, -4.5], scale: [1.2, 3.8, 1.2], roughness: 0.10, metallic: 0.95, color: [0.75, 0.35, 0.95], collider: "AABB Box (1.2x3.8x1.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Crystal Obelisk", contact: false },
+      { id: 12, name: "Void_Obelisk_SW", type: "Cosmic Crystal Monolith", pos: [-6.0, 2.0, 5.5], scale: [1.2, 3.0, 1.2], roughness: 0.10, metallic: 0.95, color: [0.75, 0.35, 0.95], collider: "AABB Box (1.2x3x1.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Crystal Obelisk", contact: false },
+      { id: 13, name: "Void_Obelisk_SE", type: "Cosmic Crystal Monolith", pos: [6.0, 2.0, 5.5], scale: [1.2, 3.0, 1.2], roughness: 0.10, metallic: 0.95, color: [0.75, 0.35, 0.95], collider: "AABB Box (1.2x3x1.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Crystal Obelisk", contact: false },
+      { id: 14, name: "Launch_Ramp_Center", type: "Ascending Thrust Ramp", pos: [0.0, 0.9, -4.5], scale: [4.0, 0.8, 3.0], roughness: 0.15, metallic: 0.90, color: [0.10, 0.85, 0.95], collider: "AABB Box (4x0.8x3m)", layer: "Layer_Obstacle", trigger: false, badge: "Thrust Ramp", contact: false },
+      { id: 15, name: "Rear_Launch_Island", type: "Suspended Island", pos: [0.0, 0.4, 13.0], scale: [6.0, 0.5, 6.0], roughness: 0.25, metallic: 0.80, color: [0.20, 0.22, 0.30], collider: "AABB Box (6x0.5x6m)", layer: "Layer_Obstacle", trigger: false, badge: "Rear Platform", contact: false }
+    ],
+    playerSpawns: [
+      { id: 1, name: "Main Courtyard South", type: "FFA Primary", pos: [0.0, 0.0, 6.5], yaw: 0.0, desc: "Courtyard south launch facing the sniper bridge." },
+      { id: 2, name: "Sniper Bridge High Perch", type: "High Sniper", pos: [0.0, 5.4, -10.0], yaw: 3.14, desc: "High railgun perch overlooking the entire void arena." },
+      { id: 3, name: "West Bounce Platform", type: "Bounce Island", pos: [-12.5, 1.8, 0.0], yaw: 1.57, desc: "West floating platform with MegaHealth sphere." },
+      { id: 4, name: "East Bounce Platform", type: "Bounce Island", pos: [12.5, 1.8, 0.0], yaw: -1.57, desc: "East floating platform with plasma energy cell." }
+    ],
+    itemSpawns: [
+      { id: 211, itemKey: "ammo_railgun", name: "Quantum Railgun Slugs (+15)", category: "ammo", pos: [0.0, 5.8, -10.0], respawnDelay: 30.0, respawnTimer: 0.0, active: true, color: [0.85, 0.35, 0.95], scale: [0.5, 0.5, 0.5], meshType: 'gem', effect: '+15 Railgun Slugs' },
+      { id: 212, itemKey: "powerup_quad", name: "Quad Damage Rune (4x DMG)", category: "powerup", pos: [0.0, 3.0, -18.0], respawnDelay: 120.0, respawnTimer: 0.0, active: true, color: [0.20, 0.55, 1.0], scale: [0.65, 0.65, 0.65], meshType: 'gem', effect: '4x Projectile Damage (30s)' },
+      { id: 213, itemKey: "armor_yellow", name: "Yellow Combat Armor (+75 AP)", category: "armor", pos: [0.0, 1.0, 0.0], respawnDelay: 25.0, respawnTimer: 0.0, active: true, color: [0.95, 0.80, 0.15], scale: [0.55, 0.55, 0.55], meshType: 'cube', effect: '+75 Armor (66% Absorb)' },
+      { id: 214, itemKey: "megahealth", name: "MegaHealth Sphere (+100 HP)", category: "health", pos: [-13.0, 2.2, 0.0], respawnDelay: 60.0, respawnTimer: 0.0, active: true, color: [0.06, 0.92, 0.95], scale: [0.55, 0.55, 0.55], meshType: 'sphere', effect: '+100 HP Overheal' },
+      { id: 215, itemKey: "ammo_plasma", name: "Plasma Energy Cells (+50)", category: "ammo", pos: [13.0, 2.2, 0.0], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.06, 0.85, 0.95], scale: [0.45, 0.45, 0.45], meshType: 'cube', effect: '+50 Energy Cells' },
+      { id: 216, itemKey: "ammo_slugs", name: "Heavy Kinetic Slugs (+30)", category: "ammo", pos: [4.0, 0.8, 5.5], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.95, 0.65, 0.15], scale: [0.45, 0.45, 0.45], meshType: 'cube', effect: '+30 Kinetic Slugs' }
+    ]
+  },
+  dm4: {
+    id: "dm4",
+    name: "The Bad Place (DM4 / Lava Spire)",
+    quakeTitle: "Q1DM4 / The Bad Place",
+    environment: "Lava Chasm",
+    style: "Vertical Chasm",
+    tag: "DM4 LAVA",
+    desc: "Claustrophobic multi-level vertical arena with bubbling molten lava pit, high stone arch bridge, spiral crypt stairs, and rapid combat corridors.",
+    ambientColor: 0.55,
+    floorScale: [26.0, 0.5, 26.0],
+    floorColor: [0.32, 0.18, 0.15],
+    floorRoughness: 0.95,
+    floorMetallic: 0.05,
+    groundFloor: { pos: [0, -0.5, 0], scale: [26.0, 0.5, 26.0], color: [0.32, 0.18, 0.15], roughness: 0.95, metallic: 0.05 },
+    staticGeometry: [
+      // Central Molten Lava Pit Pool & Protective Basalt Rim
+      { id: 2, name: "Lava_Core_Pit", type: "Molten Lava Core", pos: [0.0, 0.2, 0.0], scale: [5.5, 0.4, 5.5], roughness: 0.05, metallic: 0.95, color: [0.95, 0.30, 0.05], collider: "AABB Box (5.5x0.4x5.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Lava Pit", contact: false },
+      { id: 3, name: "Lava_Pit_Stone_Rim", type: "Basalt Rim", pos: [0.0, 0.5, 0.0], scale: [7.2, 0.6, 7.2], roughness: 0.60, metallic: 0.30, color: [0.25, 0.20, 0.20], collider: "AABB Box (7.2x0.6x7.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Lava Rim", contact: false },
+      
+      // High Stone Arch Bridge Spanning Across the Chasm
+      { id: 4, name: "High_Arch_Bridge", type: "Lava Arch Bridge", pos: [0.0, 3.6, -4.5], scale: [14.0, 0.5, 3.5], roughness: 0.40, metallic: 0.60, color: [0.45, 0.25, 0.20], collider: "AABB Box (14x0.5x3.5m)", layer: "Layer_Obstacle", trigger: false, badge: "High Bridge", contact: false },
+      { id: 5, name: "Bridge_Support_Pier_L", type: "Volcanic Pillar", pos: [-5.5, 1.8, -4.5], scale: [1.8, 3.6, 1.8], roughness: 0.50, metallic: 0.40, color: [0.35, 0.20, 0.18], collider: "AABB Box (1.8x3.6x1.8m)", layer: "Layer_Obstacle", trigger: false, badge: "Bridge Pier", contact: false },
+      { id: 6, name: "Bridge_Support_Pier_R", type: "Volcanic Pillar", pos: [5.5, 1.8, -4.5], scale: [1.8, 3.6, 1.8], roughness: 0.50, metallic: 0.40, color: [0.35, 0.20, 0.18], collider: "AABB Box (1.8x3.6x1.8m)", layer: "Layer_Obstacle", trigger: false, badge: "Bridge Pier", contact: false },
+      
+      // East Spiral Crypt Stairs & West Rocket Vault
+      { id: 7, name: "East_Spiral_Crypt_Stairs", type: "Stone Spiral Stairs", pos: [8.0, 1.8, 1.5], scale: [3.5, 1.8, 5.5], roughness: 0.50, metallic: 0.40, color: [0.38, 0.28, 0.25], collider: "AABB Box (3.5x1.8x5.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Crypt Stairs", contact: false },
+      { id: 8, name: "West_Rocket_Chamber", type: "Vaulted Crypt Room", pos: [-8.5, 1.5, -2.0], scale: [4.5, 3.0, 6.0], roughness: 0.45, metallic: 0.35, color: [0.32, 0.22, 0.20], collider: "AABB Box (4.5x3x6m)", layer: "Layer_Obstacle", trigger: false, badge: "Rocket Vault", contact: false },
+      
+      // Perimeter Volcanic Cavern Walls
+      { id: 9, name: "North_Volcanic_Wall", type: "Molten Cavern Wall", pos: [0.0, 3.5, -12.5], scale: [26.0, 7.0, 1.5], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (26x7x1.5m)", layer: "Layer_Obstacle", trigger: false, badge: "North Wall", contact: false },
+      { id: 10, name: "South_Volcanic_Wall", type: "Molten Cavern Wall", pos: [0.0, 3.5, 12.5], scale: [26.0, 7.0, 1.5], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (26x7x1.5m)", layer: "Layer_Obstacle", trigger: false, badge: "South Wall", contact: false },
+      { id: 11, name: "West_Volcanic_Wall", type: "Molten Cavern Wall", pos: [-12.5, 3.5, 0.0], scale: [1.5, 7.0, 26.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (1.5x7x26m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
+      { id: 12, name: "East_Volcanic_Wall", type: "Molten Cavern Wall", pos: [12.5, 3.5, 0.0], scale: [1.5, 7.0, 26.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (1.5x7x26m)", layer: "Layer_Obstacle", trigger: false, badge: "East Wall", contact: false },
+      
+      // Altar & Crypt Columns
+      { id: 13, name: "High_Megahealth_Altar", type: "Stone Altar Ledge", pos: [0.0, 4.4, -4.5], scale: [3.2, 0.4, 3.2], roughness: 0.25, metallic: 0.85, color: [0.55, 0.20, 0.15], collider: "AABB Box (3.2x0.4x3.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Mega Altar", contact: false },
+      { id: 14, name: "Lower_Lava_Walkway", type: "Sunken Path", pos: [0.0, 0.3, 7.5], scale: [10.0, 0.4, 3.0], roughness: 0.50, metallic: 0.30, color: [0.30, 0.22, 0.20], collider: "AABB Box (10x0.4x3m)", layer: "Layer_Obstacle", trigger: false, badge: "Lower Path", contact: false }
+    ],
+    playerSpawns: [
+      { id: 1, name: "Lower Lava Ring Entrance", type: "FFA Primary", pos: [0.0, 0.0, 7.0], yaw: 0.0, desc: "South entrance looking at the central bubbling lava pedestal." },
+      { id: 2, name: "High Arch Bridge Perch", type: "Elevated Bridge", pos: [0.0, 3.9, -4.5], yaw: 3.14, desc: "High stone arch bridge holding the MegaHealth sphere." },
+      { id: 3, name: "West Crypt Chamber", type: "Crypt Room", pos: [-6.5, 0.0, -2.0], yaw: 1.57, desc: "West tight corridor near rocket ammunition crate." },
+      { id: 4, name: "East Spire Stairs", type: "Stairs Ledge", pos: [6.5, 1.8, 1.5], yaw: -1.57, desc: "East raised platform holding Red Heavy Armor." }
+    ],
+    itemSpawns: [
+      { id: 221, itemKey: "megahealth", name: "MegaHealth Sphere (+100 HP)", category: "health", pos: [0.0, 4.8, -4.5], respawnDelay: 60.0, respawnTimer: 0.0, active: true, color: [0.06, 0.92, 0.95], scale: [0.55, 0.55, 0.55], meshType: 'sphere', effect: '+100 HP Overheal' },
+      { id: 222, itemKey: "armor_red", name: "Red Heavy Battle Armor (+100 AP)", category: "armor", pos: [6.5, 2.3, 1.5], respawnDelay: 30.0, respawnTimer: 0.0, active: true, color: [0.95, 0.20, 0.30], scale: [0.6, 0.6, 0.6], meshType: 'cube', effect: '+100 Armor (75% Absorb)' },
+      { id: 223, itemKey: "powerup_haste", name: "Haste Speed Rune (+60% Speed)", category: "powerup", pos: [0.0, 1.4, 0.0], respawnDelay: 90.0, respawnTimer: 0.0, active: true, color: [0.95, 0.85, 0.15], scale: [0.65, 0.65, 0.65], meshType: 'gem', effect: '+60% Movement & Sprint (25s)' },
+      { id: 224, itemKey: "ammo_rockets", name: "High-Explosive Rocket Shells (+10)", category: "ammo", pos: [-6.5, 0.8, -2.0], respawnDelay: 25.0, respawnTimer: 0.0, active: true, color: [0.95, 0.45, 0.10], scale: [0.5, 0.5, 0.5], meshType: 'cube', effect: '+10 HE Rockets' },
+      { id: 225, itemKey: "ammo_plasma", name: "Plasma Energy Cells (+50)", category: "ammo", pos: [-4.0, 0.8, 5.0], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.06, 0.85, 0.95], scale: [0.45, 0.45, 0.45], meshType: 'cube', effect: '+50 Energy Cells' },
+      { id: 226, itemKey: "health_medium", name: "Medium Health Pack (+25 HP)", category: "health", pos: [4.0, 0.8, -6.0], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.10, 0.85, 0.40], scale: [0.45, 0.45, 0.45], meshType: 'sphere', effect: '+25 HP' }
+    ]
+  },
+  ztn: {
+    id: "ztn",
+    name: "Blood Run (ZTNDM3 / Tech Corridor)",
+    quakeTitle: "ZTNDM3 / Blood Run",
+    environment: "Tech Duel Atrium",
+    style: "Tech Duel",
+    tag: "ZTN TECH",
+    desc: "High-speed competitive tournament duel map with upper teleporter balcony, central coolant core, mezzanine catwalks, and tactical height advantage.",
+    ambientColor: 0.40,
+    floorScale: [28.0, 0.5, 28.0],
+    floorColor: [0.18, 0.22, 0.26],
+    floorRoughness: 0.70,
+    floorMetallic: 0.60,
+    groundFloor: { pos: [0, -0.5, 0], scale: [28.0, 0.5, 28.0], color: [0.18, 0.22, 0.26], roughness: 0.70, metallic: 0.60 },
+    staticGeometry: [
+      // High Teleporter Balcony & Structural I-Beams
+      { id: 2, name: "High_Teleporter_Balcony", type: "Tech Balcony", pos: [-7.5, 3.8, 3.5], scale: [5.5, 0.5, 5.5], roughness: 0.20, metallic: 0.95, color: [0.15, 0.45, 0.75], collider: "AABB Box (5.5x0.5x5.5m)", layer: "Layer_Obstacle", trigger: false, badge: "High Balcony", contact: false },
+      { id: 3, name: "Balcony_Steel_Support_1", type: "Steel I-Beam", pos: [-9.5, 1.8, 1.5], scale: [0.6, 3.6, 0.6], roughness: 0.25, metallic: 0.90, color: [0.20, 0.25, 0.32], collider: "AABB Box (0.6x3.6x0.6m)", layer: "Layer_Obstacle", trigger: false, badge: "Steel I-Beam", contact: false },
+      { id: 4, name: "Balcony_Steel_Support_2", type: "Steel I-Beam", pos: [-5.5, 1.8, 5.5], scale: [0.6, 3.6, 0.6], roughness: 0.25, metallic: 0.90, color: [0.20, 0.25, 0.32], collider: "AABB Box (0.6x3.6x0.6m)", layer: "Layer_Obstacle", trigger: false, badge: "Steel I-Beam", contact: false },
+      
+      // East Mezzanine Catwalk Corridor
+      { id: 5, name: "East_Catwalk_Corridor", type: "Catwalk Platform", pos: [7.5, 2.4, -2.5], scale: [4.0, 0.5, 10.0], roughness: 0.30, metallic: 0.80, color: [0.22, 0.30, 0.38], collider: "AABB Box (4x0.5x10m)", layer: "Layer_Obstacle", trigger: false, badge: "East Corridor", contact: false },
+      { id: 6, name: "East_Corridor_Railing", type: "Safety Railing", pos: [9.2, 3.0, -2.5], scale: [0.2, 0.8, 10.0], roughness: 0.20, metallic: 0.90, color: [0.12, 0.16, 0.20], collider: "AABB Box (0.2x0.8x10m)", layer: "Layer_Obstacle", trigger: false, badge: "Railing", contact: false },
+      
+      // Central Coolant Core Tower & Glowing Energy Conduits
+      { id: 7, name: "North_Tech_Core_Tower", type: "Cooling Tower Monolith", pos: [0.0, 2.8, -9.0], scale: [2.5, 5.5, 2.5], roughness: 0.15, metallic: 0.95, color: [0.08, 0.65, 0.60], collider: "AABB Box (2.5x5.5x2.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Coolant Core", contact: false },
+      { id: 8, name: "Tech_Conduit_Left", type: "Energy Conduit", pos: [-2.0, 2.0, -8.5], scale: [0.5, 4.0, 0.5], roughness: 0.10, metallic: 0.95, color: [0.06, 0.85, 0.95], collider: "AABB Box (0.5x4x0.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Conduit", contact: false },
+      { id: 9, name: "Tech_Conduit_Right", type: "Energy Conduit", pos: [2.0, 2.0, -8.5], scale: [0.5, 4.0, 0.5], roughness: 0.10, metallic: 0.95, color: [0.06, 0.85, 0.95], collider: "AABB Box (0.5x4x0.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Conduit", contact: false },
+      
+      // Quantum Teleporter Gateway Arch & Sunken Well Dais
+      { id: 10, name: "West_Teleporter_Arch", type: "Quantum Portal Frame", pos: [-8.0, 1.8, -5.5], scale: [1.0, 3.5, 3.0], roughness: 0.10, metallic: 0.95, color: [0.06, 0.85, 0.95], collider: "AABB Box (1x3.5x3m)", layer: "Layer_Obstacle", trigger: false, badge: "Teleport Frame", contact: false },
+      { id: 11, name: "Atrium_Sunken_Well", type: "Tech Well Dais", pos: [0.0, 0.3, 0.0], scale: [4.5, 0.4, 4.5], roughness: 0.25, metallic: 0.75, color: [0.20, 0.32, 0.45], collider: "AABB Box (4.5x0.4x4.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Sunken Well", contact: false },
+      { id: 12, name: "South_Railgun_Perch", type: "Sniper Balcony", pos: [0.0, 2.6, 9.5], scale: [8.0, 0.5, 3.5], roughness: 0.25, metallic: 0.85, color: [0.25, 0.35, 0.45], collider: "AABB Box (8x0.5x3.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Sniper Perch", contact: false },
+      { id: 13, name: "South_Access_Ramp", type: "Stepped Ramp", pos: [0.0, 1.2, 6.0], scale: [3.0, 0.5, 4.0], roughness: 0.30, metallic: 0.70, color: [0.20, 0.25, 0.32], collider: "AABB Box (3x0.5x4m)", layer: "Layer_Obstacle", trigger: false, badge: "Access Ramp", contact: false },
+      
+      // Perimeter Steel Walls
+      { id: 14, name: "Tech_Wall_North", type: "Steel Perimeter Wall", pos: [0.0, 3.5, -13.5], scale: [28.0, 7.0, 1.5], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (28x7x1.5m)", layer: "Layer_Obstacle", trigger: false, badge: "North Wall", contact: false },
+      { id: 15, name: "Tech_Wall_South", type: "Steel Perimeter Wall", pos: [0.0, 3.5, 13.5], scale: [28.0, 7.0, 1.5], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (28x7x1.5m)", layer: "Layer_Obstacle", trigger: false, badge: "South Wall", contact: false },
+      { id: 16, name: "Tech_Wall_West", type: "Steel Perimeter Wall", pos: [-13.5, 3.5, 0.0], scale: [1.5, 7.0, 28.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (1.5x7x28m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
+      { id: 17, name: "Tech_Wall_East", type: "Steel Perimeter Wall", pos: [13.5, 3.5, 0.0], scale: [1.5, 7.0, 28.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (1.5x7x28m)", layer: "Layer_Obstacle", trigger: false, badge: "East Wall", contact: false }
+    ],
+    playerSpawns: [
+      { id: 1, name: "Atrium Lower Floor (Primary)", type: "FFA Primary", pos: [0.0, 0.0, 5.0], yaw: 0.0, desc: "Lower center atrium facing the north tech core." },
+      { id: 2, name: "High Teleporter Balcony", type: "High Balcony", pos: [-7.0, 4.1, 3.5], yaw: 2.35, desc: "High teleporter balcony holding Red Heavy Armor." },
+      { id: 3, name: "North Tech Alcove", type: "Tech Alcove", pos: [0.0, 0.0, -7.5], yaw: 3.14, desc: "North alcove with heavy kinetic slugs." },
+      { id: 4, name: "East Catwalk Ledge", type: "Catwalk Ledge", pos: [7.5, 2.7, -2.5], yaw: -1.57, desc: "East catwalk overlooking the lower atrium." }
+    ],
+    itemSpawns: [
+      { id: 231, itemKey: "armor_red", name: "Red Heavy Battle Armor (+100 AP)", category: "armor", pos: [-7.5, 4.5, 3.5], respawnDelay: 30.0, respawnTimer: 0.0, active: true, color: [0.95, 0.20, 0.30], scale: [0.6, 0.6, 0.6], meshType: 'cube', effect: '+100 Armor (75% Absorb)' },
+      { id: 232, itemKey: "megahealth", name: "MegaHealth Sphere (+100 HP)", category: "health", pos: [0.0, 1.0, 0.0], respawnDelay: 60.0, respawnTimer: 0.0, active: true, color: [0.06, 0.92, 0.95], scale: [0.55, 0.55, 0.55], meshType: 'sphere', effect: '+100 HP Overheal' },
+      { id: 233, itemKey: "powerup_regen", name: "Regeneration Rune (+15 HP/s)", category: "powerup", pos: [4.0, 0.8, 6.0], respawnDelay: 90.0, respawnTimer: 0.0, active: true, color: [0.15, 0.95, 0.45], scale: [0.65, 0.65, 0.65], meshType: 'gem', effect: '+15 HP/sec Regen (30s)' },
+      { id: 234, itemKey: "ammo_slugs", name: "Heavy Kinetic Slugs (+30)", category: "ammo", pos: [0.0, 0.8, -7.5], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.95, 0.65, 0.15], scale: [0.45, 0.45, 0.45], meshType: 'cube', effect: '+30 Kinetic Slugs' },
+      { id: 235, itemKey: "ammo_plasma", name: "Plasma Energy Cells (+50)", category: "ammo", pos: [7.5, 3.0, -2.5], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.06, 0.85, 0.95], scale: [0.45, 0.45, 0.45], meshType: 'cube', effect: '+50 Energy Cells' },
+      { id: 236, itemKey: "armor_green", name: "Green Combat Armor (+50 AP)", category: "armor", pos: [-6.5, 0.8, -4.0], respawnDelay: 25.0, respawnTimer: 0.0, active: true, color: [0.10, 0.85, 0.45], scale: [0.5, 0.5, 0.5], meshType: 'cube', effect: '+50 Armor (50% Absorb)' }
+    ]
+  }
+};
+
+// Full FPS Elemental Items Catalog (Health, Armor, Ammunition, and Legendary Powerups)
+const ELEMENTAL_ITEMS_CATALOG = {
+  health_small: { key: "health_small", name: "Small Health Vial", category: "health", icon: "❤️", color: [0.15, 0.95, 0.65], typePill: "Health +15", effect: "+15 HP", desc: "Instantly restores 15 Health points up to base capacity (100 HP).", respawnDelay: 15.0, meshType: "sphere", scale: [0.35, 0.35, 0.35], sound: "health" },
+  health_medium: { key: "health_medium", name: "Medium Health Pack", category: "health", icon: "💚", color: [0.10, 0.85, 0.40], typePill: "Health +25", effect: "+25 HP", desc: "Field surgical combat kit restoring 25 Health points up to 100 HP.", respawnDelay: 20.0, meshType: "sphere", scale: [0.45, 0.45, 0.45], sound: "health" },
+  megahealth: { key: "megahealth", name: "MegaHealth Sphere", category: "health", icon: "💎", color: [0.06, 0.92, 0.95], typePill: "Overheal +100", effect: "+100 HP Overheal (Max 200 HP)", desc: "Pulsing bio-energy core boosting maximum health beyond limit up to 200 HP.", respawnDelay: 60.0, meshType: "sphere", scale: [0.55, 0.55, 0.55], sound: "health_mega" },
+
+  armor_green: { key: "armor_green", name: "Green Combat Armor", category: "armor", icon: "🛡️", color: [0.10, 0.85, 0.45], typePill: "Armor +50", effect: "+50 AP (50% Absorb)", desc: "Light Kevlar weave vest absorbing 50% of incoming kinetic damage.", respawnDelay: 25.0, meshType: "cube", scale: [0.50, 0.50, 0.50], sound: "armor" },
+  armor_yellow: { key: "armor_yellow", name: "Yellow Combat Armor", category: "armor", icon: "🛡️", color: [0.95, 0.80, 0.15], typePill: "Armor +75", effect: "+75 AP (66% Absorb)", desc: "Medium ceramic composite battle plate absorbing 66% of damage.", respawnDelay: 25.0, meshType: "cube", scale: [0.55, 0.55, 0.55], sound: "armor" },
+  armor_red: { key: "armor_red", name: "Red Heavy Battle Armor", category: "armor", icon: "🛡️", color: [0.95, 0.20, 0.30], typePill: "Armor +100", effect: "+100 AP (75% Absorb)", desc: "Heavy powered titanium exoskeleton providing 75% damage mitigation.", respawnDelay: 30.0, meshType: "cube", scale: [0.60, 0.60, 0.60], sound: "armor_heavy" },
+
+  ammo_plasma: { key: "ammo_plasma", name: "Plasma Energy Cells", category: "ammo", icon: "⚡", color: [0.06, 0.85, 0.95], typePill: "Energy +50", effect: "+50 Energy Cells", desc: "Superheated ionized plasma canister for plasma bolt rifles.", respawnDelay: 20.0, meshType: "cube", scale: [0.45, 0.45, 0.45], sound: "ammo" },
+  ammo_slugs: { key: "ammo_slugs", name: "Heavy Kinetic Slugs", category: "ammo", icon: "💥", color: [0.95, 0.65, 0.15], typePill: "Ammo +30", effect: "+30 Kinetic Slugs", desc: "Depleted uranium high-density slugs for rapid-fire ballistic cannons.", respawnDelay: 20.0, meshType: "cube", scale: [0.45, 0.45, 0.45], sound: "ammo" },
+  ammo_rockets: { key: "ammo_rockets", name: "HE Rocket Shells", category: "ammo", icon: "🚀", color: [0.95, 0.45, 0.10], typePill: "Rockets +10", effect: "+10 HE Rockets", desc: "High-explosive rocket ordnance pods with blast radius capability.", respawnDelay: 25.0, meshType: "cube", scale: [0.50, 0.50, 0.50], sound: "ammo" },
+  ammo_railgun: { key: "ammo_railgun", name: "Quantum Railgun Slugs", category: "ammo", icon: "🔮", color: [0.85, 0.35, 0.95], typePill: "Railgun +15", effect: "+15 Pulse Slugs", desc: "Quantum accelerated relativistic projectile slugs for sniper railguns.", respawnDelay: 30.0, meshType: "gem", scale: [0.50, 0.50, 0.50], sound: "ammo" },
+
+  powerup_quad: { key: "powerup_quad", name: "Quad Damage Rune", category: "powerup", icon: "⚡", color: [0.20, 0.55, 1.0], typePill: "Powerup (4x DMG)", effect: "4.0x Damage Multiplier (30s)", desc: "Legendary Quake rune amplifying all weapon projectile damage by 400%.", respawnDelay: 120.0, meshType: "gem", scale: [0.65, 0.65, 0.65], sound: "powerup" },
+  powerup_haste: { key: "powerup_haste", name: "Haste Speed Rune", category: "powerup", icon: "🏃", color: [0.95, 0.85, 0.15], typePill: "Powerup (+60% Spd)", effect: "+60% Move & Sprint Speed (25s)", desc: "Hyper-kinetic rune accelerating locomotion, sprint, and jump velocity.", respawnDelay: 90.0, meshType: "gem", scale: [0.65, 0.65, 0.65], sound: "powerup" },
+  powerup_regen: { key: "powerup_regen", name: "Regeneration Rune", category: "powerup", icon: "💚", color: [0.15, 0.95, 0.45], typePill: "Powerup (+15 HP/s)", effect: "+15 HP/sec Regen (30s)", desc: "Continuous cellular nanite repair restoring 15 Health per second.", respawnDelay: 90.0, meshType: "gem", scale: [0.65, 0.65, 0.65], sound: "powerup" }
+};
+
+// Comprehensive Filament & PBR Material Catalog with MAT COST profiling
+const FILAMENT_MATERIALS_CATALOG = {
+  wood: {
+    key: "wood",
+    name: "Procedural Dark Walnut Wood",
+    category: "procedural",
+    icon: "🌲",
+    matTypeId: 1,
+    bumpStrength: 1.6,
+    color: [0.38, 0.22, 0.12],
+    roughness: 0.48,
+    metallic: 0.0,
+    clearCoat: 0.05,
+    noiseScale: 22.0,
+    anisotropy: 0.15,
+    proceduralType: "wood",
+    swatch: "linear-gradient(135deg, #5c3a21 0%, #2b180d 100%)",
+    desc: "Procedural wood grain synthesis using sine-wave ring perturbations, fine grain lines, and pores.",
+    matCost: {
+      rating: "LOW",
+      badgeClass: "safe",
+      alus: "16 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "1.2 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Ultra Safe for Mobile",
+      desc: "Zero texture fetches. Pure sinusoidal grain modulation with minimal arithmetic."
+    }
+  },
+  rock: {
+    key: "rock",
+    name: "Procedural Basalt & Granite Rock",
+    category: "procedural",
+    icon: "🗿",
+    matTypeId: 2,
+    bumpStrength: 2.5,
+    color: [0.32, 0.32, 0.35],
+    roughness: 0.88,
+    metallic: 0.0,
+    clearCoat: 0.0,
+    noiseScale: 14.0,
+    anisotropy: 0.0,
+    proceduralType: "rock",
+    swatch: "linear-gradient(135deg, #4b5563 0%, #1f2937 100%)",
+    desc: "Cellular micro-crag perturbation with high roughness Oren-Nayar diffuse approximation and quartz flecks.",
+    matCost: {
+      rating: "LOW",
+      badgeClass: "safe",
+      alus: "18 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "1.2 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Ultra Safe for Mobile",
+      desc: "Fast analytical normal displacement without VRAM sampling overhead."
+    }
+  },
+  metal: {
+    key: "metal",
+    name: "Brushed Aerospace Titanium",
+    category: "procedural",
+    icon: "⚙️",
+    matTypeId: 3,
+    bumpStrength: 1.4,
+    color: [0.72, 0.76, 0.82],
+    roughness: 0.24,
+    metallic: 0.96,
+    clearCoat: 0.0,
+    noiseScale: 35.0,
+    anisotropy: 0.85,
+    proceduralType: "metal",
+    swatch: "linear-gradient(135deg, #94a3b8 0%, #334155 100%)",
+    desc: "High-speed directional anisotropy with micro-scratches and sharp conductor specular lobe.",
+    matCost: {
+      rating: "LOW",
+      badgeClass: "safe",
+      alus: "14 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "1.0 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Ultra Safe for Mobile",
+      desc: "Cook-Torrance anisotropic GGX with precalculated tangent frame."
+    }
+  },
+  gold: {
+    key: "gold",
+    name: "Polished 24K Pure Gold",
+    category: "reflective",
+    icon: "👑",
+    matTypeId: 0,
+    bumpStrength: 0.0,
+    color: [1.00, 0.78, 0.28],
+    roughness: 0.12,
+    metallic: 1.0,
+    clearCoat: 0.10,
+    noiseScale: 1.0,
+    anisotropy: 0.0,
+    proceduralType: "standard",
+    swatch: "linear-gradient(135deg, #fbbf24 0%, #b45309 100%)",
+    desc: "Cook-Torrance standard conductor BRDF with exact golden F0 spectrum.",
+    matCost: {
+      rating: "LOW",
+      badgeClass: "safe",
+      alus: "12 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "0.8 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Ultra Safe for Mobile",
+      desc: "Standard PBR conductor math with negligible fill-rate footprint."
+    }
+  },
+  chrome: {
+    key: "chrome",
+    name: "Mirror Specular Chrome",
+    category: "reflective",
+    icon: "🪞",
+    matTypeId: 0,
+    bumpStrength: 0.0,
+    color: [0.95, 0.95, 0.98],
+    roughness: 0.04,
+    metallic: 1.0,
+    clearCoat: 0.0,
+    noiseScale: 1.0,
+    anisotropy: 0.0,
+    proceduralType: "standard",
+    swatch: "linear-gradient(135deg, #e2e8f0 0%, #64748b 100%)",
+    desc: "Ultra-low roughness delta reflection with peak specular sharpness.",
+    matCost: {
+      rating: "LOW",
+      badgeClass: "safe",
+      alus: "12 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "0.8 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Ultra Safe for Mobile",
+      desc: "Nearly specular delta reflection with minimal instruction count."
+    }
+  },
+  glass: {
+    key: "glass",
+    name: "Optical Dielectric Glass & Refractions",
+    category: "reflective",
+    icon: "🔮",
+    matTypeId: 9,
+    bumpStrength: 0.0,
+    color: [0.92, 0.96, 1.00],
+    roughness: 0.03,
+    metallic: 0.0,
+    clearCoat: 0.95,
+    noiseScale: 1.0,
+    anisotropy: 0.0,
+    proceduralType: "glass",
+    swatch: "linear-gradient(135deg, rgba(147,197,253,0.85) 0%, rgba(30,58,138,0.85) 100%)",
+    desc: "Fresnel dielectric transmission with Cauchy chromatic dispersion and screen depth sampling.",
+    matCost: {
+      rating: "MEDIUM",
+      badgeClass: "medium",
+      alus: "32 ALUs",
+      texSamplers: "1 Depth / Screen",
+      bandwidth: "2.8 GB/s",
+      fpsEstimate: "58 FPS Balanced",
+      mobileVerdict: "Moderate Cost (OK for modern phones)",
+      desc: "Screen-space refraction pass with Fresnel transmission math."
+    }
+  },
+  water: {
+    key: "water",
+    name: "Procedural Trochoidal Ripple Water",
+    category: "reflective",
+    icon: "🌊",
+    matTypeId: 13,
+    bumpStrength: 2.8,
+    color: [0.10, 0.45, 0.75],
+    roughness: 0.08,
+    metallic: 0.10,
+    clearCoat: 0.95,
+    noiseScale: 25.0,
+    anisotropy: 0.20,
+    proceduralType: "water",
+    swatch: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+    desc: "Dual harmonic trochoidal wave normal synthesis for dynamic surface ripples.",
+    matCost: {
+      rating: "MEDIUM",
+      badgeClass: "medium",
+      alus: "28 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "2.1 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Safe for Mobile",
+      desc: "Dual sine/cosine derivative normal evaluation in fragment stage."
+    }
+  },
+  marble: {
+    key: "marble",
+    name: "Procedural Calacatta Marble",
+    category: "procedural",
+    icon: "🏛️",
+    matTypeId: 4,
+    bumpStrength: 0.8,
+    color: [0.92, 0.92, 0.94],
+    roughness: 0.28,
+    metallic: 0.0,
+    clearCoat: 0.85,
+    noiseScale: 16.0,
+    anisotropy: 0.0,
+    proceduralType: "marble",
+    swatch: "linear-gradient(135deg, #f8fafc 0%, #94a3b8 100%)",
+    desc: "Multi-octave Perlin turbulence vein synthesis with subsurface scattering approximation.",
+    matCost: {
+      rating: "HIGH",
+      badgeClass: "heavy",
+      alus: "46 ALUs",
+      texSamplers: "0 (Heavy Math)",
+      bandwidth: "3.4 GB/s",
+      fpsEstimate: "50 FPS (Heavy)",
+      mobileVerdict: "Heavy on Low-End Mobile",
+      desc: "3 octaves of analytical fractional turbulence with SSS light falloff."
+    }
+  },
+  obsidian: {
+    key: "obsidian",
+    name: "Volcanic Obsidian Glass",
+    category: "reflective",
+    icon: "🖤",
+    matTypeId: 0,
+    bumpStrength: 0.0,
+    color: [0.08, 0.08, 0.10],
+    roughness: 0.06,
+    metallic: 0.15,
+    clearCoat: 0.80,
+    noiseScale: 1.0,
+    anisotropy: 0.0,
+    proceduralType: "standard",
+    swatch: "linear-gradient(135deg, #1e1b4b 0%, #030712 100%)",
+    desc: "Deep black dielectric substrate with specular rim fresnel.",
+    matCost: {
+      rating: "LOW",
+      badgeClass: "safe",
+      alus: "14 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "0.9 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Ultra Safe for Mobile",
+      desc: "High absorptive base with clean dielectric reflection."
+    }
+  },
+  velvet: {
+    key: "velvet",
+    name: "Sheen Microfiber Velvet Cloth",
+    category: "special",
+    icon: "👘",
+    matTypeId: 10,
+    bumpStrength: 0.0,
+    color: [0.55, 0.12, 0.25],
+    roughness: 0.72,
+    metallic: 0.0,
+    clearCoat: 0.0,
+    noiseScale: 1.0,
+    anisotropy: 0.0,
+    proceduralType: "velvet",
+    swatch: "linear-gradient(135deg, #9f1239 0%, #4c0519 100%)",
+    desc: "Charlie sheen BRDF with grazing rim fabric light wrapping.",
+    matCost: {
+      rating: "MEDIUM",
+      badgeClass: "medium",
+      alus: "24 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "1.8 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Safe for Mobile",
+      desc: "Inverted Fresnel rim wrap simulates micro-fibers along silhouette."
+    }
+  },
+  carbon_fiber: {
+    key: "carbon_fiber",
+    name: "Twill Weave Carbon Fiber",
+    category: "procedural",
+    icon: "🏎️",
+    matTypeId: 5,
+    bumpStrength: 1.8,
+    color: [0.12, 0.13, 0.15],
+    roughness: 0.30,
+    metallic: 0.45,
+    clearCoat: 1.0,
+    noiseScale: 40.0,
+    anisotropy: 0.90,
+    proceduralType: "carbon_fiber",
+    swatch: "linear-gradient(135deg, #334155 0%, #0f172a 100%)",
+    desc: "Dual-angle anisotropic cross reflection under clearcoat glaze.",
+    matCost: {
+      rating: "MEDIUM",
+      badgeClass: "medium",
+      alus: "28 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "2.2 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Safe for Mobile",
+      desc: "Checker-pattern orthogonal tangent evaluation with clearcoat."
+    }
+  },
+  rust: {
+    key: "rust",
+    name: "Corroded Iron & Rust",
+    category: "procedural",
+    icon: "🧱",
+    matTypeId: 6,
+    bumpStrength: 2.2,
+    color: [0.65, 0.28, 0.16],
+    roughness: 0.82,
+    metallic: 0.35,
+    clearCoat: 0.0,
+    noiseScale: 20.0,
+    anisotropy: 0.0,
+    proceduralType: "rust",
+    swatch: "linear-gradient(135deg, #b45309 0%, #451a03 100%)",
+    desc: "Procedural noise mask blending smooth conductor and rough oxide.",
+    matCost: {
+      rating: "MEDIUM",
+      badgeClass: "medium",
+      alus: "30 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "2.4 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Safe for Mobile",
+      desc: "Analytical threshold mask smoothly interpolating two PBR lobes."
+    }
+  },
+  magma: {
+    key: "magma",
+    name: "Volcanic Magma & Lava Crust",
+    category: "procedural",
+    icon: "🌋",
+    matTypeId: 7,
+    bumpStrength: 2.0,
+    color: [0.85, 0.25, 0.05],
+    roughness: 0.65,
+    metallic: 0.0,
+    clearCoat: 0.0,
+    noiseScale: 18.0,
+    anisotropy: 0.0,
+    proceduralType: "magma",
+    swatch: "linear-gradient(135deg, #f97316 0%, #7f1d1d 100%)",
+    desc: "Voronoi magma fracture cracks with animated heat glow and dark basalt crust.",
+    matCost: {
+      rating: "HIGH",
+      badgeClass: "heavy",
+      alus: "42 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "3.1 GB/s",
+      fpsEstimate: "52 FPS Balanced",
+      mobileVerdict: "Moderate Cost on Mobile",
+      desc: "Procedural cellular fracture network with dynamic emissive pulses."
+    }
+  },
+  car_paint: {
+    key: "car_paint",
+    name: "Flake Metallic Clear Coat Paint",
+    category: "reflective",
+    icon: "🚗",
+    matTypeId: 8,
+    bumpStrength: 1.0,
+    color: [0.85, 0.15, 0.20],
+    roughness: 0.20,
+    metallic: 0.85,
+    clearCoat: 1.0,
+    noiseScale: 50.0,
+    anisotropy: 0.0,
+    proceduralType: "car_paint",
+    swatch: "linear-gradient(135deg, #e11d48 0%, #881337 100%)",
+    desc: "Dual-layer PBR with micro-specular sparkling flakes and dielectric top coat.",
+    matCost: {
+      rating: "MEDIUM",
+      badgeClass: "medium",
+      alus: "26 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "2.0 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Safe for Mobile",
+      desc: "Specular flake noise layer under a polished dielectric glaze."
+    }
+  },
+  leather: {
+    key: "leather",
+    name: "Pebble Grain Full-Grain Leather",
+    category: "procedural",
+    icon: "👞",
+    matTypeId: 14,
+    bumpStrength: 1.9,
+    color: [0.45, 0.26, 0.16],
+    roughness: 0.58,
+    metallic: 0.0,
+    clearCoat: 0.15,
+    noiseScale: 28.0,
+    anisotropy: 0.1,
+    proceduralType: "leather",
+    swatch: "linear-gradient(135deg, #78350f 0%, #3d1a04 100%)",
+    desc: "Organic cellular Voronoi pebble displacement with soft sheen response.",
+    matCost: {
+      rating: "MEDIUM",
+      badgeClass: "medium",
+      alus: "26 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "2.0 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Safe for Mobile",
+      desc: "Procedural cellular pebble normal displacement with low overhead."
+    }
+  },
+  hologram: {
+    key: "hologram",
+    name: "Quantum Holographic Matrix",
+    category: "special",
+    icon: "🌐",
+    matTypeId: 11,
+    bumpStrength: 0.0,
+    color: [0.10, 0.90, 0.85],
+    roughness: 0.10,
+    metallic: 0.0,
+    clearCoat: 0.0,
+    noiseScale: 25.0,
+    anisotropy: 0.0,
+    proceduralType: "hologram",
+    swatch: "linear-gradient(135deg, #06b6d4 0%, #0284c7 100%)",
+    desc: "Fresnel rim glow with animated scanline interference.",
+    matCost: {
+      rating: "LOW",
+      badgeClass: "safe",
+      alus: "18 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "1.2 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Ultra Safe for Mobile",
+      desc: "Fast time-modulated trigonometric scanlines and Fresnel glow."
+    }
+  },
+  neon: {
+    key: "neon",
+    name: "Supercharged Emissive Neon",
+    category: "special",
+    icon: "⚡",
+    matTypeId: 12,
+    bumpStrength: 0.0,
+    color: [0.95, 0.20, 0.80],
+    roughness: 0.05,
+    metallic: 0.0,
+    clearCoat: 0.0,
+    noiseScale: 1.0,
+    anisotropy: 0.0,
+    proceduralType: "neon",
+    swatch: "linear-gradient(135deg, #ec4899 0%, #be185d 100%)",
+    desc: "HDR emissive luminance with smooth gaussian bloom falloff.",
+    matCost: {
+      rating: "LOW",
+      badgeClass: "safe",
+      alus: "14 ALUs",
+      texSamplers: "0 (Pure Math)",
+      bandwidth: "1.0 GB/s",
+      fpsEstimate: "60 FPS Solid",
+      mobileVerdict: "Ultra Safe for Mobile",
+      desc: "Direct HDR additive color emission with minimal fragment overhead."
+    }
+  }
+};
+
 /// Application State Controller
 class NativeApp {
   constructor() {
@@ -1934,6 +3147,10 @@ class NativeApp {
       camFront: new Float32Array([0.0, 0.0, -1.0]),
       camRight: new Float32Array([1.0, 0.0, 0.0]),
       moveSpeed: 6.5,
+
+      // First-Person Kinematic Jumping & Gravity State
+      fpsVelocityY: 0.0,
+      fpsIsGrounded: true,
 
       // Input bitmasks & drag tracking
       isDragging: false,
@@ -2060,18 +3277,46 @@ class NativeApp {
     this.damageEvents = [];
     this.totalDamageDealt = 0;
 
+    // Web Audio Synthesizer for FPS Sound FX
+    this.synth = new RetroSoundSynth();
+
+    // Map & Items Systems State
+    this.currentMapId = 'dm6';
+    this.activeCategoryFilter = 'all';
+
+    // Player Status & Inventory State
+    this.playerHealth = 100.0;
+    this.playerMaxHealth = 100.0;
+    this.playerArmor = 50.0;
+    this.playerMaxArmor = 100.0;
+    this.playerArmorType = 'green';
+    this.playerAmmo = {
+      plasma: 100,
+      slugs: 60,
+      rockets: 20,
+      railgun: 15
+    };
+    this.activePowerups = {
+      quad: { active: false, timer: 0.0, maxTime: 30.0 },
+      haste: { active: false, timer: 0.0, maxTime: 25.0 },
+      regen: { active: false, timer: 0.0, maxTime: 30.0 }
+    };
+
+    this.spawnPoints = [];
+    this.itemPickups = [];
+
     // Scene Entity Hierarchy matching C++ Demo 06
     this.sceneEntities = [
-      { id: 0, name: "Player_Character", type: "Kinematic Character", pos: [0.0, 0.0, 2.0], scale: [0.8, 1.8, 0.8], roughness: 0.30, metallic: 0.85, color: [0.15, 0.40, 0.95], collider: "Swept Sphere (r=0.4m, h=1.8m)", layer: "Layer_Player", trigger: false, badge: "Kinematic", contact: false },
-      { id: 1, name: "Ground_Floor", type: "Static Environment", pos: [0.0, -0.5, 0.0], scale: [25.0, 0.5, 25.0], roughness: 0.85, metallic: 0.10, color: [0.22, 0.25, 0.30], collider: "AABB Box (25x0.5x25m)", layer: "Layer_Ground", trigger: false, badge: "Static AABB", contact: true },
-      { id: 2, name: "Pillar_North", type: "Monolith Obstacle", pos: [0.0, 2.0, -8.0], scale: [1.0, 2.0, 1.0], roughness: 0.30, metallic: 0.90, color: [0.85, 0.35, 0.20], collider: "AABB Box (1x2x1m)", layer: "Layer_Obstacle", trigger: false, badge: "Static AABB", contact: false },
-      { id: 3, name: "Pillar_West", type: "Monolith Obstacle", pos: [-6.0, 1.5, 0.0], scale: [1.2, 1.5, 1.2], roughness: 0.40, metallic: 0.70, color: [0.30, 0.75, 0.45], collider: "AABB Box (1.2x1.5x1.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Static AABB", contact: false },
-      { id: 4, name: "Pillar_East", type: "Monolith Obstacle", pos: [6.0, 1.5, 0.0], scale: [1.2, 1.5, 1.2], roughness: 0.40, metallic: 0.70, color: [0.30, 0.75, 0.45], collider: "AABB Box (1.2x1.5x1.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Static AABB", contact: false },
-      { id: 5, name: "Platform_High", type: "Jump Platform", pos: [0.0, 1.2, 6.0], scale: [3.0, 0.4, 3.0], roughness: 0.50, metallic: 0.50, color: [0.90, 0.75, 0.20], collider: "AABB Box (3x0.4x3m)", layer: "Layer_Obstacle", trigger: false, badge: "Static AABB", contact: false },
-      { id: 6, name: "Sphere_Boulder_1", type: "Physical Prop", pos: [-3.5, 1.0, -4.0], scale: [1.0, 1.0, 1.0], roughness: 0.20, metallic: 0.85, color: [0.80, 0.40, 0.90], collider: "Sphere (r=1.0m)", layer: "Layer_Obstacle", trigger: false, badge: "Static Sphere", contact: false },
-      { id: 7, name: "Sphere_Boulder_2", type: "Physical Prop", pos: [3.5, 1.0, -4.0], scale: [1.0, 1.0, 1.0], roughness: 0.20, metallic: 0.85, color: [0.80, 0.40, 0.90], collider: "Sphere (r=1.0m)", layer: "Layer_Obstacle", trigger: false, badge: "Static Sphere", contact: false },
-      { id: 8, name: "Gem_Trigger_North", type: "Trigger Collectible", pos: [0.0, 1.2, -8.0], scale: [0.5, 0.5, 0.5], roughness: 0.10, metallic: 0.95, color: [0.10, 0.95, 0.85], collider: "AABB Trigger (0.5x0.5x0.5m)", layer: "Layer_Trigger", trigger: true, badge: "Trigger Gem", contact: false },
-      { id: 9, name: "Gem_Trigger_Platform", type: "Trigger Collectible", pos: [0.0, 2.0, 6.0], scale: [0.5, 0.5, 0.5], roughness: 0.10, metallic: 0.95, color: [0.10, 0.95, 0.85], collider: "AABB Trigger (0.5x0.5x0.5m)", layer: "Layer_Trigger", trigger: true, badge: "Trigger Gem", contact: false }
+      { id: 0, name: "Player_Character", type: "Kinematic Character", materialKey: "metal", pos: [0.0, 0.0, 2.0], scale: [1.6, 1.8, 1.6], roughness: 0.30, metallic: 0.85, color: [0.15, 0.40, 0.95], collider: "Swept Sphere (r=0.80m, h=1.8m)", layer: "Layer_Player", trigger: false, badge: "Kinematic", contact: false },
+      { id: 1, name: "Ground_Floor", type: "Static Environment", materialKey: "rock", pos: [0.0, -0.5, 0.0], scale: [25.0, 0.5, 25.0], roughness: 0.88, metallic: 0.0, color: [0.32, 0.32, 0.35], collider: "AABB Box (25x0.5x25m)", layer: "Layer_Ground", trigger: false, badge: "Static AABB", contact: true },
+      { id: 2, name: "Pillar_North", type: "Monolith Obstacle", materialKey: "wood", pos: [0.0, 2.0, -8.0], scale: [1.0, 2.0, 1.0], roughness: 0.48, metallic: 0.0, color: [0.38, 0.22, 0.12], collider: "AABB Box (1x2x1m)", layer: "Layer_Obstacle", trigger: false, badge: "Static AABB", contact: false },
+      { id: 3, name: "Pillar_West", type: "Monolith Obstacle", materialKey: "rust", pos: [-6.0, 1.5, 0.0], scale: [1.2, 1.5, 1.2], roughness: 0.82, metallic: 0.35, color: [0.65, 0.28, 0.16], collider: "AABB Box (1.2x1.5x1.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Static AABB", contact: false },
+      { id: 4, name: "Pillar_East", type: "Monolith Obstacle", materialKey: "marble", pos: [6.0, 1.5, 0.0], scale: [1.2, 1.5, 1.2], roughness: 0.28, metallic: 0.0, color: [0.92, 0.92, 0.94], collider: "AABB Box (1.2x1.5x1.2m)", layer: "Layer_Obstacle", trigger: false, badge: "Static AABB", contact: false },
+      { id: 5, name: "Platform_High", type: "Jump Platform", materialKey: "metal", pos: [0.0, 1.2, 6.0], scale: [3.0, 0.4, 3.0], roughness: 0.24, metallic: 0.96, color: [0.72, 0.76, 0.82], collider: "AABB Box (3x0.4x3m)", layer: "Layer_Obstacle", trigger: false, badge: "Static AABB", contact: false },
+      { id: 6, name: "Sphere_Boulder_1", type: "Physical Prop", materialKey: "magma", pos: [-3.5, 1.0, -4.0], scale: [1.0, 1.0, 1.0], roughness: 0.65, metallic: 0.0, color: [0.85, 0.25, 0.05], collider: "Sphere (r=1.0m)", layer: "Layer_Obstacle", trigger: false, badge: "Static Sphere", contact: false },
+      { id: 7, name: "Sphere_Boulder_2", type: "Physical Prop", materialKey: "car_paint", pos: [3.5, 1.0, -4.0], scale: [1.0, 1.0, 1.0], roughness: 0.20, metallic: 0.85, color: [0.85, 0.15, 0.20], collider: "Sphere (r=1.0m)", layer: "Layer_Obstacle", trigger: false, badge: "Static Sphere", contact: false },
+      { id: 8, name: "Gem_Trigger_North", type: "Trigger Collectible", materialKey: "hologram", pos: [0.0, 1.2, -8.0], scale: [0.5, 0.5, 0.5], roughness: 0.10, metallic: 0.0, color: [0.10, 0.90, 0.85], collider: "AABB Trigger (0.5x0.5x0.5m)", layer: "Layer_Trigger", trigger: true, badge: "Trigger Gem", contact: false },
+      { id: 9, name: "Gem_Trigger_Platform", type: "Trigger Collectible", materialKey: "neon", pos: [0.0, 2.0, 6.0], scale: [0.5, 0.5, 0.5], roughness: 0.05, metallic: 0.0, color: [0.95, 0.20, 0.80], collider: "AABB Trigger (0.5x0.5x0.5m)", layer: "Layer_Trigger", trigger: true, badge: "Trigger Gem", contact: false }
     ];
 
     // Player Controller Locomotion & Physics Simulation State
@@ -2093,7 +3338,7 @@ class NativeApp {
       sprintSpeed: 11.0,
       jumpForce: 8.5,
       gravity: -22.0,
-      characterRadius: 0.4,
+      characterRadius: 0.80,
       characterHeight: 1.8,
       cameraViewMode: 'third-person',
       
@@ -2188,7 +3433,17 @@ class NativeApp {
       uBaseColor: gl.getUniformLocation(prog, "u_baseColor"),
       uRoughness: gl.getUniformLocation(prog, "u_roughness"),
       uMetallic: gl.getUniformLocation(prog, "u_metallic"),
-      uTime: gl.getUniformLocation(prog, "u_time")
+      uTime: gl.getUniformLocation(prog, "u_time"),
+      uMatType: gl.getUniformLocation(prog, "u_matType"),
+      uNoiseScale: gl.getUniformLocation(prog, "u_noiseScale"),
+      uClearCoat: gl.getUniformLocation(prog, "u_clearCoat"),
+      uAnisotropy: gl.getUniformLocation(prog, "u_anisotropy"),
+      uBumpStrength: gl.getUniformLocation(prog, "u_bumpStrength"),
+      uUseTexMaps: gl.getUniformLocation(prog, "u_useTexMaps"),
+      uLightDir: gl.getUniformLocation(prog, "u_lightDir"),
+      uLightColor: gl.getUniformLocation(prog, "u_lightColor"),
+      uFillLightDir: gl.getUniformLocation(prog, "u_fillLightDir"),
+      uFillLightColor: gl.getUniformLocation(prog, "u_fillLightColor")
     };
   }
 
@@ -2204,10 +3459,11 @@ class NativeApp {
   initMeshes() {
     const gl = this.gl;
     this.rawMeshes = [
-      createTorus(0.45, 1.1, 48, 24),
+      createSphere(1.0, 24, 24),
       createCube(1.6),
       createIcosahedron(1.4),
-      createTrefoilKnot(120, 20, 0.28)
+      createTrefoilKnot(120, 20, 0.28),
+      createTorus(0.45, 1.1, 48, 24)
     ];
 
     this.meshBuffers = this.rawMeshes.map(data => {
@@ -2315,7 +3571,7 @@ class NativeApp {
       const banner = document.getElementById('fps-pointerlock-banner');
       if (banner) {
         if (isLocked) {
-          banner.innerHTML = `<span>🎯 <b>Pointer Locked</b> &bull; Mouse direct-look active &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click</b> / Space to Shoot</span>`;
+          banner.innerHTML = `<span>🎯 <b>Pointer Locked</b> &bull; Mouse direct-look active &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click</b> to Shoot &bull; <b>Space</b> to Jump</span>`;
           banner.classList.add('locked');
         } else {
           banner.innerHTML = `<span>🎯 <b>FPS Shooter Active</b>: Click viewport to Lock Mouse Look (No Mouse-Down needed!) &bull; Press <b>ESC</b> to unlock</span>`;
@@ -2417,9 +3673,6 @@ class NativeApp {
       if (k === 'e') this.state.keys.e = true;
       if (e.code === 'Space') {
         this.state.keys.space = true;
-        if (this.state.cameraMode === 3) {
-          this.fireWeaponProjectile();
-        }
       }
       if (e.shiftKey) this.state.keys.shift = true;
     });
@@ -2452,7 +3705,7 @@ class NativeApp {
           this.state.camPitch = 0.0;
           updateFPSOverlays();
           this.log("Loaded Demo 07: First-Person Shooter & Damage System", "cpp");
-          this.log("FPS Direct-Look Active: Aim and click/space to fire projectiles!", "success");
+          this.log("FPS Direct-Look Active: Aim and L-Click to fire projectiles, Space to Jump!", "success");
         } else if (this.state.demoScene === '02_metallic_roughness_matrix.cpp' || this.state.demoScene === 'matrix') {
           this.state.cameraMode = 0;
           const camSelect = document.getElementById('camera-mode-select');
@@ -3346,10 +4599,16 @@ class NativeApp {
       });
     };
 
-    // UP / Elevate (E key)
-    bindTouchButton(btnUp, () => { this.state.keys.e = true; }, () => { this.state.keys.e = false; });
+    // JUMP / UP (Space key / E in Free-Fly)
+    bindTouchButton(btnUp, () => {
+      this.state.keys.space = true;
+      this.state.keys.e = true;
+    }, () => {
+      this.state.keys.space = false;
+      this.state.keys.e = false;
+    });
 
-    // DOWN / Descend (Q key)
+    // DOWN / Descend (Q key in Free-Fly)
     bindTouchButton(btnDown, () => { this.state.keys.q = true; }, () => { this.state.keys.q = false; });
 
     // SPRINT Toggle (Shift)
@@ -3836,6 +5095,714 @@ else if (typeof define === 'function' && define['amd'])
     this.renderCollisionRegister();
     this.updateCppBridge();
     this.initFpsDamageWorkspace();
+    this.initMapSettingsWorkspace();
+    this.initItemsWorkspace();
+    this.initMaterialsWorkspace();
+    this.initHzbWorkspace();
+    this.loadQuakeMap('dm6', false);
+  }
+
+  initMapSettingsWorkspace() {
+    // 1. Quake Map Load Buttons & Card Selection
+    document.querySelectorAll('.btn-load-map').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const mapId = e.currentTarget.dataset.mapId || 'dm6';
+        this.loadQuakeMap(mapId, true);
+      });
+    });
+
+    document.querySelectorAll('.quake-map-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        const mapId = e.currentTarget.dataset.mapId || 'dm6';
+        if (mapId !== this.currentMapId) {
+          this.loadQuakeMap(mapId, true);
+        }
+      });
+    });
+
+    // 2. Add Spawn Point at Current Player/Camera Position
+    const btnAddSpawnPose = document.getElementById('btn-add-spawn-pose');
+    if (btnAddSpawnPose) {
+      btnAddSpawnPose.addEventListener('click', () => {
+        this.addPlayerSpawnAtCamPose();
+      });
+    }
+
+    // 3. Respawn All Items in Map
+    const btnRespawnItems = document.getElementById('btn-respawn-all-items');
+    if (btnRespawnItems) {
+      btnRespawnItems.addEventListener('click', () => {
+        this.respawnAllItems();
+      });
+    }
+
+    // 4. Place Item at Current Player Position
+    const btnPlaceItem = document.getElementById('btn-place-item-at-cam');
+    if (btnPlaceItem) {
+      btnPlaceItem.addEventListener('click', () => {
+        this.placeItemAtCamPose();
+      });
+    }
+
+    // 5. Jump Pad Launch Velocity Slider
+    const sliderJumpPad = document.getElementById('slider-jumppad-force');
+    if (sliderJumpPad) {
+      sliderJumpPad.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        const valLabel = document.getElementById('val-jumppad-force');
+        if (valLabel) valLabel.textContent = `${val.toFixed(1)} m/s`;
+      });
+    }
+
+    // 6. Arena Ambient Lighting Slider
+    const sliderAmb = document.getElementById('slider-map-ambient');
+    if (sliderAmb) {
+      sliderAmb.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        const valLabel = document.getElementById('val-map-ambient');
+        if (valLabel) {
+          valLabel.textContent = val < 0.3 ? `Gothic Dark (${val.toFixed(2)})` : (val < 0.6 ? `Gothic Dusk (${val.toFixed(2)})` : `Full Bright (${val.toFixed(2)})`);
+        }
+      });
+    }
+
+    // 7. Hazard Floor Damage Slider
+    const sliderHazard = document.getElementById('slider-hazard-dmg');
+    if (sliderHazard) {
+      sliderHazard.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        const valLabel = document.getElementById('val-hazard-dmg');
+        if (valLabel) valLabel.textContent = `${val.toFixed(0)} HP / s`;
+      });
+    }
+
+    this.renderQuakeMapCards();
+    this.renderSpawnPointsList();
+    this.renderItemSpawnsList();
+  }
+
+  initItemsWorkspace() {
+    this.activeCategoryFilter = 'all';
+    this.renderItemsCatalogCards('all');
+
+    // Category Filter Buttons
+    const catBtns = document.querySelectorAll('.item-cat-btn');
+    catBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        catBtns.forEach(b => b.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+        this.activeCategoryFilter = e.currentTarget.dataset.itemCat || 'all';
+        this.renderItemsCatalogCards(this.activeCategoryFilter);
+      });
+    });
+
+    // Respawn All from Catalog
+    const btnRespawnCatalog = document.getElementById('btn-respawn-all-catalog');
+    if (btnRespawnCatalog) {
+      btnRespawnCatalog.addEventListener('click', () => {
+        this.respawnAllItems();
+      });
+    }
+
+    // Clear Pickups / Reset to Map
+    const btnClearPickups = document.getElementById('btn-clear-all-pickups');
+    if (btnClearPickups) {
+      btnClearPickups.addEventListener('click', () => {
+        this.clearSpawnedPickups();
+      });
+    }
+
+    // Instant Player Attribute Actions
+    const btnHealFull = document.getElementById('btn-heal-player-full');
+    if (btnHealFull) {
+      btnHealFull.addEventListener('click', () => {
+        this.playerHealth = 100.0;
+        if (this.synth) this.synth.play('health_large');
+        this.showPickupToast("Health Restored", "Player health refilled to 100 HP", "health");
+        this.updateFpsPlayerHud();
+        this.log("Restored player health to 100 HP.", "success");
+      });
+    }
+
+    const btnGiveMega = document.getElementById('btn-give-megahealth');
+    if (btnGiveMega) {
+      btnGiveMega.addEventListener('click', () => {
+        this.playerHealth = 200.0;
+        if (this.synth) this.synth.play('megahealth');
+        this.showPickupToast("MegaHealth Overheal", "+100 HP (200 Max Overheal Active)", "health");
+        this.updateFpsPlayerHud();
+        this.log("Applied MegaHealth overheal (Health: 200 HP).", "success");
+      });
+    }
+
+    const btnGiveArmor = document.getElementById('btn-give-red-armor');
+    if (btnGiveArmor) {
+      btnGiveArmor.addEventListener('click', () => {
+        this.playerArmor = 100.0;
+        this.playerArmorType = 'red';
+        if (this.synth) this.synth.play('armor_red');
+        this.showPickupToast("Red Heavy Battle Armor", "+100 AP (75% Damage Mitigation)", "armor");
+        this.updateFpsPlayerHud();
+        this.log("Equipped Red Heavy Battle Armor (+100 AP, 75% absorption).", "success");
+      });
+    }
+
+    const btnGiveQuad = document.getElementById('btn-give-quad-damage');
+    if (btnGiveQuad) {
+      btnGiveQuad.addEventListener('click', () => {
+        this.activePowerups.quad.active = true;
+        this.activePowerups.quad.timer = 30.0;
+        if (this.synth) this.synth.play('powerup_quad');
+        this.showPickupToast("Quad Damage Rune", "4.0x Weapon Damage Multiplier Active (30s)", "powerup");
+        this.updateFpsPlayerHud();
+        this.log("Activated Quad Damage Rune (400% Projectile Output for 30s)!", "danger");
+      });
+    }
+
+    this.updateFpsPlayerHud();
+  }
+
+  loadQuakeMap(mapId, teleportPlayer = true) {
+    const mapDef = QUAKE_MAP_DEFINITIONS[mapId];
+    if (!mapDef) return;
+
+    this.currentMapId = mapId;
+    const qTitle = mapDef.quakeTitle || mapDef.tag || mapDef.name;
+    this.log(`Loading Quake Map: "${mapDef.name}" (${qTitle}) - ${mapDef.desc}`, "cpp");
+
+    const floorScale = mapDef.floorScale || (mapDef.groundFloor ? mapDef.groundFloor.scale : [26.0, 0.5, 26.0]);
+    const floorColor = mapDef.floorColor || (mapDef.groundFloor ? mapDef.groundFloor.color : [0.22, 0.24, 0.28]);
+    const floorRough = mapDef.floorRoughness || (mapDef.groundFloor ? mapDef.groundFloor.roughness : 0.85);
+    const floorMetal = mapDef.floorMetallic || (mapDef.groundFloor ? mapDef.groundFloor.metallic : 0.15);
+
+    // 1. Update Floor Entity
+    const ground = this.sceneEntities.find(e => e.id === 1);
+    if (ground) {
+      ground.scale = [...floorScale];
+      ground.color = [...floorColor];
+      ground.roughness = floorRough;
+      ground.metallic = floorMetal;
+    }
+
+    // 2. Rebuild Static Geometry Entities (Keep Player id=0 and Ground id=1)
+    const staticGeom = mapDef.staticGeometry ? JSON.parse(JSON.stringify(mapDef.staticGeometry)) : [];
+    this.sceneEntities = [
+      this.sceneEntities[0] || { id: 0, name: "Player_Character", type: "Kinematic Capsule", pos: [0, 1.7, 0], scale: [1, 1, 1], color: [0.15, 0.45, 0.95], collider: "Capsule (r=1.20m, h=1.8m)", layer: "Layer_Player", trigger: false },
+      this.sceneEntities[1] || { id: 1, name: "Arena_Floor", type: "Static Ground", pos: [0, -0.5, 0], scale: [...floorScale], color: [...floorColor], collider: "AABB Floor", layer: "Layer_Static", trigger: false },
+      ...staticGeom
+    ];
+
+    // 3. Rebuild Player Spawns & Item Pickups
+    this.spawnPoints = mapDef.playerSpawns ? JSON.parse(JSON.stringify(mapDef.playerSpawns)) : [];
+    this.itemPickups = mapDef.itemSpawns ? JSON.parse(JSON.stringify(mapDef.itemSpawns)) : [];
+
+    // 4. Teleport Player to Spawn Point 1
+    if (teleportPlayer && this.spawnPoints.length > 0) {
+      const sp = this.spawnPoints[0];
+      this.state.camPos[0] = sp.pos[0];
+      this.state.camPos[1] = sp.pos[1] + 1.7;
+      this.state.camPos[2] = sp.pos[2];
+      this.state.camYaw = sp.yaw || 0.0;
+      this.state.fpsVelocityY = 0.0;
+
+      if (this.playerController) {
+        this.playerController.pos = [...sp.pos];
+        this.playerController.velocity = [0, 0, 0];
+        this.playerController.yaw = sp.yaw || 0.0;
+      }
+      if (this.synth) this.synth.play('teleport');
+    }
+
+    // 5. Update UI Viewports
+    this.renderQuakeMapCards();
+    this.renderSpawnPointsList();
+    this.renderItemSpawnsList();
+    this.renderHierarchyTree();
+    this.renderCollisionRegister();
+    this.updateCppBridge();
+    this.updateFpsPlayerHud();
+
+    // Update active map badge in UI
+    const activeBadge = document.getElementById('active-map-badge');
+    if (activeBadge) activeBadge.textContent = `Active: ${mapDef.name} (${qTitle})`;
+  }
+
+  renderQuakeMapCards() {
+    document.querySelectorAll('.quake-map-card').forEach(card => {
+      const mapId = card.dataset.mapId;
+      const isSelected = mapId === this.currentMapId;
+      card.classList.toggle('active', isSelected);
+
+      const btn = card.querySelector('.btn-load-map');
+      if (btn) {
+        btn.textContent = isSelected ? `✓ ${mapId.toUpperCase()} Active Arena` : `⚔️ Load ${mapId.toUpperCase()} Arena`;
+        btn.style.background = isSelected ? 'rgba(56, 189, 248, 0.25)' : '';
+        btn.style.borderColor = isSelected ? 'var(--accent-cyan)' : '';
+      }
+    });
+  }
+
+  renderSpawnPointsList() {
+    const listContainer = document.getElementById('spawn-points-list');
+    const countBadge = document.getElementById('player-spawns-count');
+
+    if (countBadge) countBadge.textContent = `${this.spawnPoints ? this.spawnPoints.length : 0}`;
+
+    if (!listContainer) return;
+    if (!this.spawnPoints || this.spawnPoints.length === 0) {
+      listContainer.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 18px; font-size: 12px;">No spawn points registered for this map.</div>`;
+      return;
+    }
+
+    listContainer.innerHTML = '';
+    this.spawnPoints.forEach((sp, idx) => {
+      const card = document.createElement('div');
+      card.className = 'spawn-node-card';
+      card.innerHTML = `
+        <div class="spawn-node-info">
+          <span class="spawn-badge">SP-${sp.id}</span>
+          <div class="spawn-node-meta">
+            <span class="spawn-name">${sp.name}</span>
+            <span class="spawn-coords">[${sp.pos.map(v => v.toFixed(1)).join(', ')}] · Yaw: ${(sp.yaw || 0).toFixed(1)} rad</span>
+          </div>
+        </div>
+        <div class="spawn-actions">
+          <button class="btn-xs btn-tp-spawn" data-spawn-idx="${idx}" title="Teleport player to this spawn">📍 Warp</button>
+          <button class="btn-xs btn-del-spawn" data-spawn-idx="${idx}" style="color: #f43f5e;" title="Remove spawn point">✕</button>
+        </div>
+      `;
+
+      card.querySelector('.btn-tp-spawn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.state.camPos[0] = sp.pos[0];
+        this.state.camPos[1] = sp.pos[1] + 1.7;
+        this.state.camPos[2] = sp.pos[2];
+        this.state.camYaw = sp.yaw || 0.0;
+        this.state.fpsVelocityY = 0.0;
+        if (this.playerController) {
+          this.playerController.pos = [...sp.pos];
+          this.playerController.velocity = [0, 0, 0];
+          this.playerController.yaw = sp.yaw || 0.0;
+        }
+        if (this.synth) this.synth.play('teleport');
+        this.log(`Teleported to spawn point "${sp.name}" [${sp.pos.join(', ')}]`, "success");
+      });
+
+      card.querySelector('.btn-del-spawn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.spawnPoints.splice(idx, 1);
+        this.renderSpawnPointsList();
+        this.log(`Removed spawn point #${sp.id}`, "warning");
+      });
+
+      listContainer.appendChild(card);
+    });
+  }
+
+  renderItemSpawnsList() {
+    const listContainer = document.getElementById('item-spawns-list');
+    const countBadge = document.getElementById('item-spawns-count');
+    if (countBadge) countBadge.textContent = `${this.itemPickups ? this.itemPickups.length : 0}`;
+
+    if (!listContainer) return;
+    if (!this.itemPickups || this.itemPickups.length === 0) {
+      listContainer.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 18px; font-size: 12px;">No item pedestals placed on this map arena.</div>`;
+      return;
+    }
+
+    listContainer.innerHTML = '';
+    this.itemPickups.forEach((item, idx) => {
+      const card = document.createElement('div');
+      card.className = 'item-node-card';
+      const catColor = item.category === 'health' ? '#10b981' : (item.category === 'armor' ? '#3b82f6' : (item.category === 'ammo' ? '#f59e0b' : '#a855f7'));
+
+      card.innerHTML = `
+        <div class="item-node-info">
+          <span style="font-size: 16px;">${item.icon || '📦'}</span>
+          <div class="item-node-meta">
+            <span class="item-node-title">${item.name} <span class="feat-pill" style="color: ${catColor}; border-color: ${catColor}44; font-size: 9px;">${item.category.toUpperCase()}</span></span>
+            <span class="item-node-coords">[${item.pos.map(v => v.toFixed(1)).join(', ')}]</span>
+          </div>
+        </div>
+        <div class="item-node-actions">
+          <span class="item-status-pill" style="${item.active ? 'background: rgba(16,185,129,0.18); color: #10b981;' : 'background: rgba(245,158,11,0.18); color: #f59e0b;'}">
+            ${item.active ? 'READY' : `${item.respawnTimer.toFixed(0)}s`}
+          </span>
+          <button class="btn-xs btn-collect-item" data-item-idx="${idx}" title="Collect item">⚡</button>
+          <button class="btn-xs btn-del-item" data-item-idx="${idx}" style="color: #f43f5e;" title="Delete node">✕</button>
+        </div>
+      `;
+
+      card.querySelector('.btn-collect-item')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.collectItemPickup(item);
+      });
+
+      card.querySelector('.btn-del-item')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.itemPickups.splice(idx, 1);
+        this.renderItemSpawnsList();
+        this.log(`Removed item spawn #${item.id} (${item.name})`, "warning");
+      });
+
+      listContainer.appendChild(card);
+    });
+  }
+
+  addPlayerSpawnAtCamPose() {
+    const eyeHeight = 1.7;
+    const feetPos = [
+      parseFloat(this.state.camPos[0].toFixed(2)),
+      parseFloat(Math.max(0.0, (this.state.camPos[1] - eyeHeight)).toFixed(2)),
+      parseFloat(this.state.camPos[2].toFixed(2))
+    ];
+
+    const nextId = (this.spawnPoints.length > 0 ? Math.max(...this.spawnPoints.map(s => s.id)) + 1 : 1);
+    const newSp = {
+      id: nextId,
+      name: `Custom_Spawn_${nextId}`,
+      pos: feetPos,
+      yaw: parseFloat(this.state.camYaw.toFixed(2)),
+      team: 'DM'
+    };
+
+    this.spawnPoints.push(newSp);
+    this.renderSpawnPointsList();
+    if (this.synth) this.synth.play('teleport');
+    this.log(`Added new spawn point #${newSp.id} at [${feetPos.join(', ')}]`, "success");
+  }
+
+  placeItemAtCamPose() {
+    const sel = document.getElementById('quick-place-item-select');
+    const itemKey = sel ? sel.value : 'megahealth';
+    const catalogItem = ELEMENTAL_ITEMS_CATALOG[itemKey] || ELEMENTAL_ITEMS_CATALOG.megahealth;
+
+    const eyeHeight = 1.7;
+    const placePos = [
+      parseFloat(this.state.camPos[0].toFixed(2)),
+      parseFloat(Math.max(0.3, (this.state.camPos[1] - eyeHeight + 0.6)).toFixed(2)),
+      parseFloat(this.state.camPos[2].toFixed(2))
+    ];
+
+    const nextId = (this.itemPickups.length > 0 ? Math.max(...this.itemPickups.map(i => i.id)) + 1 : 1);
+    const newItem = {
+      id: nextId,
+      itemKey: catalogItem.key,
+      name: catalogItem.name,
+      category: catalogItem.category,
+      icon: catalogItem.icon,
+      pos: placePos,
+      scale: [...catalogItem.scale],
+      color: [...catalogItem.color],
+      meshType: catalogItem.meshType,
+      effect: catalogItem.effect,
+      respawnDelay: catalogItem.respawnDelay,
+      respawnTimer: 0.0,
+      active: true
+    };
+
+    this.itemPickups.push(newItem);
+    this.renderItemSpawnsList();
+    if (this.synth) this.synth.play(catalogItem.sound || 'ammo');
+    this.log(`Placed item "${catalogItem.name}" at player position [${placePos.join(', ')}]`, "success");
+  }
+
+  respawnAllItems() {
+    if (!this.itemPickups) return;
+    this.itemPickups.forEach(item => {
+      item.active = true;
+      item.respawnTimer = 0.0;
+    });
+    this.renderItemSpawnsList();
+    if (this.synth) this.synth.play('powerup_quad');
+    this.log("Instantly respawned all map item pickups!", "success");
+  }
+
+  clearSpawnedPickups() {
+    this.loadQuakeMap(this.currentMapId, false);
+    this.log(`Reset all spawns and items for map "${this.currentMapId}" to template defaults.`, "info");
+  }
+
+  renderItemsCatalogCards(categoryFilter = 'all') {
+    const grid = document.getElementById('items-cards-grid');
+    if (!grid) return;
+
+    grid.innerHTML = '';
+    const filteredItems = Object.values(ELEMENTAL_ITEMS_CATALOG).filter(item => {
+      if (categoryFilter === 'all') return true;
+      return item.category === categoryFilter;
+    });
+
+    filteredItems.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'quake-map-card';
+      card.id = `catalog-card-${item.key}`;
+
+      const catColor = item.category === 'health' ? '#10b981' : (item.category === 'armor' ? '#3b82f6' : (item.category === 'ammo' ? '#f59e0b' : '#a855f7'));
+
+      card.innerHTML = `
+        <div class="map-card-banner" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(10, 15, 26, 0.95));">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 24px;">${item.icon}</span>
+            <div>
+              <span class="map-tag" style="color: ${catColor}; border-color: ${catColor}55;">${item.typePill}</span>
+            </div>
+          </div>
+          <span class="map-spawns-count">⏱ ${item.respawnDelay.toFixed(0)}s Respawn</span>
+        </div>
+
+        <div class="map-card-content">
+          <h4 class="map-title">${item.name}</h4>
+          <p class="map-desc">${item.desc}</p>
+          <div class="map-features-list">
+            <span class="feat-pill" style="color: ${catColor}; border-color: ${catColor}44; font-weight: 600;">⚡ ${item.effect}</span>
+            <span class="feat-pill">Mesh: ${item.meshType.toUpperCase()}</span>
+          </div>
+          <div style="display: flex; gap: 6px; margin-top: 6px;">
+            <button class="btn-action btn-catalog-consume" data-item-key="${item.key}" style="flex: 1; padding: 7px 10px; font-size: 11px;">
+              ⚡ Instant Give
+            </button>
+            <button class="btn-action btn-catalog-spawn-cam" data-item-key="${item.key}" style="padding: 7px 10px; font-size: 11px; background: rgba(56,189,248,0.15); border-color: var(--accent-cyan);" title="Spawn in front of camera">
+              🎯 Spawn
+            </button>
+          </div>
+        </div>
+      `;
+
+      card.querySelector('.btn-catalog-consume')?.addEventListener('click', () => {
+        this.collectItemPickup({
+          id: 999,
+          itemKey: item.key,
+          name: item.name,
+          category: item.category,
+          effect: item.effect,
+          respawnDelay: item.respawnDelay
+        });
+      });
+
+      card.querySelector('.btn-catalog-spawn-cam')?.addEventListener('click', () => {
+        this.spawnItemInFrontOfPlayer(item.key);
+      });
+
+      grid.appendChild(card);
+    });
+  }
+
+  spawnItemInFrontOfPlayer(itemKey) {
+    const catalogItem = ELEMENTAL_ITEMS_CATALOG[itemKey] || ELEMENTAL_ITEMS_CATALOG.megahealth;
+    const forwardDist = 2.0;
+
+    const spawnPos = [
+      parseFloat((this.state.camPos[0] + this.state.camFront[0] * forwardDist).toFixed(2)),
+      parseFloat((this.state.camPos[1] - 0.9).toFixed(2)),
+      parseFloat((this.state.camPos[2] + this.state.camFront[2] * forwardDist).toFixed(2))
+    ];
+
+    const nextId = (this.itemPickups.length > 0 ? Math.max(...this.itemPickups.map(i => i.id)) + 1 : 1);
+    const newItem = {
+      id: nextId,
+      itemKey: catalogItem.key,
+      name: catalogItem.name,
+      category: catalogItem.category,
+      icon: catalogItem.icon,
+      pos: spawnPos,
+      scale: [...catalogItem.scale],
+      color: [...catalogItem.color],
+      meshType: catalogItem.meshType,
+      effect: catalogItem.effect,
+      respawnDelay: catalogItem.respawnDelay,
+      respawnTimer: 0.0,
+      active: true
+    };
+
+    this.itemPickups.push(newItem);
+    this.renderItemSpawnsList();
+    if (this.synth) this.synth.play(catalogItem.sound || 'ammo');
+    this.showPickupToast(catalogItem.name, `Spawned in world at [${spawnPos.join(', ')}]`, catalogItem.category);
+    this.log(`Spawned item "${catalogItem.name}" in world at [${spawnPos.join(', ')}]`, "success");
+  }
+
+  collectItemPickup(item) {
+    const key = item.itemKey || item.name.toLowerCase();
+    
+    // Play Web Audio procedural sound
+    if (this.synth) {
+      if (key.includes('mega')) this.synth.play('megahealth');
+      else if (key.includes('armor_red')) this.synth.play('armor_red');
+      else if (key.includes('armor')) this.synth.play('armor_heavy');
+      else if (key.includes('quad')) this.synth.play('powerup_quad');
+      else if (key.includes('haste') || key.includes('regen') || key.includes('powerup')) this.synth.play('powerup');
+      else if (key.includes('health')) this.synth.play('health_large');
+      else this.synth.play('ammo');
+    }
+
+    // Apply item gameplay effects
+    if (key.includes('health_small')) {
+      this.playerHealth = Math.min(100.0, this.playerHealth + 15.0);
+    } else if (key.includes('health_medium')) {
+      this.playerHealth = Math.min(100.0, this.playerHealth + 25.0);
+    } else if (key.includes('health_large')) {
+      this.playerHealth = Math.min(100.0, this.playerHealth + 50.0);
+    } else if (key.includes('megahealth')) {
+      this.playerHealth = Math.min(200.0, this.playerHealth + 100.0); // Overheal
+    } else if (key.includes('armor_green')) {
+      this.playerArmor = Math.min(100.0, this.playerArmor + 50.0);
+      this.playerArmorType = 'green';
+    } else if (key.includes('armor_yellow')) {
+      this.playerArmor = Math.min(100.0, this.playerArmor + 75.0);
+      this.playerArmorType = 'yellow';
+    } else if (key.includes('armor_red')) {
+      this.playerArmor = Math.min(100.0, this.playerArmor + 100.0);
+      this.playerArmorType = 'red';
+    } else if (key.includes('ammo_plasma')) {
+      this.playerAmmo.plasma = Math.min(300, this.playerAmmo.plasma + 50);
+    } else if (key.includes('ammo_slugs')) {
+      this.playerAmmo.slugs = Math.min(150, this.playerAmmo.slugs + 30);
+    } else if (key.includes('ammo_rockets')) {
+      this.playerAmmo.rockets = Math.min(50, this.playerAmmo.rockets + 10);
+    } else if (key.includes('ammo_railgun')) {
+      this.playerAmmo.railgun = Math.min(50, this.playerAmmo.railgun + 15);
+    } else if (key.includes('powerup_quad')) {
+      this.activePowerups.quad.active = true;
+      this.activePowerups.quad.timer = 30.0;
+    } else if (key.includes('powerup_haste')) {
+      this.activePowerups.haste.active = true;
+      this.activePowerups.haste.timer = 25.0;
+    } else if (key.includes('powerup_regen')) {
+      this.activePowerups.regen.active = true;
+      this.activePowerups.regen.timer = 30.0;
+    }
+
+    item.active = false;
+    item.respawnTimer = item.respawnDelay || 25.0;
+
+    this.showPickupToast(item.name, item.effect || "Item collected into inventory", item.category || "health");
+    this.updateFpsPlayerHud();
+    this.renderItemSpawnsList();
+    this.log(`>> [ITEM PICKUP] Collected: "${item.name}" (+Effect applied: ${item.effect || ''})`, "success");
+  }
+
+  showPickupToast(title, desc, category = 'health') {
+    const toast = document.getElementById('fps-pickup-toast');
+    const toastTitle = document.getElementById('toast-item-title');
+    const toastDesc = document.getElementById('toast-item-desc');
+
+    if (toastTitle) toastTitle.textContent = title;
+    if (toastDesc) toastDesc.textContent = desc;
+
+    if (toast) {
+      toast.classList.remove('active');
+      void toast.offsetWidth; // reflow
+      toast.classList.add('active');
+
+      if (this.toastTimeout) clearTimeout(this.toastTimeout);
+      this.toastTimeout = setTimeout(() => {
+        toast.classList.remove('active');
+      }, 2000);
+    }
+  }
+
+  updateFpsPlayerHud() {
+    // Health HUD
+    const hudHp = document.getElementById('hud-val-health');
+    const barHp = document.getElementById('hud-bar-health');
+    if (hudHp) {
+      hudHp.textContent = Math.round(this.playerHealth);
+      if (this.playerHealth > 100) {
+        hudHp.style.color = '#06b6d4'; // Cyan MegaHealth Overheal
+      } else if (this.playerHealth <= 25) {
+        hudHp.style.color = '#f43f5e';
+      } else {
+        hudHp.style.color = '#10b981';
+      }
+    }
+    if (barHp) {
+      const pct = Math.min(100, (this.playerHealth / 100.0) * 100);
+      barHp.style.width = `${pct}%`;
+      barHp.style.background = this.playerHealth > 100 ? '#06b6d4' : (this.playerHealth <= 25 ? '#f43f5e' : '#10b981');
+    }
+
+    // Armor HUD
+    const hudAp = document.getElementById('hud-val-armor');
+    const barAp = document.getElementById('hud-bar-armor');
+    const armorBadge = document.getElementById('hud-armor-type-badge');
+    if (hudAp) hudAp.textContent = Math.round(this.playerArmor);
+    if (barAp) {
+      const pct = Math.min(100, (this.playerArmor / 100.0) * 100);
+      barAp.style.width = `${pct}%`;
+      if (this.playerArmorType === 'red') barAp.style.background = '#f43f5e';
+      else if (this.playerArmorType === 'yellow') barAp.style.background = '#f59e0b';
+      else barAp.style.background = '#10b981';
+    }
+    if (armorBadge) {
+      armorBadge.textContent = `${this.playerArmorType.toUpperCase()} ARMOR`;
+      armorBadge.style.color = this.playerArmorType === 'red' ? '#f43f5e' : (this.playerArmorType === 'yellow' ? '#f59e0b' : '#10b981');
+    }
+
+    // Ammo HUD
+    const hudAmmo = document.getElementById('hud-val-ammo');
+    const ammoLabel = document.getElementById('hud-ammo-type-label');
+    const wType = this.weaponConfig ? this.weaponConfig.type : 'plasma';
+    if (hudAmmo) {
+      if (wType === 'plasma') hudAmmo.textContent = this.playerAmmo.plasma;
+      else if (wType === 'kinetic') hudAmmo.textContent = this.playerAmmo.slugs;
+      else if (wType === 'railgun') hudAmmo.textContent = this.playerAmmo.railgun;
+    }
+    if (ammoLabel) {
+      ammoLabel.textContent = wType.toUpperCase();
+    }
+
+    // Powerup Pills in Overlay
+    const quadEl = document.getElementById('hud-powerup-quad');
+    const hasteEl = document.getElementById('hud-powerup-haste');
+    const regenEl = document.getElementById('hud-powerup-regen');
+
+    if (quadEl) {
+      if (this.activePowerups.quad.active) {
+        quadEl.style.display = 'inline-flex';
+        quadEl.textContent = `⚡ QUAD (${this.activePowerups.quad.timer.toFixed(0)}s)`;
+      } else {
+        quadEl.style.display = 'none';
+      }
+    }
+    if (hasteEl) {
+      if (this.activePowerups.haste.active) {
+        hasteEl.style.display = 'inline-flex';
+        hasteEl.textContent = `🏃 HASTE (${this.activePowerups.haste.timer.toFixed(0)}s)`;
+      } else {
+        hasteEl.style.display = 'none';
+      }
+    }
+    if (regenEl) {
+      if (this.activePowerups.regen.active) {
+        regenEl.style.display = 'inline-flex';
+        regenEl.textContent = `💚 REGEN (${this.activePowerups.regen.timer.toFixed(0)}s)`;
+      } else {
+        regenEl.style.display = 'none';
+      }
+    }
+
+    // Sub-tab Items Live Status Pills & Telemetry Cards
+    const telemHp = document.getElementById('telem-item-health');
+    const telemAp = document.getElementById('telem-item-armor');
+    const telemPower = document.getElementById('telem-item-powerups');
+    const telemDmg = document.getElementById('telem-item-dmgmult');
+    const telemSfx = document.getElementById('telem-item-sfx');
+
+    const absorbRate = this.playerArmorType === 'red' ? '75%' : (this.playerArmorType === 'yellow' ? '60%' : '50%');
+    if (telemHp) telemHp.textContent = `${Math.round(this.playerHealth)} / ${this.playerHealth > 100 ? '200 (Overheal)' : '100'}`;
+    if (telemAp) telemAp.textContent = `${Math.round(this.playerArmor)} / 100 (${absorbRate} Absorb)`;
+    if (telemDmg) telemDmg.textContent = this.activePowerups.quad.active ? '4.0x (Quad Active)' : '1.0x (Standard)';
+    if (telemSfx) telemSfx.textContent = this.synth ? 'WebAudio Synth Active' : 'Muted';
+
+    if (telemPower) {
+      const activeList = [];
+      if (this.activePowerups.quad.active) activeList.push(`Quad (${this.activePowerups.quad.timer.toFixed(0)}s)`);
+      if (this.activePowerups.haste.active) activeList.push(`Haste (${this.activePowerups.haste.timer.toFixed(0)}s)`);
+      if (this.activePowerups.regen.active) activeList.push(`Regen (${this.activePowerups.regen.timer.toFixed(0)}s)`);
+      telemPower.textContent = activeList.length > 0 ? activeList.join(', ') : 'None';
+    }
   }
 
   initFpsDamageWorkspace() {
@@ -4085,6 +6052,15 @@ else if (typeof define === 'function' && define['amd'])
       this.weaponState.muzzleFlash = 1.0;
     }
 
+    // Play weapon fire sound
+    if (this.synth) {
+      this.synth.play(this.weaponConfig.type === 'railgun' ? 'powerup' : 'ammo');
+    }
+
+    // Check Quad Damage
+    const isQuad = this.activePowerups && this.activePowerups.quad && this.activePowerups.quad.active;
+    const dmgMultiplier = isQuad ? 4.0 : 1.0;
+
     // Calculate muzzle origin and direction
     let origin = [this.state.camPos[0], this.state.camPos[1] - 0.12, this.state.camPos[2]];
     let dir = [this.state.camFront[0], this.state.camFront[1], this.state.camFront[2]];
@@ -4101,13 +6077,19 @@ else if (typeof define === 'function' && define['amd'])
       dir[1] * this.weaponConfig.speed,
       dir[2] * this.weaponConfig.speed
     ];
-    proj.damage = this.weaponConfig.damage;
+    proj.damage = this.weaponConfig.damage * dmgMultiplier;
     proj.lifetime = this.weaponConfig.lifetime;
     proj.age = 0.0;
-    proj.radius = 0.2;
-    proj.color = [...this.weaponConfig.color];
+    proj.radius = isQuad ? 0.32 : 0.2;
+    proj.color = isQuad ? [0.20, 0.65, 1.0] : [...this.weaponConfig.color];
 
-    this.log(`Fired ${this.weaponConfig.name} [Speed: ${this.weaponConfig.speed}m/s, DMG: ${this.weaponConfig.damage}]`, "info");
+    // Deduct ammo pool
+    if (this.weaponConfig.type === 'plasma' && this.playerAmmo.plasma > 0) this.playerAmmo.plasma--;
+    else if (this.weaponConfig.type === 'kinetic' && this.playerAmmo.slugs > 0) this.playerAmmo.slugs--;
+    else if (this.weaponConfig.type === 'railgun' && this.playerAmmo.railgun > 0) this.playerAmmo.railgun--;
+    this.updateFpsPlayerHud();
+
+    this.log(`Fired ${this.weaponConfig.name} [Speed: ${this.weaponConfig.speed}m/s, DMG: ${proj.damage.toFixed(0)}${isQuad ? ' (QUAD x4!)' : ''}]`, "info");
   }
 
   applyDamageToActor(actor, damageAmount, hitPos, hitNorm) {
@@ -4185,7 +6167,77 @@ else if (typeof define === 'function' && define['amd'])
       }
     }
 
-    // 1. Tick Target Actors & Respawns
+    // 1. Tick Powerup Durations & Regenerations
+    if (this.activePowerups) {
+      let hudNeedsUpdate = false;
+      if (this.activePowerups.quad.active) {
+        this.activePowerups.quad.timer -= dt;
+        hudNeedsUpdate = true;
+        if (this.activePowerups.quad.timer <= 0) {
+          this.activePowerups.quad.active = false;
+          this.activePowerups.quad.timer = 0.0;
+          this.log("Quad Damage powerup expired.", "info");
+        }
+      }
+      if (this.activePowerups.haste.active) {
+        this.activePowerups.haste.timer -= dt;
+        hudNeedsUpdate = true;
+        if (this.activePowerups.haste.timer <= 0) {
+          this.activePowerups.haste.active = false;
+          this.activePowerups.haste.timer = 0.0;
+          this.log("Haste Speed powerup expired.", "info");
+        }
+      }
+      if (this.activePowerups.regen.active) {
+        this.activePowerups.regen.timer -= dt;
+        this.playerHealth = Math.min(200.0, this.playerHealth + 15.0 * dt);
+        hudNeedsUpdate = true;
+        if (this.activePowerups.regen.timer <= 0) {
+          this.activePowerups.regen.active = false;
+          this.activePowerups.regen.timer = 0.0;
+          this.log("Regeneration powerup expired.", "info");
+        }
+      }
+      if (hudNeedsUpdate) {
+        this.updateFpsPlayerHud();
+      }
+    }
+
+    // 2. Tick Item Pickups Respawns & Player Proximity Trigger
+    if (this.itemPickups && this.itemPickups.length > 0) {
+      const pEye = this.state.camPos;
+      let needListUpdate = false;
+
+      for (let i = 0; i < this.itemPickups.length; i++) {
+        const item = this.itemPickups[i];
+        if (!item.active) {
+          item.respawnTimer -= dt;
+          if (item.respawnTimer <= 0) {
+            item.active = true;
+            item.respawnTimer = 0.0;
+            needListUpdate = true;
+            this.log(`[ITEM RESPAWNED] ${item.name} ready for pickup!`, "success");
+          }
+        } else {
+          // Check proximity to player
+          const dx = pEye[0] - item.pos[0];
+          const dy = (pEye[1] - 0.8) - item.pos[1];
+          const dz = pEye[2] - item.pos[2];
+          const dist = Math.hypot(dx, dy, dz);
+
+          if (dist < 1.35) {
+            this.collectItemPickup(item);
+            needListUpdate = true;
+          }
+        }
+      }
+
+      if (needListUpdate) {
+        this.renderItemSpawnsList();
+      }
+    }
+
+    // 3. Tick Target Actors & Respawns
     let needsRosterUpdate = false;
     this.damageActors.forEach(actor => {
       if (actor.hitFlashTimer > 0) {
@@ -4206,7 +6258,7 @@ else if (typeof define === 'function' && define['amd'])
       this.renderDamageActorsRoster();
     }
 
-    // 2. Tick Active Projectiles & Swept Collisions
+    // 4. Tick Active Projectiles & Swept Collisions
     this.projectilePool.forEach(p => {
       if (!p.active) return;
       p.prevPos[0] = p.pos[0];
@@ -4243,30 +6295,381 @@ else if (typeof define === 'function' && define['amd'])
     });
   }
 
+  initMaterialsWorkspace() {
+    this.currentMaterialFilter = 'all';
+    this.activeTunedMaterial = 'wood';
+
+    // 1. Material Filter buttons
+    const filterBtns = document.querySelectorAll('.btn-mat-filter');
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+        this.currentMaterialFilter = e.currentTarget.dataset.filter || 'all';
+        this.renderMaterialsCatalogCards(this.currentMaterialFilter);
+      });
+    });
+
+    // 2. Initial Grid Render
+    this.renderMaterialsCatalogCards('all');
+
+    // 3. Tuner Slider Event Listeners
+    const bindTunerSlider = (id, valId, prop, suffix = '') => {
+      const el = document.getElementById(id);
+      const valEl = document.getElementById(valId);
+      if (el) {
+        el.addEventListener('input', (e) => {
+          const val = parseFloat(e.target.value);
+          if (valEl) valEl.textContent = `${val.toFixed(2)}${suffix}`;
+          
+          const mat = FILAMENT_MATERIALS_CATALOG[this.activeTunedMaterial];
+          if (mat) {
+            mat[prop] = val;
+          }
+
+          // Apply live to selected scene entity
+          const entity = this.sceneEntities[this.selectedEntityIndex];
+          if (entity && entity.materialKey === this.activeTunedMaterial) {
+            if (prop === 'roughness') entity.roughness = val;
+            if (prop === 'metallic') entity.metallic = val;
+          }
+
+          this.updateMobileCostStats(mat);
+        });
+      }
+    };
+
+    bindTunerSlider('tuner-roughness', 'val-tuner-roughness', 'roughness');
+    bindTunerSlider('tuner-metallic', 'val-tuner-metallic', 'metallic');
+    bindTunerSlider('tuner-clearcoat', 'val-tuner-clearcoat', 'clearCoat');
+    bindTunerSlider('tuner-noisescale', 'val-tuner-noisescale', 'noiseScale', 'x');
+    bindTunerSlider('tuner-anisotropy', 'val-tuner-anisotropy', 'anisotropy');
+
+    const colorPicker = document.getElementById('tuner-basecolor');
+    if (colorPicker) {
+      colorPicker.addEventListener('input', (e) => {
+        const hex = e.target.value;
+        const r = parseInt(hex.slice(1, 3), 16) / 255.0;
+        const g = parseInt(hex.slice(3, 5), 16) / 255.0;
+        const b = parseInt(hex.slice(5, 7), 16) / 255.0;
+        const mat = FILAMENT_MATERIALS_CATALOG[this.activeTunedMaterial];
+        if (mat) {
+          mat.color = [r, g, b];
+        }
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity && entity.materialKey === this.activeTunedMaterial) {
+          entity.color = [r, g, b];
+        }
+      });
+    }
+
+    // Apply button
+    const btnApply = document.getElementById('btn-apply-active-mat');
+    if (btnApply) {
+      btnApply.addEventListener('click', () => {
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity) {
+          this.applyMaterialToEntity(entity, this.activeTunedMaterial);
+        }
+      });
+    }
+
+    this.selectTunedMaterial('wood');
+  }
+
+  selectTunedMaterial(matKey) {
+    const mat = FILAMENT_MATERIALS_CATALOG[matKey];
+    if (!mat) return;
+    this.activeTunedMaterial = matKey;
+
+    const nameEl = document.getElementById('tuner-mat-name');
+    const descEl = document.getElementById('tuner-mat-desc');
+    const swatchEl = document.getElementById('tuner-preview-swatch');
+    const badgeEl = document.getElementById('tuner-mat-cost-badge');
+
+    if (nameEl) nameEl.textContent = mat.name;
+    if (descEl) descEl.textContent = mat.desc;
+    if (swatchEl) swatchEl.style.background = mat.swatch;
+    if (badgeEl) {
+      badgeEl.textContent = `MAT COST: ${mat.matCost.rating}`;
+      badgeEl.className = `mat-cost-badge ${mat.matCost.badgeClass}`;
+    }
+
+    // Update Tuner sliders
+    const rEl = document.getElementById('tuner-roughness');
+    const mEl = document.getElementById('tuner-metallic');
+    const cEl = document.getElementById('tuner-clearcoat');
+    const sEl = document.getElementById('tuner-noisescale');
+    const aEl = document.getElementById('tuner-anisotropy');
+
+    if (rEl) rEl.value = mat.roughness;
+    if (mEl) mEl.value = mat.metallic;
+    if (cEl) cEl.value = mat.clearCoat || 0;
+    if (sEl) sEl.value = mat.noiseScale || 1;
+    if (aEl) aEl.value = mat.anisotropy || 0;
+
+    const rVal = document.getElementById('val-tuner-roughness');
+    const mVal = document.getElementById('val-tuner-metallic');
+    const cVal = document.getElementById('val-tuner-clearcoat');
+    const sVal = document.getElementById('val-tuner-noisescale');
+    const aVal = document.getElementById('val-tuner-anisotropy');
+
+    if (rVal) rVal.textContent = mat.roughness.toFixed(2);
+    if (mVal) mVal.textContent = mat.metallic.toFixed(2);
+    if (cVal) cVal.textContent = (mat.clearCoat || 0).toFixed(2);
+    if (sVal) sVal.textContent = `${(mat.noiseScale || 1).toFixed(1)}x`;
+    if (aVal) aVal.textContent = (mat.anisotropy || 0).toFixed(2);
+
+    const cp = document.getElementById('tuner-basecolor');
+    if (cp && mat.color) {
+      const hexR = Math.round(mat.color[0] * 255).toString(16).padStart(2, '0');
+      const hexG = Math.round(mat.color[1] * 255).toString(16).padStart(2, '0');
+      const hexB = Math.round(mat.color[2] * 255).toString(16).padStart(2, '0');
+      cp.value = `#${hexR}${hexG}${hexB}`;
+    }
+
+    this.updateMobileCostStats(mat);
+  }
+
+  updateMobileCostStats(mat) {
+    if (!mat) return;
+    const aluEl = document.getElementById('stat-mat-alus');
+    const bandEl = document.getElementById('stat-mat-bandwidth');
+    const timeEl = document.getElementById('stat-mat-frametime');
+    const verdEl = document.getElementById('stat-mat-verdict');
+
+    if (aluEl) aluEl.textContent = mat.matCost.alus;
+    if (bandEl) bandEl.textContent = mat.matCost.bandwidth;
+    if (timeEl) timeEl.textContent = mat.matCost.fpsEstimate;
+    if (verdEl) {
+      verdEl.textContent = mat.matCost.mobileVerdict;
+      verdEl.style.color = mat.matCost.rating === 'LOW' ? '#10b981' : (mat.matCost.rating === 'MEDIUM' ? '#f59e0b' : '#f43f5e');
+    }
+  }
+
+  renderMaterialsCatalogCards(categoryFilter = 'all') {
+    const grid = document.getElementById('materials-cards-grid');
+    if (!grid) return;
+
+    grid.innerHTML = '';
+    const filtered = Object.values(FILAMENT_MATERIALS_CATALOG).filter(mat => {
+      if (categoryFilter === 'all') return true;
+      return mat.category === categoryFilter;
+    });
+
+    filtered.forEach(mat => {
+      const card = document.createElement('div');
+      card.className = `mat-card ${mat.key === this.activeTunedMaterial ? 'active' : ''}`;
+      card.id = `mat-card-${mat.key}`;
+
+      card.innerHTML = `
+        <div class="mat-card-header">
+          <div class="mat-card-header-left">
+            <span class="mat-card-icon">${mat.icon}</span>
+            <h4 class="mat-card-title">${mat.name}</h4>
+          </div>
+          <span class="mat-cost-badge ${mat.matCost.badgeClass}">MAT COST: ${mat.matCost.rating}</span>
+        </div>
+
+        <div class="mat-swatch-banner" style="background: ${mat.swatch};"></div>
+
+        <div class="mat-card-body">
+          <p class="mat-card-desc">${mat.desc}</p>
+          <div class="mat-cost-breakdown">
+            <div class="cost-item">
+              <span class="cost-label">ALUs:</span>
+              <span class="cost-val font-mono">${mat.matCost.alus}</span>
+            </div>
+            <div class="cost-item">
+              <span class="cost-label">Tex Samplers:</span>
+              <span class="cost-val font-mono">${mat.matCost.texSamplers}</span>
+            </div>
+            <div class="cost-item">
+              <span class="cost-label">VRAM Bandwidth:</span>
+              <span class="cost-val font-mono">${mat.matCost.bandwidth}</span>
+            </div>
+            <div class="cost-item">
+              <span class="cost-label">Mobile Safety:</span>
+              <span class="cost-val font-mono" style="color: ${mat.matCost.rating === 'LOW' ? '#10b981' : (mat.matCost.rating === 'MEDIUM' ? '#f59e0b' : '#f43f5e')};">${mat.matCost.mobileVerdict}</span>
+            </div>
+          </div>
+
+          <div class="mat-card-actions">
+            <button class="btn-action btn-mat-tune" data-mat-key="${mat.key}" style="flex: 1; padding: 7px 10px; font-size: 11px; background: rgba(56,189,248,0.15); border-color: var(--accent-cyan);">
+              🎛 Tune in Lab
+            </button>
+            <button class="btn-action btn-mat-apply-direct" data-mat-key="${mat.key}" style="flex: 1; padding: 7px 10px; font-size: 11px; background: rgba(16,185,129,0.15); border-color: #10b981;">
+              ⚡ Apply Object
+            </button>
+          </div>
+        </div>
+      `;
+
+      card.querySelector('.btn-mat-tune')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.mat-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        this.selectTunedMaterial(mat.key);
+      });
+
+      card.querySelector('.btn-mat-apply-direct')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.mat-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        this.selectTunedMaterial(mat.key);
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity) {
+          this.applyMaterialToEntity(entity, mat.key);
+        }
+      });
+
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.mat-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        this.selectTunedMaterial(mat.key);
+      });
+
+      grid.appendChild(card);
+    });
+  }
+
+  applyMaterialToEntity(entity, matKey) {
+    const mat = FILAMENT_MATERIALS_CATALOG[matKey];
+    if (!entity || !mat) return;
+
+    entity.materialKey = matKey;
+    entity.roughness = mat.roughness;
+    entity.metallic = mat.metallic;
+    entity.color = [...mat.color];
+
+    this.populateInspector(entity);
+    this.updateCppBridge();
+    this.showPickupToast(mat.name, `Applied to ${entity.name} (MAT COST: ${mat.matCost.rating})`, 'ammo');
+    this.log(`Applied material [${mat.name}] to scene entity "${entity.name}" (ALUs: ${mat.matCost.alus})`, "success");
+  }
+
+  initHzbWorkspace() {
+    this.hzbState = {
+      enabled: true,
+      culling: true,
+      ssr: true,
+      viewMode: 'none',
+      mipLevel: 0,
+      steps: 8,
+      cullRate: 52.4,
+      downsampleTime: 0.045
+    };
+
+    const toggleEnable = document.getElementById('toggle-hzb-enable');
+    if (toggleEnable) {
+      toggleEnable.checked = this.hzbState.enabled;
+      toggleEnable.addEventListener('change', (e) => {
+        this.hzbState.enabled = e.target.checked;
+        this.log(`HZB Hierarchical Z-Buffer Subsystem: ${e.target.checked ? 'ACTIVE' : 'DISABLED'}`, "info");
+      });
+    }
+
+    const toggleCulling = document.getElementById('toggle-hzb-culling');
+    if (toggleCulling) {
+      toggleCulling.checked = this.hzbState.culling;
+      toggleCulling.addEventListener('change', (e) => {
+        this.hzbState.culling = e.target.checked;
+        this.log(`HZB Early Occlusion Culling: ${e.target.checked ? 'ACTIVE' : 'BYPASS'}`, "info");
+      });
+    }
+
+    const toggleSsr = document.getElementById('toggle-hzb-ssr');
+    if (toggleSsr) {
+      toggleSsr.checked = this.hzbState.ssr;
+      toggleSsr.addEventListener('change', (e) => {
+        this.hzbState.ssr = e.target.checked;
+        this.log(`HZB Hi-Z Raymarching SSR: ${e.target.checked ? 'ACTIVE' : 'BYPASS'}`, "info");
+      });
+    }
+
+    const selectViewMode = document.getElementById('select-hzb-view-mode');
+    if (selectViewMode) {
+      selectViewMode.value = this.hzbState.viewMode;
+      selectViewMode.addEventListener('change', (e) => {
+        this.hzbState.viewMode = e.target.value;
+        this.log(`HZB Render Debug View Mode: ${e.target.value}`, "info");
+      });
+    }
+
+    const sliderMip = document.getElementById('slider-hzb-miplevel');
+    const valMip = document.getElementById('val-hzb-miplevel');
+    if (sliderMip) {
+      sliderMip.addEventListener('input', (e) => {
+        this.hzbState.mipLevel = parseInt(e.target.value);
+        if (valMip) valMip.textContent = `Mip ${this.hzbState.mipLevel} (${Math.pow(2, 5 - this.hzbState.mipLevel)}x${Math.pow(2, 5 - this.hzbState.mipLevel)})`;
+      });
+    }
+
+    const sliderSteps = document.getElementById('slider-hzb-steps');
+    const valSteps = document.getElementById('val-hzb-steps');
+    if (sliderSteps) {
+      sliderSteps.addEventListener('input', (e) => {
+        this.hzbState.steps = parseInt(e.target.value);
+        if (valSteps) valSteps.textContent = `${this.hzbState.steps} steps`;
+      });
+    }
+  }
+
+  updateHzbTelemetry(dt) {
+    if (!this.hzbState) return;
+
+    // Simulate depth pyramid timing & dynamic occlusion efficiency
+    const totalEntities = this.sceneEntities ? this.sceneEntities.length : 12;
+    const baseCull = this.hzbState.culling ? 0.45 : 0.0;
+    const dynamicOffset = Math.sin(Date.now() * 0.001) * 0.08;
+    const cullPct = Math.max(0, Math.min(0.95, baseCull + dynamicOffset));
+    const occludedCount = Math.round(totalEntities * cullPct);
+    const trianglesSaved = occludedCount * 480;
+
+    const timeEl = document.getElementById('hzb-pyramid-time');
+    const occEl = document.getElementById('hzb-occluded-count');
+    const triEl = document.getElementById('hzb-triangles-saved');
+    const effEl = document.getElementById('hzb-cull-efficiency');
+
+    if (timeEl) timeEl.textContent = `${(0.04 + Math.random() * 0.01).toFixed(3)} ms`;
+    if (occEl) occEl.textContent = `${occludedCount} / ${totalEntities}`;
+    if (triEl) triEl.textContent = `${trianglesSaved.toLocaleString()} tris`;
+    if (effEl) effEl.textContent = `${(cullPct * 100).toFixed(1)}%`;
+  }
+
   renderHierarchyTree() {
     const treeList = document.getElementById('hierarchy-tree-list');
     if (!treeList) return;
 
     treeList.innerHTML = '';
     this.sceneEntities.forEach((entity, idx) => {
+      const isSelected = (idx === this.selectedEntityIndex);
       const item = document.createElement('div');
-      item.className = `hierarchy-item ${idx === this.selectedEntityIndex ? 'selected' : ''}`;
+      item.className = `hierarchy-item ${isSelected ? 'selected' : ''}`;
       item.dataset.index = idx;
+      item.id = `hierarchy-item-${idx}`;
 
       let badgeColor = '#64748b';
       if (entity.layer === 'Layer_Player') badgeColor = '#3b82f6';
       else if (entity.layer === 'Layer_Ground') badgeColor = '#10b981';
       else if (entity.layer === 'Layer_Obstacle') badgeColor = '#f59e0b';
       else if (entity.layer === 'Layer_Trigger') badgeColor = '#06b6d4';
+      else if (entity.layer === 'Layer_Damageable') badgeColor = '#f43f5e';
+
+      const matInfo = FILAMENT_MATERIALS_CATALOG[entity.materialKey] || FILAMENT_MATERIALS_CATALOG.wood;
 
       item.innerHTML = `
         <div class="hierarchy-item-left">
+          <span class="hierarchy-selection-indicator"></span>
           <span class="hierarchy-badge" style="background: ${badgeColor}22; color: ${badgeColor}; border: 1px solid ${badgeColor}44;">
             ${entity.badge || entity.type}
           </span>
-          <span class="hierarchy-name">${entity.name}</span>
+          <span class="hierarchy-name" id="hierarchy-name-${idx}">${entity.name}</span>
         </div>
-        <span class="hierarchy-coord font-mono">[${entity.pos[0].toFixed(1)}, ${entity.pos[1].toFixed(1)}, ${entity.pos[2].toFixed(1)}]</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="hierarchy-mat-tag" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.06); color: #94a3b8;">${matInfo.icon} ${matInfo.key.toUpperCase()}</span>
+          <span class="hierarchy-coord font-mono">[${entity.pos[0].toFixed(1)}, ${entity.pos[1].toFixed(1)}, ${entity.pos[2].toFixed(1)}]</span>
+        </div>
       `;
 
       item.addEventListener('click', () => {
@@ -4288,15 +6691,54 @@ else if (typeof define === 'function' && define['amd'])
   populateInspector(entity) {
     if (!entity) return;
     const nameEl = document.getElementById('insp-obj-name');
+    const nameEdit = document.getElementById('insp-name-edit');
     const typeEl = document.getElementById('insp-obj-type');
     const badgeEl = document.getElementById('insp-obj-badge');
     const colliderEl = document.getElementById('insp-collider-type');
 
     if (nameEl) nameEl.textContent = entity.name;
+    if (nameEdit) nameEdit.value = entity.name;
     if (typeEl) typeEl.textContent = `Type: ${entity.type} (${entity.layer})`;
     if (badgeEl) badgeEl.textContent = entity.badge || 'Active';
     if (colliderEl) colliderEl.textContent = entity.collider || 'None';
 
+    const colShape = document.getElementById('insp-collider-shape');
+    const colLayer = document.getElementById('insp-collider-layer');
+    const colTrigger = document.getElementById('insp-collider-trigger');
+    if (colShape) colShape.textContent = entity.collider.includes('Sphere') ? 'SPHERE' : 'AABB BOX';
+    if (colLayer) colLayer.textContent = entity.layer || 'Default';
+    if (colTrigger) colTrigger.textContent = entity.trigger ? 'YES (Overlap Zone)' : 'NO (Solid Physics)';
+
+    // Populate Material Select & Swatch
+    const matSelect = document.getElementById('insp-material-select');
+    if (matSelect) {
+      matSelect.innerHTML = '';
+      Object.values(FILAMENT_MATERIALS_CATALOG).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.key;
+        opt.textContent = `${m.icon} ${m.name} [${m.matCost.rating}]`;
+        if (entity.materialKey === m.key) opt.selected = true;
+        matSelect.appendChild(opt);
+      });
+      if (!entity.materialKey) {
+        entity.materialKey = 'wood';
+      }
+      matSelect.value = entity.materialKey;
+    }
+
+    const curMat = FILAMENT_MATERIALS_CATALOG[entity.materialKey] || FILAMENT_MATERIALS_CATALOG.wood;
+    const matBadge = document.getElementById('insp-mat-cost-badge');
+    const matSwatch = document.getElementById('insp-mat-swatch');
+    const matDesc = document.getElementById('insp-mat-desc');
+
+    if (matBadge) {
+      matBadge.textContent = `MAT COST: ${curMat.matCost.rating} (${curMat.matCost.alus})`;
+      matBadge.className = `mat-cost-badge ${curMat.matCost.badgeClass}`;
+    }
+    if (matSwatch) matSwatch.style.background = curMat.swatch;
+    if (matDesc) matDesc.textContent = curMat.desc;
+
+    // Transform Values
     const posX = document.getElementById('insp-pos-x');
     const posY = document.getElementById('insp-pos-y');
     const posZ = document.getElementById('insp-pos-z');
@@ -4313,8 +6755,24 @@ else if (typeof define === 'function' && define['amd'])
 
     const rough = document.getElementById('insp-roughness');
     const metal = document.getElementById('insp-metallic');
-    if (rough) rough.value = entity.roughness !== undefined ? entity.roughness : 0.35;
-    if (metal) metal.value = entity.metallic !== undefined ? entity.metallic : 0.8;
+    const roughVal = document.getElementById('insp-roughness-val');
+    const metalVal = document.getElementById('insp-metallic-val');
+
+    const curRough = entity.roughness !== undefined ? entity.roughness : curMat.roughness;
+    const curMetal = entity.metallic !== undefined ? entity.metallic : curMat.metallic;
+
+    if (rough) rough.value = curRough;
+    if (metal) metal.value = curMetal;
+    if (roughVal) roughVal.textContent = curRough.toFixed(2);
+    if (metalVal) metalVal.textContent = curMetal.toFixed(2);
+
+    const cp = document.getElementById('insp-basecolor');
+    if (cp && entity.color) {
+      const hexR = Math.round(entity.color[0] * 255).toString(16).padStart(2, '0');
+      const hexG = Math.round(entity.color[1] * 255).toString(16).padStart(2, '0');
+      const hexB = Math.round(entity.color[2] * 255).toString(16).padStart(2, '0');
+      cp.value = `#${hexR}${hexG}${hexB}`;
+    }
   }
 
   bindInspectorControls() {
@@ -4341,8 +6799,40 @@ else if (typeof define === 'function' && define['amd'])
       entity.roughness = rough;
       entity.metallic = metal;
 
+      const roughVal = document.getElementById('insp-roughness-val');
+      const metalVal = document.getElementById('insp-metallic-val');
+      if (roughVal) roughVal.textContent = rough.toFixed(2);
+      if (metalVal) metalVal.textContent = metal.toFixed(2);
+
       this.updateCppBridge();
     };
+
+    // Name rename input listener
+    const nameEdit = document.getElementById('insp-name-edit');
+    if (nameEdit) {
+      nameEdit.addEventListener('input', (e) => {
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity) {
+          entity.name = e.target.value || `Entity_${entity.id}`;
+          const nameEl = document.getElementById('insp-obj-name');
+          if (nameEl) nameEl.textContent = entity.name;
+          const treeNameEl = document.getElementById(`hierarchy-name-${this.selectedEntityIndex}`);
+          if (treeNameEl) treeNameEl.textContent = entity.name;
+          this.updateCppBridge();
+        }
+      });
+    }
+
+    // Material Dropdown Listener
+    const matSelect = document.getElementById('insp-material-select');
+    if (matSelect) {
+      matSelect.addEventListener('change', (e) => {
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity) {
+          this.applyMaterialToEntity(entity, e.target.value);
+        }
+      });
+    }
 
     ['insp-pos-x', 'insp-pos-y', 'insp-pos-z', 'insp-scale-x', 'insp-scale-y', 'insp-scale-z', 'insp-roughness', 'insp-metallic'].forEach(id => {
       const el = document.getElementById(id);
@@ -4350,6 +6840,22 @@ else if (typeof define === 'function' && define['amd'])
         el.addEventListener('input', updateEntity);
       }
     });
+
+    const cp = document.getElementById('insp-basecolor');
+    if (cp) {
+      cp.addEventListener('input', (e) => {
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity) {
+          const hex = e.target.value;
+          entity.color = [
+            parseInt(hex.slice(1, 3), 16) / 255.0,
+            parseInt(hex.slice(3, 5), 16) / 255.0,
+            parseInt(hex.slice(5, 7), 16) / 255.0
+          ];
+          this.updateCppBridge();
+        }
+      });
+    }
 
     const btnFocus = document.getElementById('btn-focus-obj');
     if (btnFocus) {
@@ -4537,6 +7043,281 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     bridgeEl.textContent = code;
   }
 
+  // Robust Kinematic & Continuous Collision Resolution for Player vs Scene Obstacles & Damageable Actors
+  resolvePlayerCollision(pos, velocity, radius, height) {
+    let isGrounded = false;
+    let groundContactCount = 0;
+
+    // 1. Level Ground Plane Collision (y = 0.0)
+    if (pos[1] <= 0.0) {
+      pos[1] = 0.0;
+      if (velocity && velocity[1] < 0) velocity[1] = 0.0;
+      isGrounded = true;
+      groundContactCount++;
+    }
+
+    // 2. Iterate through Scene Entities (Ground, Pillars, Jump Platforms, Physical Prop Boulders, Collectibles)
+    for (let i = 0; i < this.sceneEntities.length; i++) {
+      const ent = this.sceneEntities[i];
+      if (ent.id === 0) continue; // Skip Player's own entity
+
+      if (ent.layer === 'Layer_Ground') {
+        ent.contact = (pos[1] <= 0.05);
+        if (ent.contact) isGrounded = true;
+        continue;
+      }
+
+      ent.contact = false;
+
+      // Layer: Triggers and Collectibles
+      if (ent.layer === 'Layer_Trigger' || ent.trigger) {
+        const dx = pos[0] - ent.pos[0];
+        const dy = (pos[1] + height * 0.5) - ent.pos[1];
+        const dz = pos[2] - ent.pos[2];
+        const triggerRad = Math.max(ent.scale[0], ent.scale[1], ent.scale[2]) * 0.75 + radius;
+        if (Math.hypot(dx, dy, dz) <= triggerRad) {
+          ent.contact = true;
+        }
+        continue;
+      }
+
+      // Layer: Solid Obstacles & Platforms
+      if (ent.layer === 'Layer_Obstacle') {
+        if (ent.collider && ent.collider.includes('Sphere')) {
+          // Sphere Collider vs Player Capsule/Cylinder
+          const sRadius = ent.scale[0] || 1.0;
+          const clampY = Math.max(pos[1] + radius, Math.min(ent.pos[1], pos[1] + height - radius));
+          const dx = pos[0] - ent.pos[0];
+          const dy = clampY - ent.pos[1];
+          const dz = pos[2] - ent.pos[2];
+          const distSq = dx * dx + dy * dy + dz * dz;
+          const minDist = radius + sRadius;
+
+          if (distSq < minDist * minDist) {
+            const dist = Math.sqrt(distSq) || 0.0001;
+            const pen = minDist - dist;
+            const nx = dx / dist;
+            const ny = dy / dist;
+            const nz = dz / dist;
+
+            pos[0] += nx * pen;
+            pos[1] += ny * pen;
+            pos[2] += nz * pen;
+
+            if (velocity) {
+              const vDotN = velocity[0] * nx + velocity[1] * ny + velocity[2] * nz;
+              if (vDotN < 0) {
+                velocity[0] -= nx * vDotN;
+                velocity[1] -= ny * vDotN;
+                velocity[2] -= nz * vDotN;
+              }
+            }
+            ent.contact = true;
+            if (ny > 0.5) {
+              isGrounded = true;
+              groundContactCount++;
+            }
+          }
+        } else {
+          // AABB Box Collider vs Player Capsule/Cylinder
+          const halfX = ent.scale[0] * 0.5;
+          const halfY = ent.scale[1] * 0.5;
+          const halfZ = ent.scale[2] * 0.5;
+          const minX = ent.pos[0] - halfX;
+          const maxX = ent.pos[0] + halfX;
+          const minY = ent.pos[1] - halfY;
+          const maxY = ent.pos[1] + halfY;
+          const minZ = ent.pos[2] - halfZ;
+          const maxZ = ent.pos[2] + halfZ;
+
+          const pMinY = pos[1];
+          const pMaxY = pos[1] + height;
+
+          // Check vertical interval overlap
+          if (pMaxY > minY && pMinY < maxY) {
+            // Find closest horizontal point on AABB rectangle to player center
+            const cx = Math.max(minX, Math.min(pos[0], maxX));
+            const cz = Math.max(minZ, Math.min(pos[2], maxZ));
+            const dx = pos[0] - cx;
+            const dz = pos[2] - cz;
+            const distSq = dx * dx + dz * dz;
+
+            if (distSq < radius * radius) {
+              ent.contact = true;
+
+              // Step-up / Landing on top of platform
+              const isLandingOnTop = (pMinY >= maxY - 0.35) && (!velocity || velocity[1] <= 0.2);
+              if (isLandingOnTop) {
+                pos[1] = maxY;
+                if (velocity) velocity[1] = 0.0;
+                isGrounded = true;
+                groundContactCount++;
+              } else if (pMaxY <= minY + 0.35 && velocity && velocity[1] > 0) {
+                // Hitting ceiling / platform underside
+                pos[1] = minY - height;
+                if (velocity) velocity[1] = 0.0;
+              } else {
+                // Lateral push-out & wall sliding
+                if (distSq > 0.00001) {
+                  const dist = Math.sqrt(distSq);
+                  const pen = radius - dist;
+                  const nx = dx / dist;
+                  const nz = dz / dist;
+
+                  pos[0] += nx * pen;
+                  pos[2] += nz * pen;
+
+                  if (velocity) {
+                    const vDotN = velocity[0] * nx + velocity[2] * nz;
+                    if (vDotN < 0) {
+                      velocity[0] -= nx * vDotN;
+                      velocity[2] -= nz * vDotN;
+                    }
+                  }
+                } else {
+                  // Penetrating inside box - project to closest perimeter boundary
+                  const penLeft = (pos[0] - minX) + radius;
+                  const penRight = (maxX - pos[0]) + radius;
+                  const penFront = (pos[2] - minZ) + radius;
+                  const penBack = (maxZ - pos[2]) + radius;
+                  const minPen = Math.min(penLeft, penRight, penFront, penBack);
+
+                  if (minPen === penLeft) {
+                    pos[0] = minX - radius;
+                    if (velocity && velocity[0] > 0) velocity[0] = 0;
+                  } else if (minPen === penRight) {
+                    pos[0] = maxX + radius;
+                    if (velocity && velocity[0] < 0) velocity[0] = 0;
+                  } else if (minPen === penFront) {
+                    pos[2] = minZ - radius;
+                    if (velocity && velocity[2] > 0) velocity[2] = 0;
+                  } else {
+                    pos[2] = maxZ + radius;
+                    if (velocity && velocity[2] < 0) velocity[2] = 0;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Iterate through Active Damageable Actors (Monoliths, Drones, Destructible Crates)
+    if (this.damageActors) {
+      for (let j = 0; j < this.damageActors.length; j++) {
+        const actor = this.damageActors[j];
+        if (!actor.alive) continue;
+
+        if (actor.collider && actor.collider.includes('Sphere')) {
+          const sRadius = actor.radius || 0.8;
+          const clampY = Math.max(pos[1] + radius, Math.min(actor.pos[1], pos[1] + height - radius));
+          const dx = pos[0] - actor.pos[0];
+          const dy = clampY - actor.pos[1];
+          const dz = pos[2] - actor.pos[2];
+          const distSq = dx * dx + dy * dy + dz * dz;
+          const minDist = radius + sRadius;
+
+          if (distSq < minDist * minDist) {
+            const dist = Math.sqrt(distSq) || 0.0001;
+            const pen = minDist - dist;
+            const nx = dx / dist;
+            const ny = dy / dist;
+            const nz = dz / dist;
+
+            pos[0] += nx * pen;
+            pos[1] += ny * pen;
+            pos[2] += nz * pen;
+
+            if (velocity) {
+              const vDotN = velocity[0] * nx + velocity[1] * ny + velocity[2] * nz;
+              if (vDotN < 0) {
+                velocity[0] -= nx * vDotN;
+                velocity[1] -= ny * vDotN;
+                velocity[2] -= nz * vDotN;
+              }
+            }
+            if (ny > 0.5) isGrounded = true;
+          }
+        } else {
+          // AABB Box Damageable Actor
+          const halfX = actor.scale[0] * 0.5;
+          const halfY = actor.scale[1] * 0.5;
+          const halfZ = actor.scale[2] * 0.5;
+          const minX = actor.pos[0] - halfX;
+          const maxX = actor.pos[0] + halfX;
+          const minY = actor.pos[1] - halfY;
+          const maxY = actor.pos[1] + halfY;
+          const minZ = actor.pos[2] - halfZ;
+          const maxZ = actor.pos[2] + halfZ;
+
+          const pMinY = pos[1];
+          const pMaxY = pos[1] + height;
+
+          if (pMaxY > minY && pMinY < maxY) {
+            const cx = Math.max(minX, Math.min(pos[0], maxX));
+            const cz = Math.max(minZ, Math.min(pos[2], maxZ));
+            const dx = pos[0] - cx;
+            const dz = pos[2] - cz;
+            const distSq = dx * dx + dz * dz;
+
+            if (distSq < radius * radius) {
+              const isLandingOnTop = (pMinY >= maxY - 0.35) && (!velocity || velocity[1] <= 0.2);
+              if (isLandingOnTop) {
+                pos[1] = maxY;
+                if (velocity) velocity[1] = 0.0;
+                isGrounded = true;
+              } else if (pMaxY <= minY + 0.35 && velocity && velocity[1] > 0) {
+                pos[1] = minY - height;
+                if (velocity) velocity[1] = 0.0;
+              } else {
+                if (distSq > 0.00001) {
+                  const dist = Math.sqrt(distSq);
+                  const pen = radius - dist;
+                  const nx = dx / dist;
+                  const nz = dz / dist;
+
+                  pos[0] += nx * pen;
+                  pos[2] += nz * pen;
+
+                  if (velocity) {
+                    const vDotN = velocity[0] * nx + velocity[2] * nz;
+                    if (vDotN < 0) {
+                      velocity[0] -= nx * vDotN;
+                      velocity[2] -= nz * vDotN;
+                    }
+                  }
+                } else {
+                  const penLeft = (pos[0] - minX) + radius;
+                  const penRight = (maxX - pos[0]) + radius;
+                  const penFront = (pos[2] - minZ) + radius;
+                  const penBack = (maxZ - pos[2]) + radius;
+                  const minPen = Math.min(penLeft, penRight, penFront, penBack);
+
+                  if (minPen === penLeft) {
+                    pos[0] = minX - radius;
+                    if (velocity && velocity[0] > 0) velocity[0] = 0;
+                  } else if (minPen === penRight) {
+                    pos[0] = maxX + radius;
+                    if (velocity && velocity[0] < 0) velocity[0] = 0;
+                  } else if (minPen === penFront) {
+                    pos[2] = minZ - radius;
+                    if (velocity && velocity[2] > 0) velocity[2] = 0;
+                  } else {
+                    pos[2] = maxZ + radius;
+                    if (velocity && velocity[2] < 0) velocity[2] = 0;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return { isGrounded };
+  }
+
   onResize() {
     const container = document.getElementById('canvas-container');
     if (!container) return;
@@ -4603,6 +7384,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // Tick Damage System and Projectiles on every frame
     this.updateProjectilesAndDamage(dt, timestamp);
+    this.updateHzbTelemetry(dt);
 
     if (isCharacterDemo) {
       // -------------------------------------------------------------
@@ -4663,112 +7445,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         pc.velocity[1] += pc.gravity * dt;
       }
 
-      // 4. Kinematic Position Integration & Collision Resolution
+      // 4. Kinematic Position Integration & Multi-Pass Collision Resolution
       pc.pos[0] += pc.velocity[0] * dt;
       pc.pos[1] += pc.velocity[1] * dt;
       pc.pos[2] += pc.velocity[2] * dt;
 
-      // Ground Plane Collision (y = 0)
-      let groundedThisFrame = false;
-      if (pc.pos[1] <= 0.0) {
-        pc.pos[1] = 0.0;
-        pc.velocity[1] = 0.0;
-        groundedThisFrame = true;
-      }
-
-      // Obstacle Collisions against sceneEntities
-      const charRadius = pc.characterRadius;
-      const charHeight = pc.characterHeight;
-
-      this.sceneEntities.forEach(ent => {
-        if (ent.layer === 'Layer_Ground') {
-          ent.contact = groundedThisFrame;
-          return;
-        }
-
-        ent.contact = false;
-        if (ent.layer === 'Layer_Obstacle') {
-          if (ent.collider.includes('Sphere')) {
-            // Sphere-Capsule / Sphere-Point collision
-            const dx = pc.pos[0] - ent.pos[0];
-            const dy = (pc.pos[1] + charRadius) - ent.pos[1];
-            const dz = pc.pos[2] - ent.pos[2];
-            const dist = Math.hypot(dx, dy, dz);
-            const rSum = charRadius + ent.scale[0];
-            if (dist < rSum && dist > 0.0001) {
-              const pen = rSum - dist;
-              const nx = dx / dist;
-              const ny = dy / dist;
-              const nz = dz / dist;
-              pc.pos[0] += nx * pen;
-              pc.pos[1] += ny * pen;
-              pc.pos[2] += nz * pen;
-              
-              // Slide response
-              const vDotN = pc.velocity[0] * nx + pc.velocity[1] * ny + pc.velocity[2] * nz;
-              if (vDotN < 0) {
-                pc.velocity[0] -= nx * vDotN;
-                pc.velocity[1] -= ny * vDotN;
-                pc.velocity[2] -= nz * vDotN;
-              }
-              ent.contact = true;
-              if (ny > 0.6) groundedThisFrame = true;
-            }
-          } else {
-            // AABB Box collision
-            const minX = ent.pos[0] - ent.scale[0] * 0.5 - charRadius;
-            const maxX = ent.pos[0] + ent.scale[0] * 0.5 + charRadius;
-            const minY = ent.pos[1] - ent.scale[1] * 0.5;
-            const maxY = ent.pos[1] + ent.scale[1] * 0.5 + charHeight;
-            const minZ = ent.pos[2] - ent.scale[2] * 0.5 - charRadius;
-            const maxZ = ent.pos[2] + ent.scale[2] * 0.5 + charRadius;
-
-            if (pc.pos[0] >= minX && pc.pos[0] <= maxX &&
-                pc.pos[1] >= minY && pc.pos[1] <= maxY &&
-                pc.pos[2] >= minZ && pc.pos[2] <= maxZ) {
-              
-              ent.contact = true;
-
-              // Find minimum penetration axis
-              const penMinX = pc.pos[0] - minX;
-              const penMaxX = maxX - pc.pos[0];
-              const penMinY = pc.pos[1] - minY;
-              const penMaxY = maxY - pc.pos[1];
-              const penMinZ = pc.pos[2] - minZ;
-              const penMaxZ = maxZ - pc.pos[2];
-
-              const minPen = Math.min(penMinX, penMaxX, penMaxY, penMinZ, penMaxZ);
-              if (minPen === penMaxY) {
-                pc.pos[1] = maxY;
-                pc.velocity[1] = 0;
-                groundedThisFrame = true;
-              } else if (minPen === penMinX) {
-                pc.pos[0] = minX;
-                pc.velocity[0] = Math.min(0, pc.velocity[0]);
-              } else if (minPen === penMaxX) {
-                pc.pos[0] = maxX;
-                pc.velocity[0] = Math.max(0, pc.velocity[0]);
-              } else if (minPen === penMinZ) {
-                pc.pos[2] = minZ;
-                pc.velocity[2] = Math.min(0, pc.velocity[2]);
-              } else if (minPen === penMaxZ) {
-                pc.pos[2] = maxZ;
-                pc.velocity[2] = Math.max(0, pc.velocity[2]);
-              }
-            }
-          }
-        } else if (ent.layer === 'Layer_Trigger') {
-          // Trigger Gem overlap test
-          const dx = pc.pos[0] - ent.pos[0];
-          const dy = (pc.pos[1] + 0.8) - ent.pos[1];
-          const dz = pc.pos[2] - ent.pos[2];
-          if (Math.hypot(dx, dy, dz) < 1.2) {
-            ent.contact = true;
-          }
-        }
-      });
-
-      pc.isGrounded = groundedThisFrame;
+      // Multi-pass collision resolution for solid obstacles, boulders, platforms and destructibles
+      const colResult = this.resolvePlayerCollision(pc.pos, pc.velocity, pc.characterRadius, pc.characterHeight);
+      pc.isGrounded = colResult.isGrounded;
 
       // 5. Update Locomotion State & Skeletal Animation
       const horizontalSpeed = Math.hypot(pc.velocity[0], pc.velocity[2]);
@@ -4910,7 +7594,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         joyR = this.joystickState.dirX;
       }
 
-      const moveSpeed = this.state.moveSpeed * (this.state.keys.shift ? 2.2 : 1.0) * dt;
+      const hasteMult = (this.activePowerups && this.activePowerups.haste && this.activePowerups.haste.active) ? 1.45 : 1.0;
+      const moveSpeed = this.state.moveSpeed * (this.state.keys.shift ? 2.2 : 1.0) * hasteMult * dt;
       if (this.state.keys.w || joyF < -0.2) {
         this.state.camPos[0] += this.state.camFront[0] * moveSpeed;
         this.state.camPos[1] += (this.state.cameraMode === 2 ? this.state.camFront[1] : 0) * moveSpeed;
@@ -4929,11 +7614,48 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.state.camPos[0] -= this.state.camRight[0] * moveSpeed;
         this.state.camPos[2] -= this.state.camRight[2] * moveSpeed;
       }
-      if (this.state.keys.e || (this.state.keys.space && this.state.cameraMode !== 3)) {
-        this.state.camPos[1] += moveSpeed;
-      }
-      if (this.state.keys.q) {
-        this.state.camPos[1] -= moveSpeed;
+      // Vertical movement & jump physics
+      if (this.state.cameraMode === 2) {
+        // 6-DOF Free-Fly Camera: Q / E ascend and descend
+        if (this.state.keys.e || this.state.keys.space) {
+          this.state.camPos[1] += moveSpeed;
+        }
+        if (this.state.keys.q) {
+          this.state.camPos[1] -= moveSpeed;
+        }
+      } else {
+        // Mode 1 (First-Person Camera) & Mode 3 (FPS Shooter Direct Look):
+        // Keys "Q" & "E" are DISABLED.
+        // Space is strictly JUMP with real kinematic gravity & collision response!
+        const jumpForce = this.playerController ? this.playerController.jumpForce : 8.5;
+        const gravity = this.playerController ? this.playerController.gravity : -22.0;
+
+        if (this.state.keys.space && this.state.fpsIsGrounded) {
+          this.state.fpsVelocityY = jumpForce;
+          this.state.fpsIsGrounded = false;
+        } else if (!this.state.fpsIsGrounded) {
+          this.state.fpsVelocityY += gravity * dt;
+        }
+
+        this.state.camPos[1] += this.state.fpsVelocityY * dt;
+
+        // Ground & Obstacle collision check for First-Person character body (Modes 1 & 3)
+        // Increased collision radius (1.20m) prevents weapon viewmodel from clipping through walls
+        const eyeHeight = 1.7;
+        const feetPos = [this.state.camPos[0], this.state.camPos[1] - eyeHeight, this.state.camPos[2]];
+        const fpsVel = [0, this.state.fpsVelocityY, 0];
+        const colRadius = 1.20;
+        const colResult = this.resolvePlayerCollision(feetPos, fpsVel, colRadius, 1.8);
+
+        this.state.camPos[0] = feetPos[0];
+        this.state.camPos[2] = feetPos[2];
+        this.state.camPos[1] = feetPos[1] + eyeHeight;
+        this.state.fpsVelocityY = fpsVel[1];
+        this.state.fpsIsGrounded = colResult.isGrounded;
+
+        if (this.state.fpsIsGrounded && this.state.fpsVelocityY < 0) {
+          this.state.fpsVelocityY = 0;
+        }
       }
 
       this.state.camTarget[0] = this.state.camPos[0] + this.state.camFront[0];
@@ -5016,11 +7738,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
         Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
 
+        const mat = (ent.materialKey && FILAMENT_MATERIALS_CATALOG[ent.materialKey]) || null;
+        const matType = mat ? (mat.matTypeId !== undefined ? mat.matTypeId : 0) : 0;
+        const noiseScale = mat ? (mat.noiseScale || 1.0) : 1.0;
+        const clearCoat = mat ? (mat.clearCoat || 0.0) : 0.0;
+        const anisotropy = mat ? (mat.anisotropy || 0.0) : 0.0;
+        const bumpStrength = mat ? (mat.bumpStrength || 0.0) : 0.0;
+
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, ent.color);
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, ent.roughness !== undefined ? ent.roughness : 0.35);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, ent.metallic !== undefined ? ent.metallic : 0.8);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+        if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, noiseScale);
+        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
+        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, anisotropy);
+        if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, bumpStrength);
 
         gl.drawElements(gl.TRIANGLES, meshToDraw.indexCount, gl.UNSIGNED_SHORT, 0);
       });
@@ -5034,7 +7768,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const animT = pc.animTime;
         const swingAngle = Math.sin(animT * 6.0) * (pc.activeAnim === 'Run' ? 0.75 : (pc.activeAnim === 'Walk' ? 0.45 : 0.05));
 
-        const drawPart = (mesh, offsetX, offsetY, offsetZ, sizeX, sizeY, sizeZ, color, rough, metal, pitch = 0) => {
+        const drawPart = (mesh, offsetX, offsetY, offsetZ, sizeX, sizeY, sizeZ, color, rough, metal, pitch = 0, pMatType = 0, pClearCoat = 0.15) => {
           if (!mesh) return;
           gl.bindVertexArray(mesh.vao);
 
@@ -5076,22 +7810,27 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
           if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, pMatType);
+          if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+          if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, pClearCoat);
+          if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+          if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
           gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
         };
 
         // Torso
-        drawPart(cubeMesh, 0, 1.1, 0, 0.45, 0.6, 0.25, [0.15, 0.45, 0.95], 0.25, 0.85);
+        drawPart(cubeMesh, 0, 1.1, 0, 0.45, 0.6, 0.25, [0.15, 0.45, 0.95], 0.25, 0.85, 0, 3, 0.5);
         // Head
-        drawPart(sphereMesh, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.95, 0.75, 0.60], 0.35, 0.10);
+        drawPart(sphereMesh, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.95, 0.75, 0.60], 0.35, 0.10, 0, 0, 0.0);
         // Visor
-        drawPart(cubeMesh, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95);
+        drawPart(cubeMesh, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95, 0, 11, 0.9);
         // Left Arm & Right Arm (Swinging)
-        drawPart(cubeMesh, -0.32, 1.05 + Math.sin(swingAngle)*0.1, Math.sin(swingAngle) * 0.3, 0.15, 0.5, 0.15, [0.15, 0.45, 0.95], 0.25, 0.85, swingAngle);
-        drawPart(cubeMesh, 0.32, 1.05 - Math.sin(swingAngle)*0.1, -Math.sin(swingAngle) * 0.3, 0.15, 0.5, 0.15, [0.15, 0.45, 0.95], 0.25, 0.85, -swingAngle);
+        drawPart(cubeMesh, -0.32, 1.05 + Math.sin(swingAngle)*0.1, Math.sin(swingAngle) * 0.3, 0.15, 0.5, 0.15, [0.15, 0.45, 0.95], 0.25, 0.85, swingAngle, 3, 0.3);
+        drawPart(cubeMesh, 0.32, 1.05 - Math.sin(swingAngle)*0.1, -Math.sin(swingAngle) * 0.3, 0.15, 0.5, 0.15, [0.15, 0.45, 0.95], 0.25, 0.85, -swingAngle, 3, 0.3);
         // Left Leg & Right Leg (Swinging opposite)
-        drawPart(cubeMesh, -0.16, 0.45 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle) * 0.35, 0.18, 0.6, 0.18, [0.12, 0.15, 0.20], 0.45, 0.30, -swingAngle * 0.8);
-        drawPart(cubeMesh, 0.16, 0.45 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle) * 0.35, 0.18, 0.6, 0.18, [0.12, 0.15, 0.20], 0.45, 0.30, swingAngle * 0.8);
+        drawPart(cubeMesh, -0.16, 0.45 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle) * 0.35, 0.18, 0.6, 0.18, [0.12, 0.15, 0.20], 0.45, 0.30, -swingAngle * 0.8, 5, 0.8);
+        drawPart(cubeMesh, 0.16, 0.45 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle) * 0.35, 0.18, 0.6, 0.18, [0.12, 0.15, 0.20], 0.45, 0.30, swingAngle * 0.8, 5, 0.8);
       }
 
     } else if (isFpsDemo) {
@@ -5142,11 +7881,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
         Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
 
+        const mat = (ent.materialKey && FILAMENT_MATERIALS_CATALOG[ent.materialKey]) || null;
+        const matType = mat ? (mat.matTypeId !== undefined ? mat.matTypeId : 0) : 0;
+        const noiseScale = mat ? (mat.noiseScale || 1.0) : 1.0;
+        const clearCoat = mat ? (mat.clearCoat || 0.0) : 0.0;
+        const anisotropy = mat ? (mat.anisotropy || 0.0) : 0.0;
+        const bumpStrength = mat ? (mat.bumpStrength || 0.0) : 0.0;
+
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, ent.color);
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, ent.roughness !== undefined ? ent.roughness : 0.4);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, ent.metallic !== undefined ? ent.metallic : 0.3);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+        if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, noiseScale);
+        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
+        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, anisotropy);
+        if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, bumpStrength);
 
         gl.drawElements(gl.TRIANGLES, meshToDraw.indexCount, gl.UNSIGNED_SHORT, 0);
       });
@@ -5209,8 +7960,31 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
 
         let drawColor = actor.color;
+        let actMatType = 0;
+        let actBump = 0.0;
+        let actNoise = 1.0;
+
+        if (actor.name.includes('Drone')) {
+          actMatType = 3; // titanium
+          actBump = 1.2;
+        } else if (actor.name.includes('Monolith')) {
+          actMatType = 2; // basalt rock
+          actBump = 2.4;
+          actNoise = 16.0;
+        } else if (actor.name.includes('Sphere')) {
+          actMatType = 7; // magma lava core
+          actBump = 2.0;
+          actNoise = 20.0;
+        } else if (actor.name.includes('Crate')) {
+          actMatType = 1; // walnut wood crate
+          actBump = 1.6;
+          actNoise = 22.0;
+        }
+
         if (!actor.alive) {
           drawColor = [0.25, 0.25, 0.28];
+          actMatType = 6; // rust
+          actBump = 2.0;
         } else if (actor.hitFlashTimer > 0) {
           drawColor = [1.0, 0.35, 0.35]; // Hit flash
         }
@@ -5218,6 +7992,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, drawColor);
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, actor.alive ? 0.20 : 0.85);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, actor.alive ? 0.90 : 0.10);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, actMatType);
+        if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, actNoise);
+        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
+        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+        if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, actBump);
 
         gl.drawElements(gl.TRIANGLES, meshToDraw.indexCount, gl.UNSIGNED_SHORT, 0);
       });
@@ -5256,12 +8035,116 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, p.color);
           if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.05);
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12); // neon emissive
+          if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+          if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
+          if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
           gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         });
       }
 
-      // 4. Render Authentic First-Person FPS Weapon Viewmodel (NO 3rd Person Character!)
+      // 4. Render Quake Item Pickups (Health, Armor, Ammo, Powerups) with 3D Rotating Models
+      if (this.itemPickups && this.itemPickups.length > 0) {
+        const torusMesh = this.meshBuffers[3];
+        this.itemPickups.forEach(item => {
+          if (!item.active) return; // Skip currently respawning items
+
+          let meshToDraw = cubeMesh;
+          if (item.meshType === 'sphere' && sphereMesh) meshToDraw = sphereMesh;
+          else if (item.meshType === 'torus' && torusMesh) meshToDraw = torusMesh;
+          else if (item.meshType === 'icosa' && icosaMesh) meshToDraw = icosaMesh;
+          else if (item.meshType === 'cube' && cubeMesh) meshToDraw = cubeMesh;
+
+          if (!meshToDraw) return;
+          gl.bindVertexArray(meshToDraw.vao);
+
+          const rotY = timestamp * 0.0028 + (item.id * 1.3);
+          const floatY = item.pos[1] + Math.sin(timestamp * 0.0035 + item.id) * 0.12;
+          const cosR = Math.cos(rotY);
+          const sinR = Math.sin(rotY);
+
+          const scaX = item.scale[0] || 0.45;
+          const scaY = item.scale[1] || 0.45;
+          const scaZ = item.scale[2] || 0.45;
+
+          this.instanceMatrix[0] = cosR * scaX;
+          this.instanceMatrix[1] = 0;
+          this.instanceMatrix[2] = -sinR * scaX;
+          this.instanceMatrix[3] = 0;
+
+          this.instanceMatrix[4] = 0;
+          this.instanceMatrix[5] = scaY;
+          this.instanceMatrix[6] = 0;
+          this.instanceMatrix[7] = 0;
+
+          this.instanceMatrix[8] = sinR * scaZ;
+          this.instanceMatrix[9] = 0;
+          this.instanceMatrix[10] = cosR * scaZ;
+          this.instanceMatrix[11] = 0;
+
+          this.instanceMatrix[12] = item.pos[0];
+          this.instanceMatrix[13] = floatY;
+          this.instanceMatrix[14] = item.pos[2];
+          this.instanceMatrix[15] = 1;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, item.color || [1, 1, 1]);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.15);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.85);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12); // neon glow
+          if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+          if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.8);
+          if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+
+          gl.drawElements(gl.TRIANGLES, meshToDraw.indexCount, gl.UNSIGNED_SHORT, 0);
+        });
+      }
+
+      // 5. Render Player Spawn Pads (Luminescent Base Markings)
+      if (this.spawnPoints && this.spawnPoints.length > 0 && cubeMesh) {
+        gl.bindVertexArray(cubeMesh.vao);
+        this.spawnPoints.forEach(sp => {
+          this.instanceMatrix[0] = 0.9;
+          this.instanceMatrix[1] = 0;
+          this.instanceMatrix[2] = 0;
+          this.instanceMatrix[3] = 0;
+
+          this.instanceMatrix[4] = 0;
+          this.instanceMatrix[5] = 0.04;
+          this.instanceMatrix[6] = 0;
+          this.instanceMatrix[7] = 0;
+
+          this.instanceMatrix[8] = 0;
+          this.instanceMatrix[9] = 0;
+          this.instanceMatrix[10] = 0.9;
+          this.instanceMatrix[11] = 0;
+
+          this.instanceMatrix[12] = sp.pos[0];
+          this.instanceMatrix[13] = sp.pos[1] + 0.02;
+          this.instanceMatrix[14] = sp.pos[2];
+          this.instanceMatrix[15] = 1;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, [0.20, 0.65, 0.95]);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.2);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.9);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 11); // hologram
+          if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 20.0);
+          if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
+          if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+
+          gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        });
+      }
+
+      // 6. Render Authentic First-Person FPS Weapon Viewmodel (NO 3rd Person Character!)
       if (cubeMesh && sphereMesh) {
         const bobT = this.weaponState ? this.weaponState.bobTimer : 0;
         const recoil = this.weaponState ? this.weaponState.recoil : 0;
@@ -5292,7 +8175,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         ];
 
         // Helper to draw a gun viewmodel component with camera orientation
-        const drawGunComponent = (mesh, fOffset, rOffset, uOffset, sX, sY, sZ, col, rough = 0.25, metal = 0.85) => {
+        const drawGunComponent = (mesh, fOffset, rOffset, uOffset, sX, sY, sZ, col, rough = 0.25, metal = 0.85, wMatType = 0, wBump = 0.0, wClearCoat = 0.0, wNoise = 1.0) => {
           if (!mesh) return;
           gl.bindVertexArray(mesh.vao);
 
@@ -5328,31 +8211,36 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, col);
           if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, wMatType);
+          if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, wNoise);
+          if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, wClearCoat);
+          if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+          if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, wBump);
 
           gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
         };
 
         const wColor = this.weaponConfig ? this.weaponConfig.color : [0.06, 0.85, 0.95];
 
-        // 1. Gun Main Receiver Chassis (Dark Titanium Carbon)
-        drawGunComponent(cubeMesh, 0.0, 0.0, 0.0, 0.065, 0.075, 0.22, [0.12, 0.14, 0.18], 0.35, 0.85);
+        // 1. Gun Main Receiver Chassis (Twill Carbon Fiber)
+        drawGunComponent(cubeMesh, 0.0, 0.0, 0.0, 0.065, 0.075, 0.22, [0.12, 0.14, 0.18], 0.30, 0.85, 5, 1.6, 0.9, 45.0);
 
-        // 2. Gun Lower Grip / Battery Handle
-        drawGunComponent(cubeMesh, -0.05, 0.0, -0.065, 0.045, 0.08, 0.05, [0.08, 0.09, 0.12], 0.60, 0.20);
+        // 2. Gun Lower Grip / Battery Handle (Pebble Grain Leather)
+        drawGunComponent(cubeMesh, -0.05, 0.0, -0.065, 0.045, 0.08, 0.05, [0.08, 0.09, 0.12], 0.60, 0.20, 14, 1.8, 0.1, 28.0);
 
-        // 3. Gun Upper Heavy Barrel Rails
-        drawGunComponent(cubeMesh, 0.14, 0.0, 0.015, 0.045, 0.045, 0.16, [0.18, 0.22, 0.28], 0.20, 0.95);
+        // 3. Gun Upper Heavy Barrel Rails (Brushed Aerospace Titanium)
+        drawGunComponent(cubeMesh, 0.14, 0.0, 0.015, 0.045, 0.045, 0.16, [0.18, 0.22, 0.28], 0.20, 0.95, 3, 1.4, 0.0, 35.0);
 
-        // 4. Glowing Plasma Energy Chamber (Illuminated Core)
-        drawGunComponent(cubeMesh, 0.02, 0.0, 0.028, 0.035, 0.035, 0.12, wColor, 0.05, 0.95);
+        // 4. Glowing Plasma Energy Chamber (Illuminated Core Neon)
+        drawGunComponent(cubeMesh, 0.02, 0.0, 0.028, 0.035, 0.035, 0.12, wColor, 0.05, 0.95, 12, 0.0, 0.0, 1.0);
 
         // 5. High-Tech Muzzle Aperture Tip
-        drawGunComponent(cubeMesh, 0.23, 0.0, 0.015, 0.055, 0.055, 0.04, [0.30, 0.32, 0.38], 0.15, 0.95);
+        drawGunComponent(cubeMesh, 0.23, 0.0, 0.015, 0.055, 0.055, 0.04, [0.30, 0.32, 0.38], 0.15, 0.95, 3, 1.2, 0.0, 35.0);
 
         // 6. Dynamic Muzzle Flash on Fire
         if (mFlash > 0.05) {
           const flashScale = 0.08 * mFlash;
-          drawGunComponent(sphereMesh, 0.28, 0.0, 0.015, flashScale, flashScale, flashScale, [1.0, 0.95, 0.6], 0.0, 1.0);
+          drawGunComponent(sphereMesh, 0.28, 0.0, 0.015, flashScale, flashScale, flashScale, [1.0, 0.95, 0.6], 0.0, 1.0, 12, 0.0, 0.0, 1.0);
         }
       }
 
@@ -5368,6 +8256,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const angle = (this.state.rotationAngle || 0);
 
         const cosY = Math.cos(angle * 0.5), sinY = Math.sin(angle * 0.5);
+
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Standard PBR matrix
+        if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
+        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+        if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
         for (let r = 0; r < rows; r++) {
           const roughness = 0.05 + (r / (rows - 1)) * 0.95;
@@ -5441,11 +8335,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
         Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
 
+        const mat = (this.activeTunedMaterial && FILAMENT_MATERIALS_CATALOG[this.activeTunedMaterial]) || null;
+        const matType = mat ? (mat.matTypeId !== undefined ? mat.matTypeId : 0) : 0;
+        const noiseScale = mat ? (mat.noiseScale || 1.0) : 1.0;
+        const clearCoat = mat ? (mat.clearCoat || 0.0) : 0.0;
+        const anisotropy = mat ? (mat.anisotropy || 0.0) : 0.0;
+        const bumpStrength = mat ? (mat.bumpStrength || 1.2) : 0.0;
+
         gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, this.state.baseColor);
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, this.state.roughness);
-        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, this.state.metallic);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, (mat && mat.color) ? mat.color : this.state.baseColor);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, (mat && mat.roughness !== undefined) ? mat.roughness : this.state.roughness);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, (mat && mat.metallic !== undefined) ? mat.metallic : this.state.metallic);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+        if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, noiseScale);
+        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
+        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, anisotropy);
+        if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, bumpStrength);
 
         gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
       }

@@ -59,7 +59,7 @@ public:
 
     // Dimensions
     float characterHeight = 1.8f;
-    float characterRadius = 0.4f;
+    float characterRadius = 0.80f;
     float eyeHeight = 1.65f;
 
     // State

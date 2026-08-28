@@ -99,7 +99,42 @@
 
             <!-- FPS Shooter Pointer Lock Prompt / Banner -->
             <div class="fps-pointerlock-banner" id="fps-pointerlock-banner" style="display: none;">
-              <span>🎯 <b>FPS Shooter Active</b>: Click viewport to Lock Mouse Look (No Mouse-Down needed!) &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click</b> / Space to Shoot</span>
+              <span>🎯 <b>FPS Shooter Active</b>: Click viewport to Lock Mouse Look &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click</b> to Shoot &bull; <b>Space</b> to Jump</span>
+            </div>
+
+            <!-- Item Pickup Toast Notification Overlay -->
+            <div class="item-pickup-toast" id="item-pickup-toast"></div>
+
+            <!-- FPS Quake-Style Player Status HUD (Health, Armor, Ammo, Powerups) -->
+            <div class="fps-player-hud" id="fps-player-hud" style="display: none;">
+              <div class="hud-stat-cell health-cell" id="hud-health-cell">
+                <span class="hud-stat-icon">❤️</span>
+                <div class="hud-stat-info">
+                  <span class="hud-stat-name">HEALTH</span>
+                  <span class="hud-stat-num" id="hud-val-health">100</span>
+                </div>
+              </div>
+
+              <div class="hud-stat-cell armor-cell" id="hud-armor-cell">
+                <span class="hud-stat-icon" id="hud-armor-icon">🛡️</span>
+                <div class="hud-stat-info">
+                  <span class="hud-stat-name" id="hud-armor-label">ARMOR</span>
+                  <span class="hud-stat-num" id="hud-val-armor">50</span>
+                </div>
+              </div>
+
+              <div class="hud-stat-cell ammo-cell" id="hud-ammo-cell">
+                <span class="hud-stat-icon">⚡</span>
+                <div class="hud-stat-info">
+                  <span class="hud-stat-name">ENERGY CELLS</span>
+                  <span class="hud-stat-num" id="hud-val-ammo">100</span>
+                </div>
+              </div>
+
+              <!-- Powerup Status Timers Container -->
+              <div class="hud-powerups-list" id="hud-powerups-list">
+                <!-- Dynamic powerup badges (Quad Damage, Haste, Regen) -->
+              </div>
             </div>
 
             <!-- FPS Weapon HUD -->
@@ -108,7 +143,7 @@
               <div class="weapon-stats">
                 <span>DMG: <b id="hud-weapon-dmg">25 HP</b></span>
                 <span>VEL: <b id="hud-weapon-vel">50 m/s</b></span>
-                <span>AMMO: <b style="color:#10b981;">&infin; POOL</b></span>
+                <span>POWERUP: <b id="hud-weapon-mult" style="color:#38bdf8;">1.0x</b></span>
               </div>
             </div>
 
@@ -159,8 +194,8 @@
 
               <!-- Mobile Quick Action Pad (Elevate Up/Down, Sprint, Camera Toggle, Reset) -->
               <div class="mobile-action-pad" id="mobile-action-pad">
-                <button class="btn-touch-action btn-touch-up" id="btn-touch-up" title="Elevate Up / Jump (E / Space)">▲ UP</button>
-                <button class="btn-touch-action btn-touch-down" id="btn-touch-down" title="Descend / Crouch (Q)">▼ DOWN</button>
+                <button class="btn-touch-action btn-touch-up" id="btn-touch-up" title="Jump (Space)">▲ JUMP</button>
+                <button class="btn-touch-action btn-touch-down" id="btn-touch-down" title="Descend in Free-Fly (Q)">▼ DOWN</button>
                 <button class="btn-touch-action btn-touch-sprint" id="btn-touch-sprint" title="Toggle 2.5x Sprint Boost">⚡ SPRINT</button>
                 <button class="btn-touch-action btn-touch-cam" id="btn-touch-cam" title="Toggle FP / Orbit Camera">🎥 CAM</button>
                 <button class="btn-touch-action btn-touch-reset" id="btn-touch-reset" title="Reset Camera View">🎯 RESET</button>
@@ -169,7 +204,7 @@
 
             <!-- Viewport Controls Overlay -->
             <div class="viewport-toolbar">
-              <span class="hint-text">&#128433; Orbit: Left Drag &bull; Pan: Right Drag &bull; FP: WASD + QE &bull; Touch: Joystick</span>
+              <span class="hint-text">&#128433; Orbit: Left Drag &bull; Pan: Right Drag &bull; FP: WASD + Space Jump &bull; Shoot: L-Click &bull; Touch: Joystick</span>
               <div class="viewport-toolbar-right">
                 <button id="btn-toggle-joystick" class="btn-hud" title="Toggle Mobile Virtual Joystick on/off">🎮 Joystick: AUTO</button>
                 <button id="btn-toggle-console" class="btn-hud" title="Toggle Bottom Console Log">📟 Console Log</button>
@@ -280,9 +315,9 @@
 
                   <div class="key-help-box" id="fp-help" style="display: block;">
                     <div class="key-row"><span class="key-badge">Mouse</span> Direct camera look without holding mouse down (Pointer Lock)</div>
-                    <div class="key-row"><span class="key-badge">L-Click / Space</span> Fire high-velocity projectile &amp; emit onDamage events</div>
+                    <div class="key-row"><span class="key-badge">L-Click</span> Fire high-velocity projectile &amp; emit onDamage events</div>
                     <div class="key-row"><span class="key-badge">W/A/S/D</span> Move horizontally relative to camera forward/strafe</div>
-                    <div class="key-row"><span class="key-badge">Q / E</span> Descend / Ascend height</div>
+                    <div class="key-row"><span class="key-badge">SPACE</span> Jump</div>
                     <div class="key-row"><span class="key-badge">SHIFT</span> 2.5x Sprint Speed Boost</div>
                     <div class="key-row"><span class="key-badge">ESC</span> Unlock mouse cursor</div>
                   </div>
@@ -669,9 +704,25 @@
           <div class="project-page-layout">
             <!-- Project Sub-Nav Bar -->
             <div class="project-subnav" id="project-subnav">
-              <button class="proj-subtab-btn active" data-subtab="scene-objects">
+              <button class="proj-subtab-btn active" data-subtab="map-settings">
+                <span class="subtab-icon">🗺️</span>
+                <span>MAP Settings</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="materials">
+                <span class="subtab-icon">✨</span>
+                <span>Materials &amp; Shaders</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="hzb-postprocessing">
+                <span class="subtab-icon">⚡</span>
+                <span>HZB Post-Processing</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="items">
+                <span class="subtab-icon">💎</span>
+                <span>ITEMS</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="scene-objects">
                 <span class="subtab-icon">📦</span>
-                <span>Scene Objects &amp; Hierarchy</span>
+                <span>Scene Hierarchy</span>
               </button>
               <button class="proj-subtab-btn" data-subtab="player-controller">
                 <span class="subtab-icon">🕹️</span>
@@ -683,7 +734,7 @@
               </button>
               <button class="proj-subtab-btn" data-subtab="fps-damage">
                 <span class="subtab-icon">🎯</span>
-                <span>FPS Shooter &amp; Damage Group</span>
+                <span>FPS Damage Group</span>
               </button>
               <button class="proj-subtab-btn" data-subtab="cpp-bridge">
                 <span class="subtab-icon">⚡</span>
@@ -691,14 +742,481 @@
               </button>
             </div>
 
+            <!-- Subtab 0: MAP Settings (4 Quake Maps, Spawns & Item Pedestals) -->
+            <div class="proj-subcontent active" id="subtab-map-settings">
+              <div class="map-settings-layout">
+                <!-- Section 1: Quake Map Arena Selector (4 Classic Quake Maps) -->
+                <div class="panel-section">
+                  <div class="section-header-row">
+                    <div>
+                      <h3 class="section-title">Quake Arena Maps (4 Classic Layouts)</h3>
+                      <p class="section-desc">Select an arena layout to dynamically rebuild geometry, physics colliders, player spawn points, and elemental item pedestals.</p>
+                    </div>
+                    <span class="status-pill"><span class="status-dot"></span><span id="active-map-badge">Active: The Dark Zone (DM6)</span></span>
+                  </div>
+
+                  <!-- 4 Quake Map Cards Grid -->
+                  <div class="quake-maps-grid">
+                    <!-- Map 1: The Dark Zone -->
+                    <div class="quake-map-card active" data-map-id="dm6" id="map-card-dm6">
+                      <div class="map-card-banner banner-dm6">
+                        <span class="map-tag">DM6 ARENA</span>
+                        <span class="map-spawns-count">4 Spawns &bull; 6 Items</span>
+                      </div>
+                      <div class="map-card-content">
+                        <h4 class="map-title">The Dark Zone (DM6 / Arena Spire)</h4>
+                        <p class="map-desc">Gothic arena featuring multi-tiered stone pillars, high perimeter catwalks, sunken center quad pedestal, and vertical jump pads.</p>
+                        <div class="map-features-list">
+                          <span class="feat-pill">MegaHealth (+100 HP)</span>
+                          <span class="feat-pill">Red Battle Armor</span>
+                          <span class="feat-pill">Quad Damage (4x)</span>
+                          <span class="feat-pill">Jump Pads</span>
+                        </div>
+                        <button class="btn-action btn-load-map" data-map-id="dm6">⚔️ Load DM6 Arena</button>
+                      </div>
+                    </div>
+
+                    <!-- Map 2: The Longest Yard -->
+                    <div class="quake-map-card" data-map-id="q3dm17" id="map-card-q3dm17">
+                      <div class="map-card-banner banner-q3dm17">
+                        <span class="map-tag">Q3DM17 VOID</span>
+                        <span class="map-spawns-count">4 Spawns &bull; 6 Items</span>
+                      </div>
+                      <div class="map-card-content">
+                        <h4 class="map-title">The Longest Yard (Q3DM17 / Void Float)</h4>
+                        <p class="map-desc">Suspended cosmic platform arena over an infinite abyss. High-altitude sniper bridge, jump pads, and exposed outer powerup island.</p>
+                        <div class="map-features-list">
+                          <span class="feat-pill">Quantum Railgun</span>
+                          <span class="feat-pill">Void Island Quad</span>
+                          <span class="feat-pill">Yellow Armor</span>
+                          <span class="feat-pill">Bounce Pads</span>
+                        </div>
+                        <button class="btn-action btn-load-map" data-map-id="q3dm17">⚔️ Load Q3DM17 Arena</button>
+                      </div>
+                    </div>
+
+                    <!-- Map 3: The Bad Place -->
+                    <div class="quake-map-card" data-map-id="dm4" id="map-card-dm4">
+                      <div class="map-card-banner banner-dm4">
+                        <span class="map-tag">DM4 LAVA</span>
+                        <span class="map-spawns-count">4 Spawns &bull; 6 Items</span>
+                      </div>
+                      <div class="map-card-content">
+                        <h4 class="map-title">The Bad Place (DM4 / Lava Spire)</h4>
+                        <p class="map-desc">Claustrophobic multi-level vertical arena with bubbling lava well, stone crypt arches, upper spiral bridges, and rapid combat corridors.</p>
+                        <div class="map-features-list">
+                          <span class="feat-pill">MegaHealth Bridge</span>
+                          <span class="feat-pill">Lava Pit Center</span>
+                          <span class="feat-pill">Haste Speed Rune</span>
+                          <span class="feat-pill">Rocket Shells</span>
+                        </div>
+                        <button class="btn-action btn-load-map" data-map-id="dm4">⚔️ Load DM4 Arena</button>
+                      </div>
+                    </div>
+
+                    <!-- Map 4: Blood Run -->
+                    <div class="quake-map-card" data-map-id="ztn" id="map-card-ztn">
+                      <div class="map-card-banner banner-ztn">
+                        <span class="map-tag">ZTN TECH</span>
+                        <span class="map-spawns-count">4 Spawns &bull; 6 Items</span>
+                      </div>
+                      <div class="map-card-content">
+                        <h4 class="map-title">Blood Run (ZTN / Tech Corridor)</h4>
+                        <p class="map-desc">High-speed competitive tournament duel map with interconnected corridors, teleporter pads, central atrium, and tactical height advantage.</p>
+                        <div class="map-features-list">
+                          <span class="feat-pill">Red Heavy Armor</span>
+                          <span class="feat-pill">Atrium MegaHealth</span>
+                          <span class="feat-pill">Regen Rune</span>
+                          <span class="feat-pill">Teleporter Pads</span>
+                        </div>
+                        <button class="btn-action btn-load-map" data-map-id="ztn">⚔️ Load ZTN Arena</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Section 2: Spawn Places & Item Spawn Locations Grid -->
+                <div class="player-controller-grid">
+                  <!-- Column 1: Player Spawn Places -->
+                  <div class="panel-section">
+                    <div class="section-header-row">
+                      <div>
+                        <h3 class="section-title">Player Spawn Places (<span id="player-spawns-count">4</span> Points)</h3>
+                        <p class="section-desc">Positions where players spawn in FFA/Duel with initial orientation.</p>
+                      </div>
+                      <button class="btn-xs" id="btn-add-spawn-pose" title="Add new spawn place at current player position">➕ Add At Cam Pose</button>
+                    </div>
+
+                    <div class="spawn-points-list" id="spawn-points-list">
+                      <!-- Dynamic spawn point items populated by main.js -->
+                    </div>
+                  </div>
+
+                  <!-- Column 2: Item Spawn Locations & Real-Time Status -->
+                  <div class="panel-section">
+                    <div class="section-header-row">
+                      <div>
+                        <h3 class="section-title">Item Spawns in Map (<span id="item-spawns-count">6</span> Pedestals)</h3>
+                        <p class="section-desc">Pickup pedestals with real-time respawn timers and collision triggers.</p>
+                      </div>
+                      <div class="card-actions">
+                        <button class="btn-xs" id="btn-respawn-all-items" title="Instantly respawn all collected items">⟳ Respawn All</button>
+                      </div>
+                    </div>
+
+                    <!-- Quick Drop / Place Item Row -->
+                    <div class="place-item-bar">
+                      <select id="quick-place-item-select" class="input-select font-mono" style="font-size: 11px;">
+                        <option value="megahealth">❤️ MegaHealth (+100 HP)</option>
+                        <option value="armor_red">🛡️ Red Heavy Armor (+100 Armor)</option>
+                        <option value="armor_yellow">🛡️ Yellow Armor (+75 Armor)</option>
+                        <option value="armor_green">🛡️ Green Armor (+50 Armor)</option>
+                        <option value="ammo_plasma">⚡ Plasma Energy Cells (+50)</option>
+                        <option value="ammo_slugs">💥 Heavy Kinetic Slugs (+30)</option>
+                        <option value="ammo_rockets">🚀 HE Rocket Shells (+10)</option>
+                        <option value="ammo_railgun">🔮 Quantum Railgun Slugs (+15)</option>
+                        <option value="powerup_quad">⚡ Quad Damage Powerup (4x)</option>
+                        <option value="powerup_haste">🏃 Haste Speed Rune (+60%)</option>
+                        <option value="powerup_regen">💚 Regeneration Rune (+15 HP/s)</option>
+                      </select>
+                      <button class="btn-xs" id="btn-place-item-at-cam" style="white-space: nowrap;">➕ Place Item</button>
+                    </div>
+
+                    <div class="item-spawns-list" id="item-spawns-list">
+                      <!-- Dynamic item spawn items populated by main.js -->
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Section 3: Arena World & Physics Configuration -->
+                <div class="panel-section">
+                  <h3 class="section-title">Map Environment &amp; Physics Tuning</h3>
+                  <div class="controls-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                    <div class="slider-group">
+                      <div class="slider-row">
+                        <span class="slider-label">Jump Pad Launch Velocity</span>
+                        <span class="slider-val highlight" id="val-jumppad-force">16.0 m/s</span>
+                      </div>
+                      <input type="range" id="slider-jumppad-force" min="8.0" max="30.0" step="1.0" value="16.0" class="range-input">
+                    </div>
+
+                    <div class="slider-group">
+                      <div class="slider-row">
+                        <span class="slider-label">Arena Ambient Lighting</span>
+                        <span class="slider-val" id="val-map-ambient">Gothic Dusk (0.45)</span>
+                      </div>
+                      <input type="range" id="slider-map-ambient" min="0.1" max="1.0" step="0.05" value="0.45" class="range-input">
+                    </div>
+
+                    <div class="slider-group">
+                      <div class="slider-row">
+                        <span class="slider-label">Hazard Floor Damage / Tick</span>
+                        <span class="slider-val" id="val-hazard-dmg" style="color: #f43f5e;">15 HP / s</span>
+                      </div>
+                      <input type="range" id="slider-hazard-dmg" min="0.0" max="50.0" step="5.0" value="15.0" class="range-input">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subtab 0.1: MATERIALS (Procedural PBR, Dielectric, Reflections & MAT COST Flags) -->
+            <div class="proj-subcontent" id="subtab-materials">
+              <div class="materials-catalog-layout">
+                <!-- Header & Performance / Cost Banner -->
+                <div class="panel-section">
+                  <div class="section-header-row">
+                    <div>
+                      <h3 class="section-title">Google Filament Material Catalog</h3>
+                      <p class="section-desc">Procedural &amp; PBR shader materials (Wood, Rock, Metal, Glass, Chrome, Gold, Obsidian, Velvet) with real-time <b>MAT COST</b> mobile profiling.</p>
+                    </div>
+                    <div class="card-actions">
+                      <button class="btn-xs" id="btn-apply-mat-to-active" title="Apply active material to viewport demo mesh">⚡ Apply to Viewport Mesh</button>
+                      <button class="btn-xs" id="btn-apply-mat-to-selected" title="Apply active material to selected scene hierarchy entity">📦 Apply to Selected Entity</button>
+                    </div>
+                  </div>
+
+                  <!-- Category Filter Pills & Cost Summary -->
+                  <div class="material-filter-bar">
+                    <div class="material-cat-group">
+                      <button class="mat-cat-btn active" data-mat-cat="all">All Materials (15)</button>
+                      <button class="mat-cat-btn" data-mat-cat="procedural">🌲 Procedural (Wood, Rock, Metal, Marble)</button>
+                      <button class="mat-cat-btn" data-mat-cat="reflective">💎 Reflective &amp; Glass (Refractions, Gold, Chrome)</button>
+                      <button class="mat-cat-btn" data-mat-cat="special">✨ Stylized &amp; Emissive (Hologram, Neon, Velvet)</button>
+                    </div>
+                    <div class="mat-cost-legend">
+                      <span class="cost-legend-pill safe">⚡ LOW COST: Mobile Safe (&le;18 ALUs)</span>
+                      <span class="cost-legend-pill medium">⚖️ MED COST: Balanced (&le;35 ALUs)</span>
+                      <span class="cost-legend-pill heavy">🔥 HIGH COST: Heavy (&gt;35 ALUs)</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Materials Cards Grid -->
+                <div class="materials-cards-grid" id="materials-cards-grid">
+                  <!-- Dynamic Material Cards rendered by main.js -->
+                </div>
+
+                <!-- Material Parameter Live Tuner & Mobile GPU Profiler Panel -->
+                <div class="panel-section">
+                  <div class="section-header-row">
+                    <h3 class="section-title">Live Material Parameter Tuner &amp; Mobile Profiler</h3>
+                    <span class="status-pill" id="active-mat-pill"><span class="status-dot"></span><span id="active-mat-badge">Active: Procedural Dark Walnut Wood</span></span>
+                  </div>
+
+                  <div class="mat-tuner-grid">
+                    <div class="controls-col">
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Roughness (Microfacet Alpha)</span>
+                          <span class="slider-val" id="val-mat-roughness">0.45</span>
+                        </div>
+                        <input type="range" id="slider-mat-roughness" min="0.02" max="1.0" step="0.01" value="0.45" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Metallic (Conductor Weight)</span>
+                          <span class="slider-val" id="val-mat-metallic">0.00</span>
+                        </div>
+                        <input type="range" id="slider-mat-metallic" min="0.0" max="1.0" step="0.01" value="0.00" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Clear Coat &amp; Glaze</span>
+                          <span class="slider-val" id="val-mat-clearcoat">0.00</span>
+                        </div>
+                        <input type="range" id="slider-mat-clearcoat" min="0.0" max="1.0" step="0.05" value="0.00" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Procedural Noise / Grain Scale</span>
+                          <span class="slider-val" id="val-mat-scale">18.0</span>
+                        </div>
+                        <input type="range" id="slider-mat-scale" min="1.0" max="60.0" step="1.0" value="18.0" class="range-input">
+                      </div>
+                    </div>
+
+                    <div class="controls-col">
+                      <!-- Live GPU Cost Telemetry Box -->
+                      <div class="mat-gpu-profiler-box">
+                        <h4 class="profiler-title">Mobile GPU Architecture Cost Profile</h4>
+                        <div class="profiler-metrics-grid">
+                          <div class="telemetry-card">
+                            <span class="telemetry-label">MAT COST Rating</span>
+                            <span class="telemetry-val emerald" id="telem-mat-cost">⚡ LOW COST</span>
+                          </div>
+                          <div class="telemetry-card">
+                            <span class="telemetry-label">ALU Instruction Count</span>
+                            <span class="telemetry-val cyan" id="telem-mat-alus">~16 ALUs</span>
+                          </div>
+                          <div class="telemetry-card">
+                            <span class="telemetry-label">Texture Samplers</span>
+                            <span class="telemetry-val" id="telem-mat-tex">0 Samplers (Pure Math)</span>
+                          </div>
+                          <div class="telemetry-card">
+                            <span class="telemetry-label">Mobile FPS Target</span>
+                            <span class="telemetry-val emerald" id="telem-mat-fps">60 FPS Solid (Mali / Adreno)</span>
+                          </div>
+                        </div>
+                        <p class="profiler-note" id="telem-mat-note">
+                          Optimized for mobile browsers: Uses mathematical procedural synthesis with zero texture memory bandwidth overhead.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subtab 0.2: HZB POST-PROCESSING (Hierarchical Z-Buffer, Occlusion Culling & Hi-Z Raymarching) -->
+            <div class="proj-subcontent" id="subtab-hzb-postprocessing">
+              <div class="hzb-postprocessing-layout">
+                <!-- Header & Performance / Cost Banner -->
+                <div class="panel-section">
+                  <div class="section-header-row">
+                    <div>
+                      <h3 class="section-title">Hierarchical Z-Buffer (HZB) Post-Processing Pipeline</h3>
+                      <p class="section-desc">Ultra-fast conservative depth pyramid generator for zero-overhead screen-space occlusion culling, early-Z rejection, and Hi-Z reflections.</p>
+                    </div>
+                    <span class="status-pill" id="hzb-status-pill"><span class="status-dot"></span><span id="hzb-status-text">HZB: Active (5 Mip Levels)</span></span>
+                  </div>
+
+                  <!-- Real-time HZB Telemetry Grid -->
+                  <div class="telemetry-metrics-grid" style="margin-top: 12px;">
+                    <div class="telemetry-card highlight">
+                      <span class="telemetry-label">HZB Post-Processing State</span>
+                      <span class="telemetry-val emerald" id="telem-hzb-state">ENABLED</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Depth Pyramid Levels</span>
+                      <span class="telemetry-val cyan" id="telem-hzb-mips">5 Mips (1x &rarr; 1/16x)</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Occlusion Culling Rate</span>
+                      <span class="telemetry-val emerald" id="telem-hzb-cullrate">48.2% Culled</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Downsample Cost</span>
+                      <span class="telemetry-val" id="telem-hzb-cost">0.06 ms (Zero Stalls)</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Mobile Bandwidth Saved</span>
+                      <span class="telemetry-val emerald" id="telem-hzb-bandwidth">~65% Fragment Savings</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- HZB Interactive Tuning & Visualizer Controls Grid -->
+                <div class="player-controller-grid">
+                  <!-- Column 1: HZB Configuration & Culling Settings -->
+                  <div class="panel-section">
+                    <h3 class="section-title">HZB Pipeline Controls &amp; Occlusion Culling</h3>
+                    
+                    <div class="toggle-list">
+                      <label class="toggle-row">
+                        <span>Enable HZB Depth Pyramid Post-Processing</span>
+                        <input type="checkbox" id="toggle-hzb-enable" checked>
+                      </label>
+                      <label class="toggle-row">
+                        <span>Conservative Early-Z Occlusion Culling</span>
+                        <input type="checkbox" id="toggle-hzb-culling" checked>
+                      </label>
+                      <label class="toggle-row">
+                        <span>Hi-Z Screen-Space Reflection (SSR) Raymarching</span>
+                        <input type="checkbox" id="toggle-hzb-ssr" checked>
+                      </label>
+                    </div>
+
+                    <div class="select-group" style="margin-top: 14px;">
+                      <label for="select-hzb-viewmode" class="hud-label">HZB Viewport Visualizer Mode:</label>
+                      <select id="select-hzb-viewmode" class="input-select">
+                        <option value="none" selected>Standard Rendered Scene (PBR Shading with HZB Culling)</option>
+                        <option value="depth-mips">HZB Depth Pyramid Mips (False-Color Visualization)</option>
+                        <option value="linear-depth">Linear Depth Buffer (Near/Far Contrast)</option>
+                        <option value="occlusion-boxes">Occlusion Culling Bounding Volumes (Green=Passed, Red=Culled)</option>
+                        <option value="hiz-raymarch">Hi-Z Raymarching Heatmap (Sample Density)</option>
+                      </select>
+                    </div>
+
+                    <div class="slider-group">
+                      <div class="slider-row">
+                        <span class="slider-label">Visualizer Inspect Mip Level</span>
+                        <span class="slider-val" id="val-hzb-miplevel">Mip 0 (Full Res 100%)</span>
+                      </div>
+                      <input type="range" id="slider-hzb-miplevel" min="0" max="4" step="1" value="0" class="range-input">
+                    </div>
+
+                    <div class="slider-group">
+                      <div class="slider-row">
+                        <span class="slider-label">Hi-Z Raymarch Steps (Max Tracing Budget)</span>
+                        <span class="slider-val" id="val-hzb-steps">8 Steps (Cheap &amp; Fast)</span>
+                      </div>
+                      <input type="range" id="slider-hzb-steps" min="4" max="24" step="4" value="8" class="range-input">
+                    </div>
+                  </div>
+
+                  <!-- Column 2: Why HZB is Cheap & Fast on Mobile Architecture -->
+                  <div class="panel-section">
+                    <h3 class="section-title">Google Filament HZB Architecture Specification</h3>
+                    
+                    <div class="arch-card">
+                      <span class="arch-badge" style="background: rgba(16,185,129,0.2); color: #10b981; border-color: #10b981;">CHEAP &amp; ZERO BANDWIDTH</span>
+                      <h4 class="arch-header">Why is HZB (Hierarchical Z-Buffer) so efficient?</h4>
+                      <p class="arch-text">
+                        1. <strong>Single-Pass 2x2 Min/Max Downsampling</strong>: HZB generates a 5-level mip pyramid directly on the tile cache in a fraction of a millisecond (&lt;0.06 ms).
+                      </p>
+                      <p class="arch-text">
+                        2. <strong>Conservative Occlusion Culling</strong>: Before dispatching expensive fragment shaders on occluded objects (such as pillars behind walls), the bounding box is tested against the lowest fitting HZB mip. If the box is behind the HZB depth value, the entire draw call is rejected immediately.
+                      </p>
+                      <p class="arch-text">
+                        3. <strong>Hi-Z Empty Space Skipping</strong>: Screen-space reflections jump multiple pixels per step by querying higher mip levels when raymarching empty air, reducing ray samples from 64 down to 8!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subtab 0.5: ITEMS (Elemental Pickups: Health, Armor, Energy, Ammo, Powerups) -->
+            <div class="proj-subcontent" id="subtab-items">
+              <div class="items-catalog-layout">
+                <!-- Section Header & Filter Pills -->
+                <div class="panel-section">
+                  <div class="section-header-row">
+                    <div>
+                      <h3 class="section-title">Elemental ITEMS Catalog</h3>
+                      <p class="section-desc">Elemental health spheres, armor absorb layers, ammunition energy cells, and rune powerups.</p>
+                    </div>
+                    <div class="card-actions">
+                      <button class="btn-xs" id="btn-respawn-all-catalog" title="Respawn all collected items in 3D arena">⟳ Respawn All Arena Items</button>
+                      <button class="btn-xs" id="btn-clear-all-pickups" title="Clear temporary spawned pickups">🗑️ Clear Pickups</button>
+                    </div>
+                  </div>
+
+                  <!-- Category Filter Pills -->
+                  <div class="item-category-bar">
+                    <button class="item-cat-btn active" data-item-cat="all">All Items (11)</button>
+                    <button class="item-cat-btn" data-item-cat="health">❤️ Health (3)</button>
+                    <button class="item-cat-btn" data-item-cat="armor">🛡️ Armor (3)</button>
+                    <button class="item-cat-btn" data-item-cat="ammo">⚡ Energy &amp; Ammo (4)</button>
+                    <button class="item-cat-btn" data-item-cat="powerup">💎 Powerups &amp; Runes (3)</button>
+                  </div>
+                </div>
+
+                <!-- Elemental Items Catalog Grid -->
+                <div class="items-cards-grid" id="items-cards-grid">
+                  <!-- Dynamic Item Cards will be rendered by main.js -->
+                </div>
+
+                <!-- Live Player Pickup Stats & Tuning Panel -->
+                <div class="panel-section">
+                  <h3 class="section-title">Live Player Elemental Status &amp; Audio Settings</h3>
+                  <div class="telemetry-metrics-grid">
+                    <div class="telemetry-card highlight">
+                      <span class="telemetry-label">Player Health (HP)</span>
+                      <span class="telemetry-val emerald" id="telem-item-health">100 / 100</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Armor Points (AP)</span>
+                      <span class="telemetry-val cyan" id="telem-item-armor">50 / 100 (50% Absorb)</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Active Powerups</span>
+                      <span class="telemetry-val amber" id="telem-item-powerups">None</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Damage Multiplier</span>
+                      <span class="telemetry-val" id="telem-item-dmgmult">1.0x</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Audio Synth SFX</span>
+                      <span class="telemetry-val emerald" id="telem-item-sfx">WebAudio Synth Active</span>
+                    </div>
+                  </div>
+
+                  <div class="card-actions" style="margin-top: 14px; gap: 8px;">
+                    <button class="btn-action" id="btn-heal-player-full" style="padding: 8px 16px;">💚 Restore Health (100 HP)</button>
+                    <button class="btn-action" id="btn-give-megahealth" style="padding: 8px 16px;">❤️ MegaHealth Overheal (200 HP)</button>
+                    <button class="btn-action" id="btn-give-red-armor" style="padding: 8px 16px;">🛡️ Give Red Heavy Armor (100 AP)</button>
+                    <button class="btn-action" id="btn-give-quad-damage" style="padding: 8px 16px;">⚡ Activate Quad Damage (30s)</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Subtab 1: Scene Objects & Hierarchy -->
-            <div class="proj-subcontent active" id="subtab-scene-objects">
+            <div class="proj-subcontent" id="subtab-scene-objects">
               <div class="scene-objects-grid">
                 <!-- Left Column: Scene Hierarchy Tree -->
                 <div class="hierarchy-panel">
                   <div class="hierarchy-header">
                     <span class="hierarchy-title">Scene Graph (<span id="scene-obj-count">9</span> Entities)</span>
-                    <button class="btn-xs" id="btn-refresh-hierarchy" title="Refresh scene hierarchy">⟳ Refresh</button>
+                    <div class="card-actions">
+                      <button class="btn-xs" id="btn-refresh-hierarchy" title="Refresh scene hierarchy">⟳ Refresh</button>
+                    </div>
                   </div>
                   <div class="hierarchy-tree" id="hierarchy-tree-list">
                     <!-- Dynamic entity items will be populated by main.js -->
@@ -707,19 +1225,48 @@
 
                 <!-- Right Column: Selected Object Inspector Card -->
                 <div class="object-inspector-panel" id="object-inspector-panel">
+                  <!-- Prominent Selected Object Header Banner -->
                   <div class="inspector-card-header">
                     <div class="inspector-name-group">
-                      <h3 class="inspector-title" id="inspector-obj-name">Player_Character</h3>
-                      <span class="inspector-type-pill" id="inspector-obj-type">Kinematic Controller</span>
+                      <div class="selected-entity-label">SELECTED OBJECT:</div>
+                      <div class="selected-name-row">
+                        <h3 class="inspector-title" id="inspector-obj-name">Player_Character</h3>
+                        <input type="text" id="insp-name-edit" class="inspector-name-input" value="Player_Character" placeholder="Rename Entity..." />
+                      </div>
+                      <div class="inspector-tag-row">
+                        <span class="inspector-type-pill" id="inspector-obj-type">Kinematic Controller</span>
+                        <span class="inspector-layer-pill" id="inspector-obj-layer">Layer_Player</span>
+                      </div>
                     </div>
                     <div class="card-actions">
-                      <button class="btn-xs" id="btn-focus-obj" title="Align camera to object">🎯 Focus Cam</button>
+                      <button class="btn-action" id="btn-focus-obj" style="padding: 6px 12px;" title="Align camera to object">🎯 Focus Cam</button>
+                    </div>
+                  </div>
+
+                  <!-- Filament Material Assignment on Selected Entity -->
+                  <div class="inspector-section">
+                    <div class="section-header-row" style="margin-bottom: 6px;">
+                      <span class="inspector-section-title">Assigned Filament Material</span>
+                      <span class="cost-legend-pill safe" id="insp-mat-cost-badge">⚡ LOW COST</span>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Material Preset:</span>
+                      <select id="insp-material-select" class="input-select font-mono" style="flex: 1; max-width: 260px;">
+                        <!-- Options populated dynamically from FILAMENT_MATERIALS_CATALOG -->
+                      </select>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Material Swatch &amp; Base:</span>
+                      <div class="inspector-swatch-row">
+                        <span class="mat-color-preview-circle" id="insp-mat-swatch" style="background: #2563eb;"></span>
+                        <span class="hud-value" id="insp-mat-desc">Cook-Torrance Standard Dielectric</span>
+                      </div>
                     </div>
                   </div>
 
                   <!-- Transform Section -->
                   <div class="inspector-section">
-                    <span class="inspector-section-title">Transform (World Space)</span>
+                    <span class="inspector-section-title">Transform (World Space Coordinates)</span>
                     <div class="inspector-field-row">
                       <span class="hud-label">Position (X, Y, Z):</span>
                       <div class="vec3-triad">
@@ -740,18 +1287,24 @@
 
                   <!-- Material & Shading Section -->
                   <div class="inspector-section">
-                    <span class="inspector-section-title">Filament PBR Material Parameters</span>
+                    <span class="inspector-section-title">Filament PBR Parameters</span>
                     <div class="inspector-field-row">
                       <span class="hud-label">Roughness:</span>
-                      <span class="hud-value" id="insp-roughness-val">0.35</span>
+                      <div class="slider-with-val" style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 240px;">
+                        <input type="range" id="insp-roughness" min="0.02" max="1.0" step="0.01" value="0.35" class="range-input">
+                        <span class="hud-value font-mono" id="insp-roughness-val" style="min-width: 38px;">0.35</span>
+                      </div>
                     </div>
                     <div class="inspector-field-row">
                       <span class="hud-label">Metallic:</span>
-                      <span class="hud-value" id="insp-metallic-val">0.80</span>
+                      <div class="slider-with-val" style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 240px;">
+                        <input type="range" id="insp-metallic" min="0.0" max="1.0" step="0.01" value="0.80" class="range-input">
+                        <span class="hud-value font-mono" id="insp-metallic-val" style="min-width: 38px;">0.80</span>
+                      </div>
                     </div>
                     <div class="inspector-field-row">
                       <span class="hud-label">Albedo Color:</span>
-                      <span class="hud-value highlight" id="insp-color-val">RGB(0.15, 0.40, 0.95)</span>
+                      <span class="hud-value highlight font-mono" id="insp-color-val">RGB(0.15, 0.40, 0.95)</span>
                     </div>
                   </div>
 
@@ -760,7 +1313,7 @@
                     <span class="inspector-section-title">Collider Configuration</span>
                     <div class="inspector-field-row">
                       <span class="hud-label">Shape Type:</span>
-                      <span class="hud-value highlight" id="insp-collider-shape">Swept Sphere (r=0.4m, h=1.8m)</span>
+                      <span class="hud-value highlight" id="insp-collider-shape">Swept Sphere (r=0.80m, h=1.8m)</span>
                     </div>
                     <div class="inspector-field-row">
                       <span class="hud-label">Collision Layer:</span>
