@@ -105,6 +105,95 @@
             <!-- Item Pickup Toast Notification Overlay -->
             <div class="item-pickup-toast" id="item-pickup-toast"></div>
 
+            <!-- Material Presentation Showroom Top Control Bar HUD Overlay (Demo 08) -->
+            <div class="showroom-hud-top" id="showroom-hud-top" style="display: none;">
+              <div class="showroom-badge-title">
+                <span class="showroom-icon">🏛️</span>
+                <div class="showroom-title-text">
+                  <span class="showroom-heading">ALL MATERIALS PRESENTATION SHOWROOM</span>
+                  <span class="showroom-subheading">17 Zero-Alloc Filament PBR Shader Materials &bull; Full Physical &amp; Procedural Gallery</span>
+                </div>
+              </div>
+
+              <div class="showroom-controls-cluster">
+                <!-- Gallery Layout Modes -->
+                <div class="showroom-btn-group">
+                  <span class="showroom-group-label">LAYOUT:</span>
+                  <button class="showroom-mode-btn active" data-layout="circular" id="btn-layout-circular" title="Circular 360° Museum Arena">⭕ Circular</button>
+                  <button class="showroom-mode-btn" data-layout="linear" id="btn-layout-linear" title="Linear Exhibition Aisle">📏 Linear</button>
+                  <button class="showroom-mode-btn" data-layout="grid" id="btn-layout-grid" title="3x6 Comparison Matrix Grid">▦ Matrix</button>
+                </div>
+
+                <!-- Sample Display Mesh -->
+                <div class="showroom-btn-group">
+                  <span class="showroom-group-label">MESH:</span>
+                  <button class="showroom-mesh-btn active" data-mesh="0" title="Shader Sphere">Sphere</button>
+                  <button class="showroom-mesh-btn" data-mesh="4" title="Torus Ring">Torus</button>
+                  <button class="showroom-mesh-btn" data-mesh="1" title="Cube">Cube</button>
+                  <button class="showroom-mesh-btn" data-mesh="3" title="Trefoil Knot">Trefoil</button>
+                  <button class="showroom-mesh-btn" data-mesh="2" title="Icosahedron Gem">Gem</button>
+                </div>
+
+                <!-- Turntable Controls -->
+                <div class="showroom-turntable-box">
+                  <label class="showroom-toggle-label">
+                    <input type="checkbox" id="chk-showroom-turntable" checked>
+                    <span>Spin Turntable</span>
+                  </label>
+                  <input type="range" id="slider-showroom-speed" min="0.1" max="2.5" step="0.05" value="0.75" class="showroom-slider" title="Turntable Rotation Speed">
+                </div>
+              </div>
+            </div>
+
+            <!-- Floating Active Material Live Diagnostic Card (Demo 08) -->
+            <div class="showroom-spec-card" id="showroom-spec-card" style="display: none;">
+              <div class="spec-card-header">
+                <div class="spec-swatch" id="showroom-card-swatch"></div>
+                <div class="spec-title-group">
+                  <div class="spec-name-row">
+                    <span class="spec-mat-name" id="showroom-card-name">Procedural Dark Walnut Wood</span>
+                    <span class="spec-cost-badge" id="showroom-card-badge">LOW</span>
+                  </div>
+                  <span class="spec-mat-category" id="showroom-card-category">CATEGORY: PROCEDURAL PBR</span>
+                </div>
+              </div>
+              <p class="spec-mat-desc" id="showroom-card-desc">Procedural wood grain synthesis using sine-wave ring perturbations, fine grain lines, and pores.</p>
+              <div class="spec-params-grid">
+                <div class="spec-param-item">
+                  <span class="spec-param-label">Roughness</span>
+                  <span class="spec-param-val" id="showroom-card-rough">0.48</span>
+                </div>
+                <div class="spec-param-item">
+                  <span class="spec-param-label">Metallic</span>
+                  <span class="spec-param-val" id="showroom-card-metal">0.00</span>
+                </div>
+                <div class="spec-param-item">
+                  <span class="spec-param-label">Clearcoat</span>
+                  <span class="spec-param-val" id="showroom-card-clearcoat">0.05</span>
+                </div>
+                <div class="spec-param-item">
+                  <span class="spec-param-label">Anisotropy</span>
+                  <span class="spec-param-val" id="showroom-card-anisotropy">0.15</span>
+                </div>
+                <div class="spec-param-item">
+                  <span class="spec-param-label">GPU ALUs</span>
+                  <span class="spec-param-val" id="showroom-card-alus">16 ALUs</span>
+                </div>
+                <div class="spec-param-item">
+                  <span class="spec-param-label">Mobile Fit</span>
+                  <span class="spec-param-val" id="showroom-card-verdict" style="color:#10b981;">60 FPS Solid</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Material Quick-Jump Strip at Bottom of Viewport (Demo 08) -->
+            <div class="showroom-hud-bottom" id="showroom-hud-bottom" style="display: none;">
+              <span class="showroom-strip-label">SELECT MATERIAL (17):</span>
+              <div class="showroom-materials-strip" id="showroom-materials-strip">
+                <!-- Dynamically generated 17 material chips -->
+              </div>
+            </div>
+
             <!-- FPS Quake-Style Player Status HUD (Health, Armor, Ammo, Powerups) -->
             <div class="fps-player-hud" id="fps-player-hud" style="display: none;">
               <div class="hud-stat-cell health-cell" id="hud-health-cell">
@@ -285,7 +374,8 @@
                       <option value="04_wasm_webgl_wrapper.cpp">Demo 04: WASM WebGL Wrapper (04_wasm_webgl_wrapper.cpp)</option>
                       <option value="05_desktop_standalone_app.cpp">Demo 05: Desktop Standalone SDL2 App (05_desktop_standalone_app.cpp)</option>
                       <option value="06_glb_character_collision_player.cpp">Demo 06: GLB Character, Collision &amp; Player Controller (06_glb_character_collision_player.cpp)</option>
-                      <option value="07_fps_shooter_damage_system.cpp" selected>Demo 07: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
+                      <option value="07_fps_shooter_damage_system.cpp">Demo 07: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
+                      <option value="08_all_materials_presentation.cpp" selected>Demo 08: All Materials Presentation Showcase (08_all_materials_presentation.cpp)</option>
                     </select>
                   </div>
                 </div>
@@ -484,7 +574,8 @@
                   <option value="examples/04_wasm_webgl_wrapper.cpp">examples/04_wasm_webgl_wrapper.cpp (Demo 04: WASM WebGL Wrapper)</option>
                   <option value="examples/05_desktop_standalone_app.cpp">examples/05_desktop_standalone_app.cpp (Demo 05: Desktop Standalone SDL2 App)</option>
                   <option value="examples/06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 06: GLB Character, Collision &amp; Player Controller)</option>
-                  <option value="examples/07_fps_shooter_damage_system.cpp" selected>examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
+                  <option value="examples/07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
+                  <option value="examples/08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 08: All Materials Presentation Showcase)</option>
                   <option value="src/core/Engine.cpp">src/core/Engine.cpp (Engine Core C++)</option>
                   <option value="src/core/Renderer.cpp">src/core/Renderer.cpp (Filament GLES3 Pipeline C++)</option>
                   <option value="src/core/Bindings.cpp">src/core/Bindings.cpp (Emscripten Embind Bindings C++)</option>
@@ -574,7 +665,8 @@
                 <option value="04_wasm_webgl_wrapper.cpp">examples/04_wasm_webgl_wrapper.cpp (Demo 04: WASM WebGL Wrapper)</option>
                 <option value="05_desktop_standalone_app.cpp">examples/05_desktop_standalone_app.cpp (Demo 05: Desktop Standalone SDL2 App)</option>
                 <option value="06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 06: GLB Character, Collision &amp; Player Controller)</option>
-                <option value="07_fps_shooter_damage_system.cpp" selected>examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
+                <option value="07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
+                <option value="08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 08: All Materials Presentation Showcase)</option>
               </select>
               <button id="btn-copy-example" class="btn-xs">Copy Example</button>
             </div>
@@ -712,9 +804,9 @@
                 <span class="subtab-icon">✨</span>
                 <span>Materials &amp; Shaders</span>
               </button>
-              <button class="proj-subtab-btn" data-subtab="hzb-postprocessing">
-                <span class="subtab-icon">⚡</span>
-                <span>HZB Post-Processing</span>
+              <button class="proj-subtab-btn" data-subtab="postprocessing">
+                <span class="subtab-icon">✨</span>
+                <span>POST PROCESSING</span>
               </button>
               <button class="proj-subtab-btn" data-subtab="items">
                 <span class="subtab-icon">💎</span>
@@ -1031,109 +1123,276 @@
               </div>
             </div>
 
-            <!-- Subtab 0.2: HZB POST-PROCESSING (Hierarchical Z-Buffer, Occlusion Culling & Hi-Z Raymarching) -->
-            <div class="proj-subcontent" id="subtab-hzb-postprocessing">
+            <!-- Subtab 0.2: POST PROCESSING (Hierarchical Z-Buffer, Bloom & Volumetric Lights) -->
+            <div class="proj-subcontent" id="subtab-postprocessing">
               <div class="hzb-postprocessing-layout">
                 <!-- Header & Performance / Cost Banner -->
                 <div class="panel-section">
                   <div class="section-header-row">
                     <div>
-                      <h3 class="section-title">Hierarchical Z-Buffer (HZB) Post-Processing Pipeline</h3>
-                      <p class="section-desc">Ultra-fast conservative depth pyramid generator for zero-overhead screen-space occlusion culling, early-Z rejection, and Hi-Z reflections.</p>
+                      <h3 class="section-title">Google Filament Real-Time Post-Processing Pipeline</h3>
+                      <p class="section-desc">Hardware-accelerated cinematic rendering pipeline featuring Hierarchical Z-Buffer depth pyramids, HDR multi-pass Bloom, and raymarched volumetric light shafts.</p>
                     </div>
-                    <span class="status-pill" id="hzb-status-pill"><span class="status-dot"></span><span id="hzb-status-text">HZB: Active (5 Mip Levels)</span></span>
+                    <span class="status-pill" id="postproc-status-pill"><span class="status-dot"></span><span id="postproc-status-text">Post-Processing: ACTIVE (3 Passes)</span></span>
                   </div>
 
-                  <!-- Real-time HZB Telemetry Grid -->
+                  <!-- Real-time Post-Processing Telemetry Grid -->
                   <div class="telemetry-metrics-grid" style="margin-top: 12px;">
                     <div class="telemetry-card highlight">
-                      <span class="telemetry-label">HZB Post-Processing State</span>
-                      <span class="telemetry-val emerald" id="telem-hzb-state">ENABLED</span>
+                      <span class="telemetry-label">Post-Processing Master</span>
+                      <span class="telemetry-val emerald" id="telem-postproc-state">ACTIVE</span>
                     </div>
                     <div class="telemetry-card">
-                      <span class="telemetry-label">Depth Pyramid Levels</span>
-                      <span class="telemetry-val cyan" id="telem-hzb-mips">5 Mips (1x &rarr; 1/16x)</span>
-                    </div>
-                    <div class="telemetry-card">
-                      <span class="telemetry-label">Occlusion Culling Rate</span>
+                      <span class="telemetry-label">HZB Culling Efficiency</span>
                       <span class="telemetry-val emerald" id="telem-hzb-cullrate">48.2% Culled</span>
                     </div>
                     <div class="telemetry-card">
-                      <span class="telemetry-label">Downsample Cost</span>
-                      <span class="telemetry-val" id="telem-hzb-cost">0.06 ms (Zero Stalls)</span>
+                      <span class="telemetry-label">HDR Bloom Luma</span>
+                      <span class="telemetry-val cyan" id="telem-bloom-luma">Threshold: 0.85</span>
                     </div>
                     <div class="telemetry-card">
-                      <span class="telemetry-label">Mobile Bandwidth Saved</span>
-                      <span class="telemetry-val emerald" id="telem-hzb-bandwidth">~65% Fragment Savings</span>
+                      <span class="telemetry-label">Volumetric God Rays</span>
+                      <span class="telemetry-val amber" id="telem-volumetric-steps">32 March Steps</span>
+                    </div>
+                    <div class="telemetry-card">
+                      <span class="telemetry-label">Pass Execution Time</span>
+                      <span class="telemetry-val emerald" id="telem-postproc-time">0.14 ms</span>
+                    </div>
+                  </div>
+
+                  <!-- Sub-Tab Navigation Bar inside Post Processing -->
+                  <div class="item-category-bar" style="margin-top: 16px; margin-bottom: 4px;">
+                    <button class="item-cat-btn active" id="btn-subtab-hzb" data-post-tab="hzb">⚡ Hierarchical Z-Buffer (HZB)</button>
+                    <button class="item-cat-btn" id="btn-subtab-bloom" data-post-tab="bloom">🌸 HDR Bloom &amp; Glare</button>
+                    <button class="item-cat-btn" id="btn-subtab-volumetric" data-post-tab="volumetric">☀️ Volumetric Lights &amp; God Rays</button>
+                  </div>
+                </div>
+
+                <!-- POST-PROCESSING SUB-VIEW 1: HIERARCHICAL Z-BUFFER (HZB) -->
+                <div class="post-proc-view active" id="post-view-hzb">
+                  <div class="player-controller-grid">
+                    <!-- Column 1: HZB Configuration & Culling Settings -->
+                    <div class="panel-section">
+                      <h3 class="section-title">HZB Pipeline Controls &amp; Occlusion Culling</h3>
+                      
+                      <div class="toggle-list">
+                        <label class="toggle-row">
+                          <span>Enable HZB Depth Pyramid Post-Processing</span>
+                          <input type="checkbox" id="toggle-hzb-enable" checked>
+                        </label>
+                        <label class="toggle-row">
+                          <span>Conservative Early-Z Occlusion Culling</span>
+                          <input type="checkbox" id="toggle-hzb-culling" checked>
+                        </label>
+                        <label class="toggle-row">
+                          <span>Hi-Z Screen-Space Reflection (SSR) Raymarching</span>
+                          <input type="checkbox" id="toggle-hzb-ssr" checked>
+                        </label>
+                      </div>
+
+                      <div class="select-group" style="margin-top: 14px;">
+                        <label for="select-hzb-viewmode" class="hud-label">HZB Viewport Visualizer Mode:</label>
+                        <select id="select-hzb-viewmode" class="input-select">
+                          <option value="none" selected>Standard Rendered Scene (PBR Shading with HZB Culling)</option>
+                          <option value="depth-mips">HZB Depth Pyramid Mips (False-Color Heatmap)</option>
+                          <option value="linear-depth">Linear Depth Buffer (Near/Far Contrast)</option>
+                          <option value="occlusion-boxes">Occlusion Culling Bounding Volumes (Green=Pass, Red=Culled)</option>
+                          <option value="hiz-raymarch">Hi-Z Raymarching Heatmap (Sample Density)</option>
+                          <option value="split-view">Split Screen (Scene Left / HZB Depth Right)</option>
+                        </select>
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Visualizer Inspect Mip Level</span>
+                          <span class="slider-val" id="val-hzb-miplevel">Mip 0 (Full Res 100%)</span>
+                        </div>
+                        <input type="range" id="slider-hzb-miplevel" min="0" max="4" step="1" value="0" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Hi-Z Raymarch Steps (Max Tracing Budget)</span>
+                          <span class="slider-val" id="val-hzb-steps">8 Steps (Cheap &amp; Fast)</span>
+                        </div>
+                        <input type="range" id="slider-hzb-steps" min="4" max="32" step="4" value="8" class="range-input">
+                      </div>
+                    </div>
+
+                    <!-- Column 2: Why HZB is Cheap & Fast on Mobile Architecture -->
+                    <div class="panel-section">
+                      <h3 class="section-title">Google Filament HZB Architecture Specification</h3>
+                      
+                      <div class="arch-card">
+                        <span class="arch-badge" style="background: rgba(16,185,129,0.2); color: #10b981; border-color: #10b981;">CHEAP &amp; ZERO BANDWIDTH</span>
+                        <h4 class="arch-header">Why is HZB (Hierarchical Z-Buffer) so efficient?</h4>
+                        <p class="arch-text">
+                          1. <strong>Single-Pass 2x2 Min/Max Downsampling</strong>: HZB generates a 5-level mip pyramid directly on the tile cache in a fraction of a millisecond (&lt;0.06 ms).
+                        </p>
+                        <p class="arch-text">
+                          2. <strong>Conservative Occlusion Culling</strong>: Before dispatching expensive fragment shaders on occluded objects (such as pillars behind walls), the bounding box is tested against the lowest fitting HZB mip. If the box is behind the HZB depth value, the entire draw call is rejected immediately.
+                        </p>
+                        <p class="arch-text">
+                          3. <strong>Hi-Z Empty Space Skipping</strong>: Screen-space reflections jump multiple pixels per step by querying higher mip levels when raymarching empty air, reducing ray samples from 64 down to 8!
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <!-- HZB Interactive Tuning & Visualizer Controls Grid -->
-                <div class="player-controller-grid">
-                  <!-- Column 1: HZB Configuration & Culling Settings -->
-                  <div class="panel-section">
-                    <h3 class="section-title">HZB Pipeline Controls &amp; Occlusion Culling</h3>
-                    
-                    <div class="toggle-list">
-                      <label class="toggle-row">
-                        <span>Enable HZB Depth Pyramid Post-Processing</span>
-                        <input type="checkbox" id="toggle-hzb-enable" checked>
-                      </label>
-                      <label class="toggle-row">
-                        <span>Conservative Early-Z Occlusion Culling</span>
-                        <input type="checkbox" id="toggle-hzb-culling" checked>
-                      </label>
-                      <label class="toggle-row">
-                        <span>Hi-Z Screen-Space Reflection (SSR) Raymarching</span>
-                        <input type="checkbox" id="toggle-hzb-ssr" checked>
-                      </label>
-                    </div>
+                <!-- POST-PROCESSING SUB-VIEW 2: HDR BLOOM -->
+                <div class="post-proc-view" id="post-view-bloom" style="display: none;">
+                  <div class="player-controller-grid">
+                    <!-- Column 1: Bloom Controls -->
+                    <div class="panel-section">
+                      <h3 class="section-title">HDR Bloom &amp; Glow Parameters</h3>
 
-                    <div class="select-group" style="margin-top: 14px;">
-                      <label for="select-hzb-viewmode" class="hud-label">HZB Viewport Visualizer Mode:</label>
-                      <select id="select-hzb-viewmode" class="input-select">
-                        <option value="none" selected>Standard Rendered Scene (PBR Shading with HZB Culling)</option>
-                        <option value="depth-mips">HZB Depth Pyramid Mips (False-Color Visualization)</option>
-                        <option value="linear-depth">Linear Depth Buffer (Near/Far Contrast)</option>
-                        <option value="occlusion-boxes">Occlusion Culling Bounding Volumes (Green=Passed, Red=Culled)</option>
-                        <option value="hiz-raymarch">Hi-Z Raymarching Heatmap (Sample Density)</option>
-                      </select>
-                    </div>
-
-                    <div class="slider-group">
-                      <div class="slider-row">
-                        <span class="slider-label">Visualizer Inspect Mip Level</span>
-                        <span class="slider-val" id="val-hzb-miplevel">Mip 0 (Full Res 100%)</span>
+                      <div class="toggle-list">
+                        <label class="toggle-row">
+                          <span>Enable HDR Bloom &amp; Luminance Scattering</span>
+                          <input type="checkbox" id="toggle-bloom-enable" checked>
+                        </label>
+                        <label class="toggle-row">
+                          <span>Anamorphic Horizontal Glare Streak</span>
+                          <input type="checkbox" id="toggle-bloom-anamorphic">
+                        </label>
+                        <label class="toggle-row">
+                          <span>Chromatic Dispersion on Bloom Fringe</span>
+                          <input type="checkbox" id="toggle-bloom-chromatic" checked>
+                        </label>
                       </div>
-                      <input type="range" id="slider-hzb-miplevel" min="0" max="4" step="1" value="0" class="range-input">
+
+                      <div class="slider-group" style="margin-top: 14px;">
+                        <div class="slider-row">
+                          <span class="slider-label">HDR Luminance Threshold</span>
+                          <span class="slider-val" id="val-bloom-threshold">0.85</span>
+                        </div>
+                        <input type="range" id="slider-bloom-threshold" min="0.2" max="2.0" step="0.05" value="0.85" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Bloom Intensity / Glow Strength</span>
+                          <span class="slider-val" id="val-bloom-intensity">1.25x</span>
+                        </div>
+                        <input type="range" id="slider-bloom-intensity" min="0.0" max="4.0" step="0.1" value="1.25" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Bloom Radius / Gaussian Spread</span>
+                          <span class="slider-val" id="val-bloom-radius">1.40</span>
+                        </div>
+                        <input type="range" id="slider-bloom-radius" min="0.2" max="3.0" step="0.1" value="1.4" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Downsample Blur Passes</span>
+                          <span class="slider-val" id="val-bloom-passes">4 Passes (Dual-Filter Kawase)</span>
+                        </div>
+                        <input type="range" id="slider-bloom-passes" min="2" max="6" step="1" value="4" class="range-input">
+                      </div>
                     </div>
 
-                    <div class="slider-group">
-                      <div class="slider-row">
-                        <span class="slider-label">Hi-Z Raymarch Steps (Max Tracing Budget)</span>
-                        <span class="slider-val" id="val-hzb-steps">8 Steps (Cheap &amp; Fast)</span>
+                    <!-- Column 2: Bloom Architecture -->
+                    <div class="panel-section">
+                      <h3 class="section-title">Physically Based Bloom Pipeline</h3>
+                      <div class="arch-card">
+                        <span class="arch-badge" style="background: rgba(56,189,248,0.2); color: #38bdf8; border-color: #38bdf8;">HDR ENERGY CONSERVING</span>
+                        <h4 class="arch-header">Multi-Scale Progressive Blur Architecture</h4>
+                        <p class="arch-text">
+                          1. <strong>Luminance Curve Extraction</strong>: Pixels with radiance above the knee threshold are preserved with soft quadratic roll-off, isolating neon cores, gems, and specular highlights.
+                        </p>
+                        <p class="arch-text">
+                          2. <strong>Pyramid Downsampling &amp; Upsampling</strong>: Progressive 13-tap tent filter downsamples across 4 FBO mip targets, followed by 3x3 tent upsampling with 0.85 radius weighting to eliminate temporal flicker.
+                        </p>
+                        <p class="arch-text">
+                          3. <strong>Spectral Chromatic Fringe</strong>: Blue and red color channels are slightly offset during composite to replicate camera lens aperture refraction and anamorphic glare.
+                        </p>
                       </div>
-                      <input type="range" id="slider-hzb-steps" min="4" max="24" step="4" value="8" class="range-input">
                     </div>
                   </div>
+                </div>
 
-                  <!-- Column 2: Why HZB is Cheap & Fast on Mobile Architecture -->
-                  <div class="panel-section">
-                    <h3 class="section-title">Google Filament HZB Architecture Specification</h3>
-                    
-                    <div class="arch-card">
-                      <span class="arch-badge" style="background: rgba(16,185,129,0.2); color: #10b981; border-color: #10b981;">CHEAP &amp; ZERO BANDWIDTH</span>
-                      <h4 class="arch-header">Why is HZB (Hierarchical Z-Buffer) so efficient?</h4>
-                      <p class="arch-text">
-                        1. <strong>Single-Pass 2x2 Min/Max Downsampling</strong>: HZB generates a 5-level mip pyramid directly on the tile cache in a fraction of a millisecond (&lt;0.06 ms).
-                      </p>
-                      <p class="arch-text">
-                        2. <strong>Conservative Occlusion Culling</strong>: Before dispatching expensive fragment shaders on occluded objects (such as pillars behind walls), the bounding box is tested against the lowest fitting HZB mip. If the box is behind the HZB depth value, the entire draw call is rejected immediately.
-                      </p>
-                      <p class="arch-text">
-                        3. <strong>Hi-Z Empty Space Skipping</strong>: Screen-space reflections jump multiple pixels per step by querying higher mip levels when raymarching empty air, reducing ray samples from 64 down to 8!
-                      </p>
+                <!-- POST-PROCESSING SUB-VIEW 3: VOLUMETRIC LIGHTS -->
+                <div class="post-proc-view" id="post-view-volumetric" style="display: none;">
+                  <div class="player-controller-grid">
+                    <!-- Column 1: Volumetric Controls -->
+                    <div class="panel-section">
+                      <h3 class="section-title">Raymarched Volumetric Lights (God Rays)</h3>
+
+                      <div class="toggle-list">
+                        <label class="toggle-row">
+                          <span>Enable Volumetric Light Shafts (God Rays)</span>
+                          <input type="checkbox" id="toggle-volumetric-enable" checked>
+                        </label>
+                        <label class="toggle-row">
+                          <span>Dynamic Sun Tracking from Sky Vector</span>
+                          <input type="checkbox" id="toggle-volumetric-sun" checked>
+                        </label>
+                      </div>
+
+                      <div class="select-group" style="margin-top: 14px;">
+                        <label for="select-volumetric-color" class="hud-label">Light Shaft Atmospheric Tint:</label>
+                        <select id="select-volumetric-color" class="input-select">
+                          <option value="golden" selected>☀️ Golden Warm Sun (Default)</option>
+                          <option value="cyan">⚡ Cyber Blue / Cool Quartz</option>
+                          <option value="crimson">🔥 Volcanic Magma Crimson</option>
+                          <option value="violet">🔮 Mystic Violet Void</option>
+                          <option value="white">⚪ Pure Neutral Daylight</option>
+                        </select>
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Raymarching Sample Steps</span>
+                          <span class="slider-val" id="val-volumetric-samples">32 Steps (Balanced Quality)</span>
+                        </div>
+                        <input type="range" id="slider-volumetric-samples" min="16" max="64" step="8" value="32" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Light Shaft Density</span>
+                          <span class="slider-val" id="val-volumetric-density">0.95</span>
+                        </div>
+                        <input type="range" id="slider-volumetric-density" min="0.2" max="2.0" step="0.05" value="0.95" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Exponential Decay Falloff</span>
+                          <span class="slider-val" id="val-volumetric-decay">0.965</span>
+                        </div>
+                        <input type="range" id="slider-volumetric-decay" min="0.88" max="0.995" step="0.005" value="0.965" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
+                          <span class="slider-label">Raymarch Exposure &amp; Weight</span>
+                          <span class="slider-val" id="val-volumetric-weight">0.65</span>
+                        </div>
+                        <input type="range" id="slider-volumetric-weight" min="0.1" max="2.0" step="0.05" value="0.65" class="range-input">
+                      </div>
+                    </div>
+
+                    <!-- Column 2: Volumetric Architecture -->
+                    <div class="panel-section">
+                      <h3 class="section-title">Crepuscular Scattering Architecture</h3>
+                      <div class="arch-card">
+                        <span class="arch-badge" style="background: rgba(245,158,11,0.2); color: #f59e0b; border-color: #f59e0b;">RAYMARCHED SHAFTS</span>
+                        <h4 class="arch-header">Screen-Space Radial Raymarching</h4>
+                        <p class="arch-text">
+                          1. <strong>Light Position Projection</strong>: The main directional sun light is projected into screen-space UV coordinates with frustum clipping handling.
+                        </p>
+                        <p class="arch-text">
+                          2. <strong>Shadow Raymarching</strong>: For each pixel, the shader marches along the vector pointing toward the screen-space light source, sampling scene occluders (walls, columns, catwalks).
+                        </p>
+                        <p class="arch-text">
+                          3. <strong>Mie Phase Forward Scattering</strong>: Atmospheric aerosol scattering accumulates illuminated radiance with exponential distance decay, producing authentic crepuscular volumetric god rays streaming past obstacles.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
