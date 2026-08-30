@@ -5,6 +5,14 @@
  * Export tools (Mesh OBJ / Canvas Snapshot / JSON Scene Config)
  */
 
+import {
+  MAP_DEFINITIONS,
+  QUAKE_MAP_DEFINITIONS,
+  ELEMENTAL_ITEMS_CATALOG,
+  FILAMENT_MATERIALS_CATALOG,
+  generateStairs
+} from './maps/index.js';
+
 const SOURCE_FILES = {
   '01_pbr_material_preview.cpp': `// examples/01_pbr_material_preview.cpp
 // Minimal Google Filament PBR Material Preview Demo
@@ -1734,7 +1742,7 @@ uniform sampler2D u_sceneColor;
 uniform sampler2D u_sceneDepth;
 uniform vec2 u_resolution;
 uniform vec3 u_camPos;
-uniform vec2 u_sunScreenPos;
+uniform vec3 u_sunScreenPos;
 uniform float u_time;
 
 // HZB uniforms
@@ -1920,37 +1928,48 @@ void main() {
     }
 
     // 3. Raymarched Volumetric Lights & Crepuscular God Rays
-    if (u_volumetricEnabled == 1) {
-        vec2 sunUV = u_sunScreenPos;
+    if (u_volumetricEnabled == 1 && u_sunScreenPos.z > 0.001) {
+        vec2 sunUV = u_sunScreenPos.xy;
+        float visibility = u_sunScreenPos.z;
         
-        // Only cast rays if sun/light source is somewhat within or near screen
-        if (sunUV.x >= -0.5 && sunUV.x <= 1.5 && sunUV.y >= -0.5 && sunUV.y <= 1.5) {
-            vec2 deltaUV = (uv - sunUV);
-            int marchSteps = clamp(u_volumetricSamples, 16, 64);
-            deltaUV *= (1.0 / float(marchSteps)) * u_volumetricDensity;
+        vec2 deltaUV = (uv - sunUV);
+        float distToSun = length(deltaUV);
+        
+        int marchSteps = clamp(u_volumetricSamples, 16, 64);
+        
+        // Ray direction towards light source
+        vec2 rayDir = normalize(deltaUV + vec2(0.0001));
+        // Clamp step size to avoid infinite intensity spikes when near sun or massive jumps when far
+        float stepLength = min(distToSun, 0.75) / float(marchSteps);
+        vec2 stepUV = rayDir * stepLength * u_volumetricDensity;
+        
+        vec2 curUV = uv;
+        float illuminationDecay = 1.0;
+        float accumulatedRay = 0.0;
+
+        for (int s = 0; s < 64; s++) {
+            if (s >= marchSteps) break;
+            curUV -= stepUV;
+            if (curUV.x < 0.0 || curUV.x > 1.0 || curUV.y < 0.0 || curUV.y > 1.0) break;
+
+            vec3 sampleScene = texture(u_sceneColor, curUV).rgb;
+            float sampleDepth = texture(u_sceneDepth, curUV).r;
             
-            vec2 curUV = uv;
-            float illuminationDecay = 1.0;
-            vec3 raysAccum = vec3(0.0);
-
-            for (int s = 0; s < 64; s++) {
-                if (s >= marchSteps) break;
-                curUV -= deltaUV;
-                if (curUV.x < 0.0 || curUV.x > 1.0 || curUV.y < 0.0 || curUV.y > 1.0) break;
-
-                vec3 sampleScene = texture(u_sceneColor, curUV).rgb;
-                float sampleDepth = texture(u_sceneDepth, curUV).r;
-                
-                // If sampling sky/background or bright light source, it lets rays stream through
-                float occluder = (sampleDepth > 0.999) ? 1.0 : (dot(sampleScene, vec3(0.299, 0.587, 0.114)) > 0.75 ? 0.6 : 0.0);
-                
-                raysAccum += occluder * illuminationDecay * u_volumetricWeight;
-                illuminationDecay *= u_volumetricDecay;
-            }
-
-            vec3 volumetricGodRays = raysAccum * u_volumetricColor;
-            finalColor += volumetricGodRays;
+            // Sky background (depth ~ 1.0) passes light fully; scene geometry occludes light unless emissive/bright
+            float occluder = (sampleDepth > 0.999) ? 1.0 : (dot(sampleScene, vec3(0.2126, 0.7152, 0.0722)) > u_bloomThreshold ? 0.35 : 0.02);
+            
+            accumulatedRay += occluder * illuminationDecay;
+            illuminationDecay *= u_volumetricDecay;
         }
+
+        // Normalize accumulator so step count doesn't scale brightness exponentially
+        accumulatedRay = (accumulatedRay / float(marchSteps)) * u_volumetricWeight * 2.5 * visibility;
+        
+        // Smooth distance falloff from light source center
+        float sunRadialGlow = exp(-distToSun * 2.2) * 0.4 * visibility;
+        
+        vec3 godRays = u_volumetricColor * (accumulatedRay + sunRadialGlow);
+        finalColor += godRays;
     }
 
     // 4. ACES Filmic Tonemapping
@@ -2803,799 +2822,20 @@ class RetroSoundSynth {
   }
 }
 
-// Real Stepped Staircase Generator - Creates solid stepped treads with zero underside collision bugs
-function generateStairs(startId, namePrefix, startX, startZ, endZ, groundY, topY, stepCount, width, color) {
-  const steps = [];
-  const totalRise = topY - groundY;
-  const stepRise = totalRise / stepCount;
-  const zSpan = endZ - startZ;
-  const stepRun = Math.abs(zSpan) / stepCount;
-  const zDir = Math.sign(zSpan);
+// generateStairs, MAP_DEFINITIONS, ELEMENTAL_ITEMS_CATALOG, and FILAMENT_MATERIALS_CATALOG
+// are imported from ./maps/index.js (AAA architecture)
 
-  for (let i = 0; i < stepCount; i++) {
-    const stepHeight = groundY + stepRise * (i + 1);
-    const zCenter = startZ + zDir * (i * stepRun + stepRun * 0.5);
-    const yCenter = stepHeight * 0.5;
-    steps.push({
-      id: startId + i,
-      name: `${namePrefix}_Step_${i + 1}`,
-      type: "Stone Stair Step",
-      pos: [startX, yCenter, zCenter],
-      scale: [width, stepHeight, stepRun * 1.08],
-      roughness: 0.55,
-      metallic: 0.35,
-      color: color || [0.32, 0.35, 0.40],
-      collider: `AABB Step (${width.toFixed(1)}x${stepHeight.toFixed(2)}x${(stepRun * 1.08).toFixed(2)}m)`,
-      layer: "Layer_Obstacle",
-      trigger: false,
-      badge: `${namePrefix} Step ${i + 1}`,
-      contact: false
-    });
-  }
-  return steps;
-}
 
 // 4 Iconic Quake Arena Maps with 2 Massive Rooms Connected with a Tunnel and Open Floor 2 Mezzanines
-const QUAKE_MAP_DEFINITIONS = {
-  dm4: {
-    id: "dm4",
-    name: "The Bad Place (DM4 / Two Vaults & Magma Tunnel)",
-    quakeTitle: "Q1DM4 / The Bad Place",
-    environment: "Lava Chasm",
-    style: "Two Vaults & Magma Tunnel",
-    tag: "DM4 LAVA",
-    desc: "Huge 2-Room arena featuring South Molten Atrium and North Crypt Vault connected by a 24m Magma Tunnel with upper Floor 2 bridge and open grand staircases.",
-    ambientColor: 0.55,
-    floorScale: [64.0, 0.6, 96.0],
-    floorColor: [0.32, 0.18, 0.15],
-    floorRoughness: 0.95,
-    floorMetallic: 0.05,
-    groundFloor: { pos: [0, -0.5, 0], scale: [64.0, 0.6, 96.0], color: [0.32, 0.18, 0.15], roughness: 0.95, metallic: 0.05 },
-    staticGeometry: [
-      // ==========================================
-      // ROOM 1: SOUTH MOLTEN ATRIUM (Z = +14 to +48)
-      // ==========================================
-      { id: 2, name: "South_Lava_Core_Pit", type: "Molten Lava Core", pos: [0.0, 0.2, 30.0], scale: [12.0, 0.4, 12.0], roughness: 0.05, metallic: 0.95, color: [0.95, 0.30, 0.05], collider: "AABB Box (12x0.4x12m)", layer: "Layer_Obstacle", trigger: false, badge: "Lava Pit", contact: false },
-      { id: 3, name: "South_Lava_Basalt_Rim", type: "Basalt Rim", pos: [0.0, 0.5, 30.0], scale: [15.0, 0.6, 15.0], roughness: 0.60, metallic: 0.30, color: [0.25, 0.20, 0.20], collider: "AABB Box (15x0.6x15m)", layer: "Layer_Obstacle", trigger: false, badge: "Lava Rim", contact: false },
-      { id: 4, name: "South_Pillar_SW", type: "Volcanic Pillar", pos: [-10.0, 4.5, 28.0], scale: [2.5, 9.0, 2.5], roughness: 0.50, metallic: 0.40, color: [0.35, 0.20, 0.18], collider: "AABB Box (2.5x9x2.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Volcanic Pillar", contact: false },
-      { id: 5, name: "South_Pillar_SE", type: "Volcanic Pillar", pos: [10.0, 4.5, 28.0], scale: [2.5, 9.0, 2.5], roughness: 0.50, metallic: 0.40, color: [0.35, 0.20, 0.18], collider: "AABB Box (2.5x9x2.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Volcanic Pillar", contact: false },
+// QUAKE_MAP_DEFINITIONS is imported from ./maps/index.js
 
-      // FLOOR 2: South Balcony & Mezzanine (at Y=4.2, Z from +36 to +48)
-      { id: 6, name: "Floor2_South_Balcony", type: "Mezzanine Floor", pos: [0.0, 3.9, 42.0], scale: [60.0, 0.6, 12.0], roughness: 0.40, metallic: 0.60, color: [0.45, 0.25, 0.20], collider: "AABB Box (60x0.6x12m)", layer: "Layer_Obstacle", trigger: false, badge: "South Floor 2", contact: false },
-      { id: 7, name: "Floor2_South_Walkway_West", type: "Catwalk Platform", pos: [-20.0, 3.9, 24.0], scale: [5.0, 0.6, 24.0], roughness: 0.40, metallic: 0.60, color: [0.45, 0.25, 0.20], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "West Catwalk", contact: false },
-      { id: 8, name: "Floor2_South_Walkway_East", type: "Catwalk Platform", pos: [20.0, 3.9, 24.0], scale: [5.0, 0.6, 24.0], roughness: 0.40, metallic: 0.60, color: [0.45, 0.25, 0.20], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "East Catwalk", contact: false },
 
-      // REAL STAIRS TO SOUTH FLOOR 2: Mounted against the outer edge walls (X = ±28m, flush with edge walls at X=±32m)
-      ...generateStairs(40, "South_West_Stairs", -28.0, 16.0, 36.0, 0.0, 4.2, 12, 4.5, [0.38, 0.28, 0.25]),
-      ...generateStairs(60, "South_East_Stairs", 28.0, 16.0, 36.0, 0.0, 4.2, 12, 4.5, [0.38, 0.28, 0.25]),
+// ELEMENTAL_ITEMS_CATALOG is imported from ./maps/index.js
 
-      // ==========================================
-      // CONNECTING TUNNEL (Z = -12 to +12, X = -10 to +10)
-      // ==========================================
-      { id: 10, name: "Tunnel_West_Wall", type: "Tunnel Rock Wall", pos: [-11.0, 5.0, 0.0], scale: [2.0, 10.0, 24.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (2x10x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Tunnel Wall", contact: false },
-      { id: 11, name: "Tunnel_East_Wall", type: "Tunnel Rock Wall", pos: [11.0, 5.0, 0.0], scale: [2.0, 10.0, 24.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (2x10x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Tunnel Wall", contact: false },
-      { id: 12, name: "Tunnel_Arch_South", type: "Tunnel Archway", pos: [0.0, 7.5, 12.0], scale: [22.0, 3.0, 2.0], roughness: 0.50, metallic: 0.30, color: [0.35, 0.20, 0.18], collider: "AABB Box (22x3x2m)", layer: "Layer_Obstacle", trigger: false, badge: "Tunnel Arch", contact: false },
-      { id: 13, name: "Tunnel_Arch_North", type: "Tunnel Archway", pos: [0.0, 7.5, -12.0], scale: [22.0, 3.0, 2.0], roughness: 0.50, metallic: 0.30, color: [0.35, 0.20, 0.18], collider: "AABB Box (22x3x2m)", layer: "Layer_Obstacle", trigger: false, badge: "Tunnel Arch", contact: false },
-      
-      // UPPER FLOOR 2 TUNNEL BRIDGE: Spanning Z from -12 to +12 connecting South Mezzanine to North Mezzanine!
-      { id: 14, name: "Floor2_Tunnel_Bridge", type: "Upper Bridge Corridor", pos: [0.0, 3.9, 0.0], scale: [8.0, 0.6, 24.0], roughness: 0.40, metallic: 0.60, color: [0.45, 0.25, 0.20], collider: "AABB Box (8x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Tunnel Bridge", contact: false },
-
-      // ==========================================
-      // ROOM 2: NORTH CRYPT VAULT (Z = -48 to -14)
-      // ==========================================
-      { id: 16, name: "North_Crypt_Altar", type: "Stone Crypt Altar", pos: [0.0, 0.5, -30.0], scale: [10.0, 0.8, 10.0], roughness: 0.30, metallic: 0.70, color: [0.40, 0.22, 0.20], collider: "AABB Box (10x0.8x10m)", layer: "Layer_Obstacle", trigger: false, badge: "Crypt Altar", contact: false },
-      { id: 17, name: "North_Monolith_Pillar", type: "Crypt Monolith", pos: [0.0, 4.5, -30.0], scale: [2.0, 7.0, 2.0], roughness: 0.20, metallic: 0.95, color: [0.85, 0.35, 0.20], collider: "AABB Box (2x7x2m)", layer: "Layer_Obstacle", trigger: false, badge: "Crypt Monolith", contact: false },
-      { id: 18, name: "North_Pillar_NW", type: "Volcanic Pillar", pos: [-10.0, 4.5, -28.0], scale: [2.5, 9.0, 2.5], roughness: 0.50, metallic: 0.40, color: [0.35, 0.20, 0.18], collider: "AABB Box (2.5x9x2.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Volcanic Pillar", contact: false },
-      { id: 19, name: "North_Pillar_NE", type: "Volcanic Pillar", pos: [10.0, 4.5, -28.0], scale: [2.5, 9.0, 2.5], roughness: 0.50, metallic: 0.40, color: [0.35, 0.20, 0.18], collider: "AABB Box (2.5x9x2.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Volcanic Pillar", contact: false },
-
-      // FLOOR 2: North Balcony & Mezzanine (at Y=4.2, Z from -48 to -36)
-      { id: 20, name: "Floor2_North_Balcony", type: "Mezzanine Floor", pos: [0.0, 3.9, -42.0], scale: [60.0, 0.6, 12.0], roughness: 0.40, metallic: 0.60, color: [0.45, 0.25, 0.20], collider: "AABB Box (60x0.6x12m)", layer: "Layer_Obstacle", trigger: false, badge: "North Floor 2", contact: false },
-      { id: 21, name: "Floor2_North_Walkway_West", type: "Catwalk Platform", pos: [-20.0, 3.9, -24.0], scale: [5.0, 0.6, 24.0], roughness: 0.40, metallic: 0.60, color: [0.45, 0.25, 0.20], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "West Catwalk", contact: false },
-      { id: 22, name: "Floor2_North_Walkway_East", type: "Catwalk Platform", pos: [20.0, 3.9, -24.0], scale: [5.0, 0.6, 24.0], roughness: 0.40, metallic: 0.60, color: [0.45, 0.25, 0.20], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "East Catwalk", contact: false },
-
-      // REAL STAIRS TO NORTH FLOOR 2: Mounted against the outer edge walls (X = ±28m, flush with edge walls at X=±32m)
-      ...generateStairs(80, "North_West_Stairs", -28.0, -16.0, -36.0, 0.0, 4.2, 12, 4.5, [0.38, 0.28, 0.25]),
-      ...generateStairs(100, "North_East_Stairs", 28.0, -16.0, -36.0, 0.0, 4.2, 12, 4.5, [0.38, 0.28, 0.25]),
-
-      // ==========================================
-      // ARENA PERIMETER WALLS (64m x 96m)
-      // ==========================================
-      { id: 101, name: "South_Lava_Light_Spheric", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 5.5, 30.0], scale: [1.2, 1.2, 1.2], color: [1.0, 0.45, 0.1], intensity: 18.0, radius: 14.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
-      { id: 102, name: "North_Crypt_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 8.5, -30.0], lightDir: [0.0, -1.0, 0.1], scale: [1.0, 1.5, 1.0], color: [0.2, 0.85, 1.0], intensity: 22.0, spotCutoff: 0.85, outerCutoff: 0.70, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
-      { id: 103, name: "Magma_Tunnel_Light", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 4.5, 0.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.65, 0.25], intensity: 14.0, radius: 10.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
-      { id: 25, name: "Perimeter_Wall_North", type: "Volcanic Wall", pos: [0.0, 6.0, -48.0], scale: [64.0, 12.0, 2.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "North Wall", contact: false },
-      { id: 26, name: "Perimeter_Wall_South", type: "Volcanic Wall", pos: [0.0, 6.0, 48.0], scale: [64.0, 12.0, 2.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "South Wall", contact: false },
-      { id: 27, name: "Perimeter_Wall_West", type: "Volcanic Wall", pos: [-32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
-      { id: 28, name: "Perimeter_Wall_East", type: "Volcanic Wall", pos: [32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "East Wall", contact: false }
-    ],
-    playerSpawns: [
-      { id: 1, name: "South Molten Atrium", type: "FFA Primary", pos: [0.0, 0.0, 20.0], yaw: 0.0, desc: "South lava room looking towards the connecting magma tunnel." },
-      { id: 2, name: "North Crypt Vault", type: "Vault Spawn", pos: [0.0, 0.0, -20.0], yaw: 3.14, desc: "North crypt chamber near the high altar." },
-      { id: 3, name: "South Floor 2 Balcony", type: "High Mezzanine", pos: [0.0, 4.2, 42.0], yaw: 3.14, desc: "Upper Floor 2 balcony overlooking the southern lava core." },
-      { id: 4, name: "North Floor 2 Balcony", type: "High Mezzanine", pos: [0.0, 4.2, -42.0], yaw: 0.0, desc: "Upper Floor 2 balcony overlooking the northern crypt." },
-      { id: 5, name: "Upper Tunnel Bridge", type: "High Bridge", pos: [0.0, 4.2, 0.0], yaw: 0.0, desc: "Floor 2 connecting bridge suspended over the magma tunnel." }
-    ],
-    itemSpawns: [
-      { id: 221, itemKey: "megahealth", name: "MegaHealth Sphere (+100 HP)", category: "health", pos: [0.0, 5.0, 0.0], respawnDelay: 60.0, respawnTimer: 0.0, active: true, color: [0.06, 0.92, 0.95], scale: [0.6, 0.6, 0.6], meshType: 'sphere', effect: '+100 HP Overheal' },
-      { id: 222, itemKey: "armor_red", name: "Red Heavy Battle Armor (+100 AP)", category: "armor", pos: [0.0, 5.0, -42.0], respawnDelay: 30.0, respawnTimer: 0.0, active: true, color: [0.95, 0.20, 0.30], scale: [0.6, 0.6, 0.6], meshType: 'cube', effect: '+100 Armor (75% Absorb)' },
-      { id: 223, itemKey: "powerup_haste", name: "Haste Speed Rune (+60% Speed)", category: "powerup", pos: [0.0, 1.4, 30.0], respawnDelay: 90.0, respawnTimer: 0.0, active: true, color: [0.95, 0.85, 0.15], scale: [0.7, 0.7, 0.7], meshType: 'gem', effect: '+60% Movement & Sprint (25s)' },
-      { id: 224, itemKey: "ammo_rockets", name: "High-Explosive Rocket Shells (+10)", category: "ammo", pos: [-16.0, 0.8, -30.0], respawnDelay: 25.0, respawnTimer: 0.0, active: true, color: [0.95, 0.45, 0.10], scale: [0.5, 0.5, 0.5], meshType: 'cube', effect: '+10 HE Rockets' },
-      { id: 225, itemKey: "ammo_plasma", name: "Plasma Energy Cells (+50)", category: "ammo", pos: [16.0, 0.8, 30.0], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.06, 0.85, 0.95], scale: [0.45, 0.45, 0.45], meshType: 'cube', effect: '+50 Energy Cells' },
-      { id: 226, itemKey: "health_medium", name: "Medium Health Pack (+25 HP)", category: "health", pos: [0.0, 0.8, 0.0], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.10, 0.85, 0.40], scale: [0.45, 0.45, 0.45], meshType: 'sphere', effect: '+25 HP' }
-    ]
-  },
-  dm6: {
-    id: "dm6",
-    name: "The Dark Zone (DM6 / Twin Cathedrals & Crypt Tunnel)",
-    quakeTitle: "Q1DM6 / The Dark Zone",
-    environment: "Gothic Spire",
-    style: "Twin Cathedrals & Crypt Tunnel",
-    tag: "DM6 ARENA",
-    desc: "Sprawling 2-Room Gothic arena with South Quad Cathedral and North Teleport Sanctuary connected by a 24m Crypt Tunnel, upper Floor 2 catwalks, and open grand stairs.",
-    ambientColor: 0.45,
-    floorScale: [64.0, 0.6, 96.0],
-    floorColor: [0.22, 0.24, 0.28],
-    floorRoughness: 0.85,
-    floorMetallic: 0.15,
-    groundFloor: { pos: [0, -0.5, 0], scale: [64.0, 0.6, 96.0], color: [0.22, 0.24, 0.28], roughness: 0.85, metallic: 0.15 },
-    staticGeometry: [
-      // ==========================================
-      // ROOM 1: SOUTH QUAD CATHEDRAL (Z = +14 to +48)
-      // ==========================================
-      { id: 2, name: "South_Quad_Pedestal", type: "Gothic Dais", pos: [0.0, 0.4, 30.0], scale: [8.0, 0.8, 8.0], roughness: 0.30, metallic: 0.75, color: [0.35, 0.38, 0.45], collider: "AABB Box (8x0.8x8m)", layer: "Layer_Obstacle", trigger: false, badge: "Quad Dais", contact: false },
-      { id: 3, name: "South_Quad_Monolith", type: "Gothic Monolith", pos: [0.0, 4.5, 30.0], scale: [2.0, 7.5, 2.0], roughness: 0.20, metallic: 0.95, color: [0.85, 0.35, 0.20], collider: "AABB Box (2x7.5x2m)", layer: "Layer_Obstacle", trigger: false, badge: "Spire Monolith", contact: false },
-      { id: 4, name: "South_Pillar_NW", type: "Fluted Stone Pillar", pos: [-10.0, 4.5, 20.0], scale: [2.5, 9.0, 2.5], roughness: 0.45, metallic: 0.55, color: [0.42, 0.40, 0.38], collider: "AABB Box (2.5x9x2.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Gothic Pillar", contact: false },
-      { id: 5, name: "South_Pillar_NE", type: "Fluted Stone Pillar", pos: [10.0, 4.5, 20.0], scale: [2.5, 9.0, 2.5], roughness: 0.45, metallic: 0.55, color: [0.42, 0.40, 0.38], collider: "AABB Box (2.5x9x2.5m)", layer: "Layer_Obstacle", trigger: false, badge: "Gothic Pillar", contact: false },
-
-      // FLOOR 2: South Catwalk Balcony (at Y=4.2, Z from +36 to +48)
-      { id: 6, name: "Floor2_South_Balcony", type: "Catwalk Platform", pos: [0.0, 3.9, 42.0], scale: [60.0, 0.6, 12.0], roughness: 0.35, metallic: 0.85, color: [0.28, 0.32, 0.38], collider: "AABB Box (60x0.6x12m)", layer: "Layer_Obstacle", trigger: false, badge: "South Floor 2", contact: false },
-      { id: 7, name: "Floor2_South_Walkway_West", type: "Catwalk Platform", pos: [-20.0, 3.9, 24.0], scale: [5.0, 0.6, 24.0], roughness: 0.35, metallic: 0.85, color: [0.28, 0.32, 0.38], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "West Catwalk", contact: false },
-      { id: 8, name: "Floor2_South_Walkway_East", type: "Catwalk Platform", pos: [20.0, 3.9, 24.0], scale: [5.0, 0.6, 24.0], roughness: 0.35, metallic: 0.85, color: [0.28, 0.32, 0.38], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "East Catwalk", contact: false },
-
-      // REAL STAIRS TO SOUTH FLOOR 2: Mounted against outer edge walls (X = ±28m, flush with edge walls at X=±32m)
-      ...generateStairs(40, "South_West_Stairs", -28.0, 16.0, 36.0, 0.0, 4.2, 12, 4.5, [0.32, 0.35, 0.40]),
-      ...generateStairs(60, "South_East_Stairs", 28.0, 16.0, 36.0, 0.0, 4.2, 12, 4.5, [0.32, 0.35, 0.40]),
-
-      // ==========================================
-      // CONNECTING CRYPT TUNNEL (Z = -12 to +12, X = -10 to +10)
-      // ==========================================
-      { id: 10, name: "Tunnel_Gothic_Wall_West", type: "Gothic Stone Wall", pos: [-11.0, 5.0, 0.0], scale: [2.0, 10.0, 24.0], roughness: 0.65, metallic: 0.25, color: [0.25, 0.26, 0.30], collider: "AABB Box (2x10x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Crypt Tunnel Wall", contact: false },
-      { id: 11, name: "Tunnel_Gothic_Wall_East", type: "Gothic Stone Wall", pos: [11.0, 5.0, 0.0], scale: [2.0, 10.0, 24.0], roughness: 0.65, metallic: 0.25, color: [0.25, 0.26, 0.30], collider: "AABB Box (2x10x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Crypt Tunnel Wall", contact: false },
-      { id: 12, name: "Tunnel_Arch_South", type: "Gothic Arch", pos: [0.0, 7.5, 12.0], scale: [22.0, 3.0, 2.0], roughness: 0.45, metallic: 0.55, color: [0.42, 0.40, 0.38], collider: "AABB Box (22x3x2m)", layer: "Layer_Obstacle", trigger: false, badge: "Gothic Arch", contact: false },
-      { id: 13, name: "Tunnel_Arch_North", type: "Gothic Arch", pos: [0.0, 7.5, -12.0], scale: [22.0, 3.0, 2.0], roughness: 0.45, metallic: 0.55, color: [0.42, 0.40, 0.38], collider: "AABB Box (22x3x2m)", layer: "Layer_Obstacle", trigger: false, badge: "Gothic Arch", contact: false },
-
-      // UPPER FLOOR 2 TUNNEL BRIDGE: Connecting South Balcony to North Mezzanine!
-      { id: 14, name: "Floor2_Tunnel_Bridge", type: "Catwalk Platform", pos: [0.0, 3.9, 0.0], scale: [8.0, 0.6, 24.0], roughness: 0.35, metallic: 0.85, color: [0.28, 0.32, 0.38], collider: "AABB Box (8x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Tunnel Bridge", contact: false },
-
-      // ==========================================
-      // ROOM 2: NORTH TELEPORT SANCTUARY (Z = -48 to -14)
-      // ==========================================
-      { id: 16, name: "North_Teleport_Portal_West", type: "Energy Teleport Portal", pos: [-10.0, 2.2, -30.0], scale: [1.0, 4.5, 4.0], roughness: 0.10, metallic: 0.95, color: [0.10, 0.75, 0.95], collider: "AABB Box (1x4.5x4m)", layer: "Layer_Obstacle", trigger: false, badge: "Teleport Portal", contact: false },
-      { id: 17, name: "North_Teleport_Portal_East", type: "Energy Teleport Portal", pos: [10.0, 2.2, -30.0], scale: [1.0, 4.5, 4.0], roughness: 0.10, metallic: 0.95, color: [0.10, 0.75, 0.95], collider: "AABB Box (1x4.5x4m)", layer: "Layer_Obstacle", trigger: false, badge: "Teleport Portal", contact: false },
-      { id: 18, name: "North_Mega_Dais", type: "Gothic Dais", pos: [0.0, 0.4, -30.0], scale: [8.0, 0.8, 8.0], roughness: 0.30, metallic: 0.75, color: [0.35, 0.38, 0.45], collider: "AABB Box (8x0.8x8m)", layer: "Layer_Obstacle", trigger: false, badge: "Mega Dais", contact: false },
-
-      // FLOOR 2: North Balcony (at Y=4.2, Z from -48 to -36)
-      { id: 20, name: "Floor2_North_Balcony", type: "Catwalk Platform", pos: [0.0, 3.9, -42.0], scale: [60.0, 0.6, 12.0], roughness: 0.35, metallic: 0.85, color: [0.28, 0.32, 0.38], collider: "AABB Box (60x0.6x12m)", layer: "Layer_Obstacle", trigger: false, badge: "North Floor 2", contact: false },
-      { id: 21, name: "Floor2_North_Walkway_West", type: "Catwalk Platform", pos: [-20.0, 3.9, -24.0], scale: [5.0, 0.6, 24.0], roughness: 0.35, metallic: 0.85, color: [0.28, 0.32, 0.38], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "West Catwalk", contact: false },
-      { id: 22, name: "Floor2_North_Walkway_East", type: "Catwalk Platform", pos: [20.0, 3.9, -24.0], scale: [5.0, 0.6, 24.0], roughness: 0.35, metallic: 0.85, color: [0.28, 0.32, 0.38], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "East Catwalk", contact: false },
-
-      // REAL STAIRS TO NORTH FLOOR 2: Mounted against outer edge walls (X = ±28m, flush with edge walls at X=±32m)
-      ...generateStairs(80, "North_West_Stairs", -28.0, -16.0, -36.0, 0.0, 4.2, 12, 4.5, [0.32, 0.35, 0.40]),
-      ...generateStairs(100, "North_East_Stairs", 28.0, -16.0, -36.0, 0.0, 4.2, 12, 4.5, [0.32, 0.35, 0.40]),
-
-      // ==========================================
-      // ARENA PERIMETER WALLS (64m x 96m)
-      // ==========================================
-      { id: 101, name: "Quad_Cathedral_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 9.0, 30.0], lightDir: [0.0, -1.0, 0.0], scale: [1.2, 1.6, 1.2], color: [1.0, 0.85, 0.25], intensity: 25.0, spotCutoff: 0.88, outerCutoff: 0.72, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
-      { id: 102, name: "North_Sanctuary_Spheric_Light", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 5.5, -30.0], scale: [1.2, 1.2, 1.2], color: [0.1, 0.75, 1.0], intensity: 18.0, radius: 12.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
-      { id: 103, name: "Crypt_Tunnel_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 6.0, 0.0], lightDir: [0.0, -1.0, 0.2], scale: [1.0, 1.4, 1.0], color: [0.2, 1.0, 0.45], intensity: 16.0, spotCutoff: 0.82, outerCutoff: 0.65, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
-      { id: 25, name: "Perimeter_Wall_North", type: "Fortified Castle Wall", pos: [0.0, 6.0, -48.0], scale: [64.0, 12.0, 2.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "North Wall", contact: false },
-      { id: 26, name: "Perimeter_Wall_South", type: "Fortified Castle Wall", pos: [0.0, 6.0, 48.0], scale: [64.0, 12.0, 2.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "South Wall", contact: false },
-      { id: 27, name: "Perimeter_Wall_West", type: "Fortified Castle Wall", pos: [-32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
-      { id: 28, name: "Perimeter_Wall_East", type: "Fortified Castle Wall", pos: [32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "East Wall", contact: false }
-    ],
-    playerSpawns: [
-      { id: 1, name: "South Quad Cathedral", type: "FFA Primary", pos: [0.0, 0.0, 20.0], yaw: 0.0, desc: "South cathedral hall facing the central crypt tunnel." },
-      { id: 2, name: "North Teleport Sanctuary", type: "High Perch", pos: [0.0, 0.0, -20.0], yaw: 3.14, desc: "North sanctuary between teleporter gateways." },
-      { id: 3, name: "South Floor 2 Balcony", type: "Booster Ledge", pos: [0.0, 4.2, 42.0], yaw: 3.14, desc: "South upper mezzanine overlooking the Quad cathedral." },
-      { id: 4, name: "Upper Tunnel Bridge", type: "Sniper Peak", pos: [0.0, 4.2, 0.0], yaw: 0.0, desc: "High bridge overlooking the entire connecting crypt tunnel." }
-    ],
-    itemSpawns: [
-      { id: 201, itemKey: "megahealth", name: "MegaHealth (+100 HP)", category: "health", pos: [0.0, 1.2, -30.0], respawnDelay: 60.0, respawnTimer: 0.0, active: true, color: [0.06, 0.92, 0.95], scale: [0.6, 0.6, 0.6], meshType: 'sphere', effect: '+100 HP Overheal' },
-      { id: 202, itemKey: "armor_red", name: "Red Heavy Battle Armor (+100 AP)", category: "armor", pos: [0.0, 5.0, 42.0], respawnDelay: 30.0, respawnTimer: 0.0, active: true, color: [0.95, 0.20, 0.30], scale: [0.6, 0.6, 0.6], meshType: 'cube', effect: '+100 Armor (75% Absorb)' },
-      { id: 203, itemKey: "powerup_quad", name: "Quad Damage Rune (4x DMG)", category: "powerup", pos: [0.0, 1.4, 30.0], respawnDelay: 120.0, respawnTimer: 0.0, active: true, color: [0.20, 0.55, 1.0], scale: [0.7, 0.7, 0.7], meshType: 'gem', effect: '4x Projectile Damage (30s)' },
-      { id: 204, itemKey: "ammo_plasma", name: "Plasma Energy Cells (+50)", category: "ammo", pos: [-16.0, 0.8, 30.0], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.06, 0.85, 0.95], scale: [0.45, 0.45, 0.45], meshType: 'cube', effect: '+50 Energy Cells' },
-      { id: 205, itemKey: "ammo_slugs", name: "Heavy Kinetic Slugs (+30)", category: "ammo", pos: [16.0, 0.8, -30.0], respawnDelay: 20.0, respawnTimer: 0.0, active: true, color: [0.95, 0.65, 0.15], scale: [0.45, 0.45, 0.45], meshType: 'cube', effect: '+30 Kinetic Slugs' },
-      { id: 206, itemKey: "health_small", name: "Small Health Vial (+15 HP)", category: "health", pos: [0.0, 0.8, 0.0], respawnDelay: 15.0, respawnTimer: 0.0, active: true, color: [0.15, 0.95, 0.65], scale: [0.4, 0.4, 0.4], meshType: 'sphere', effect: '+15 HP' }
-    ]
-  },
-  q3dm17: {
-    id: "q3dm17",
-    name: "The Longest Yard (Q3DM17 / Twin Void Islands & Space Bridge)",
-    quakeTitle: "Q3DM17 / The Longest Yard",
-    environment: "Cosmic Void",
-    style: "Twin Void Islands & Space Bridge",
-    tag: "Q3DM17 VOID",
-    desc: "Huge suspended 2-Room cosmic arena featuring South Launch Courtyard and North Sniper Island connected by a 24m Void Bridge with real stepped launch stairs.",
-    ambientColor: 0.30,
-    floorScale: [60.0, 0.6, 90.0],
-    floorColor: [0.15, 0.16, 0.22],
-    floorRoughness: 0.90,
-    floorMetallic: 0.40,
-    groundFloor: { pos: [0, -0.5, 0], scale: [60.0, 0.6, 90.0], color: [0.15, 0.16, 0.22], roughness: 0.90, metallic: 0.40 },
-    staticGeometry: [
-      // ROOM 1: South Launch Courtyard (Z = +14 to +45)
-      { id: 2, name: "South_Upper_Dais", type: "Raised Octagon", pos: [0.0, 0.6, 28.0], scale: [18.0, 0.6, 18.0], roughness: 0.25, metallic: 0.85, color: [0.22, 0.20, 0.35], collider: "AABB Box (18x0.6x18m)", layer: "Layer_Obstacle", trigger: false, badge: "South Dais", contact: false },
-      { id: 3, name: "Floor2_South_Deck", type: "High Sniper Deck", pos: [0.0, 3.9, 38.0], scale: [54.0, 0.6, 10.0], roughness: 0.20, metallic: 0.95, color: [0.35, 0.25, 0.50], collider: "AABB Box (54x0.6x10m)", layer: "Layer_Obstacle", trigger: false, badge: "South Floor 2", contact: false },
-      ...generateStairs(40, "South_Launch_Stairs_West", -24.0, 16.0, 33.0, 0.0, 4.2, 10, 4.5, [0.30, 0.22, 0.45]),
-      ...generateStairs(50, "South_Launch_Stairs_East", 24.0, 16.0, 33.0, 0.0, 4.2, 10, 4.5, [0.30, 0.22, 0.45]),
-
-      // CONNECTING VOID TUNNEL / SKYWAY (Z = -12 to +12)
-      { id: 6, name: "Void_Skyway_Bridge", type: "Suspended Skyway", pos: [0.0, 0.4, 0.0], scale: [12.0, 0.6, 24.0], roughness: 0.20, metallic: 0.90, color: [0.20, 0.18, 0.30], collider: "AABB Box (12x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Void Skyway", contact: false },
-      { id: 7, name: "Floor2_Upper_Sky_Bridge", type: "Upper Sky Bridge", pos: [0.0, 3.9, 0.0], scale: [8.0, 0.6, 24.0], roughness: 0.20, metallic: 0.95, color: [0.35, 0.25, 0.50], collider: "AABB Box (8x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Upper Bridge", contact: false },
-
-      // ROOM 2: North Sniper Island (Z = -45 to -14)
-      { id: 10, name: "North_Sniper_Dais", type: "Raised Octagon", pos: [0.0, 0.6, -28.0], scale: [18.0, 0.6, 18.0], roughness: 0.25, metallic: 0.85, color: [0.22, 0.20, 0.35], collider: "AABB Box (18x0.6x18m)", layer: "Layer_Obstacle", trigger: false, badge: "North Dais", contact: false },
-      { id: 11, name: "Floor2_North_Deck", type: "High Sniper Deck", pos: [0.0, 3.9, -38.0], scale: [54.0, 0.6, 10.0], roughness: 0.20, metallic: 0.95, color: [0.35, 0.25, 0.50], collider: "AABB Box (54x0.6x10m)", layer: "Layer_Obstacle", trigger: false, badge: "North Floor 2", contact: false },
-      ...generateStairs(60, "North_Sniper_Stairs_West", -24.0, -16.0, -33.0, 0.0, 4.2, 10, 4.5, [0.30, 0.22, 0.45]),
-      ...generateStairs(70, "North_Sniper_Stairs_East", 24.0, -16.0, -33.0, 0.0, 4.2, 10, 4.5, [0.30, 0.22, 0.45]),
-
-      // LIGHT ENTITIES (Area Spheric Light & Spot Lights)
-      { id: 101, name: "Void_Skyway_Spheric_Light", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 5.5, 0.0], scale: [1.2, 1.2, 1.2], color: [0.85, 0.25, 1.0], intensity: 18.0, radius: 12.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
-      { id: 102, name: "South_Launch_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 8.0, 28.0], lightDir: [0.0, -1.0, -0.2], scale: [1.0, 1.5, 1.0], color: [0.2, 0.9, 1.0], intensity: 20.0, spotCutoff: 0.85, outerCutoff: 0.70, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
-      { id: 103, name: "North_Sniper_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 8.0, -28.0], lightDir: [0.0, -1.0, 0.2], scale: [1.0, 1.5, 1.0], color: [0.95, 0.35, 1.0], intensity: 20.0, spotCutoff: 0.85, outerCutoff: 0.70, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false }
-    ],
-    playerSpawns: [
-      { id: 1, name: "South Launch Courtyard", type: "FFA Primary", pos: [0.0, 0.6, 20.0], yaw: 0.0, desc: "South void platform facing the space bridge." },
-      { id: 2, name: "North Sniper Island", type: "Sniper Perch", pos: [0.0, 0.6, -20.0], yaw: 3.14, desc: "North floating island facing south." },
-      { id: 3, name: "Upper Sky Bridge", type: "High Perch", pos: [0.0, 4.2, 0.0], yaw: 0.0, desc: "Floor 2 bridge suspended over the cosmic abyss." }
-    ],
-    itemSpawns: [
-      { id: 211, itemKey: "ammo_railgun", name: "Quantum Railgun Slugs (+15)", category: "ammo", pos: [0.0, 5.0, -38.0], respawnDelay: 30.0, respawnTimer: 0.0, active: true, color: [0.85, 0.35, 0.95], scale: [0.5, 0.5, 0.5], meshType: 'gem', effect: '+15 Railgun Slugs' },
-      { id: 212, itemKey: "powerup_quad", name: "Quad Damage Rune (4x DMG)", category: "powerup", pos: [0.0, 5.0, 38.0], respawnDelay: 120.0, respawnTimer: 0.0, active: true, color: [0.20, 0.55, 1.0], scale: [0.65, 0.65, 0.65], meshType: 'gem', effect: '4x Projectile Damage (30s)' },
-      { id: 213, itemKey: "armor_yellow", name: "Yellow Combat Armor (+75 AP)", category: "armor", pos: [0.0, 1.2, 0.0], respawnDelay: 25.0, respawnTimer: 0.0, active: true, color: [0.95, 0.80, 0.15], scale: [0.55, 0.55, 0.55], meshType: 'cube', effect: '+75 Armor (66% Absorb)' }
-    ]
-  },
-  ztn: {
-    id: "ztn",
-    name: "Blood Run (ZTNDM3 / Dual Tech Halls & Coolant Tunnel)",
-    quakeTitle: "ZTNDM3 / Blood Run",
-    environment: "Tech Duel Atrium",
-    style: "Dual Tech Halls & Coolant Tunnel",
-    tag: "ZTN TECH",
-    desc: "Huge 2-Room tournament arena featuring South Reactor Atrium and North Teleport Hub connected by a 24m Coolant Tunnel with upper Floor 2 catwalks and open staircases.",
-    ambientColor: 0.40,
-    floorScale: [64.0, 0.6, 96.0],
-    floorColor: [0.18, 0.22, 0.26],
-    floorRoughness: 0.70,
-    floorMetallic: 0.60,
-    groundFloor: { pos: [0, -0.5, 0], scale: [64.0, 0.6, 96.0], color: [0.18, 0.22, 0.26], roughness: 0.70, metallic: 0.60 },
-    staticGeometry: [
-      // ROOM 1: South Reactor Atrium (Z = +14 to +48)
-      { id: 2, name: "South_Reactor_Core", type: "Cooling Tower Monolith", pos: [0.0, 4.0, 30.0], scale: [5.0, 8.0, 5.0], roughness: 0.15, metallic: 0.95, color: [0.08, 0.65, 0.60], collider: "AABB Box (5x8x5m)", layer: "Layer_Obstacle", trigger: false, badge: "Reactor Core", contact: false },
-      { id: 3, name: "Floor2_South_Catwalk", type: "Tech Balcony", pos: [0.0, 3.9, 42.0], scale: [60.0, 0.6, 12.0], roughness: 0.20, metallic: 0.95, color: [0.15, 0.45, 0.75], collider: "AABB Box (60x0.6x12m)", layer: "Layer_Obstacle", trigger: false, badge: "South Floor 2", contact: false },
-      { id: 4, name: "Floor2_South_Walkway_West", type: "Tech Catwalk", pos: [-20.0, 3.9, 24.0], scale: [5.0, 0.6, 24.0], roughness: 0.20, metallic: 0.95, color: [0.15, 0.45, 0.75], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "West Catwalk", contact: false },
-      { id: 5, name: "Floor2_South_Walkway_East", type: "Tech Catwalk", pos: [20.0, 3.9, 24.0], scale: [5.0, 0.6, 24.0], roughness: 0.20, metallic: 0.95, color: [0.15, 0.45, 0.75], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "East Catwalk", contact: false },
-      ...generateStairs(40, "South_Tech_Stairs_West", -28.0, 16.0, 36.0, 0.0, 4.2, 12, 4.5, [0.22, 0.28, 0.35]),
-      ...generateStairs(60, "South_Tech_Stairs_East", 28.0, 16.0, 36.0, 0.0, 4.2, 12, 4.5, [0.22, 0.28, 0.35]),
-
-      // CONNECTING COOLANT TUNNEL (Z = -12 to +12, X = -10 to +10)
-      { id: 10, name: "Tunnel_Tech_Wall_West", type: "Steel Tunnel Wall", pos: [-11.0, 5.0, 0.0], scale: [2.0, 10.0, 24.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (2x10x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Tunnel Wall", contact: false },
-      { id: 11, name: "Tunnel_Tech_Wall_East", type: "Steel Tunnel Wall", pos: [11.0, 5.0, 0.0], scale: [2.0, 10.0, 24.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (2x10x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Tunnel Wall", contact: false },
-      { id: 12, name: "Floor2_Tunnel_Catwalk_Bridge", type: "Upper Tech Bridge", pos: [0.0, 3.9, 0.0], scale: [8.0, 0.6, 24.0], roughness: 0.30, metallic: 0.80, color: [0.22, 0.30, 0.38], collider: "AABB Box (8x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "Tunnel Bridge", contact: false },
-
-      // ROOM 2: North Teleport Hub (Z = -48 to -14)
-      { id: 15, name: "North_Teleport_Arch", type: "Quantum Portal Frame", pos: [0.0, 2.5, -30.0], scale: [1.2, 4.5, 4.0], roughness: 0.10, metallic: 0.95, color: [0.06, 0.85, 0.95], collider: "AABB Box (1.2x4.5x4m)", layer: "Layer_Obstacle", trigger: false, badge: "Teleport Frame", contact: false },
-      { id: 16, name: "Floor2_North_Catwalk", type: "Tech Balcony", pos: [0.0, 3.9, -42.0], scale: [60.0, 0.6, 12.0], roughness: 0.20, metallic: 0.95, color: [0.15, 0.45, 0.75], collider: "AABB Box (60x0.6x12m)", layer: "Layer_Obstacle", trigger: false, badge: "North Floor 2", contact: false },
-      { id: 17, name: "Floor2_North_Walkway_West", type: "Tech Catwalk", pos: [-20.0, 3.9, -24.0], scale: [5.0, 0.6, 24.0], roughness: 0.20, metallic: 0.95, color: [0.15, 0.45, 0.75], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "West Catwalk", contact: false },
-      { id: 18, name: "Floor2_North_Walkway_East", type: "Tech Catwalk", pos: [20.0, 3.9, -24.0], scale: [5.0, 0.6, 24.0], roughness: 0.20, metallic: 0.95, color: [0.15, 0.45, 0.75], collider: "AABB Box (5x0.6x24m)", layer: "Layer_Obstacle", trigger: false, badge: "East Catwalk", contact: false },
-      ...generateStairs(80, "North_Tech_Stairs_West", -28.0, -16.0, -36.0, 0.0, 4.2, 12, 4.5, [0.22, 0.28, 0.35]),
-      ...generateStairs(100, "North_Tech_Stairs_East", 28.0, -16.0, -36.0, 0.0, 4.2, 12, 4.5, [0.22, 0.28, 0.35]),
-
-      // PERIMETER WALLS
-      { id: 101, name: "South_Reactor_Spheric_Light", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 6.0, 30.0], scale: [1.4, 1.4, 1.4], color: [0.08, 0.85, 0.75], intensity: 22.0, radius: 14.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
-      { id: 102, name: "North_Portal_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 8.0, -30.0], lightDir: [0.0, -1.0, 0.1], scale: [1.0, 1.5, 1.0], color: [0.5, 0.9, 1.0], intensity: 22.0, spotCutoff: 0.86, outerCutoff: 0.72, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
-      { id: 103, name: "Coolant_Tunnel_Spheric_Light", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 4.5, 0.0], scale: [1.0, 1.0, 1.0], color: [0.2, 0.6, 1.0], intensity: 15.0, radius: 9.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
-      { id: 20, name: "Perimeter_Wall_North", type: "Steel Perimeter Wall", pos: [0.0, 6.0, -48.0], scale: [64.0, 12.0, 2.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "North Wall", contact: false },
-      { id: 21, name: "Perimeter_Wall_South", type: "Steel Perimeter Wall", pos: [0.0, 6.0, 48.0], scale: [64.0, 12.0, 2.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "South Wall", contact: false },
-      { id: 22, name: "Perimeter_Wall_West", type: "Steel Perimeter Wall", pos: [-32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
-      { id: 23, name: "Perimeter_Wall_East", type: "Steel Perimeter Wall", pos: [32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "East Wall", contact: false }
-    ],
-    playerSpawns: [
-      { id: 1, name: "South Reactor Atrium", type: "FFA Primary", pos: [0.0, 0.0, 20.0], yaw: 0.0, desc: "South reactor floor facing the coolant tunnel." },
-      { id: 2, name: "North Teleport Hub", type: "Hub Spawn", pos: [0.0, 0.0, -20.0], yaw: 3.14, desc: "North teleport hub looking south." },
-      { id: 3, name: "Upper Tunnel Catwalk", type: "High Balcony", pos: [0.0, 4.2, 0.0], yaw: 0.0, desc: "Floor 2 catwalk bridge inside the coolant tunnel." }
-    ],
-    itemSpawns: [
-      { id: 231, itemKey: "armor_red", name: "Red Heavy Battle Armor (+100 AP)", category: "armor", pos: [0.0, 5.0, 42.0], respawnDelay: 30.0, respawnTimer: 0.0, active: true, color: [0.95, 0.20, 0.30], scale: [0.6, 0.6, 0.6], meshType: 'cube', effect: '+100 Armor (75% Absorb)' },
-      { id: 232, itemKey: "megahealth", name: "MegaHealth Sphere (+100 HP)", category: "health", pos: [0.0, 5.0, 0.0], respawnDelay: 60.0, respawnTimer: 0.0, active: true, color: [0.06, 0.92, 0.95], scale: [0.6, 0.6, 0.6], meshType: 'sphere', effect: '+100 HP Overheal' },
-      { id: 233, itemKey: "powerup_regen", name: "Regeneration Rune (+15 HP/s)", category: "powerup", pos: [0.0, 1.4, -30.0], respawnDelay: 90.0, respawnTimer: 0.0, active: true, color: [0.15, 0.95, 0.45], scale: [0.7, 0.7, 0.7], meshType: 'gem', effect: '+15 HP/sec Regen (30s)' }
-    ]
-  }
-};
-
-// Full FPS Elemental Items Catalog (Health, Armor, Ammunition, and Legendary Powerups)
-const ELEMENTAL_ITEMS_CATALOG = {
-  health_small: { key: "health_small", name: "Small Health Vial", category: "health", icon: "❤️", color: [0.15, 0.95, 0.65], typePill: "Health +15", effect: "+15 HP", desc: "Instantly restores 15 Health points up to base capacity (100 HP).", respawnDelay: 15.0, meshType: "sphere", scale: [0.35, 0.35, 0.35], sound: "health" },
-  health_medium: { key: "health_medium", name: "Medium Health Pack", category: "health", icon: "💚", color: [0.10, 0.85, 0.40], typePill: "Health +25", effect: "+25 HP", desc: "Field surgical combat kit restoring 25 Health points up to 100 HP.", respawnDelay: 20.0, meshType: "sphere", scale: [0.45, 0.45, 0.45], sound: "health" },
-  megahealth: { key: "megahealth", name: "MegaHealth Sphere", category: "health", icon: "💎", color: [0.06, 0.92, 0.95], typePill: "Overheal +100", effect: "+100 HP Overheal (Max 200 HP)", desc: "Pulsing bio-energy core boosting maximum health beyond limit up to 200 HP.", respawnDelay: 60.0, meshType: "sphere", scale: [0.55, 0.55, 0.55], sound: "health_mega" },
-
-  armor_green: { key: "armor_green", name: "Green Combat Armor", category: "armor", icon: "🛡️", color: [0.10, 0.85, 0.45], typePill: "Armor +50", effect: "+50 AP (50% Absorb)", desc: "Light Kevlar weave vest absorbing 50% of incoming kinetic damage.", respawnDelay: 25.0, meshType: "cube", scale: [0.50, 0.50, 0.50], sound: "armor" },
-  armor_yellow: { key: "armor_yellow", name: "Yellow Combat Armor", category: "armor", icon: "🛡️", color: [0.95, 0.80, 0.15], typePill: "Armor +75", effect: "+75 AP (66% Absorb)", desc: "Medium ceramic composite battle plate absorbing 66% of damage.", respawnDelay: 25.0, meshType: "cube", scale: [0.55, 0.55, 0.55], sound: "armor" },
-  armor_red: { key: "armor_red", name: "Red Heavy Battle Armor", category: "armor", icon: "🛡️", color: [0.95, 0.20, 0.30], typePill: "Armor +100", effect: "+100 AP (75% Absorb)", desc: "Heavy powered titanium exoskeleton providing 75% damage mitigation.", respawnDelay: 30.0, meshType: "cube", scale: [0.60, 0.60, 0.60], sound: "armor_heavy" },
-
-  ammo_plasma: { key: "ammo_plasma", name: "Plasma Energy Cells", category: "ammo", icon: "⚡", color: [0.06, 0.85, 0.95], typePill: "Energy +50", effect: "+50 Energy Cells", desc: "Superheated ionized plasma canister for plasma bolt rifles.", respawnDelay: 20.0, meshType: "cube", scale: [0.45, 0.45, 0.45], sound: "ammo" },
-  ammo_slugs: { key: "ammo_slugs", name: "Heavy Kinetic Slugs", category: "ammo", icon: "💥", color: [0.95, 0.65, 0.15], typePill: "Ammo +30", effect: "+30 Kinetic Slugs", desc: "Depleted uranium high-density slugs for rapid-fire ballistic cannons.", respawnDelay: 20.0, meshType: "cube", scale: [0.45, 0.45, 0.45], sound: "ammo" },
-  ammo_rockets: { key: "ammo_rockets", name: "HE Rocket Shells", category: "ammo", icon: "🚀", color: [0.95, 0.45, 0.10], typePill: "Rockets +10", effect: "+10 HE Rockets", desc: "High-explosive rocket ordnance pods with blast radius capability.", respawnDelay: 25.0, meshType: "cube", scale: [0.50, 0.50, 0.50], sound: "ammo" },
-  ammo_railgun: { key: "ammo_railgun", name: "Quantum Railgun Slugs", category: "ammo", icon: "🔮", color: [0.85, 0.35, 0.95], typePill: "Railgun +15", effect: "+15 Pulse Slugs", desc: "Quantum accelerated relativistic projectile slugs for sniper railguns.", respawnDelay: 30.0, meshType: "gem", scale: [0.50, 0.50, 0.50], sound: "ammo" },
-
-  powerup_quad: { key: "powerup_quad", name: "Quad Damage Rune", category: "powerup", icon: "⚡", color: [0.20, 0.55, 1.0], typePill: "Powerup (4x DMG)", effect: "4.0x Damage Multiplier (30s)", desc: "Legendary Quake rune amplifying all weapon projectile damage by 400%.", respawnDelay: 120.0, meshType: "gem", scale: [0.65, 0.65, 0.65], sound: "powerup" },
-  powerup_haste: { key: "powerup_haste", name: "Haste Speed Rune", category: "powerup", icon: "🏃", color: [0.95, 0.85, 0.15], typePill: "Powerup (+60% Spd)", effect: "+60% Move & Sprint Speed (25s)", desc: "Hyper-kinetic rune accelerating locomotion, sprint, and jump velocity.", respawnDelay: 90.0, meshType: "gem", scale: [0.65, 0.65, 0.65], sound: "powerup" },
-  powerup_regen: { key: "powerup_regen", name: "Regeneration Rune", category: "powerup", icon: "💚", color: [0.15, 0.95, 0.45], typePill: "Powerup (+15 HP/s)", effect: "+15 HP/sec Regen (30s)", desc: "Continuous cellular nanite repair restoring 15 Health per second.", respawnDelay: 90.0, meshType: "gem", scale: [0.65, 0.65, 0.65], sound: "powerup" }
-};
 
 // Comprehensive Filament & PBR Material Catalog with MAT COST profiling
-const FILAMENT_MATERIALS_CATALOG = {
-  wood: {
-    key: "wood",
-    name: "Procedural Dark Walnut Wood",
-    category: "procedural",
-    icon: "🌲",
-    matTypeId: 1,
-    bumpStrength: 1.6,
-    color: [0.38, 0.22, 0.12],
-    roughness: 0.48,
-    metallic: 0.0,
-    clearCoat: 0.05,
-    noiseScale: 22.0,
-    anisotropy: 0.15,
-    proceduralType: "wood",
-    swatch: "linear-gradient(135deg, #5c3a21 0%, #2b180d 100%)",
-    desc: "Procedural wood grain synthesis using sine-wave ring perturbations, fine grain lines, and pores.",
-    matCost: {
-      rating: "LOW",
-      badgeClass: "safe",
-      alus: "16 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "1.2 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Ultra Safe for Mobile",
-      desc: "Zero texture fetches. Pure sinusoidal grain modulation with minimal arithmetic."
-    }
-  },
-  rock: {
-    key: "rock",
-    name: "Procedural Basalt & Granite Rock",
-    category: "procedural",
-    icon: "🗿",
-    matTypeId: 2,
-    bumpStrength: 2.5,
-    color: [0.32, 0.32, 0.35],
-    roughness: 0.88,
-    metallic: 0.0,
-    clearCoat: 0.0,
-    noiseScale: 14.0,
-    anisotropy: 0.0,
-    proceduralType: "rock",
-    swatch: "linear-gradient(135deg, #4b5563 0%, #1f2937 100%)",
-    desc: "Cellular micro-crag perturbation with high roughness Oren-Nayar diffuse approximation and quartz flecks.",
-    matCost: {
-      rating: "LOW",
-      badgeClass: "safe",
-      alus: "18 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "1.2 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Ultra Safe for Mobile",
-      desc: "Fast analytical normal displacement without VRAM sampling overhead."
-    }
-  },
-  metal: {
-    key: "metal",
-    name: "Brushed Aerospace Titanium",
-    category: "procedural",
-    icon: "⚙️",
-    matTypeId: 3,
-    bumpStrength: 1.4,
-    color: [0.72, 0.76, 0.82],
-    roughness: 0.24,
-    metallic: 0.96,
-    clearCoat: 0.0,
-    noiseScale: 35.0,
-    anisotropy: 0.85,
-    proceduralType: "metal",
-    swatch: "linear-gradient(135deg, #94a3b8 0%, #334155 100%)",
-    desc: "High-speed directional anisotropy with micro-scratches and sharp conductor specular lobe.",
-    matCost: {
-      rating: "LOW",
-      badgeClass: "safe",
-      alus: "14 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "1.0 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Ultra Safe for Mobile",
-      desc: "Cook-Torrance anisotropic GGX with precalculated tangent frame."
-    }
-  },
-  gold: {
-    key: "gold",
-    name: "Polished 24K Pure Gold",
-    category: "reflective",
-    icon: "👑",
-    matTypeId: 0,
-    bumpStrength: 0.0,
-    color: [1.00, 0.78, 0.28],
-    roughness: 0.12,
-    metallic: 1.0,
-    clearCoat: 0.10,
-    noiseScale: 1.0,
-    anisotropy: 0.0,
-    proceduralType: "standard",
-    swatch: "linear-gradient(135deg, #fbbf24 0%, #b45309 100%)",
-    desc: "Cook-Torrance standard conductor BRDF with exact golden F0 spectrum.",
-    matCost: {
-      rating: "LOW",
-      badgeClass: "safe",
-      alus: "12 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "0.8 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Ultra Safe for Mobile",
-      desc: "Standard PBR conductor math with negligible fill-rate footprint."
-    }
-  },
-  chrome: {
-    key: "chrome",
-    name: "Mirror Specular Chrome",
-    category: "reflective",
-    icon: "🪞",
-    matTypeId: 0,
-    bumpStrength: 0.0,
-    color: [0.95, 0.95, 0.98],
-    roughness: 0.04,
-    metallic: 1.0,
-    clearCoat: 0.0,
-    noiseScale: 1.0,
-    anisotropy: 0.0,
-    proceduralType: "standard",
-    swatch: "linear-gradient(135deg, #e2e8f0 0%, #64748b 100%)",
-    desc: "Ultra-low roughness delta reflection with peak specular sharpness.",
-    matCost: {
-      rating: "LOW",
-      badgeClass: "safe",
-      alus: "12 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "0.8 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Ultra Safe for Mobile",
-      desc: "Nearly specular delta reflection with minimal instruction count."
-    }
-  },
-  glass: {
-    key: "glass",
-    name: "Optical Dielectric Glass & Refractions",
-    category: "reflective",
-    icon: "🔮",
-    matTypeId: 9,
-    bumpStrength: 0.0,
-    color: [0.92, 0.96, 1.00],
-    roughness: 0.03,
-    metallic: 0.0,
-    clearCoat: 0.95,
-    noiseScale: 1.0,
-    anisotropy: 0.0,
-    proceduralType: "glass",
-    swatch: "linear-gradient(135deg, rgba(147,197,253,0.85) 0%, rgba(30,58,138,0.85) 100%)",
-    desc: "Fresnel dielectric transmission with Cauchy chromatic dispersion and screen depth sampling.",
-    matCost: {
-      rating: "MEDIUM",
-      badgeClass: "medium",
-      alus: "32 ALUs",
-      texSamplers: "1 Depth / Screen",
-      bandwidth: "2.8 GB/s",
-      fpsEstimate: "58 FPS Balanced",
-      mobileVerdict: "Moderate Cost (OK for modern phones)",
-      desc: "Screen-space refraction pass with Fresnel transmission math."
-    }
-  },
-  water: {
-    key: "water",
-    name: "Procedural Trochoidal Ripple Water",
-    category: "reflective",
-    icon: "🌊",
-    matTypeId: 13,
-    bumpStrength: 2.8,
-    color: [0.10, 0.45, 0.75],
-    roughness: 0.08,
-    metallic: 0.10,
-    clearCoat: 0.95,
-    noiseScale: 25.0,
-    anisotropy: 0.20,
-    proceduralType: "water",
-    swatch: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
-    desc: "Dual harmonic trochoidal wave normal synthesis for dynamic surface ripples.",
-    matCost: {
-      rating: "MEDIUM",
-      badgeClass: "medium",
-      alus: "28 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "2.1 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Safe for Mobile",
-      desc: "Dual sine/cosine derivative normal evaluation in fragment stage."
-    }
-  },
-  marble: {
-    key: "marble",
-    name: "Procedural Calacatta Marble",
-    category: "procedural",
-    icon: "🏛️",
-    matTypeId: 4,
-    bumpStrength: 0.8,
-    color: [0.92, 0.92, 0.94],
-    roughness: 0.28,
-    metallic: 0.0,
-    clearCoat: 0.85,
-    noiseScale: 16.0,
-    anisotropy: 0.0,
-    proceduralType: "marble",
-    swatch: "linear-gradient(135deg, #f8fafc 0%, #94a3b8 100%)",
-    desc: "Multi-octave Perlin turbulence vein synthesis with subsurface scattering approximation.",
-    matCost: {
-      rating: "HIGH",
-      badgeClass: "heavy",
-      alus: "46 ALUs",
-      texSamplers: "0 (Heavy Math)",
-      bandwidth: "3.4 GB/s",
-      fpsEstimate: "50 FPS (Heavy)",
-      mobileVerdict: "Heavy on Low-End Mobile",
-      desc: "3 octaves of analytical fractional turbulence with SSS light falloff."
-    }
-  },
-  obsidian: {
-    key: "obsidian",
-    name: "Volcanic Obsidian Glass",
-    category: "reflective",
-    icon: "🖤",
-    matTypeId: 0,
-    bumpStrength: 0.0,
-    color: [0.08, 0.08, 0.10],
-    roughness: 0.06,
-    metallic: 0.15,
-    clearCoat: 0.80,
-    noiseScale: 1.0,
-    anisotropy: 0.0,
-    proceduralType: "standard",
-    swatch: "linear-gradient(135deg, #1e1b4b 0%, #030712 100%)",
-    desc: "Deep black dielectric substrate with specular rim fresnel.",
-    matCost: {
-      rating: "LOW",
-      badgeClass: "safe",
-      alus: "14 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "0.9 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Ultra Safe for Mobile",
-      desc: "High absorptive base with clean dielectric reflection."
-    }
-  },
-  velvet: {
-    key: "velvet",
-    name: "Sheen Microfiber Velvet Cloth",
-    category: "special",
-    icon: "👘",
-    matTypeId: 10,
-    bumpStrength: 0.0,
-    color: [0.55, 0.12, 0.25],
-    roughness: 0.72,
-    metallic: 0.0,
-    clearCoat: 0.0,
-    noiseScale: 1.0,
-    anisotropy: 0.0,
-    proceduralType: "velvet",
-    swatch: "linear-gradient(135deg, #9f1239 0%, #4c0519 100%)",
-    desc: "Charlie sheen BRDF with grazing rim fabric light wrapping.",
-    matCost: {
-      rating: "MEDIUM",
-      badgeClass: "medium",
-      alus: "24 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "1.8 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Safe for Mobile",
-      desc: "Inverted Fresnel rim wrap simulates micro-fibers along silhouette."
-    }
-  },
-  carbon_fiber: {
-    key: "carbon_fiber",
-    name: "Twill Weave Carbon Fiber",
-    category: "procedural",
-    icon: "🏎️",
-    matTypeId: 5,
-    bumpStrength: 1.8,
-    color: [0.12, 0.13, 0.15],
-    roughness: 0.30,
-    metallic: 0.45,
-    clearCoat: 1.0,
-    noiseScale: 40.0,
-    anisotropy: 0.90,
-    proceduralType: "carbon_fiber",
-    swatch: "linear-gradient(135deg, #334155 0%, #0f172a 100%)",
-    desc: "Dual-angle anisotropic cross reflection under clearcoat glaze.",
-    matCost: {
-      rating: "MEDIUM",
-      badgeClass: "medium",
-      alus: "28 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "2.2 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Safe for Mobile",
-      desc: "Checker-pattern orthogonal tangent evaluation with clearcoat."
-    }
-  },
-  rust: {
-    key: "rust",
-    name: "Corroded Iron & Rust",
-    category: "procedural",
-    icon: "🧱",
-    matTypeId: 6,
-    bumpStrength: 2.2,
-    color: [0.65, 0.28, 0.16],
-    roughness: 0.82,
-    metallic: 0.35,
-    clearCoat: 0.0,
-    noiseScale: 20.0,
-    anisotropy: 0.0,
-    proceduralType: "rust",
-    swatch: "linear-gradient(135deg, #b45309 0%, #451a03 100%)",
-    desc: "Procedural noise mask blending smooth conductor and rough oxide.",
-    matCost: {
-      rating: "MEDIUM",
-      badgeClass: "medium",
-      alus: "30 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "2.4 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Safe for Mobile",
-      desc: "Analytical threshold mask smoothly interpolating two PBR lobes."
-    }
-  },
-  magma: {
-    key: "magma",
-    name: "Volcanic Magma & Lava Crust",
-    category: "procedural",
-    icon: "🌋",
-    matTypeId: 7,
-    bumpStrength: 2.0,
-    color: [0.85, 0.25, 0.05],
-    roughness: 0.65,
-    metallic: 0.0,
-    clearCoat: 0.0,
-    noiseScale: 18.0,
-    anisotropy: 0.0,
-    proceduralType: "magma",
-    swatch: "linear-gradient(135deg, #f97316 0%, #7f1d1d 100%)",
-    desc: "Voronoi magma fracture cracks with animated heat glow and dark basalt crust.",
-    matCost: {
-      rating: "HIGH",
-      badgeClass: "heavy",
-      alus: "42 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "3.1 GB/s",
-      fpsEstimate: "52 FPS Balanced",
-      mobileVerdict: "Moderate Cost on Mobile",
-      desc: "Procedural cellular fracture network with dynamic emissive pulses."
-    }
-  },
-  car_paint: {
-    key: "car_paint",
-    name: "Flake Metallic Clear Coat Paint",
-    category: "reflective",
-    icon: "🚗",
-    matTypeId: 8,
-    bumpStrength: 1.0,
-    color: [0.85, 0.15, 0.20],
-    roughness: 0.20,
-    metallic: 0.85,
-    clearCoat: 1.0,
-    noiseScale: 50.0,
-    anisotropy: 0.0,
-    proceduralType: "car_paint",
-    swatch: "linear-gradient(135deg, #e11d48 0%, #881337 100%)",
-    desc: "Dual-layer PBR with micro-specular sparkling flakes and dielectric top coat.",
-    matCost: {
-      rating: "MEDIUM",
-      badgeClass: "medium",
-      alus: "26 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "2.0 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Safe for Mobile",
-      desc: "Specular flake noise layer under a polished dielectric glaze."
-    }
-  },
-  leather: {
-    key: "leather",
-    name: "Pebble Grain Full-Grain Leather",
-    category: "procedural",
-    icon: "👞",
-    matTypeId: 14,
-    bumpStrength: 1.9,
-    color: [0.45, 0.26, 0.16],
-    roughness: 0.58,
-    metallic: 0.0,
-    clearCoat: 0.15,
-    noiseScale: 28.0,
-    anisotropy: 0.1,
-    proceduralType: "leather",
-    swatch: "linear-gradient(135deg, #78350f 0%, #3d1a04 100%)",
-    desc: "Organic cellular Voronoi pebble displacement with soft sheen response.",
-    matCost: {
-      rating: "MEDIUM",
-      badgeClass: "medium",
-      alus: "26 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "2.0 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Safe for Mobile",
-      desc: "Procedural cellular pebble normal displacement with low overhead."
-    }
-  },
-  hologram: {
-    key: "hologram",
-    name: "Quantum Holographic Matrix",
-    category: "special",
-    icon: "🌐",
-    matTypeId: 11,
-    bumpStrength: 0.0,
-    color: [0.10, 0.90, 0.85],
-    roughness: 0.10,
-    metallic: 0.0,
-    clearCoat: 0.0,
-    noiseScale: 25.0,
-    anisotropy: 0.0,
-    proceduralType: "hologram",
-    swatch: "linear-gradient(135deg, #06b6d4 0%, #0284c7 100%)",
-    desc: "Fresnel rim glow with animated scanline interference.",
-    matCost: {
-      rating: "LOW",
-      badgeClass: "safe",
-      alus: "18 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "1.2 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Ultra Safe for Mobile",
-      desc: "Fast time-modulated trigonometric scanlines and Fresnel glow."
-    }
-  },
-  neon: {
-    key: "neon",
-    name: "Supercharged Emissive Neon",
-    category: "special",
-    icon: "⚡",
-    matTypeId: 12,
-    bumpStrength: 0.0,
-    color: [0.95, 0.20, 0.80],
-    roughness: 0.05,
-    metallic: 0.0,
-    clearCoat: 0.0,
-    noiseScale: 1.0,
-    anisotropy: 0.0,
-    proceduralType: "neon",
-    swatch: "linear-gradient(135deg, #ec4899 0%, #be185d 100%)",
-    desc: "HDR emissive luminance with smooth gaussian bloom falloff.",
-    matCost: {
-      rating: "LOW",
-      badgeClass: "safe",
-      alus: "14 ALUs",
-      texSamplers: "0 (Pure Math)",
-      bandwidth: "1.0 GB/s",
-      fpsEstimate: "60 FPS Solid",
-      mobileVerdict: "Ultra Safe for Mobile",
-      desc: "Direct HDR additive color emission with minimal fragment overhead."
-    }
-  }
-};
+// FILAMENT_MATERIALS_CATALOG is imported from ./maps/index.js
+
 
 /// Application State Controller
 class NativeApp {
@@ -9759,11 +8999,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (this.postProcProg.uTime) gl.uniform1f(this.postProcProg.uTime, timestamp * 0.001);
       if (this.postProcProg.uCamPos) gl.uniform3fv(this.postProcProg.uCamPos, this.state.camPos);
 
-      // Dynamic Sun Screen Position for Volumetric Light God Rays
+      // Dynamic Sun Screen Position & Visibility for Volumetric Light God Rays
       const sunWorld = [
-        this.state.camPos[0] - 25.0,
-        this.state.camPos[1] + 35.0,
-        this.state.camPos[2] + 20.0,
+        this.state.camPos[0] - 30.0,
+        this.state.camPos[1] + 45.0,
+        this.state.camPos[2] + 25.0,
         1.0
       ];
       const sunClip = [
@@ -9772,13 +9012,21 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.viewProjMatrix[2]*sunWorld[0] + this.viewProjMatrix[6]*sunWorld[1] + this.viewProjMatrix[10]*sunWorld[2] + this.viewProjMatrix[14]*sunWorld[3],
         this.viewProjMatrix[3]*sunWorld[0] + this.viewProjMatrix[7]*sunWorld[1] + this.viewProjMatrix[11]*sunWorld[2] + this.viewProjMatrix[15]*sunWorld[3]
       ];
-      let sunScreenX = 0.5;
-      let sunScreenY = 0.8;
-      if (sunClip[3] > 0.01) {
+      let sunScreenX = -10.0;
+      let sunScreenY = -10.0;
+      let sunVisibility = 0.0;
+      if (sunClip[3] > 0.1) {
         sunScreenX = (sunClip[0] / sunClip[3]) * 0.5 + 0.5;
         sunScreenY = (sunClip[1] / sunClip[3]) * 0.5 + 0.5;
+
+        // Smooth viewport edge falloff
+        const edgeDistX = Math.abs(sunScreenX - 0.5);
+        const edgeDistY = Math.abs(sunScreenY - 0.5);
+        const fadeX = Math.max(0.0, 1.0 - Math.max(0.0, edgeDistX - 0.4) * 2.5);
+        const fadeY = Math.max(0.0, 1.0 - Math.max(0.0, edgeDistY - 0.4) * 2.5);
+        sunVisibility = Math.min(1.0, fadeX * fadeY);
       }
-      if (this.postProcProg.uSunScreenPos) gl.uniform2f(this.postProcProg.uSunScreenPos, sunScreenX, sunScreenY);
+      if (this.postProcProg.uSunScreenPos) gl.uniform3f(this.postProcProg.uSunScreenPos, sunScreenX, sunScreenY, sunVisibility);
 
       const hzb = this.postProcState ? this.postProcState.hzb : {};
       const bloom = this.postProcState ? this.postProcState.bloom : {};

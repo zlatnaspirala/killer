@@ -73,6 +73,10 @@
           <span class="tab-icon">📄</span>
           <span>Headers (.hpp)</span>
         </button>
+        <button class="tab-btn" data-tab="api-docs">
+          <span class="tab-icon">📚</span>
+          <span>API DOCS</span>
+        </button>
       </nav>
 
       <!-- Full-Page Main Tab Viewport Container -->
@@ -796,7 +800,11 @@
           <div class="project-page-layout">
             <!-- Project Sub-Nav Bar -->
             <div class="project-subnav" id="project-subnav">
-              <button class="proj-subtab-btn active" data-subtab="map-settings">
+              <button class="proj-subtab-btn active" data-subtab="scene-objects">
+                <span class="subtab-icon">📦</span>
+                <span>Scene Hierarchy</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="map-settings">
                 <span class="subtab-icon">🗺️</span>
                 <span>MAP Settings</span>
               </button>
@@ -811,10 +819,6 @@
               <button class="proj-subtab-btn" data-subtab="items">
                 <span class="subtab-icon">💎</span>
                 <span>ITEMS</span>
-              </button>
-              <button class="proj-subtab-btn" data-subtab="scene-objects">
-                <span class="subtab-icon">📦</span>
-                <span>Scene Hierarchy</span>
               </button>
               <button class="proj-subtab-btn" data-subtab="player-controller">
                 <span class="subtab-icon">🕹️</span>
@@ -835,7 +839,7 @@
             </div>
 
             <!-- Subtab 0: MAP Settings (4 Quake Maps, Spawns & Item Pedestals) -->
-            <div class="proj-subcontent active" id="subtab-map-settings">
+            <div class="proj-subcontent" id="subtab-map-settings">
               <div class="map-settings-layout">
                 <!-- Section 1: Quake Map Arena Selector (4 Classic Quake Maps) -->
                 <div class="panel-section">
@@ -1475,7 +1479,7 @@
             </div>
 
             <!-- Subtab 1: Scene Objects & Hierarchy -->
-            <div class="proj-subcontent" id="subtab-scene-objects">
+            <div class="proj-subcontent active" id="subtab-scene-objects">
               <div class="scene-objects-grid">
                 <!-- Left Column: Scene Hierarchy Tree -->
                 <div class="hierarchy-panel">
@@ -1900,6 +1904,104 @@
                 </div>
                 <div class="cpp-snippet-container">
                   <pre class="code-view"><code id="cpp-bridge-code" class="font-mono"></code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 9: API DOCS TAB -->
+        <div class="tab-content" id="tab-api-docs">
+          <div class="full-page-editor-container">
+            <div class="editor-header-bar">
+              <div class="file-info-group">
+                <span class="file-type-badge text-sky-400 border-sky-500/30">C++ / WebGL2 / JS Engine API Specification</span>
+                <span class="file-name text-slate-200">Google Filament &amp; Quake FPS Engine Technical Documentation</span>
+              </div>
+            </div>
+
+            <div class="controls-scroll-area" style="padding: 24px;">
+              <!-- Hero Section -->
+              <div class="panel-section" style="background: linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.9)); border-color: rgba(56,189,248,0.3);">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+                  <div>
+                    <h2 style="font-size: 20px; font-weight: 700; color: var(--text-heading); margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
+                      <span>📚 Engine API &amp; Architectural Specifications</span>
+                      <span style="font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 9999px; background: rgba(56,189,248,0.2); color: var(--accent-cyan); border: 1px solid rgba(56,189,248,0.4);">v3.2.0 API</span>
+                    </h2>
+                    <p style="font-size: 13px; color: var(--text-muted); max-width: 780px; line-height: 1.6;">
+                      Complete technical reference for Google Filament C++ WASM Bindings, WebGL 2.0 Post-Processing Pipeline (HZB Early-Z Occlusion, Kawase Bloom, Crepuscular Volumetric Light God Rays), Dynamic Light Entities, Kinematic Player Capsule locomotion, and Quake Arena Map Data Specifications.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; margin-top: 20px;">
+                <!-- Section 1: C++ Filament Engine Core API -->
+                <div class="panel-section">
+                  <h3 class="section-title">1. Google Filament C++ Engine Core API</h3>
+                  <p class="section-desc">Zero-allocation C++ runtime API for scene rendering and PBR materials.</p>
+                  <pre class="code-view font-mono" style="font-size: 11px; padding: 12px; background: rgba(10,15,26,0.9); border-radius: 8px; margin-top: 10px; color: #38bdf8;"><code>// C++ Filament Engine API Overview
+namespace EngineCore {
+    class Engine {
+    public:
+        void Init(const EngineConfig& config);
+        void Update(float deltaTime);
+        void Render();
+        void SetBaseColor(float r, float g, float b);
+        void SetRoughness(float roughness);
+        void SetMetallic(float metallic);
+        
+        // Entity & Light Management
+        uint32_t AddPointLight(Vec3 pos, Vec3 color, float intensity, float radius);
+        uint32_t AddSpotLight(Vec3 pos, Vec3 dir, Vec3 color, float intensity, float outerAngle);
+    };
+}</code></pre>
+                </div>
+
+                <!-- Section 2: Post-Processing Shader Uniforms -->
+                <div class="panel-section">
+                  <h3 class="section-title">2. WebGL2 Post-Processing Uniform Reference</h3>
+                  <p class="section-desc">Shader uniforms exposed on <code>FS_POSTPROCESS</code> pass.</p>
+                  <pre class="code-view font-mono" style="font-size: 11px; padding: 12px; background: rgba(10,15,26,0.9); border-radius: 8px; margin-top: 10px; color: #f59e0b;"><code>// FS_POSTPROCESS Uniform Interface
+uniform sampler2D u_sceneColor;    // Unit 0
+uniform sampler2D u_sceneDepth;    // Unit 1
+uniform vec3      u_sunScreenPos;  // (u, v, visibility)
+uniform int       u_bloomEnabled;   // 0=off, 1=on
+uniform float     u_bloomThreshold;// soft-knee cut
+uniform float     u_bloomSensitivity; // softness curve
+uniform int       u_volumetricEnabled; // 0=off, 1=on
+uniform int       u_volumetricSamples; // 16..64 steps</code></pre>
+                </div>
+
+                <!-- Section 3: Kinematic Capsule & Collision Solver -->
+                <div class="panel-section">
+                  <h3 class="section-title">3. Kinematic Player Controller &amp; Collision API</h3>
+                  <p class="section-desc">Continuous Minkowski-sum swept capsule collision solver against arena AABB box geometry.</p>
+                  <pre class="code-view font-mono" style="font-size: 11px; padding: 12px; background: rgba(10,15,26,0.9); border-radius: 8px; margin-top: 10px; color: #10b981;"><code>// Continuous Capsule Collision API
+struct PlayerController {
+    Vec3  pos;
+    Vec3  velocity;
+    float walkSpeed   = 8.5f;
+    float sprintSpeed = 14.0f;
+    float jumpForce   = 12.5f;
+    float gravity     = 28.0f;
+};
+CollisionResult resolvePlayerCollision(Vec3& pos, Vec3& vel, float radius, float height);</code></pre>
+                </div>
+
+                <!-- Section 4: FPS Map Data & Item Pedestals -->
+                <div class="panel-section">
+                  <h3 class="section-title">4. Arena Map Data &amp; Item Pedestals Schema</h3>
+                  <p class="section-desc">Data format used in <code>MAP_DEFINITIONS</code> and <code>ELEMENTAL_ITEMS_CATALOG</code>.</p>
+                  <pre class="code-view font-mono" style="font-size: 11px; padding: 12px; background: rgba(10,15,26,0.9); border-radius: 8px; margin-top: 10px; color: #a855f7;"><code>// Map Data Architecture
+MAP_DEFINITIONS["dm6"] = {
+  name: "The Dark Zone (DM6)",
+  staticGeometry: [ { name, type, pos, scale, color, materialKey } ],
+  playerSpawns:   [ { id, name, pos, yaw } ],
+  lights:         [ { id, type, pos, dir, color, intensity, radius } ],
+  itemSpawns:     [ { id, itemKey, pos, active, respawnDelay } ]
+};</code></pre>
                 </div>
               </div>
             </div>
