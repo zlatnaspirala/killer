@@ -1533,11 +1533,15 @@ void main() {
 
     // Blend optional 2D Texture Maps if active
     if (u_useTexMaps > 0) {
-        vec4 texAlb = texture(u_albedoMap, v_uv * scale);
-        vec4 texPbr = texture(u_pbrMap, v_uv * scale);
-        albedo *= texAlb.rgb;
-        roughness *= texPbr.r;
-        metallic = mix(metallic, texPbr.g, 0.8);
+        vec2 texUv = v_uv * (u_noiseScale > 0.1 ? u_noiseScale * 0.05 : 1.0);
+        if (length(v_uv) < 0.001) {
+            texUv = (abs(N.y) > 0.6) ? p.xz * 0.3 : ((abs(N.x) > 0.6) ? p.yz * 0.3 : p.xy * 0.3);
+        }
+        vec4 texAlb = texture(u_albedoMap, texUv);
+        vec4 texPbr = texture(u_pbrMap, texUv);
+        albedo = mix(albedo, texAlb.rgb, 0.85);
+        roughness = mix(roughness, texPbr.r, 0.5);
+        metallic = mix(metallic, texPbr.g, 0.5);
     }
 
     // -------------------------------------------------------------
@@ -1643,11 +1647,11 @@ void main() {
 
     // 5. Filament IBL Hemisphere Ambient
     vec3 R = reflect(-V, N);
-    vec3 skyColor = mix(vec3(0.06, 0.08, 0.14), vec3(0.35, 0.50, 0.75), clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
-    vec3 groundColor = vec3(0.07, 0.05, 0.04);
+    vec3 skyColor = mix(vec3(0.012, 0.018, 0.030), vec3(0.06, 0.10, 0.16), clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
+    vec3 groundColor = vec3(0.008, 0.006, 0.004);
     vec3 iblDiffuse = mix(groundColor, skyColor, N.y * 0.5 + 0.5) * albedo * (1.0 - metallic) * ao;
 
-    vec3 iblSpecularColor = mix(vec3(0.12, 0.16, 0.28), vec3(0.85, 0.92, 1.0), clamp(R.y * 0.5 + 0.5, 0.0, 1.0));
+    vec3 iblSpecularColor = mix(vec3(0.02, 0.03, 0.06), vec3(0.20, 0.28, 0.38), clamp(R.y * 0.5 + 0.5, 0.0, 1.0));
     vec3 iblFresnel = FresnelSchlick(NoV, F0);
     vec3 iblSpecular = iblSpecularColor * iblFresnel * (1.0 - roughness * 0.75);
 
@@ -1656,7 +1660,7 @@ void main() {
         iblSpecular += iblSpecularColor * clearCoatFresnel * 0.8;
     }
 
-    vec3 color = Lo + (iblDiffuse + iblSpecular) * 0.55 + emissive;
+    vec3 color = Lo + (iblDiffuse + iblSpecular) * 0.18 + emissive;
 
     // HDR Reinhard Tone Mapping & Gamma Correction
     color = color / (color + vec3(1.0));
@@ -2817,6 +2821,31 @@ class RetroSoundSynth {
         gain.connect(this.ctx.destination);
         osc.start(t);
         osc.stop(t + 0.45);
+      } else if (type === 'teleport') {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(180, t);
+        osc.frequency.exponentialRampToValueAtTime(1800, t + 0.18);
+        osc.frequency.exponentialRampToValueAtTime(400, t + 0.35);
+        gain.gain.setValueAtTime(0.35, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.38);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.38);
+      } else if (type === 'elevator') {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(220, t);
+        osc.frequency.linearRampToValueAtTime(440, t + 0.12);
+        gain.gain.setValueAtTime(0.2, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.22);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + 0.22);
       }
     } catch(e) {}
   }
@@ -3113,6 +3142,7 @@ class NativeApp {
     this.isExecutingCmd = false;
 
     this.rawMeshes = [];
+    this.initTextures();
     this.initPipeline();
     this.initMeshes();
     this.initUI();
@@ -3157,6 +3187,53 @@ class NativeApp {
     return shader;
   }
 
+  initTextures() {
+    const gl = this.gl;
+    if (!gl) return;
+    this.textureCatalog = {};
+
+    const texturesToLoad = {
+      metal1: '/assets/textures/metal/metal1.webp',
+      metal2: '/assets/textures/metal/metal2.webp',
+      rust: '/assets/textures/rust.jpg',
+      wood: '/assets/textures/wal1.webp',
+      tex01: '/assets/textures/tex01.webp',
+      tex02: '/assets/textures/tex02.webp',
+      whiteMetal: '/assets/textures/white-metal.png',
+      whiteMetal2: '/assets/textures/white-metal2.webp',
+      matrix1: '/assets/textures/matrix1.webp',
+      red1: '/assets/textures/red1.webp',
+      xrp: '/assets/textures/xrp.webp',
+      star1: '/assets/textures/star1.png',
+      starFantazy: '/assets/textures/star-fantazy.png',
+      pushBtn: '/assets/textures/pushBtn.webp'
+    };
+
+    Object.keys(texturesToLoad).forEach(key => {
+      const url = texturesToLoad[key];
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([120, 120, 120, 255]));
+
+      const img = new Image();
+      img.onload = () => {
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+      };
+      img.onerror = () => {
+        console.warn(`[Texture] Failed to load ${url}`);
+      };
+      img.src = url;
+      this.textureCatalog[key] = tex;
+    });
+  }
+
   createProgram(vsSrc, fsSrc) {
     const gl = this.gl;
     const vs = this.compileShader(gl.VERTEX_SHADER, vsSrc);
@@ -3185,6 +3262,8 @@ class NativeApp {
       uAnisotropy: gl.getUniformLocation(prog, "u_anisotropy"),
       uBumpStrength: gl.getUniformLocation(prog, "u_bumpStrength"),
       uUseTexMaps: gl.getUniformLocation(prog, "u_useTexMaps"),
+      uAlbedoMap: gl.getUniformLocation(prog, "u_albedoMap"),
+      uPbrMap: gl.getUniformLocation(prog, "u_pbrMap"),
       uLightDir: gl.getUniformLocation(prog, "u_lightDir"),
       uLightColor: gl.getUniformLocation(prog, "u_lightColor"),
       uFillLightDir: gl.getUniformLocation(prog, "u_fillLightDir"),
@@ -5351,9 +5430,42 @@ else if (typeof define === 'function' && define['amd'])
       ...staticGeom
     ];
 
-    // 3. Rebuild Player Spawns & Item Pickups
+    // 3. Rebuild Player Spawns, Item Pickups, Teleporters, and Elevators
     this.spawnPoints = mapDef.playerSpawns ? JSON.parse(JSON.stringify(mapDef.playerSpawns)) : [];
     this.itemPickups = mapDef.itemSpawns ? JSON.parse(JSON.stringify(mapDef.itemSpawns)) : [];
+
+    this.teleporters = mapDef.teleporters ? JSON.parse(JSON.stringify(mapDef.teleporters)).map(t => ({
+      ...t,
+      cooldown: 0.0
+    })) : [];
+
+    this.elevators = mapDef.elevators ? JSON.parse(JSON.stringify(mapDef.elevators)).map(e => ({
+      ...e,
+      pos: [...e.pos],
+      movingUp: true,
+      pauseTimer: 0.0
+    })) : [];
+
+    // Inject Elevator Platforms into sceneEntities for physics collision resolution
+    this.elevators.forEach((el, idx) => {
+      this.sceneEntities.push({
+        id: 500 + idx,
+        name: el.name || `Elevator_Lift_${el.id}`,
+        type: "Dynamic Hydraulic Elevator",
+        isElevator: true,
+        elevatorId: el.id,
+        pos: [...el.pos],
+        scale: [...el.scale],
+        roughness: 0.25,
+        metallic: 0.85,
+        color: el.color || [0.35, 0.40, 0.50],
+        collider: `AABB Box (${el.scale.join('x')}m)`,
+        layer: "Layer_Obstacle",
+        trigger: false,
+        badge: "Elevator Lift",
+        contact: false
+      });
+    });
 
     // 4. Teleport Player to Spawn Point 1
     if (teleportPlayer && this.spawnPoints.length > 0) {
@@ -6349,6 +6461,110 @@ else if (typeof define === 'function' && define['amd'])
           p.active = false;
           break;
         }
+      }
+    });
+  }
+
+  updateElevators(dt) {
+    if (!this.elevators || this.elevators.length === 0) return;
+
+    const pc = this.playerController;
+    let playerPos = pc ? pc.pos : [this.state.camPos[0], this.state.camPos[1] - 1.7, this.state.camPos[2]];
+
+    this.elevators.forEach((el) => {
+      const prevY = el.pos[1];
+
+      if (el.pauseTimer > 0) {
+        el.pauseTimer -= dt;
+      } else {
+        const speed = el.speed || 3.0;
+        if (el.movingUp) {
+          el.pos[1] += speed * dt;
+          if (el.pos[1] >= el.endY) {
+            el.pos[1] = el.endY;
+            el.movingUp = false;
+            el.pauseTimer = 1.6;
+          }
+        } else {
+          el.pos[1] -= speed * dt;
+          if (el.pos[1] <= el.startY) {
+            el.pos[1] = el.startY;
+            el.movingUp = true;
+            el.pauseTimer = 1.6;
+          }
+        }
+      }
+
+      const deltaY = el.pos[1] - prevY;
+
+      // Sync entity in sceneEntities
+      const entity = this.sceneEntities.find(e => e.isElevator && e.elevatorId === el.id);
+      if (entity) {
+        entity.pos[1] = el.pos[1];
+      }
+
+      // Check if player is standing on this elevator platform
+      if (Math.abs(deltaY) > 0.0001 && playerPos) {
+        const halfW = el.scale[0] * 0.5 + 0.6;
+        const halfD = el.scale[2] * 0.5 + 0.6;
+        const topY = el.pos[1] + el.scale[1] * 0.5;
+
+        const onX = Math.abs(playerPos[0] - el.pos[0]) <= halfW;
+        const onZ = Math.abs(playerPos[2] - el.pos[2]) <= halfD;
+        const onY = playerPos[1] >= topY - 0.40 && playerPos[1] <= topY + 0.90;
+
+        if (onX && onZ && onY) {
+          if (pc) {
+            pc.pos[1] += deltaY;
+            pc.isGrounded = true;
+          }
+          this.state.camPos[1] += deltaY;
+        }
+      }
+    });
+  }
+
+  updateTeleporters(dt) {
+    if (!this.teleporters || this.teleporters.length === 0) return;
+
+    const pc = this.playerController;
+    let playerPos = pc ? pc.pos : [this.state.camPos[0], this.state.camPos[1] - 1.7, this.state.camPos[2]];
+
+    this.teleporters.forEach((tp) => {
+      if (tp.cooldown > 0) {
+        tp.cooldown -= dt;
+        return;
+      }
+
+      const dx = playerPos[0] - tp.pos[0];
+      const dy = playerPos[1] - tp.pos[1];
+      const dz = playerPos[2] - tp.pos[2];
+      const distSq = dx * dx + dy * dy + dz * dz;
+      const triggerRadius = tp.radius || 1.8;
+
+      if (distSq <= triggerRadius * triggerRadius && Math.abs(dy) <= 2.2) {
+        const target = tp.targetPos;
+        if (!target) return;
+
+        if (pc) {
+          pc.pos[0] = target[0];
+          pc.pos[1] = target[1];
+          pc.pos[2] = target[2];
+          pc.velocity[0] = 0;
+          pc.velocity[1] = 0;
+          pc.velocity[2] = 0;
+        }
+
+        this.state.camPos[0] = target[0];
+        this.state.camPos[1] = target[1] + 1.7;
+        this.state.camPos[2] = target[2];
+        this.state.fpsVelocityY = 0.0;
+
+        tp.cooldown = 1.2;
+
+        if (this.synth) this.synth.play('teleport');
+        this.showPickupToast("⚡ QUANTUM TELEPORT", `Warped to: [${target.map(v=>v.toFixed(1)).join(', ')}]`, "powerup");
+        this.log(`Teleported via "${tp.name}" to [${target.join(', ')}]`, "success");
       }
     });
   }
@@ -7810,7 +8026,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     gl.viewport(0, 0, width, height);
 
     // Clear Scene
-    gl.clearColor(0.04, 0.05, 0.07, 1.0);
+    gl.clearColor(0.005, 0.007, 0.012, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     // Pipeline GL States
@@ -7837,8 +8053,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const isCharacterDemo = (this.state.demoScene.includes('06_glb') || this.state.demoScene === 'character') && !isFpsMode && !isShowroomDemo;
     const isFpsDemo = (this.state.demoScene.includes('07_fps') || isFpsMode) && !isShowroomDemo;
 
-    // Tick Damage System and Projectiles on every frame
+    // Tick Damage System, Elevators, Teleporters, and Projectiles on every frame
     this.updateProjectilesAndDamage(dt, timestamp);
+    this.updateElevators(dt);
+    this.updateTeleporters(dt);
     this.updateHzbTelemetry(dt);
 
     if (isCharacterDemo) {
@@ -8251,6 +8469,18 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const clearCoat = mat ? (mat.clearCoat || 0.0) : 0.0;
         const anisotropy = mat ? (mat.anisotropy || 0.0) : 0.0;
         const bumpStrength = mat ? (mat.bumpStrength || 0.0) : 0.0;
+
+        const texKey = (mat && mat.textureKey) ? mat.textureKey : null;
+        const texObj = (texKey && this.textureCatalog) ? this.textureCatalog[texKey] : null;
+        if (texObj && progInfo.uUseTexMaps) {
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, texObj);
+          if (progInfo.uAlbedoMap) gl.uniform1i(progInfo.uAlbedoMap, 2);
+          if (progInfo.uPbrMap) gl.uniform1i(progInfo.uPbrMap, 2);
+          gl.uniform1i(progInfo.uUseTexMaps, 1);
+        } else if (progInfo.uUseTexMaps) {
+          gl.uniform1i(progInfo.uUseTexMaps, 0);
+        }
 
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
@@ -8760,7 +8990,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const cubeMesh = this.meshBuffers[1]; // Cube for pedestals and floor
 
       // Helper to render an instance with full Filament PBR uniforms
-      const renderInstance = (mesh, px, py, pz, sx, sy, sz, rx, ry, rz, col, rough, metal, matType, noiseScale, clearCoat, anisotropy, bump) => {
+      const renderInstance = (mesh, px, py, pz, sx, sy, sz, rx, ry, rz, col, rough, metal, matType, noiseScale, clearCoat, anisotropy, bump, texKey) => {
         if (!mesh) return;
         gl.bindVertexArray(mesh.vao);
 
@@ -8790,6 +9020,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.instanceMatrix[15] = 1;
 
         Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+
+        const texObj = (texKey && this.textureCatalog) ? this.textureCatalog[texKey] : null;
+        if (texObj && progInfo.uUseTexMaps) {
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, texObj);
+          if (progInfo.uAlbedoMap) gl.uniform1i(progInfo.uAlbedoMap, 2);
+          if (progInfo.uPbrMap) gl.uniform1i(progInfo.uPbrMap, 2);
+          gl.uniform1i(progInfo.uUseTexMaps, 1);
+        } else if (progInfo.uUseTexMaps) {
+          gl.uniform1i(progInfo.uUseTexMaps, 0);
+        }
 
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
@@ -8853,7 +9094,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           noise,
           clearCoat,
           aniso,
-          bump
+          bump,
+          mat.textureKey
         );
       }
 

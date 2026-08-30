@@ -38,6 +38,13 @@ export const mapQ3DM17 = {
     { id: 102, name: "South_Launch_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 8.0, 28.0], lightDir: [0.0, -1.0, -0.2], scale: [1.0, 1.5, 1.0], color: [0.2, 0.9, 1.0], intensity: 20.0, spotCutoff: 0.85, outerCutoff: 0.70, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
     { id: 103, name: "North_Sniper_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 8.0, -28.0], lightDir: [0.0, -1.0, 0.2], scale: [1.0, 1.5, 1.0], color: [0.95, 0.35, 1.0], intensity: 20.0, spotCutoff: 0.85, outerCutoff: 0.70, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false }
   ],
+  teleporters: [
+    { id: 1, name: "South Launch Portal", pos: [0.0, 0.6, 28.0], targetPos: [0.0, 4.5, -38.0], radius: 1.8, color: [0.1, 0.85, 1.0], label: "Warp -> North Floor 2" },
+    { id: 2, name: "North Sniper Portal", pos: [0.0, 0.6, -28.0], targetPos: [0.0, 4.5, 38.0], radius: 1.8, color: [0.95, 0.25, 0.95], label: "Warp -> South Floor 2" }
+  ],
+  elevators: [
+    { id: 1, name: "Void Skyway Kinetic Lift", pos: [0.0, 0.4, 0.0], startY: 0.4, endY: 4.2, scale: [4.5, 0.4, 4.5], speed: 3.0, color: [0.25, 0.35, 0.55], label: "Void Hydraulic Lift" }
+  ],
   playerSpawns: [
     { id: 1, name: "South Launch Courtyard", type: "FFA Primary", pos: [0.0, 0.6, 20.0], yaw: 0.0, desc: "South void platform facing the space bridge." },
     { id: 2, name: "North Sniper Island", type: "Sniper Perch", pos: [0.0, 0.6, -20.0], yaw: 3.14, desc: "North floating island facing south." },

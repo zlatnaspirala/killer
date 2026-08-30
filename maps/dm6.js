@@ -64,6 +64,13 @@ export const mapDM6 = {
     { id: 27, name: "Perimeter_Wall_West", type: "Fortified Castle Wall", pos: [-32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
     { id: 28, name: "Perimeter_Wall_East", type: "Fortified Castle Wall", pos: [32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "East Wall", contact: false }
   ],
+  teleporters: [
+    { id: 1, name: "Sanctuary West Portal", pos: [-10.0, 0.4, -30.0], targetPos: [0.0, 4.2, 42.0], radius: 1.8, color: [0.1, 0.85, 1.0], label: "Warp -> South Floor 2" },
+    { id: 2, name: "Sanctuary East Portal", pos: [10.0, 0.4, -30.0], targetPos: [0.0, 4.2, 0.0], radius: 1.8, color: [0.2, 0.95, 0.5], label: "Warp -> Tunnel Bridge" }
+  ],
+  elevators: [
+    { id: 1, name: "Quad Cathedral Hydraulic Lift", pos: [0.0, 0.4, 30.0], startY: 0.4, endY: 4.2, scale: [4.5, 0.4, 4.5], speed: 3.2, color: [0.35, 0.38, 0.52], label: "Cathedral Hydraulic Lift" }
+  ],
   playerSpawns: [
     { id: 1, name: "South Quad Cathedral", type: "FFA Primary", pos: [0.0, 0.0, 20.0], yaw: 0.0, desc: "South cathedral hall facing the central crypt tunnel." },
     { id: 2, name: "North Teleport Sanctuary", type: "High Perch", pos: [0.0, 0.0, -20.0], yaw: 3.14, desc: "North sanctuary between teleporter gateways." },

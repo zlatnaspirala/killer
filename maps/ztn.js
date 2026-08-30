@@ -47,6 +47,13 @@ export const mapZTN = {
     { id: 22, name: "Perimeter_Wall_West", type: "Steel Perimeter Wall", pos: [-32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
     { id: 23, name: "Perimeter_Wall_East", type: "Steel Perimeter Wall", pos: [32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "East Wall", contact: false }
   ],
+  teleporters: [
+    { id: 1, name: "North Teleport Hub Portal", pos: [0.0, 0.4, -30.0], targetPos: [0.0, 4.2, 42.0], radius: 1.8, color: [0.06, 0.85, 0.95], label: "Warp -> South Floor 2" },
+    { id: 2, name: "South Reactor Portal", pos: [0.0, 0.4, 30.0], targetPos: [0.0, 4.2, 0.0], radius: 1.8, color: [0.15, 0.95, 0.45], label: "Warp -> Coolant Bridge" }
+  ],
+  elevators: [
+    { id: 1, name: "South Reactor Hydraulic Lift", pos: [0.0, 0.4, 30.0], startY: 0.4, endY: 4.2, scale: [4.0, 0.4, 4.0], speed: 3.5, color: [0.22, 0.35, 0.45], label: "Reactor Hydraulic Lift" }
+  ],
   playerSpawns: [
     { id: 1, name: "South Reactor Atrium", type: "FFA Primary", pos: [0.0, 0.0, 20.0], yaw: 0.0, desc: "South reactor floor facing the coolant tunnel." },
     { id: 2, name: "North Teleport Hub", type: "Hub Spawn", pos: [0.0, 0.0, -20.0], yaw: 3.14, desc: "North teleport hub looking south." },

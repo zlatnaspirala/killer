@@ -65,6 +65,13 @@ export const mapDM4 = {
     { id: 27, name: "Perimeter_Wall_West", type: "Volcanic Wall", pos: [-32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
     { id: 28, name: "Perimeter_Wall_East", type: "Volcanic Wall", pos: [32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "East Wall", contact: false }
   ],
+  teleporters: [
+    { id: 1, name: "South Molten Portal", pos: [0.0, 0.5, 30.0], targetPos: [0.0, 4.2, -42.0], radius: 1.8, color: [1.0, 0.45, 0.1], label: "Warp -> North Floor 2" },
+    { id: 2, name: "North Crypt Portal", pos: [0.0, 0.5, -30.0], targetPos: [0.0, 4.2, 42.0], radius: 1.8, color: [0.95, 0.25, 0.25], label: "Warp -> South Floor 2" }
+  ],
+  elevators: [
+    { id: 1, name: "Magma Tunnel Industrial Lift", pos: [0.0, 0.4, 0.0], startY: 0.4, endY: 4.2, scale: [4.0, 0.4, 4.0], speed: 3.0, color: [0.45, 0.28, 0.22], label: "Tunnel Magma Lift" }
+  ],
   playerSpawns: [
     { id: 1, name: "South Molten Atrium", type: "FFA Primary", pos: [0.0, 0.0, 20.0], yaw: 0.0, desc: "South lava room looking towards the connecting magma tunnel." },
     { id: 2, name: "North Crypt Vault", type: "Vault Spawn", pos: [0.0, 0.0, -20.0], yaw: 3.14, desc: "North crypt chamber near the high altar." },
