@@ -1272,6 +1272,14 @@
 
                       <div class="slider-group">
                         <div class="slider-row">
+                          <span class="slider-label">Bloom Brightness Sensitivity (Knee Softness)</span>
+                          <span class="slider-val" id="val-bloom-sensitivity">0.50</span>
+                        </div>
+                        <input type="range" id="slider-bloom-sensitivity" min="0.05" max="1.50" step="0.05" value="0.50" class="range-input">
+                      </div>
+
+                      <div class="slider-group">
+                        <div class="slider-row">
                           <span class="slider-label">Bloom Intensity / Glow Strength</span>
                           <span class="slider-val" id="val-bloom-intensity">1.25x</span>
                         </div>
@@ -1473,8 +1481,10 @@
                 <div class="hierarchy-panel">
                   <div class="hierarchy-header">
                     <span class="hierarchy-title">Scene Graph (<span id="scene-obj-count">9</span> Entities)</span>
-                    <div class="card-actions">
-                      <button class="btn-xs" id="btn-refresh-hierarchy" title="Refresh scene hierarchy">⟳ Refresh</button>
+                    <div class="card-actions" style="display: flex; gap: 4px;">
+                      <button class="btn-xs highlight" id="btn-add-light-point" title="Add Area / Spheric Point Light">💡 +Spheric</button>
+                      <button class="btn-xs highlight" id="btn-add-light-spot" title="Add Spot Light">🔦 +Spot</button>
+                      <button class="btn-xs" id="btn-refresh-hierarchy" title="Refresh scene hierarchy">⟳</button>
                     </div>
                   </div>
                   <div class="hierarchy-tree" id="hierarchy-tree-list">
@@ -1540,6 +1550,58 @@
                         <div class="axis-input-cell"><span class="axis-label x">W</span><input type="number" step="0.1" id="insp-scale-x" class="axis-val" value="0.8"></div>
                         <div class="axis-input-cell"><span class="axis-label y">H</span><input type="number" step="0.1" id="insp-scale-y" class="axis-val" value="1.8"></div>
                         <div class="axis-input-cell"><span class="axis-label z">D</span><input type="number" step="0.1" id="insp-scale-z" class="axis-val" value="0.8"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Light Entity Configuration Section (Visible for Light Entities) -->
+                  <div class="inspector-section" id="insp-light-section" style="display: none; border: 1px solid rgba(234, 179, 8, 0.4); background: rgba(234, 179, 8, 0.04);">
+                    <div class="section-header-row" style="margin-bottom: 6px;">
+                      <span class="inspector-section-title" style="color: #fef08a;">💡 Light Source Entity Parameters</span>
+                      <span class="cost-legend-pill safe" style="background: rgba(234, 179, 8, 0.2); color: #facc15; border-color: #facc15;">LIGHT SOURCE</span>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Light Type:</span>
+                      <select id="insp-light-type" class="input-select font-mono" style="flex: 1; max-width: 240px;">
+                        <option value="point">Area - Spheric Light (Point)</option>
+                        <option value="spot">Spot Light (Conical Beam)</option>
+                        <option value="directional">Directional (Sun/Global Light)</option>
+                      </select>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Light Color Tint:</span>
+                      <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                        <input type="color" id="insp-light-color" value="#ffaa00" style="width: 36px; height: 28px; border: none; cursor: pointer; background: transparent; border-radius: 4px;">
+                        <span class="hud-value font-mono" id="insp-light-color-hex" style="color: #facc15;">#FFAA00</span>
+                      </div>
+                    </div>
+                    <div class="inspector-field-row">
+                      <span class="hud-label">Radiance Intensity:</span>
+                      <div class="slider-with-val" style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 240px;">
+                        <input type="range" id="insp-light-intensity" min="0.0" max="40.0" step="0.5" value="15.0" class="range-input">
+                        <span class="hud-value font-mono" id="insp-light-intensity-val" style="min-width: 42px;">15.0</span>
+                      </div>
+                    </div>
+                    <div class="inspector-field-row" id="insp-row-light-radius">
+                      <span class="hud-label">Light Radius / Attenuation:</span>
+                      <div class="slider-with-val" style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 240px;">
+                        <input type="range" id="insp-light-radius" min="1.0" max="30.0" step="0.5" value="10.0" class="range-input">
+                        <span class="hud-value font-mono" id="insp-light-radius-val" style="min-width: 42px;">10.0m</span>
+                      </div>
+                    </div>
+                    <div class="inspector-field-row" id="insp-row-spot-cutoff" style="display: none;">
+                      <span class="hud-label">Spot Beam Angle:</span>
+                      <div class="slider-with-val" style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 240px;">
+                        <input type="range" id="insp-light-cutoff" min="10" max="80" step="1" value="35" class="range-input">
+                        <span class="hud-value font-mono" id="insp-light-cutoff-val" style="min-width: 42px;">35°</span>
+                      </div>
+                    </div>
+                    <div class="inspector-field-row" id="insp-row-spot-dir" style="display: none;">
+                      <span class="hud-label">Spot Direction Vector:</span>
+                      <div class="vec3-triad">
+                        <div class="axis-input-cell"><span class="axis-label x">X</span><input type="number" step="0.1" id="insp-light-dir-x" class="axis-val" value="0.0"></div>
+                        <div class="axis-input-cell"><span class="axis-label y">Y</span><input type="number" step="0.1" id="insp-light-dir-y" class="axis-val" value="-1.0"></div>
+                        <div class="axis-input-cell"><span class="axis-label z">Z</span><input type="number" step="0.1" id="insp-light-dir-z" class="axis-val" value="0.0"></div>
                       </div>
                     </div>
                   </div>

@@ -1135,6 +1135,28 @@ uniform vec3 u_lightColor;
 uniform vec3 u_fillLightDir;
 uniform vec3 u_fillLightColor;
 
+struct PointAreaLight {
+    vec3 pos;
+    vec3 color;
+    float intensity;
+    float radius;
+};
+
+struct SpotLight {
+    vec3 pos;
+    vec3 dir;
+    vec3 color;
+    float intensity;
+    float cutoff;
+    float outerCutoff;
+};
+
+uniform int u_numPointLights;
+uniform PointAreaLight u_pointLights[6];
+
+uniform int u_numSpotLights;
+uniform SpotLight u_spotLights[4];
+
 uniform sampler2D u_albedoMap;
 uniform sampler2D u_pbrMap;
 
@@ -1558,7 +1580,60 @@ void main() {
         Lo += (kD2 * albedo / PI + specular2) * lCol2 * NdotL2 * 0.45;
     }
 
-    // 3. Filament IBL Hemisphere Ambient
+    // 3. Dynamic Point & Spheric Area Light Entities
+    for (int i = 0; i < 6; i++) {
+        if (i >= u_numPointLights) break;
+        vec3 lightVec = u_pointLights[i].pos - v_worldPos;
+        float dist = length(lightVec);
+        float maxR = max(u_pointLights[i].radius, 1.0);
+        if (dist > maxR * 3.5) continue;
+        
+        vec3 Lp = normalize(lightVec);
+        float atten = u_pointLights[i].intensity / (1.0 + 0.1 * dist + 0.04 * dist * dist);
+        float falloff = clamp(1.0 - pow(dist / (maxR * 3.5), 4.0), 0.0, 1.0);
+        atten *= falloff * falloff;
+        
+        vec3 Hp = normalize(V + Lp);
+        float NdotLp = max(dot(N, Lp), 0.0);
+        if (NdotLp > 0.0) {
+            float NDFp = DistributionGGX(max(dot(N, Hp), 0.0), max(roughness, 0.04));
+            float Gp = GeometrySmith(N, V, Lp, max(roughness, 0.04));
+            vec3 Fp = FresnelSchlick(max(dot(Hp, V), 0.0), F0);
+            vec3 specularP = (NDFp * Gp * Fp) / (4.0 * NoV * NdotLp + 0.0001);
+            vec3 kSp = Fp;
+            vec3 kDp = (vec3(1.0) - kSp) * (1.0 - metallic);
+            Lo += (kDp * albedo / PI + specularP) * u_pointLights[i].color * atten * NdotLp;
+        }
+    }
+
+    // 4. Dynamic Spot Light Entities
+    for (int i = 0; i < 4; i++) {
+        if (i >= u_numSpotLights) break;
+        vec3 lightVec = u_spotLights[i].pos - v_worldPos;
+        float dist = length(lightVec);
+        vec3 Ls = normalize(lightVec);
+        vec3 spotDir = length(u_spotLights[i].dir) > 0.001 ? normalize(u_spotLights[i].dir) : vec3(0.0, -1.0, 0.0);
+        float spotCos = dot(-Ls, spotDir);
+        
+        if (spotCos < u_spotLights[i].outerCutoff) continue;
+        
+        float spotFactor = clamp((spotCos - u_spotLights[i].outerCutoff) / (u_spotLights[i].cutoff - u_spotLights[i].outerCutoff + 1e-4), 0.0, 1.0);
+        float atten = u_spotLights[i].intensity / (1.0 + 0.08 * dist + 0.02 * dist * dist) * spotFactor;
+        
+        vec3 Hs = normalize(V + Ls);
+        float NdotLs = max(dot(N, Ls), 0.0);
+        if (NdotLs > 0.0) {
+            float NDFs = DistributionGGX(max(dot(N, Hs), 0.0), max(roughness, 0.04));
+            float Gs = GeometrySmith(N, V, Ls, max(roughness, 0.04));
+            vec3 Fs = FresnelSchlick(max(dot(Hs, V), 0.0), F0);
+            vec3 specularS = (NDFs * Gs * Fs) / (4.0 * NoV * NdotLs + 0.0001);
+            vec3 kSs = Fs;
+            vec3 kDs = (vec3(1.0) - kSs) * (1.0 - metallic);
+            Lo += (kDs * albedo / PI + specularS) * u_spotLights[i].color * atten * NdotLs;
+        }
+    }
+
+    // 5. Filament IBL Hemisphere Ambient
     vec3 R = reflect(-V, N);
     vec3 skyColor = mix(vec3(0.06, 0.08, 0.14), vec3(0.35, 0.50, 0.75), clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
     vec3 groundColor = vec3(0.07, 0.05, 0.04);
@@ -1671,6 +1746,7 @@ uniform int u_hzbSteps;
 // Bloom uniforms
 uniform int u_bloomEnabled;
 uniform float u_bloomThreshold;
+uniform float u_bloomSensitivity;
 uniform float u_bloomIntensity;
 uniform float u_bloomRadius;
 uniform int u_bloomAnamorphic;
@@ -1813,9 +1889,9 @@ void main() {
             vec2 sampleUv = uv + offsets[i] * spread;
             vec3 sCol = texture(u_sceneColor, sampleUv).rgb;
             
-            // Soft-knee thresholding
+            // Soft-knee thresholding with configurable sensitivity
             float luma = dot(sCol, vec3(0.2126, 0.7152, 0.0722));
-            float softKnee = clamp(luma - u_bloomThreshold, 0.0, 1.5);
+            float softKnee = clamp(luma - u_bloomThreshold, 0.0, max(u_bloomSensitivity * 2.0, 0.01));
             if (luma > u_bloomThreshold) {
                 bloomAccum += sCol * softKnee;
             }
@@ -2824,6 +2900,9 @@ const QUAKE_MAP_DEFINITIONS = {
       // ==========================================
       // ARENA PERIMETER WALLS (64m x 96m)
       // ==========================================
+      { id: 101, name: "South_Lava_Light_Spheric", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 5.5, 30.0], scale: [1.2, 1.2, 1.2], color: [1.0, 0.45, 0.1], intensity: 18.0, radius: 14.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
+      { id: 102, name: "North_Crypt_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 8.5, -30.0], lightDir: [0.0, -1.0, 0.1], scale: [1.0, 1.5, 1.0], color: [0.2, 0.85, 1.0], intensity: 22.0, spotCutoff: 0.85, outerCutoff: 0.70, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
+      { id: 103, name: "Magma_Tunnel_Light", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 4.5, 0.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.65, 0.25], intensity: 14.0, radius: 10.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
       { id: 25, name: "Perimeter_Wall_North", type: "Volcanic Wall", pos: [0.0, 6.0, -48.0], scale: [64.0, 12.0, 2.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "North Wall", contact: false },
       { id: 26, name: "Perimeter_Wall_South", type: "Volcanic Wall", pos: [0.0, 6.0, 48.0], scale: [64.0, 12.0, 2.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "South Wall", contact: false },
       { id: 27, name: "Perimeter_Wall_West", type: "Volcanic Wall", pos: [-32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.70, metallic: 0.15, color: [0.28, 0.16, 0.14], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
@@ -2907,6 +2986,9 @@ const QUAKE_MAP_DEFINITIONS = {
       // ==========================================
       // ARENA PERIMETER WALLS (64m x 96m)
       // ==========================================
+      { id: 101, name: "Quad_Cathedral_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 9.0, 30.0], lightDir: [0.0, -1.0, 0.0], scale: [1.2, 1.6, 1.2], color: [1.0, 0.85, 0.25], intensity: 25.0, spotCutoff: 0.88, outerCutoff: 0.72, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
+      { id: 102, name: "North_Sanctuary_Spheric_Light", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 5.5, -30.0], scale: [1.2, 1.2, 1.2], color: [0.1, 0.75, 1.0], intensity: 18.0, radius: 12.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
+      { id: 103, name: "Crypt_Tunnel_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 6.0, 0.0], lightDir: [0.0, -1.0, 0.2], scale: [1.0, 1.4, 1.0], color: [0.2, 1.0, 0.45], intensity: 16.0, spotCutoff: 0.82, outerCutoff: 0.65, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
       { id: 25, name: "Perimeter_Wall_North", type: "Fortified Castle Wall", pos: [0.0, 6.0, -48.0], scale: [64.0, 12.0, 2.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "North Wall", contact: false },
       { id: 26, name: "Perimeter_Wall_South", type: "Fortified Castle Wall", pos: [0.0, 6.0, 48.0], scale: [64.0, 12.0, 2.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "South Wall", contact: false },
       { id: 27, name: "Perimeter_Wall_West", type: "Fortified Castle Wall", pos: [-32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.70, metallic: 0.20, color: [0.25, 0.26, 0.30], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
@@ -2956,7 +3038,12 @@ const QUAKE_MAP_DEFINITIONS = {
       { id: 10, name: "North_Sniper_Dais", type: "Raised Octagon", pos: [0.0, 0.6, -28.0], scale: [18.0, 0.6, 18.0], roughness: 0.25, metallic: 0.85, color: [0.22, 0.20, 0.35], collider: "AABB Box (18x0.6x18m)", layer: "Layer_Obstacle", trigger: false, badge: "North Dais", contact: false },
       { id: 11, name: "Floor2_North_Deck", type: "High Sniper Deck", pos: [0.0, 3.9, -38.0], scale: [54.0, 0.6, 10.0], roughness: 0.20, metallic: 0.95, color: [0.35, 0.25, 0.50], collider: "AABB Box (54x0.6x10m)", layer: "Layer_Obstacle", trigger: false, badge: "North Floor 2", contact: false },
       ...generateStairs(60, "North_Sniper_Stairs_West", -24.0, -16.0, -33.0, 0.0, 4.2, 10, 4.5, [0.30, 0.22, 0.45]),
-      ...generateStairs(70, "North_Sniper_Stairs_East", 24.0, -16.0, -33.0, 0.0, 4.2, 10, 4.5, [0.30, 0.22, 0.45])
+      ...generateStairs(70, "North_Sniper_Stairs_East", 24.0, -16.0, -33.0, 0.0, 4.2, 10, 4.5, [0.30, 0.22, 0.45]),
+
+      // LIGHT ENTITIES (Area Spheric Light & Spot Lights)
+      { id: 101, name: "Void_Skyway_Spheric_Light", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 5.5, 0.0], scale: [1.2, 1.2, 1.2], color: [0.85, 0.25, 1.0], intensity: 18.0, radius: 12.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
+      { id: 102, name: "South_Launch_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 8.0, 28.0], lightDir: [0.0, -1.0, -0.2], scale: [1.0, 1.5, 1.0], color: [0.2, 0.9, 1.0], intensity: 20.0, spotCutoff: 0.85, outerCutoff: 0.70, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
+      { id: 103, name: "North_Sniper_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 8.0, -28.0], lightDir: [0.0, -1.0, 0.2], scale: [1.0, 1.5, 1.0], color: [0.95, 0.35, 1.0], intensity: 20.0, spotCutoff: 0.85, outerCutoff: 0.70, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false }
     ],
     playerSpawns: [
       { id: 1, name: "South Launch Courtyard", type: "FFA Primary", pos: [0.0, 0.6, 20.0], yaw: 0.0, desc: "South void platform facing the space bridge." },
@@ -3006,6 +3093,9 @@ const QUAKE_MAP_DEFINITIONS = {
       ...generateStairs(100, "North_Tech_Stairs_East", 28.0, -16.0, -36.0, 0.0, 4.2, 12, 4.5, [0.22, 0.28, 0.35]),
 
       // PERIMETER WALLS
+      { id: 101, name: "South_Reactor_Spheric_Light", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 6.0, 30.0], scale: [1.4, 1.4, 1.4], color: [0.08, 0.85, 0.75], intensity: 22.0, radius: 14.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
+      { id: 102, name: "North_Portal_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [0.0, 8.0, -30.0], lightDir: [0.0, -1.0, 0.1], scale: [1.0, 1.5, 1.0], color: [0.5, 0.9, 1.0], intensity: 22.0, spotCutoff: 0.86, outerCutoff: 0.72, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
+      { id: 103, name: "Coolant_Tunnel_Spheric_Light", type: "Spheric Area Light", isLight: true, lightType: "point", pos: [0.0, 4.5, 0.0], scale: [1.0, 1.0, 1.0], color: [0.2, 0.6, 1.0], intensity: 15.0, radius: 9.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Area Light", contact: false },
       { id: 20, name: "Perimeter_Wall_North", type: "Steel Perimeter Wall", pos: [0.0, 6.0, -48.0], scale: [64.0, 12.0, 2.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "North Wall", contact: false },
       { id: 21, name: "Perimeter_Wall_South", type: "Steel Perimeter Wall", pos: [0.0, 6.0, 48.0], scale: [64.0, 12.0, 2.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (64x12x2m)", layer: "Layer_Obstacle", trigger: false, badge: "South Wall", contact: false },
       { id: 22, name: "Perimeter_Wall_West", type: "Steel Perimeter Wall", pos: [-32.0, 6.0, 0.0], scale: [2.0, 12.0, 96.0], roughness: 0.65, metallic: 0.35, color: [0.18, 0.22, 0.26], collider: "AABB Box (2x12x96m)", layer: "Layer_Obstacle", trigger: false, badge: "West Wall", contact: false },
@@ -3858,7 +3948,23 @@ class NativeApp {
       uLightDir: gl.getUniformLocation(prog, "u_lightDir"),
       uLightColor: gl.getUniformLocation(prog, "u_lightColor"),
       uFillLightDir: gl.getUniformLocation(prog, "u_fillLightDir"),
-      uFillLightColor: gl.getUniformLocation(prog, "u_fillLightColor")
+      uFillLightColor: gl.getUniformLocation(prog, "u_fillLightColor"),
+      uNumPointLights: gl.getUniformLocation(prog, "u_numPointLights"),
+      uNumSpotLights: gl.getUniformLocation(prog, "u_numSpotLights"),
+      pointLights: Array.from({length: 6}, (_, i) => ({
+        pos: gl.getUniformLocation(prog, `u_pointLights[${i}].pos`),
+        color: gl.getUniformLocation(prog, `u_pointLights[${i}].color`),
+        intensity: gl.getUniformLocation(prog, `u_pointLights[${i}].intensity`),
+        radius: gl.getUniformLocation(prog, `u_pointLights[${i}].radius`)
+      })),
+      spotLights: Array.from({length: 4}, (_, i) => ({
+        pos: gl.getUniformLocation(prog, `u_spotLights[${i}].pos`),
+        dir: gl.getUniformLocation(prog, `u_spotLights[${i}].dir`),
+        color: gl.getUniformLocation(prog, `u_spotLights[${i}].color`),
+        intensity: gl.getUniformLocation(prog, `u_spotLights[${i}].intensity`),
+        cutoff: gl.getUniformLocation(prog, `u_spotLights[${i}].cutoff`),
+        outerCutoff: gl.getUniformLocation(prog, `u_spotLights[${i}].outerCutoff`)
+      }))
     };
   }
 
@@ -3921,6 +4027,7 @@ class NativeApp {
 
       uBloomEnabled: gl.getUniformLocation(prog, "u_bloomEnabled"),
       uBloomThreshold: gl.getUniformLocation(prog, "u_bloomThreshold"),
+      uBloomSensitivity: gl.getUniformLocation(prog, "u_bloomSensitivity"),
       uBloomIntensity: gl.getUniformLocation(prog, "u_bloomIntensity"),
       uBloomRadius: gl.getUniformLocation(prog, "u_bloomRadius"),
       uBloomAnamorphic: gl.getUniformLocation(prog, "u_bloomAnamorphic"),
@@ -7273,6 +7380,7 @@ else if (typeof define === 'function' && define['amd'])
       bloom: {
         enabled: true,
         threshold: 0.85,
+        sensitivity: 0.50,
         intensity: 1.25,
         radius: 1.4,
         passes: 4,
@@ -7394,6 +7502,15 @@ else if (typeof define === 'function' && define['amd'])
       sliderThreshold.addEventListener('input', (e) => {
         this.postProcState.bloom.threshold = parseFloat(e.target.value);
         if (valThreshold) valThreshold.textContent = this.postProcState.bloom.threshold.toFixed(2);
+      });
+    }
+
+    const sliderSensitivity = document.getElementById('slider-bloom-sensitivity');
+    const valSensitivity = document.getElementById('val-bloom-sensitivity');
+    if (sliderSensitivity) {
+      sliderSensitivity.addEventListener('input', (e) => {
+        this.postProcState.bloom.sensitivity = parseFloat(e.target.value);
+        if (valSensitivity) valSensitivity.textContent = this.postProcState.bloom.sensitivity.toFixed(2);
       });
     }
 
@@ -7539,7 +7656,14 @@ else if (typeof define === 'function' && define['amd'])
       item.id = `hierarchy-item-${idx}`;
 
       let badgeColor = '#64748b';
-      if (entity.layer === 'Layer_Player') badgeColor = '#3b82f6';
+      let lightIcon = '';
+      if (entity.isLight || entity.layer === 'Layer_Light') {
+        badgeColor = '#eab308';
+        if (entity.lightType === 'spot') lightIcon = '🔦 ';
+        else if (entity.lightType === 'directional') lightIcon = '☀️ ';
+        else lightIcon = '💡 ';
+      }
+      else if (entity.layer === 'Layer_Player') badgeColor = '#3b82f6';
       else if (entity.layer === 'Layer_Ground') badgeColor = '#10b981';
       else if (entity.layer === 'Layer_Obstacle') badgeColor = '#f59e0b';
       else if (entity.layer === 'Layer_Trigger') badgeColor = '#06b6d4';
@@ -7551,7 +7675,7 @@ else if (typeof define === 'function' && define['amd'])
         <div class="hierarchy-item-left">
           <span class="hierarchy-selection-indicator"></span>
           <span class="hierarchy-badge" style="background: ${badgeColor}22; color: ${badgeColor}; border: 1px solid ${badgeColor}44;">
-            ${entity.badge || entity.type}
+            ${lightIcon}${entity.badge || entity.type}
           </span>
           <span class="hierarchy-name" id="hierarchy-name-${idx}">${entity.name}</span>
         </div>
@@ -7662,6 +7786,61 @@ else if (typeof define === 'function' && define['amd'])
       const hexB = Math.round(entity.color[2] * 255).toString(16).padStart(2, '0');
       cp.value = `#${hexR}${hexG}${hexB}`;
     }
+
+    // Populate Light Entity Section
+    const lightSec = document.getElementById('insp-light-section');
+    if (entity.isLight || entity.layer === 'Layer_Light') {
+      if (lightSec) lightSec.style.display = 'block';
+      const lightTypeSel = document.getElementById('insp-light-type');
+      const lightColorPick = document.getElementById('insp-light-color');
+      const lightColorHex = document.getElementById('insp-light-color-hex');
+      const lightInten = document.getElementById('insp-light-intensity');
+      const lightIntenVal = document.getElementById('insp-light-intensity-val');
+      const lightRad = document.getElementById('insp-light-radius');
+      const lightRadVal = document.getElementById('insp-light-radius-val');
+      const lightCutoff = document.getElementById('insp-light-cutoff');
+      const lightCutoffVal = document.getElementById('insp-light-cutoff-val');
+      const rowSpotCutoff = document.getElementById('insp-row-spot-cutoff');
+      const rowSpotDir = document.getElementById('insp-row-spot-dir');
+      const rowLightRadius = document.getElementById('insp-row-light-radius');
+
+      if (lightTypeSel) lightTypeSel.value = entity.lightType || 'point';
+      if (lightInten) {
+        lightInten.value = entity.intensity !== undefined ? entity.intensity : 15.0;
+        if (lightIntenVal) lightIntenVal.textContent = parseFloat(lightInten.value).toFixed(1);
+      }
+      if (lightRad) {
+        lightRad.value = entity.radius !== undefined ? entity.radius : 10.0;
+        if (lightRadVal) lightRadVal.textContent = `${parseFloat(lightRad.value).toFixed(1)}m`;
+      }
+      if (entity.color) {
+        const hexR = Math.round(entity.color[0] * 255).toString(16).padStart(2, '0');
+        const hexG = Math.round(entity.color[1] * 255).toString(16).padStart(2, '0');
+        const hexB = Math.round(entity.color[2] * 255).toString(16).padStart(2, '0');
+        if (lightColorPick) lightColorPick.value = `#${hexR}${hexG}${hexB}`;
+        if (lightColorHex) lightColorHex.textContent = `#${hexR.toUpperCase()}${hexG.toUpperCase()}${hexB.toUpperCase()}`;
+      }
+
+      const isSpot = entity.lightType === 'spot';
+      if (rowSpotCutoff) rowSpotCutoff.style.display = isSpot ? 'flex' : 'none';
+      if (rowSpotDir) rowSpotDir.style.display = isSpot ? 'flex' : 'none';
+      if (rowLightRadius) rowLightRadius.style.display = (entity.lightType === 'directional') ? 'none' : 'flex';
+
+      if (isSpot) {
+        const deg = Math.round(entity.spotCutoffAngle !== undefined ? entity.spotCutoffAngle : 35);
+        if (lightCutoff) lightCutoff.value = deg;
+        if (lightCutoffVal) lightCutoffVal.textContent = `${deg}°`;
+        const dirX = document.getElementById('insp-light-dir-x');
+        const dirY = document.getElementById('insp-light-dir-y');
+        const dirZ = document.getElementById('insp-light-dir-z');
+        const dir = entity.lightDir || [0, -1, 0];
+        if (dirX) dirX.value = dir[0];
+        if (dirY) dirY.value = dir[1];
+        if (dirZ) dirZ.value = dir[2];
+      }
+    } else {
+      if (lightSec) lightSec.style.display = 'none';
+    }
   }
 
   bindInspectorControls() {
@@ -7745,6 +7924,130 @@ else if (typeof define === 'function' && define['amd'])
         }
       });
     }
+
+    // Light Entity Controls Listeners
+    const lightTypeSel = document.getElementById('insp-light-type');
+    if (lightTypeSel) {
+      lightTypeSel.addEventListener('change', (e) => {
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity) {
+          entity.lightType = e.target.value;
+          entity.type = entity.lightType === 'spot' ? "Spot Light" : (entity.lightType === 'directional' ? "Directional Light" : "Spheric Area Light");
+          entity.badge = entity.lightType === 'spot' ? "Spot Light" : (entity.lightType === 'directional' ? "Sun Light" : "Area Light");
+          entity.collider = entity.lightType === 'spot' ? "Spot Light Cone" : "Point Light Sphere";
+          this.renderHierarchyTree();
+          this.populateInspector(entity);
+        }
+      });
+    }
+
+    const lightColorPick = document.getElementById('insp-light-color');
+    if (lightColorPick) {
+      lightColorPick.addEventListener('input', (e) => {
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity) {
+          const hex = e.target.value;
+          entity.color = [
+            parseInt(hex.slice(1, 3), 16) / 255.0,
+            parseInt(hex.slice(3, 5), 16) / 255.0,
+            parseInt(hex.slice(5, 7), 16) / 255.0
+          ];
+          const hexLabel = document.getElementById('insp-light-color-hex');
+          if (hexLabel) hexLabel.textContent = hex.toUpperCase();
+        }
+      });
+    }
+
+    const lightInten = document.getElementById('insp-light-intensity');
+    if (lightInten) {
+      lightInten.addEventListener('input', (e) => {
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity) {
+          entity.intensity = parseFloat(e.target.value);
+          const valLabel = document.getElementById('insp-light-intensity-val');
+          if (valLabel) valLabel.textContent = entity.intensity.toFixed(1);
+        }
+      });
+    }
+
+    const lightRad = document.getElementById('insp-light-radius');
+    if (lightRad) {
+      lightRad.addEventListener('input', (e) => {
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity) {
+          entity.radius = parseFloat(e.target.value);
+          const valLabel = document.getElementById('insp-light-radius-val');
+          if (valLabel) valLabel.textContent = `${entity.radius.toFixed(1)}m`;
+        }
+      });
+    }
+
+    const lightCutoff = document.getElementById('insp-light-cutoff');
+    if (lightCutoff) {
+      lightCutoff.addEventListener('input', (e) => {
+        const entity = this.sceneEntities[this.selectedEntityIndex];
+        if (entity) {
+          const deg = parseFloat(e.target.value);
+          entity.spotCutoffAngle = deg;
+          const rad = deg * Math.PI / 180;
+          entity.spotCutoff = Math.cos(rad);
+          entity.outerCutoff = Math.cos(rad * 1.35);
+          const valLabel = document.getElementById('insp-light-cutoff-val');
+          if (valLabel) valLabel.textContent = `${deg}°`;
+        }
+      });
+    }
+
+    const updateSpotDir = () => {
+      const entity = this.sceneEntities[this.selectedEntityIndex];
+      if (entity && entity.lightType === 'spot') {
+        const dx = parseFloat(document.getElementById('insp-light-dir-x')?.value) || 0;
+        const dy = parseFloat(document.getElementById('insp-light-dir-y')?.value) || -1;
+        const dz = parseFloat(document.getElementById('insp-light-dir-z')?.value) || 0;
+        entity.lightDir = [dx, dy, dz];
+      }
+    };
+    ['insp-light-dir-x', 'insp-light-dir-y', 'insp-light-dir-z'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', updateSpotDir);
+    });
+
+    const addLight = (type) => {
+      const newId = 500 + this.sceneEntities.length;
+      const isSpot = (type === 'spot');
+      const camYaw = this.state.camYaw || 0;
+      const camPos = this.state.camPos || [0, 5, 10];
+      const newLight = {
+        id: newId,
+        name: isSpot ? `Spot_Light_${newId}` : `Area_Spheric_Light_${newId}`,
+        type: isSpot ? "Spot Light" : "Spheric Area Light",
+        isLight: true,
+        lightType: isSpot ? "spot" : "point",
+        pos: [camPos[0] - Math.sin(camYaw) * 4.0, camPos[1] + 1.5, camPos[2] - Math.cos(camYaw) * 4.0],
+        lightDir: [0, -1, 0],
+        scale: [1.2, 1.2, 1.2],
+        color: isSpot ? [0.2, 0.85, 1.0] : [1.0, 0.65, 0.2],
+        intensity: 20.0,
+        radius: 12.0,
+        spotCutoffAngle: 35,
+        spotCutoff: Math.cos(35 * Math.PI / 180),
+        outerCutoff: Math.cos(35 * 1.35 * Math.PI / 180),
+        roughness: 0.1,
+        metallic: 0.9,
+        collider: isSpot ? "Spot Light Cone" : "Point Light Sphere",
+        layer: "Layer_Light",
+        trigger: false,
+        badge: isSpot ? "Spot Light" : "Area Light",
+        contact: false
+      };
+      this.sceneEntities.push(newLight);
+      this.selectedEntityIndex = this.sceneEntities.length - 1;
+      this.renderHierarchyTree();
+      this.populateInspector(newLight);
+      this.log(`Added new ${newLight.type} entity [${newLight.name}] to scene at [${newLight.pos.map(n=>n.toFixed(1)).join(', ')}]`, "success");
+    };
+
+    document.getElementById('btn-add-light-point')?.addEventListener('click', () => addLight('point'));
+    document.getElementById('btn-add-light-spot')?.addEventListener('click', () => addLight('spot'));
 
     const btnFocus = document.getElementById('btn-focus-obj');
     if (btnFocus) {
@@ -8589,6 +8892,59 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (progInfo.uCamPos) gl.uniform3fv(progInfo.uCamPos, this.state.camPos);
     if (progInfo.uTime) gl.uniform1f(progInfo.uTime, timestamp * 0.001);
 
+    // Dynamic Point & Spot Light Uniform Upload
+    const pointLightsList = [];
+    const spotLightsList = [];
+
+    this.sceneEntities.forEach(ent => {
+      if (ent.isLight || ent.layer === 'Layer_Light') {
+        if (ent.lightType === 'spot' && spotLightsList.length < 4) {
+          spotLightsList.push(ent);
+        } else if ((ent.lightType === 'point' || !ent.lightType) && pointLightsList.length < 6) {
+          pointLightsList.push(ent);
+        }
+      }
+    });
+
+    if (progInfo.uNumPointLights) {
+      gl.uniform1i(progInfo.uNumPointLights, pointLightsList.length);
+      for (let i = 0; i < 6; i++) {
+        const u = progInfo.pointLights ? progInfo.pointLights[i] : null;
+        if (!u) continue;
+        if (i < pointLightsList.length) {
+          const l = pointLightsList[i];
+          if (u.pos) gl.uniform3fv(u.pos, l.pos);
+          if (u.color) gl.uniform3fv(u.color, l.color || [1, 1, 1]);
+          if (u.intensity) gl.uniform1f(u.intensity, l.intensity !== undefined ? l.intensity : 15.0);
+          if (u.radius) gl.uniform1f(u.radius, l.radius !== undefined ? l.radius : 10.0);
+        } else {
+          if (u.intensity) gl.uniform1f(u.intensity, 0.0);
+        }
+      }
+    }
+
+    if (progInfo.uNumSpotLights) {
+      gl.uniform1i(progInfo.uNumSpotLights, spotLightsList.length);
+      for (let i = 0; i < 4; i++) {
+        const u = progInfo.spotLights ? progInfo.spotLights[i] : null;
+        if (!u) continue;
+        if (i < spotLightsList.length) {
+          const l = spotLightsList[i];
+          const dir = l.lightDir || [0, -1, 0];
+          const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+          const normDir = [dir[0]/len, dir[1]/len, dir[2]/len];
+          if (u.pos) gl.uniform3fv(u.pos, l.pos);
+          if (u.dir) gl.uniform3fv(u.dir, normDir);
+          if (u.color) gl.uniform3fv(u.color, l.color || [1, 1, 1]);
+          if (u.intensity) gl.uniform1f(u.intensity, l.intensity !== undefined ? l.intensity : 20.0);
+          if (u.cutoff) gl.uniform1f(u.cutoff, l.spotCutoff !== undefined ? l.spotCutoff : Math.cos(35 * Math.PI / 180));
+          if (u.outerCutoff) gl.uniform1f(u.outerCutoff, l.outerCutoff !== undefined ? l.outerCutoff : Math.cos(45 * Math.PI / 180));
+        } else {
+          if (u.intensity) gl.uniform1f(u.intensity, 0.0);
+        }
+      }
+    }
+
     if (isCharacterDemo) {
       // -------------------------------------------------------------
       // RENDER DEMO 06 SCENE OBJECTS & ANIMATED CHARACTER
@@ -9391,17 +9747,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // Bind Scene Color Texture (Unit 0)
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.sceneColorTex);
-      gl.uniform1i(this.postProcProg.u_sceneColor, 0);
+      if (this.postProcProg.uSceneColor) gl.uniform1i(this.postProcProg.uSceneColor, 0);
 
       // Bind Scene Depth Texture (Unit 1)
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, this.sceneDepthTex);
-      gl.uniform1i(this.postProcProg.u_sceneDepth, 1);
+      if (this.postProcProg.uSceneDepth) gl.uniform1i(this.postProcProg.uSceneDepth, 1);
 
       // Screen & Camera Uniforms
-      if (this.postProcProg.u_resolution) gl.uniform2f(this.postProcProg.u_resolution, width, height);
-      if (this.postProcProg.u_time) gl.uniform1f(this.postProcProg.u_time, timestamp * 0.001);
-      if (this.postProcProg.u_camPos) gl.uniform3fv(this.postProcProg.u_camPos, this.state.camPos);
+      if (this.postProcProg.uResolution) gl.uniform2f(this.postProcProg.uResolution, width, height);
+      if (this.postProcProg.uTime) gl.uniform1f(this.postProcProg.uTime, timestamp * 0.001);
+      if (this.postProcProg.uCamPos) gl.uniform3fv(this.postProcProg.uCamPos, this.state.camPos);
 
       // Dynamic Sun Screen Position for Volumetric Light God Rays
       const sunWorld = [
@@ -9422,7 +9778,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         sunScreenX = (sunClip[0] / sunClip[3]) * 0.5 + 0.5;
         sunScreenY = (sunClip[1] / sunClip[3]) * 0.5 + 0.5;
       }
-      if (this.postProcProg.u_sunScreenPos) gl.uniform2f(this.postProcProg.u_sunScreenPos, sunScreenX, sunScreenY);
+      if (this.postProcProg.uSunScreenPos) gl.uniform2f(this.postProcProg.uSunScreenPos, sunScreenX, sunScreenY);
+
+      const hzb = this.postProcState ? this.postProcState.hzb : {};
+      const bloom = this.postProcState ? this.postProcState.bloom : {};
+      const vol = this.postProcState ? this.postProcState.volumetric : {};
 
       // HZB Mode mapping
       const viewModeMap = {
@@ -9433,29 +9793,30 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         'hiz-raymarch': 4,
         'split-view': 5
       };
-      const hzbModeInt = viewModeMap[this.postProcState.hzbViewMode] !== undefined ? viewModeMap[this.postProcState.hzbViewMode] : 0;
+      const hzbModeInt = viewModeMap[hzb.viewMode] !== undefined ? viewModeMap[hzb.viewMode] : 0;
 
       // HZB Uniforms
-      if (this.postProcProg.u_hzbEnabled) gl.uniform1i(this.postProcProg.u_hzbEnabled, this.postProcState.hzbEnabled ? 1 : 0);
-      if (this.postProcProg.u_hzbViewMode) gl.uniform1i(this.postProcProg.u_hzbViewMode, hzbModeInt);
-      if (this.postProcProg.u_hzbMipLevel) gl.uniform1f(this.postProcProg.u_hzbMipLevel, this.postProcState.hzbMipLevel);
-      if (this.postProcProg.u_hzbSteps) gl.uniform1i(this.postProcProg.u_hzbSteps, this.postProcState.hzbSteps);
+      if (this.postProcProg.uHzbEnabled) gl.uniform1i(this.postProcProg.uHzbEnabled, hzb.enabled ? 1 : 0);
+      if (this.postProcProg.uHzbViewMode) gl.uniform1i(this.postProcProg.uHzbViewMode, hzbModeInt);
+      if (this.postProcProg.uHzbMipLevel) gl.uniform1f(this.postProcProg.uHzbMipLevel, hzb.mipLevel !== undefined ? hzb.mipLevel : 0);
+      if (this.postProcProg.uHzbSteps) gl.uniform1i(this.postProcProg.uHzbSteps, hzb.steps !== undefined ? hzb.steps : 8);
 
       // Bloom Uniforms
-      if (this.postProcProg.u_bloomEnabled) gl.uniform1i(this.postProcProg.u_bloomEnabled, this.postProcState.bloomEnabled ? 1 : 0);
-      if (this.postProcProg.u_bloomThreshold) gl.uniform1f(this.postProcProg.u_bloomThreshold, this.postProcState.bloomThreshold);
-      if (this.postProcProg.u_bloomIntensity) gl.uniform1f(this.postProcProg.u_bloomIntensity, this.postProcState.bloomIntensity);
-      if (this.postProcProg.u_bloomRadius) gl.uniform1f(this.postProcProg.u_bloomRadius, this.postProcState.bloomRadius);
-      if (this.postProcProg.u_bloomAnamorphic) gl.uniform1f(this.postProcProg.u_bloomAnamorphic, this.postProcState.bloomAnamorphic);
-      if (this.postProcProg.u_bloomChromatic) gl.uniform1f(this.postProcProg.u_bloomChromatic, this.postProcState.bloomChromatic);
+      if (this.postProcProg.uBloomEnabled) gl.uniform1i(this.postProcProg.uBloomEnabled, bloom.enabled ? 1 : 0);
+      if (this.postProcProg.uBloomThreshold) gl.uniform1f(this.postProcProg.uBloomThreshold, bloom.threshold !== undefined ? bloom.threshold : 0.85);
+      if (this.postProcProg.uBloomSensitivity) gl.uniform1f(this.postProcProg.uBloomSensitivity, bloom.sensitivity !== undefined ? bloom.sensitivity : 0.50);
+      if (this.postProcProg.uBloomIntensity) gl.uniform1f(this.postProcProg.uBloomIntensity, bloom.intensity !== undefined ? bloom.intensity : 1.25);
+      if (this.postProcProg.uBloomRadius) gl.uniform1f(this.postProcProg.uBloomRadius, bloom.radius !== undefined ? bloom.radius : 1.4);
+      if (this.postProcProg.uBloomAnamorphic) gl.uniform1f(this.postProcProg.uBloomAnamorphic, bloom.anamorphic ? 1.0 : 0.0);
+      if (this.postProcProg.uBloomChromatic) gl.uniform1f(this.postProcProg.uBloomChromatic, bloom.chromatic ? 1.0 : 0.0);
 
       // Volumetric Uniforms
-      if (this.postProcProg.u_volumetricEnabled) gl.uniform1i(this.postProcProg.u_volumetricEnabled, this.postProcState.volumetricEnabled ? 1 : 0);
-      if (this.postProcProg.u_volumetricSamples) gl.uniform1i(this.postProcProg.u_volumetricSamples, this.postProcState.volumetricSamples);
-      if (this.postProcProg.u_volumetricDensity) gl.uniform1f(this.postProcProg.u_volumetricDensity, this.postProcState.volumetricDensity);
-      if (this.postProcProg.u_volumetricDecay) gl.uniform1f(this.postProcProg.u_volumetricDecay, this.postProcState.volumetricDecay);
-      if (this.postProcProg.u_volumetricWeight) gl.uniform1f(this.postProcProg.u_volumetricWeight, this.postProcState.volumetricWeight);
-      if (this.postProcProg.u_volumetricColor) gl.uniform3fv(this.postProcProg.u_volumetricColor, this.postProcState.volumetricColor);
+      if (this.postProcProg.uVolumetricEnabled) gl.uniform1i(this.postProcProg.uVolumetricEnabled, vol.enabled ? 1 : 0);
+      if (this.postProcProg.uVolumetricSamples) gl.uniform1i(this.postProcProg.uVolumetricSamples, vol.samples !== undefined ? vol.samples : 32);
+      if (this.postProcProg.uVolumetricDensity) gl.uniform1f(this.postProcProg.uVolumetricDensity, vol.density !== undefined ? vol.density : 0.95);
+      if (this.postProcProg.uVolumetricDecay) gl.uniform1f(this.postProcProg.uVolumetricDecay, vol.decay !== undefined ? vol.decay : 0.965);
+      if (this.postProcProg.uVolumetricWeight) gl.uniform1f(this.postProcProg.uVolumetricWeight, vol.weight !== undefined ? vol.weight : 0.65);
+      if (this.postProcProg.uVolumetricColor) gl.uniform3fv(this.postProcProg.uVolumetricColor, vol.color || [1.0, 0.85, 0.45]);
 
       // Render Fullscreen Post-Process Quad
       gl.bindVertexArray(this.quadVao);
