@@ -113,6 +113,90 @@
               </div>
             </div>
 
+            <!-- 🎰 3D Cyber Slot Machine Interactive Panel (Demo 09) -->
+            <div id="slot-machine-overlay" class="slot-machine-overlay-panel" style="display: none;">
+              <div class="slot-header">
+                <div class="slot-title">🎰 CASINO 3D SLOT</div>
+                <div class="slot-subtitle">HIGH PERFORMANCE REAL-TIME SOLVER</div>
+              </div>
+
+              <!-- Stats Box -->
+              <div class="slot-stat-box">
+                <div class="slot-stat-cell">
+                  <span class="slot-stat-label">💰 Credits</span>
+                  <span class="slot-credits-val slot-stat-value gold" id="slot-credits-val">1000</span>
+                </div>
+                <div class="slot-stat-cell">
+                  <span class="slot-stat-label">⭐ Last Win</span>
+                  <span class="slot-win-val slot-stat-value win" id="slot-win-val">0</span>
+                </div>
+              </div>
+
+              <!-- Paytable Section -->
+              <div class="slot-paytable">
+                <div class="slot-paytable-title">💎 Payout Multipliers</div>
+                <div class="slot-paytable-row">
+                  <span class="slot-paytable-symbol">🧬 Wild Trefoil (3x)</span>
+                  <span class="slot-paytable-mult">100x</span>
+                </div>
+                <div class="slot-paytable-row">
+                  <span class="slot-paytable-symbol">🟨 Golden Cube (3x)</span>
+                  <span class="slot-paytable-mult">50x</span>
+                </div>
+                <div class="slot-paytable-row">
+                  <span class="slot-paytable-symbol">💎 Cyber Gem (3x)</span>
+                  <span class="slot-paytable-mult">30x</span>
+                </div>
+                <div class="slot-paytable-row">
+                  <span class="slot-paytable-symbol">🍩 Space Donut (3x)</span>
+                  <span class="slot-paytable-mult">15x</span>
+                </div>
+                <div class="slot-paytable-row">
+                  <span class="slot-paytable-symbol">🔴 Cyber Cherry (3x)</span>
+                  <span class="slot-paytable-mult">8x</span>
+                </div>
+                <div class="slot-paytable-row">
+                  <span class="slot-paytable-symbol">✨ Any Match Pair (2x)</span>
+                  <span class="slot-paytable-mult">3x</span>
+                </div>
+              </div>
+
+              <!-- Controls -->
+              <div class="slot-controls">
+                <div class="slot-stat-label">Select Bet Size</div>
+                <div class="slot-bet-selector" id="slot-bet-selector">
+                  <button class="slot-bet-btn active" data-bet="10">10</button>
+                  <button class="slot-bet-btn" data-bet="25">25</button>
+                  <button class="slot-bet-btn" data-bet="50">50</button>
+                  <button class="slot-bet-btn" data-bet="100">100</button>
+                </div>
+
+                <button id="btn-slot-spin" class="slot-spin-btn">🎰 SPIN / PULL LEVER</button>
+
+                <div class="slot-utility-row">
+                  <button id="btn-slot-auto" class="slot-util-btn">🔄 Auto Spin: OFF</button>
+                  <button id="btn-slot-add-funds" class="slot-util-btn">💳 Add +500 Credits</button>
+                </div>
+              </div>
+
+              <!-- Recent Spins History -->
+              <div class="slot-history">
+                <div class="slot-history-title">📜 Payout Ledger</div>
+                <div class="slot-history-list" id="slot-history-list">
+                  <div class="slot-history-item">
+                    <span class="slot-history-text">Casino Room opened...</span>
+                    <span class="slot-history-payout">Ready</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 🎰 Slot Machine Banner Info -->
+            <div id="slot-machine-banner" class="slot-machine-banner" style="display: none;">
+              <span>🎰 <b>Demo 09 Active: 3D Casino Slot Machine</b> &bull; Drag to Rotate camera &bull; Pull lever or click SPIN!</span>
+              <span id="slot-stats-summary" style="color: #fbbf24; font-weight: bold;">Spins: 0 | Win Rate: 0%</span>
+            </div>
+
             <!-- FPS Startup Menu & Multiplayer Lobby Overlay (Demo 07) -->
             <div class="fps-startup-overlay" id="fps-startup-overlay" style="display: none;">
               <div class="fps-menu-card">
@@ -192,6 +276,32 @@
                             <option value="Red" selected>🔴 Red Team</option>
                             <option value="Blue">🔵 Blue Team</option>
                             <option value="FFA">⚔️ Free For All</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <!-- 🎵 Audio & Music Settings -->
+                      <div class="fps-form-row" style="margin-top: 10px;">
+                        <div class="fps-form-group">
+                          <label class="fps-label">🎵 Background Music:</label>
+                          <select id="fps-music-toggle" class="fps-select">
+                            <option value="on" selected>🔊 Music ON</option>
+                            <option value="off">🔇 Music OFF</option>
+                          </select>
+                        </div>
+                        <div class="fps-form-group">
+                          <label class="fps-label">💥 Sound Effects (SFX):</label>
+                          <select id="fps-sfx-toggle" class="fps-select">
+                            <option value="on" selected>🔊 SFX ON</option>
+                            <option value="off">🔇 SFX OFF</option>
+                          </select>
+                        </div>
+                        <div class="fps-form-group">
+                          <label class="fps-label">🧟 Zombie Voice Density:</label>
+                          <select id="fps-zombie-density" class="fps-select">
+                            <option value="high" selected>💀 High (Fierce)</option>
+                            <option value="medium">🧟 Medium</option>
+                            <option value="low">💤 Low / Silent</option>
                           </select>
                         </div>
                       </div>
@@ -599,6 +709,7 @@
                       <option value="06_glb_character_collision_player.cpp">Demo 06: GLB Character, Collision &amp; Player Controller (06_glb_character_collision_player.cpp)</option>
                       <option value="07_fps_shooter_damage_system.cpp" selected>Demo 07: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
                       <option value="08_all_materials_presentation.cpp">Demo 08: All Materials Presentation Showcase (08_all_materials_presentation.cpp)</option>
+                      <option value="09_slot_machine.cpp">Demo 09: 3D Casino Slot Machine &amp; Particles (09_slot_machine.cpp)</option>
                     </select>
                   </div>
                 </div>
@@ -799,6 +910,7 @@
                   <option value="examples/06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 06: GLB Character, Collision &amp; Player Controller)</option>
                   <option value="examples/07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
                   <option value="examples/08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 08: All Materials Presentation Showcase)</option>
+                  <option value="examples/09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 09: 3D Casino Slot Machine &amp; Particles)</option>
                   <option value="src/core/Engine.cpp">src/core/Engine.cpp (Engine Core C++)</option>
                   <option value="src/core/Renderer.cpp">src/core/Renderer.cpp (Filament GLES3 Pipeline C++)</option>
                   <option value="src/core/Bindings.cpp">src/core/Bindings.cpp (Emscripten Embind Bindings C++)</option>
@@ -862,6 +974,7 @@
                 <option value="06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 06: GLB Character, Collision &amp; Player Controller)</option>
                 <option value="07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
                 <option value="08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 08: All Materials Presentation Showcase)</option>
+                <option value="09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 09: 3D Casino Slot Machine &amp; Particles)</option>
               </select>
               <button id="btn-copy-example" class="btn-xs">Copy Example</button>
             </div>

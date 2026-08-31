@@ -1,0 +1,12 @@
+{
+  "name": "C++ Filament 3D Engine Studio",
+  "description": "High-performance C++ & WebAssembly 3D engine sandbox with custom physics, damage system, and active arena bots.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

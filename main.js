@@ -2424,6 +2424,82 @@ void Renderer::EndFrame() {
 } // namespace EngineCore
 `,
 
+  '09_slot_machine.cpp': `// examples/09_slot_machine.cpp
+// Filament / Native C++ Demo 09: 3D Casino Slot Machine & Particle Coins Showcase
+// Demonstrates spinning cylinder/torus reels, animated levers with damped sine physics,
+// instanced 3D coin particle solvers, and multi-symbol PBR material rendering.
+
+#include <iostream>
+#include <vector>
+#include <random>
+#include <cmath>
+#include <memory>
+#include <string>
+
+namespace CasinoDemo {
+    struct Vec3 { float x = 0.0f, y = 0.0f, z = 0.0f; };
+    enum SymbolType { Symbol_Cherry, Symbol_Donut, Symbol_Gem, Symbol_GoldCube, Symbol_WildTrefoil, Symbol_COUNT };
+    struct Reel { float angle = 0.0f, speed = 0.0f; bool spinning = false; SymbolType currentSymbol = Symbol_Cherry; float stopTimer = 0.0f; };
+    struct CoinParticle { Vec3 position, velocity; float lifetime = 0.0f, maxLifetime = 3.0f; bool active = false; };
+
+    class SlotMachine {
+    public:
+        int credits = 1000, bet = 10;
+        Reel reels[3];
+        float leverAngle = 0.0f, leverVelocity = 0.0f;
+        bool leverPulled = false;
+        std::vector<CoinParticle> coins;
+
+        SlotMachine() {
+            for(int i = 0; i < 3; ++i) {
+                reels[i].currentSymbol = static_cast<SymbolType>(i % Symbol_COUNT);
+                reels[i].angle = reels[i].currentSymbol * (360.0f / Symbol_COUNT);
+            }
+            coins.resize(100);
+        }
+
+        void Spin(int playerBet) {
+            if (playerBet > credits) return;
+            credits -= playerBet; bet = playerBet;
+            leverPulled = true; leverVelocity = 15.0f;
+            for(int i = 0; i < 3; ++i) {
+                reels[i].spinning = true;
+                reels[i].speed = 40.0f + i * 15.0f;
+                reels[i].stopTimer = 1.0f + i * 0.75f;
+            }
+        }
+
+        void Update(float dt) {
+            for(int i = 0; i < 3; ++i) {
+                if (reels[i].spinning) {
+                    reels[i].angle += reels[i].speed * 10.0f * dt;
+                    reels[i].stopTimer -= dt;
+                    if (reels[i].stopTimer <= 0.0f) {
+                        reels[i].spinning = false; reels[i].speed = 0.0f;
+                        reels[i].angle = reels[i].currentSymbol * (360.0f / Symbol_COUNT);
+                    }
+                }
+            }
+            if (leverPulled) {
+                leverAngle += leverVelocity * dt;
+                if (leverAngle > 0.8f) { leverAngle = 0.8f; leverVelocity = -12.0f; }
+                leverVelocity += (0.0f - leverAngle) * 45.0f * dt;
+                leverVelocity *= std::exp(-8.0f * dt);
+                if (std::abs(leverAngle) < 0.01f && std::abs(leverVelocity) < 0.05f) { leverPulled = false; }
+            }
+        }
+    };
+}
+
+int main() {
+    std::cout << "FILAMENT C++ DEMO 09: 3D CASINO SLOT MACHINE & PARTICLES\\n";
+    CasinoDemo::SlotMachine game;
+    game.Spin(20);
+    game.Update(0.1f);
+    return 0;
+}
+`,
+
   'src/core/Bindings.cpp': `// src/core/Bindings.cpp
 // Emscripten WebIDL / Embind Table linking C++ Engine to WebAssembly
 
@@ -2471,6 +2547,7 @@ EMSCRIPTEN_BINDINGS(EngineModule) {
 `,
 
   'examples/06_glb_character_collision_player.cpp': SOURCE_FILES['06_glb_character_collision_player.cpp'],
+  'examples/09_slot_machine.cpp': SOURCE_FILES['09_slot_machine.cpp'],
   'include/engine/Engine.hpp': SOURCE_FILES['Engine.hpp'],
   'include/engine/Camera.hpp': SOURCE_FILES['Camera.hpp'],
   'include/engine/GLBLoader.hpp': SOURCE_FILES['GLBLoader.hpp'],
@@ -2743,6 +2820,16 @@ function createSphere(radius = 1.0, latBands = 24, longBands = 24) {
 class RetroSoundSynth {
   constructor() {
     this.ctx = null;
+    this.musicOn = true;
+    this.sfxOn = true;
+    this.zombieDensity = 'high'; // 'high', 'medium', 'low'
+
+    // HTML5 Audio elements
+    this.bgMusic = null;
+    this.gunshotPool = [];
+    this.gunshotPoolIndex = 0;
+    this.zombieAudios = [];
+    this.lastZombieTime = 0;
   }
 
   init() {
@@ -2755,11 +2842,108 @@ class RetroSoundSynth {
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
+    this.initMusicAndSFX();
+  }
+
+  initMusicAndSFX() {
+    try {
+      if (!this.bgMusic) {
+        this.bgMusic = new Audio('assets/audio/audionautix-black-fly.mp3');
+        this.bgMusic.loop = true;
+        this.bgMusic.volume = 0.45; // balanced background volume
+      }
+
+      if (this.gunshotPool.length === 0) {
+        // Multi-channel gunshot audio pool for overlapping fire support
+        for (let i = 0; i < 8; i++) {
+          const sfx = new Audio('assets/audio/gun/gunshot.mp3');
+          sfx.volume = 0.50;
+          this.gunshotPool.push(sfx);
+        }
+      }
+
+      if (this.zombieAudios.length === 0) {
+        // Load random selection of zombie audio files for immersive combat atmosphere
+        const zombieIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24];
+        // Shuffle and take 12 to save bandwidth but retain high variety
+        zombieIds.sort(() => 0.5 - Math.random());
+        zombieIds.slice(0, 12).forEach(id => {
+          const zAudio = new Audio(`assets/audio/zombie/zombie-${id}.mp3`);
+          zAudio.volume = 0.40;
+          this.zombieAudios.push(zAudio);
+        });
+      }
+    } catch (e) {
+      console.warn("Audio loading failed or blocked: ", e);
+    }
+  }
+
+  updateSettings(musicOn, sfxOn, zombieDensity) {
+    this.musicOn = musicOn;
+    this.sfxOn = sfxOn;
+    this.zombieDensity = zombieDensity;
+
+    if (this.bgMusic) {
+      if (this.musicOn && window.isMatchActive) {
+        if (this.bgMusic.paused) {
+          this.bgMusic.play().catch(e => console.log("Music play deferred until interaction: ", e));
+        }
+      } else {
+        this.bgMusic.pause();
+      }
+    }
+  }
+
+  startMusic() {
+    this.init();
+    if (this.bgMusic && this.musicOn) {
+      this.bgMusic.play().catch(e => console.log("Music play deferred: ", e));
+    }
+  }
+
+  stopMusic() {
+    if (this.bgMusic) {
+      this.bgMusic.pause();
+    }
+  }
+
+  playZombieSound() {
+    if (!this.sfxOn || this.zombieDensity === 'low') return;
+
+    const now = Date.now();
+    const minDelay = this.zombieDensity === 'high' ? 1200 : 3500;
+    if (now - this.lastZombieTime < minDelay) return;
+
+    if (this.zombieAudios.length > 0) {
+      this.lastZombieTime = now;
+      const randIdx = Math.floor(Math.random() * this.zombieAudios.length);
+      const audio = this.zombieAudios[randIdx];
+      try {
+        audio.currentTime = 0;
+        audio.play().catch(e => {});
+      } catch (err) {}
+    }
   }
 
   play(type) {
+    if (!this.sfxOn) return;
+
     try {
       this.init();
+
+      // Custom real MP3 Audio sound effect override for firing
+      if (type === 'fire') {
+        if (this.gunshotPool.length > 0) {
+          const audio = this.gunshotPool[this.gunshotPoolIndex];
+          try {
+            audio.currentTime = 0;
+            audio.play().catch(e => {});
+          } catch (err) {}
+          this.gunshotPoolIndex = (this.gunshotPoolIndex + 1) % this.gunshotPool.length;
+          return;
+        }
+      }
+
       if (!this.ctx) return;
       const t = this.ctx.currentTime;
 
@@ -3678,7 +3862,8 @@ class NativeApp {
 
     const updateFPSOverlays = () => {
       const isShowroom = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
-      const isFPS = this.state.cameraMode === 3 && !isShowroom;
+      const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
+      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine;
       const crosshairEl = document.getElementById('fps-crosshair-overlay');
       const bannerEl = document.getElementById('fps-pointerlock-banner');
       const weaponHudEl = document.getElementById('fps-weapon-hud');
@@ -3687,15 +3872,26 @@ class NativeApp {
       const showroomTopEl = document.getElementById('showroom-hud-top');
       const showroomCardEl = document.getElementById('showroom-spec-card');
       const showroomBottomEl = document.getElementById('showroom-hud-bottom');
+      
+      const slotOverlayEl = document.getElementById('slot-machine-overlay');
+      const slotBannerEl = document.getElementById('slot-machine-banner');
 
       if (crosshairEl) crosshairEl.style.display = isFPS ? 'flex' : 'none';
       if (bannerEl) bannerEl.style.display = isFPS ? 'block' : 'none';
       if (weaponHudEl) weaponHudEl.style.display = isFPS ? 'flex' : 'none';
-      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom) ? 'block' : 'none';
+      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine) ? 'block' : 'none';
 
       if (showroomTopEl) showroomTopEl.style.display = isShowroom ? 'flex' : 'none';
       if (showroomCardEl) showroomCardEl.style.display = isShowroom ? 'block' : 'none';
       if (showroomBottomEl) showroomBottomEl.style.display = isShowroom ? 'flex' : 'none';
+
+      if (slotOverlayEl) slotOverlayEl.style.display = isSlotMachine ? 'flex' : 'none';
+      if (slotBannerEl) slotBannerEl.style.display = isSlotMachine ? 'block' : 'none';
+
+      if (isSlotMachine) {
+        const startupOverlay = document.getElementById('fps-startup-overlay');
+        if (startupOverlay) startupOverlay.style.display = 'none';
+      }
     };
 
     updateFPSOverlays();
@@ -3941,6 +4137,19 @@ class NativeApp {
           this.state.camTarget[2] = this.playerController.pos[2];
           updateFPSOverlays();
           this.log("Loaded Demo 06: GLB Character, Collision & Player Controller", "cpp");
+        } else if (this.state.demoScene.includes('09_slot_machine')) {
+          this.state.cameraMode = 0;
+          const camSelect = document.getElementById('camera-mode-select');
+          if (camSelect) camSelect.value = "0";
+          this.state.camRadius = 5.2;
+          this.state.camPitch = 0.15;
+          this.state.camYaw = 0.0;
+          this.state.camTarget[0] = 0.0;
+          this.state.camTarget[1] = 0.2;
+          this.state.camTarget[2] = 0.0;
+          updateFPSOverlays();
+          this.log("Loaded Demo 09: 3D Casino Slot Machine & Gold Coins Showcase", "cpp");
+          this.initSlotMachineDemo();
         } else {
           this.log(`Loaded Demo: ${this.state.demoScene}`, "cpp");
         }
@@ -6308,7 +6517,7 @@ else if (typeof define === 'function' && define['amd'])
 
     // Play weapon fire sound
     if (this.synth) {
-      this.synth.play(this.weaponConfig.type === 'railgun' ? 'powerup' : 'ammo');
+      this.synth.play('fire');
     }
 
     // Check Quad Damage
@@ -6403,6 +6612,7 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   updateProjectilesAndDamage(dt, timestamp) {
+    if (!this.isMatchActive) return;
     // 0. Tick First-Person Weapon Animations (Bobbing, Recoil, Muzzle Flash)
     if (this.weaponState) {
       if (this.weaponState.recoil > 0) {
@@ -6832,6 +7042,13 @@ else if (typeof define === 'function' && define['amd'])
         return;
       }
 
+      // Randomly play active zombie ambient growl sounds if match is active
+      if (this.isMatchActive && Math.random() < 0.002) {
+        if (this.synth) {
+          this.synth.playZombieSound();
+        }
+      }
+
       // AI Movement & Aiming Towards Player
       const dx = pEye[0] - bot.pos[0];
       const dy = pEye[1] - (bot.pos[1] + 1.2);
@@ -6993,6 +7210,11 @@ else if (typeof define === 'function' && define['amd'])
     this.totalDamageDealt += damageAmount;
     this.triggerHitmarker();
     this.spawnFloatingDamageNumber(hitPos, damageAmount, isDestroyed);
+
+    // Play a custom zombie grunting sound when damaged
+    if (this.synth) {
+      this.synth.playZombieSound();
+    }
 
     const evt = {
       time: new Date().toLocaleTimeString(),
@@ -7407,6 +7629,24 @@ else if (typeof define === 'function' && define['amd'])
       });
     }
 
+    // Set up audio change listeners
+    const musicToggle = document.getElementById('fps-music-toggle');
+    const sfxToggle = document.getElementById('fps-sfx-toggle');
+    const zombieDensitySelect = document.getElementById('fps-zombie-density');
+
+    const updateAudioSettings = () => {
+      const musicOn = musicToggle ? musicToggle.value === 'on' : true;
+      const sfxOn = sfxToggle ? sfxToggle.value === 'on' : true;
+      const density = zombieDensitySelect ? zombieDensitySelect.value : 'high';
+      if (this.synth) {
+        this.synth.updateSettings(musicOn, sfxOn, density);
+      }
+    };
+
+    if (musicToggle) musicToggle.addEventListener('change', updateAudioSettings);
+    if (sfxToggle) sfxToggle.addEventListener('change', updateAudioSettings);
+    if (zombieDensitySelect) zombieDensitySelect.addEventListener('change', updateAudioSettings);
+
     // Start Match
     if (btnStart) {
       btnStart.addEventListener('click', () => {
@@ -7416,6 +7656,12 @@ else if (typeof define === 'function' && define['amd'])
 
         this.hideFpsStartupMenu();
         this.isMatchActive = true;
+        window.isMatchActive = true;
+        
+        // Push current settings to the synth and start music
+        updateAudioSettings();
+        if (this.synth) this.synth.startMusic();
+
         this.sync3DBotsFromLobby();
         this.state.cameraMode = 3; // FPS Mode
         const camSelect = document.getElementById('camera-mode-select');
@@ -7456,6 +7702,610 @@ else if (typeof define === 'function' && define['amd'])
     }
   }
 
+  initSlotMachineDemo() {
+    if (!this.slotMachine) {
+      this.slotMachine = {
+        credits: 1000,
+        bet: 10,
+        reels: [
+          { angle: 0, speed: 0, spinning: false, stopTimer: 0, currentSymbol: 'cherry', destSymbol: 'cherry' },
+          { angle: 0, speed: 0, spinning: false, stopTimer: 0, currentSymbol: 'cherry', destSymbol: 'cherry' },
+          { angle: 0, speed: 0, spinning: false, stopTimer: 0, currentSymbol: 'cherry', destSymbol: 'cherry' }
+        ],
+        leverAngle: 0,
+        leverVelocity: 0,
+        leverPulled: false,
+        coins: [],
+        currentWin: 0,
+        autoSpin: false,
+        wasSpinActive: false,
+        stats: { spins: 0, wins: 0, totalBet: 0, totalWin: 0 },
+        symbolsList: ['cherry', 'torus', 'gem', 'cube', 'trefoil'],
+        symbolProps: {
+          cherry: { meshId: 0, color: [1.0, 0.1, 0.1], matType: 0, label: '🍒 Cherry' },
+          torus: { meshId: 4, color: [1.0, 0.5, 0.0], matType: 0, label: '🍩 Donut' },
+          gem: { meshId: 2, color: [0.1, 0.8, 1.0], matType: 12, label: '💎 Gem' },
+          cube: { meshId: 1, color: [1.0, 0.84, 0.0], matType: 1, label: '🟨 Gold' },
+          trefoil: { meshId: 3, color: [0.8, 0.1, 1.0], matType: 3, label: '🧬 Trefoil' }
+        },
+        initializedUI: false
+      };
+
+      // Pre-allocate coin particles
+      for (let i = 0; i < 80; i++) {
+        this.slotMachine.coins.push({
+          pos: [0, 0, 0],
+          vel: [0, 0, 0],
+          active: false,
+          rot: [0, 0, 0],
+          rotSpeed: [0, 0, 0],
+          scale: 0.12,
+          lifetime: 0,
+          maxLifetime: 2.5 + Math.random() * 1.0
+        });
+      }
+    }
+
+    const sm = this.slotMachine;
+
+    // Set UI displays to current values
+    const creditsEl = document.getElementById('slot-credits-val');
+    if (creditsEl) creditsEl.textContent = sm.credits;
+    const winEl = document.getElementById('slot-win-val');
+    if (winEl) winEl.textContent = sm.currentWin;
+
+    // Setup DOM Listeners only once
+    if (!sm.initializedUI) {
+      sm.initializedUI = true;
+
+      // Bet select buttons
+      const betButtons = document.querySelectorAll('.slot-bet-btn');
+      betButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          if (sm.reels[0].spinning || sm.reels[1].spinning || sm.reels[2].spinning) return;
+          betButtons.forEach(b => b.classList.remove('active'));
+          e.target.classList.add('active');
+          sm.bet = parseInt(e.target.getAttribute('data-bet'), 10);
+          if (this.synth) this.synth.play('ammo');
+          this.log(`Bet size adjusted to: ${sm.bet} Credits`, "cpp");
+        });
+      });
+
+      // Spin button
+      const spinBtn = document.getElementById('btn-slot-spin');
+      if (spinBtn) {
+        spinBtn.addEventListener('click', () => {
+          this.pullSlotLever();
+        });
+      }
+
+      // Auto Spin button
+      const autoBtn = document.getElementById('btn-slot-auto');
+      if (autoBtn) {
+        autoBtn.addEventListener('click', () => {
+          sm.autoSpin = !sm.autoSpin;
+          autoBtn.textContent = sm.autoSpin ? "🔄 Auto Spin: ON" : "🔄 Auto Spin: OFF";
+          autoBtn.style.background = sm.autoSpin ? "rgba(245, 158, 11, 0.2)" : "rgba(30, 41, 59, 0.4)";
+          autoBtn.style.borderColor = sm.autoSpin ? "#f59e0b" : "rgba(255, 255, 255, 0.08)";
+          if (this.synth) this.synth.play('ammo');
+          this.log(`Auto Spin set to: ${sm.autoSpin ? "ON" : "OFF"}`, "cpp");
+        });
+      }
+
+      // Add Credits button
+      const addBtn = document.getElementById('btn-slot-add-funds');
+      if (addBtn) {
+        addBtn.addEventListener('click', () => {
+          sm.credits += 500;
+          const creditsVal = document.getElementById('slot-credits-val');
+          if (creditsVal) creditsVal.textContent = sm.credits;
+          if (this.synth) this.synth.play('health_mega');
+          this.log(`Purchased 500 Credits! Total: ${sm.credits}`, "success");
+          
+          // Disable spin button safeguard
+          const btnSpin = document.getElementById('btn-slot-spin');
+          if (btnSpin) btnSpin.removeAttribute('disabled');
+        });
+      }
+    }
+  }
+
+  pullSlotLever() {
+    const sm = this.slotMachine;
+    if (!sm) return;
+
+    if (sm.reels[0].spinning || sm.reels[1].spinning || sm.reels[2].spinning) return;
+
+    if (sm.credits < sm.bet) {
+      this.log("⚠️ Insufficient credits! Click 'Add +500 Credits' to buy-in.", "error");
+      if (this.synth) this.synth.play('health_small');
+      return;
+    }
+
+    // Deduct credits
+    sm.credits -= sm.bet;
+    const creditsEl = document.getElementById('slot-credits-val');
+    if (creditsEl) creditsEl.textContent = sm.credits;
+
+    // Trigger lever tilt
+    sm.leverPulled = true;
+    sm.leverVelocity = 18.0; // downwards snap
+
+    // Clear previous win display
+    sm.currentWin = 0;
+    const winEl = document.getElementById('slot-win-val');
+    if (winEl) winEl.textContent = "0";
+
+    if (this.synth) this.synth.play('powerup'); // whoosh start sound
+
+    // Choose winning destination symbol states
+    sm.stats.spins++;
+    sm.stats.totalBet += sm.bet;
+    sm.wasSpinActive = true;
+
+    // Random distribution matching standard slot ratios
+    const randSymbol = () => {
+      const roll = Math.random();
+      if (roll < 0.06) return 'trefoil';   // 6% Wild Jackpot
+      if (roll < 0.16) return 'cube';      // 10% Gold
+      if (roll < 0.32) return 'gem';       // 16% Gem
+      if (roll < 0.55) return 'torus';     // 23% Donut
+      return 'cherry';                     // 45% Cherry
+    };
+
+    // Sequential trigger for stopping
+    sm.reels.forEach((reel, idx) => {
+      reel.spinning = true;
+      reel.speed = 15.0 + idx * 8.0 + Math.random() * 4.0;
+      reel.stopTimer = 1.4 + idx * 0.75;
+      reel.destSymbol = randSymbol();
+    });
+
+    // Disable Spin UI while rolling
+    const spinBtn = document.getElementById('btn-slot-spin');
+    if (spinBtn) spinBtn.setAttribute('disabled', 'true');
+
+    this.log(`Spin #${sm.stats.spins} Triggered! Bet: ${sm.bet} Credits | Remaining: ${sm.credits}`, "cpp");
+  }
+
+  evaluateSlotResult() {
+    const sm = this.slotMachine;
+    if (!sm) return;
+
+    const r1 = sm.reels[0].currentSymbol;
+    const r2 = sm.reels[1].currentSymbol;
+    const r3 = sm.reels[2].currentSymbol;
+
+    let payout = 0;
+    let description = "";
+    let winType = "loss";
+
+    const symbolProps = sm.symbolProps;
+
+    if (r1 === r2 && r2 === r3) {
+      // Triple Jackpot!
+      winType = "jackpot";
+      const mult = r1 === 'trefoil' ? 100 : (r1 === 'cube' ? 50 : (r1 === 'gem' ? 30 : (r1 === 'torus' ? 15 : 8)));
+      payout = sm.bet * mult;
+      description = `💥 TRIPLE JACKPOT!!! 3x ${symbolProps[r1].label}!`;
+      this.spawnSlotCoins(60);
+      if (this.synth) this.synth.play('health_mega');
+    } else if (r1 === r2 || r2 === r3 || r1 === r3) {
+      // Pair match!
+      winType = "pair";
+      payout = sm.bet * 3;
+      const matchedSym = (r1 === r2 || r1 === r3) ? r1 : r2;
+      description = `✨ Pair Match! 2x ${symbolProps[matchedSym].label}!`;
+      this.spawnSlotCoins(20);
+      if (this.synth) this.synth.play('health_medium');
+    } else {
+      description = "No Matches. Better luck next roll!";
+    }
+
+    if (payout > 0) {
+      sm.credits += payout;
+      sm.currentWin = payout;
+      sm.stats.wins++;
+      sm.stats.totalWin += payout;
+
+      const creditsEl = document.getElementById('slot-credits-val');
+      if (creditsEl) creditsEl.textContent = sm.credits;
+      const winEl = document.getElementById('slot-win-val');
+      if (winEl) {
+        winEl.textContent = `+${payout}!`;
+        winEl.classList.add('win-animate');
+        setTimeout(() => winEl.classList.remove('win-animate'), 800);
+      }
+      this.log(`🎉 Payout Won: +${payout} Credits! (${description})`, "success");
+    } else {
+      this.log(`💀 Spin Outcome: Missed.`, "cpp");
+    }
+
+    // Re-enable Spin button
+    const spinBtn = document.getElementById('btn-slot-spin');
+    if (spinBtn) {
+      if (sm.credits >= sm.bet) {
+        spinBtn.removeAttribute('disabled');
+      } else {
+        spinBtn.setAttribute('disabled', 'true');
+      }
+    }
+
+    // Update History Ledger panel
+    const ledger = document.getElementById('slot-history-list');
+    if (ledger) {
+      const item = document.createElement('div');
+      item.className = `slot-history-item ${payout > 0 ? 'win' : ''}`;
+      
+      const textSpan = document.createElement('span');
+      textSpan.className = `slot-history-text ${payout > 0 ? 'win' : ''}`;
+      textSpan.textContent = payout > 0 ? description : "Roll: No Matches";
+      
+      const paySpan = document.createElement('span');
+      paySpan.className = "slot-history-payout";
+      paySpan.textContent = payout > 0 ? `+${payout}` : "-";
+
+      item.appendChild(textSpan);
+      item.appendChild(paySpan);
+      
+      ledger.insertBefore(item, ledger.firstChild);
+      if (ledger.childNodes.length > 8) {
+        ledger.removeChild(ledger.lastChild);
+      }
+    }
+
+    // Update Stats Summary Banner
+    const rate = Math.round((sm.stats.wins / sm.stats.spins) * 100) || 0;
+    const statsEl = document.getElementById('slot-stats-summary');
+    if (statsEl) {
+      statsEl.textContent = `Spins: ${sm.stats.spins} | Win Rate: ${rate}% | Net: ${sm.stats.totalWin - sm.stats.totalBet} Cr`;
+    }
+  }
+
+  spawnSlotCoins(count) {
+    const sm = this.slotMachine;
+    if (!sm) return;
+
+    let spawned = 0;
+    for (let i = 0; i < sm.coins.length; i++) {
+      const coin = sm.coins[i];
+      if (!coin.active) {
+        coin.active = true;
+        // Discharge from center coin tray hopper (X=0, Y=-0.2, Z=0.2)
+        coin.pos[0] = (Math.random() - 0.5) * 0.4;
+        coin.pos[1] = -0.2;
+        coin.pos[2] = 0.2;
+
+        coin.vel[0] = (Math.random() - 0.5) * 4.5;
+        coin.vel[1] = 4.5 + Math.random() * 4.0;
+        coin.vel[2] = 1.0 + Math.random() * 2.5;
+
+        coin.rot[0] = Math.random() * Math.PI * 2;
+        coin.rot[1] = Math.random() * Math.PI * 2;
+        coin.rot[2] = Math.random() * Math.PI * 2;
+
+        coin.rotSpeed[0] = (Math.random() - 0.5) * 15;
+        coin.rotSpeed[1] = (Math.random() - 0.5) * 15;
+        coin.rotSpeed[2] = (Math.random() - 0.5) * 15;
+
+        coin.lifetime = 0;
+        spawned++;
+        if (spawned >= count) break;
+      }
+    }
+  }
+
+  updateSlotMachinePhysics(dt) {
+    const sm = this.slotMachine;
+    if (!sm) return;
+
+    let anyReelSpinning = false;
+    let stoppedThisFrameIdx = -1;
+
+    sm.reels.forEach((reel, idx) => {
+      if (reel.spinning) {
+        anyReelSpinning = true;
+        reel.angle += reel.speed * dt;
+        reel.stopTimer -= dt;
+        
+        // Rapid visual rotation symbol cycling
+        const cycleIdx = Math.floor(reel.angle * 4.5) % sm.symbolsList.length;
+        reel.currentSymbol = sm.symbolsList[cycleIdx];
+
+        if (reel.stopTimer <= 0) {
+          reel.spinning = false;
+          reel.speed = 0;
+          // Snap strictly to destSymbol index
+          const symIdx = sm.symbolsList.indexOf(reel.destSymbol);
+          reel.currentSymbol = reel.destSymbol;
+          reel.angle = symIdx * (Math.PI * 2 / sm.symbolsList.length);
+          stoppedThisFrameIdx = idx;
+        }
+      }
+    });
+
+    if (stoppedThisFrameIdx !== -1) {
+      if (this.synth) this.synth.play('elevator');
+      if (!sm.reels[0].spinning && !sm.reels[1].spinning && !sm.reels[2].spinning && sm.wasSpinActive) {
+        sm.wasSpinActive = false;
+        this.evaluateSlotResult();
+      }
+    }
+
+    // Damped harmonic lever oscillator
+    if (sm.leverPulled) {
+      sm.leverAngle += sm.leverVelocity * dt;
+      if (sm.leverAngle > 0.8) {
+        sm.leverAngle = 0.8;
+        sm.leverVelocity = -14.0; // bounce-back force
+        if (this.synth) this.synth.play('armor'); // bottom-out clank
+      }
+      // Spring stiffness return force
+      sm.leverVelocity += (0.0 - sm.leverAngle) * 45 * dt;
+      sm.leverVelocity *= Math.exp(-8.0 * dt); // damping drag
+
+      if (Math.abs(sm.leverAngle) < 0.01 && Math.abs(sm.leverVelocity) < 0.02) {
+        sm.leverAngle = 0.0;
+        sm.leverVelocity = 0.0;
+        sm.leverPulled = false;
+      }
+    }
+
+    // Coin particles dynamics
+    sm.coins.forEach(coin => {
+      if (coin.active) {
+        coin.lifetime += dt;
+        if (coin.lifetime >= coin.maxLifetime) {
+          coin.active = false;
+          return;
+        }
+        coin.vel[1] -= 9.81 * dt; // gravity
+        coin.pos[0] += coin.vel[0] * dt;
+        coin.pos[1] += coin.vel[1] * dt;
+        coin.pos[2] += coin.vel[2] * dt;
+
+        coin.rot[0] += coin.rotSpeed[0] * dt;
+        coin.rot[1] += coin.rotSpeed[1] * dt;
+        coin.rot[2] += coin.rotSpeed[2] * dt;
+
+        // Collision with payout tray floor at Y = -0.7
+        if (coin.pos[1] <= -0.7) {
+          coin.pos[1] = -0.7;
+          coin.vel[1] = -coin.vel[1] * 0.45; // restitution bounce
+          coin.vel[0] *= 0.8; // drag friction
+          coin.vel[2] *= 0.8;
+          if (this.synth && Math.random() < 0.25) this.synth.play('health_small'); // coin chime clink
+        }
+      }
+    });
+
+    // Auto spin scheduler
+    if (sm.autoSpin && !anyReelSpinning && !sm.leverPulled && sm.autoSpinTimer === undefined) {
+      sm.autoSpinTimer = setTimeout(() => {
+        sm.autoSpinTimer = undefined;
+        if (this.state.demoScene.includes('09_slot_machine')) {
+          this.pullSlotLever();
+        }
+      }, 1000);
+    }
+  }
+
+  render3DSlotMachine(progInfo) {
+    const gl = this.gl;
+    const sm = this.slotMachine;
+    if (!sm) return;
+
+    const cubeMesh = this.meshBuffers[1];
+    const sphereMesh = this.meshBuffers[0];
+    const torusMesh = this.meshBuffers[4];
+
+    if (!cubeMesh || !sphereMesh) return;
+
+    // Zero-allocation inner rendering function
+    const drawCube = (px, py, pz, sx, sy, sz, color, rough = 0.25, metal = 0.85, matType = 0, pClearCoat = 0.15) => {
+      gl.bindVertexArray(cubeMesh.vao);
+      
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, pClearCoat);
+      if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+      if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+      if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    const drawSphere = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0) => {
+      gl.bindVertexArray(sphereMesh.vao);
+      
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    // 1. Draw Slot Machine Cabinet Body
+    // Backing chassis base
+    drawCube(0, 0.2, -1.0, 4.4, 3.2, 0.6, [0.08, 0.1, 0.14], 0.18, 0.9, 0, 0.25); // Sleek gold-accent metallic backplate
+    // Gold glowing frame accents on top
+    drawCube(0, 1.8, -0.7, 4.4, 0.12, 0.3, [0.95, 0.64, 0.08], 0.05, 0.98, 12); // Yellow/gold glowing sign plate
+    // Cabinet bottom pedestal base
+    drawCube(0, -1.3, -0.4, 4.4, 1.4, 1.8, [0.05, 0.06, 0.09], 0.2, 0.8, 0, 0.1);
+
+    // 2. Recessed slots backing displays & Glowing Separators
+    // Draw 3 dark display screen backings
+    const colX = [-1.2, 0, 1.2];
+    colX.forEach(x => {
+      drawCube(x, 0.5, -0.65, 1.0, 1.5, 0.1, [0.01, 0.02, 0.03], 0.95, 0.0, 0); // Flat non-reflective display backgrounds
+    });
+    
+    // Draw neon glowing borders between the 3 display slots
+    drawCube(-1.75, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12); // Emissive borders
+    drawCube(-0.6, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12);
+    drawCube(0.6, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12);
+    drawCube(1.75, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12);
+
+    // 3. Draw the Right-Side Lever Handle Mechanics
+    const lx = 2.4;
+    const ly = -0.1;
+    const lz = -0.4;
+    // Base hub pivot
+    drawCube(lx, ly, lz, 0.3, 0.3, 0.3, [0.15, 0.16, 0.18], 0.1, 0.95, 1);
+    
+    // Animated Lever Handle Stick (pivots about X axis based on sm.leverAngle)
+    const sinTilt = Math.sin(-sm.leverAngle);
+    const cosTilt = Math.cos(-sm.leverAngle);
+    const sLen = 1.1; // Stick length
+    const sEndY = ly + cosTilt * sLen;
+    const sEndZ = lz + sinTilt * sLen;
+    
+    // Draw the stick as multiple points or a rotated segment
+    // To draw a simple tilted cylinder/stick, we can interpolate 3 spheres
+    for (let j = 1; j <= 5; j++) {
+      const t = j / 5;
+      const px = lx;
+      const py = ly + (sEndY - ly) * t;
+      const pz = lz + (sEndZ - lz) * t;
+      drawSphere(px, py, pz, 0.08, 0.08, 0.08, [0.75, 0.75, 0.8], 0.05, 0.98);
+    }
+    // Pull Red ball handle sphere at end of stick
+    drawSphere(lx, sEndY, sEndZ, 0.28, 0.28, 0.28, [0.9, 0.05, 0.05], 0.1, 0.1, 0, 0.4); // Red shiny plastic
+
+    // 4. Draw Payout Tray Basin at Bottom Center
+    drawCube(0, -0.7, 0.4, 2.2, 0.12, 0.8, [0.12, 0.14, 0.16], 0.15, 0.95); // Basin tray bottom floor
+    drawCube(-1.1, -0.6, 0.4, 0.08, 0.3, 0.8, [0.12, 0.14, 0.16], 0.15, 0.95); // left lip
+    drawCube(1.1, -0.6, 0.4, 0.08, 0.3, 0.8, [0.12, 0.14, 0.16], 0.15, 0.95); // right lip
+    drawCube(0, -0.6, 0.8, 2.2, 0.3, 0.08, [0.12, 0.14, 0.16], 0.15, 0.95); // front lip
+
+    // 5. Render Active 3D Reel Symbols in Front of Screens
+    sm.reels.forEach((reel, colIdx) => {
+      const rx = colX[colIdx];
+      const ry = 0.5;
+      const rz = -0.3; // Floating in front of screen
+
+      const activeSymbol = reel.currentSymbol;
+      const props = sm.symbolProps[activeSymbol];
+      if (!props) return;
+
+      const symMesh = this.meshBuffers[props.meshId];
+      if (symMesh) {
+        gl.bindVertexArray(symMesh.vao);
+
+        // Spin or idle rot
+        let angleY = timestamp * 0.001 * (reel.spinning ? 8.5 : 1.2) + colIdx;
+        let angleX = reel.spinning ? (reel.angle * 4.0) : 0; // rapid vertical flip when rolling!
+
+        const cy = Math.cos(angleY), sy = Math.sin(angleY);
+        const cx = Math.cos(angleX), sx = Math.sin(angleX);
+
+        // Apply double model rotation matrices manually inside modelMatrix
+        // R_x * R_y
+        this.modelMatrix[0] = cy * 0.58;
+        this.modelMatrix[1] = sx * sy * 0.58;
+        this.modelMatrix[2] = -cx * sy * 0.58;
+        this.modelMatrix[3] = 0;
+
+        this.modelMatrix[4] = 0;
+        this.modelMatrix[5] = cx * 0.58;
+        this.modelMatrix[6] = sx * 0.58;
+        this.modelMatrix[7] = 0;
+
+        this.modelMatrix[8] = sy * 0.58;
+        this.modelMatrix[9] = -sx * cy * 0.58;
+        this.modelMatrix[10] = cx * cy * 0.58;
+        this.modelMatrix[11] = 0;
+
+        this.modelMatrix[12] = rx;
+        this.modelMatrix[13] = ry;
+        this.modelMatrix[14] = rz;
+        this.modelMatrix[15] = 1;
+
+        Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, props.color);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, props.meshId === 1 ? 0.05 : 0.2); // extra glossy gold
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, props.meshId === 1 ? 0.98 : 0.85);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, props.matType);
+        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.2);
+        if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+        if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+
+        gl.drawElements(gl.TRIANGLES, symMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
+    });
+
+    // 6. Render Spinning Gold Coin Particles falling in 3D Tray Space!
+    sm.coins.forEach(coin => {
+      if (coin.active) {
+        // Render each gold coin as a small flat Torus or Cube, colored yellow gold!
+        if (torusMesh) {
+          gl.bindVertexArray(torusMesh.vao);
+
+          const cx = Math.cos(coin.rot[0]), sx = Math.sin(coin.rot[0]);
+          const cy = Math.cos(coin.rot[1]), sy = Math.sin(coin.rot[1]);
+
+          // Scale and rotate
+          const s = coin.scale;
+          this.modelMatrix[0] = cy * s;
+          this.modelMatrix[1] = sx * sy * s;
+          this.modelMatrix[2] = -cx * sy * s;
+          this.modelMatrix[3] = 0;
+
+          this.modelMatrix[4] = 0;
+          this.modelMatrix[5] = cx * s;
+          this.modelMatrix[6] = sx * s;
+          this.modelMatrix[7] = 0;
+
+          this.modelMatrix[8] = sy * s;
+          this.modelMatrix[9] = -sx * cy * s;
+          this.modelMatrix[10] = cx * cy * s;
+          this.modelMatrix[11] = 0;
+
+          this.modelMatrix[12] = coin.pos[0];
+          this.modelMatrix[13] = coin.pos[1];
+          this.modelMatrix[14] = coin.pos[2];
+          this.modelMatrix[15] = 1;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, [0.95, 0.72, 0.05]); // Golden Coin yellow color
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.08); // High shiny gloss
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.98); // pure metal coins
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 1); // gold reflective
+          if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.1);
+
+          gl.drawElements(gl.TRIANGLES, torusMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+      }
+    });
+  }
+
   showFpsStartupMenu() {
     const overlay = document.getElementById('fps-startup-overlay');
     if (overlay) {
@@ -7464,6 +8314,10 @@ else if (typeof define === 'function' && define['amd'])
       this.fetchLobbyStateFromServer();
     }
     this.isMatchActive = false;
+    window.isMatchActive = false;
+    if (this.synth) {
+      this.synth.stopMusic();
+    }
     if (document.pointerLockElement) {
       try {
         document.exitPointerLock();
@@ -7477,6 +8331,20 @@ else if (typeof define === 'function' && define['amd'])
       overlay.style.display = 'none';
     }
     this.isMatchActive = true;
+    window.isMatchActive = true;
+    
+    // Ensure music settings are up to date and play music
+    const musicToggle = document.getElementById('fps-music-toggle');
+    const sfxToggle = document.getElementById('fps-sfx-toggle');
+    const zombieDensitySelect = document.getElementById('fps-zombie-density');
+    const musicOn = musicToggle ? musicToggle.value === 'on' : true;
+    const sfxOn = sfxToggle ? sfxToggle.value === 'on' : true;
+    const density = zombieDensitySelect ? zombieDensitySelect.value : 'high';
+    
+    if (this.synth) {
+      this.synth.updateSettings(musicOn, sfxOn, density);
+      this.synth.startMusic();
+    }
   }
 
   renderFpsLobbyPlayers() {
@@ -10259,6 +11127,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           }
         }
       }
+    } else if (this.state.demoScene.includes('09_slot_machine')) {
+      // -------------------------------------------------------------
+      // DEMO 09: 3D CASINO SLOT MACHINE & GOLD COIN PARTICLES
+      // -------------------------------------------------------------
+      this.updateSlotMachinePhysics(dt);
+      this.render3DSlotMachine(progInfo);
     } else {
       // DEMO 1 & DEMO 3: SINGLE OBJECT PBR / STUDIO
       const mesh = this.meshBuffers[this.state.activeMesh];

@@ -4009,6 +4009,296 @@ body.app-body {
   background: linear-gradient(135deg, #0891b2 0%, #2563eb 100%);
 }
 
+/* 🎰 Cyber Slot Machine Overlay Styles */
+.slot-machine-overlay-panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 340px;
+  bottom: 16px;
+  background: rgba(10, 15, 30, 0.92);
+  border: 1.5px solid rgba(245, 158, 11, 0.45);
+  border-radius: 12px;
+  box-shadow: 0 0 35px rgba(0, 0, 0, 0.85), 0 0 15px rgba(245, 158, 11, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  z-index: 150;
+  padding: 16px;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-y: auto;
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.slot-header {
+  text-align: center;
+  border-bottom: 1.5px solid rgba(245, 158, 11, 0.3);
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+
+.slot-title {
+  font-size: 16px;
+  font-weight: 900;
+  color: #f59e0b;
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+  margin-bottom: 2px;
+}
+
+.slot-subtitle {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.slot-stat-box {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.slot-stat-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.slot-stat-label {
+  font-size: 9px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.slot-stat-value {
+  font-size: 16px;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.slot-stat-value.gold {
+  color: #fbbf24;
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
+}
+
+.slot-stat-value.win {
+  color: #10b981;
+  text-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.slot-paytable {
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 14px;
+  font-size: 10px;
+}
+
+.slot-paytable-title {
+  color: #f59e0b;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+.slot-paytable-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.slot-paytable-row:last-child {
+  border-bottom: none;
+}
+
+.slot-paytable-symbol {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slot-paytable-mult {
+  color: #fbbf24;
+  font-weight: bold;
+}
+
+.slot-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slot-bet-selector {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.slot-bet-btn {
+  flex: 1;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.slot-bet-btn.active {
+  background: #f59e0b;
+  border-color: #fbbf24;
+  color: #0f172a;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+.slot-spin-btn {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 900;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.45);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: center;
+}
+
+.slot-spin-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.6);
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+}
+
+.slot-spin-btn:active {
+  transform: translateY(1px);
+}
+
+.slot-spin-btn:disabled {
+  background: #1e293b;
+  border-color: rgba(255, 255, 255, 0.05);
+  color: #64748b;
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.slot-utility-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.slot-util-btn {
+  flex: 1;
+  background: rgba(30, 41, 59, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  font-size: 9px;
+  font-weight: bold;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.slot-util-btn:hover {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.slot-history {
+  margin-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 10px;
+}
+
+.slot-history-title {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.slot-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 110px;
+  overflow-y: auto;
+  font-size: 9px;
+}
+
+.slot-history-item {
+  display: flex;
+  justify-content: space-between;
+  background: rgba(15, 23, 42, 0.3);
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.slot-history-item.win {
+  border-color: rgba(16, 185, 129, 0.2);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.slot-history-text {
+  color: #e2e8f0;
+}
+
+.slot-history-text.win {
+  color: #34d399;
+}
+
+.slot-history-payout {
+  font-weight: bold;
+  color: #fbbf24;
+}
+
+/* 🎰 Floating Top Banner for Slot machine Instructions */
+.slot-machine-banner {
+  position: absolute;
+  top: 16px;
+  left: 372px;
+  right: 16px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 140;
+  font-size: 11px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+
 
 
 

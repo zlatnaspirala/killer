@@ -99,6 +99,24 @@ In short: SDL2 removes 90 % of the pain of multi-platform support so you can foc
 
 ---
 
+## 🌐 WebSocket Real-Time Multiplayer Architecture
+
+This project features a real-time multiplayer backend powered by Node.js, Express, and high-performance WebSockets (`ws`). It enables stateful client-server synchronization, lobby matchmaking, and live combat event broadcasting.
+
+### 1. Matchmaking & Lobby Orchestration
+Players can join a persistent lobby, configure their custom alias, select player skins, specify team assignments, and change map arenas. 
+- **Lobby Management**: The Node.js backend maintains a stateful in-memory registry of active players.
+- **Dynamic Team Balancer**: Clients can request automated team sorting and balance optimizations to keep matches competitive.
+- **Universal Sync**: Any changes made by any client (such as adding AI bots, changing maps, or sending chat messages) are instantly broadcast to all connected players.
+
+### 2. Live Combat Telemetry & Event Feed
+When a player enters the arena and fires, the application pipes structural telemetry over the websocket channel:
+- **Combat Events**: Every hit, damage event, or elimination triggers a state update that is transmitted bi-directionally.
+- **Self-Elimination Logs**: If a player falls out of bounds or gets defeated by a bot, the server processes the event and issues a system-wide log announcement in the Dynamic Log Board.
+- **Latency Monitoring**: Continuous ping-pong handshakes monitor player and bot network connection qualities.
+
+---
+
 ## Repository Structure
 <pre>
 ├── include/engine/
@@ -190,9 +208,14 @@ chmod +x build_android.sh
   </a>
 </div>
 
+<div align="left" style="margin-bottom: 25px;">
+  <img src="https://raw.githubusercontent.com/zlatnaspirala/killer/refs/heads/main/docs/sdl_logo.png" width="90" alt="SDL Logo" style="vertical-align:middle; margin-right: 15px;" onerror="this.style.display='none'" />
+  <img src="https://raw.githubusercontent.com/zlatnaspirala/killer/refs/heads/main/docs/emscripten_logo.png" width="100" alt="Emscripten Logo" style="vertical-align:middle;" onerror="this.style.display='none'" />
+</div>
+
 - **Google Filament**: Real-time physically based rendering (PBR) engine for mobile, web, and desktop.
-- **SDL2**: Cross-platform Windowing, Input events, and Audio layer.
-- **Emscripten**: LLVM-to-JavaScript/WebAssembly compiler toolchain.
+- **SDL2 (Simple DirectMedia Layer)**: Low-level hardware abstraction library for keyboard, mouse, controllers, and multi-channel audio output. Used across desktop, web (via Emscripten), and Android builds.
+- **Emscripten WebAssembly compiler**: Web compilation suite that translates C++ native bytecode to highly optimized WebAssembly (WASM) and handles translation from native SDL events to HTML5 DOM triggers.
 - **Standards & APIs**: C++17, OpenGL ES 3.0 / WebGL 2.0, CMake, Android NDK.
 
 ---
@@ -200,6 +223,10 @@ chmod +x build_android.sh
 ### ⚖️ Legal Note / Trademark Notice
 
 Google Filament, SDL2, Emscripten, WebAssembly, OpenGL, WebGL, and related logos are trademarks or registered trademarks of their respective owners (Google LLC, the SDL project / zlib license, the Emscripten project, the Khronos Group, etc.). 
+
+### 📜 SDL2 and Emscripten Legal Licensing & Guidelines
+- **SDL2 (Simple DirectMedia Layer)**: SDL2 is licensed under the **zlib License**. This permits the library to be used in any application (commercial or non-commercial), statically or dynamically linked, and modified freely, provided that the original copyright notice and origin are acknowledged. For full licensing details, consult the [official SDL license file](https://www.libsdl.org/license.php).
+- **Emscripten compiler toolchain**: Emscripten is open-source software dual-licensed under the **MIT License** and the **University of Illinois/NCSA Open Source License**. It allows free use, distribution, modification, and deployment of compiles.
 
 These names, badges, and any logos used in this repository are for identification, reference, and attribution purposes only. 
 
