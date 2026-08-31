@@ -4077,6 +4077,17 @@ class NativeApp {
       this.exportSceneJSON();
     });
 
+    // Tabs Horizontal Wheel Scroll
+    const mainTabsNav = document.getElementById('app-tabs-nav');
+    if (mainTabsNav) {
+      mainTabsNav.addEventListener('wheel', (e) => {
+        if (e.deltaY !== 0) {
+          e.preventDefault();
+          mainTabsNav.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
+    }
+
     // Tabs
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -4091,6 +4102,20 @@ class NativeApp {
             setTimeout(() => this.onResize(), 10);
           }
         }
+      });
+    });
+
+    // WASM Export Sub-Tabs Handler
+    const exportSubtabBtns = document.querySelectorAll('.export-subtab-btn');
+    const exportSubcontents = document.querySelectorAll('.export-subcontent');
+    exportSubtabBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        exportSubtabBtns.forEach(b => b.classList.remove('active'));
+        exportSubcontents.forEach(c => c.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+        const targetId = `export-subtab-${e.currentTarget.dataset.exportSubtab}`;
+        const targetEl = document.getElementById(targetId);
+        if (targetEl) targetEl.classList.add('active');
       });
     });
 
