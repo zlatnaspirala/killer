@@ -3038,6 +3038,8 @@ class NativeApp {
       muzzleFlash: 0.0
     };
 
+    this.isMatchActive = false;
+
     // Initialize Active 3D AI Combat Bots & Bot Projectiles Pool
     this.init3DBots();
 
@@ -6294,6 +6296,7 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   fireWeaponProjectile() {
+    if (!this.isMatchActive) return;
     let proj = this.projectilePool.find(p => !p.active);
     if (!proj) return; // Pool full
 
@@ -6476,7 +6479,7 @@ else if (typeof define === 'function' && define['amd'])
           const dz = pEye[2] - item.pos[2];
           const dist = Math.hypot(dx, dy, dz);
 
-          if (dist < 1.35) {
+          if (dist < 1.35 && this.isMatchActive) {
             this.collectItemPickup(item);
             needListUpdate = true;
           }
@@ -6848,7 +6851,7 @@ else if (typeof define === 'function' && define['amd'])
       bot.pos[1] += bot.velocity[1] * dt;
 
       // 2. Strafe / Patrol movement when player is in arena
-      if (distToPlayer > 3.0 && distToPlayer < 35.0 && isFpsMode) {
+      if (distToPlayer > 3.0 && distToPlayer < 35.0 && isFpsMode && this.isMatchActive) {
         const moveSpeed = 3.2;
         const strafe = Math.sin(timestamp * 0.003 + bot.id) * 2.5;
         const dirX = dx / distToPlayer;
@@ -6870,7 +6873,7 @@ else if (typeof define === 'function' && define['amd'])
 
       // AI Shooting Logic: Bot shoots at player ONLY if line of sight is clear!
       bot.fireTimer -= dt;
-      if (bot.fireTimer <= 0 && totalDist < 40.0 && isFpsMode) {
+      if (bot.fireTimer <= 0 && totalDist < 40.0 && isFpsMode && this.isMatchActive) {
         bot.fireTimer = 1.3 + Math.random() * 1.7; // Fire every 1.3s to 3.0s
 
         const botEye = [bot.pos[0], bot.pos[1] + 1.3, bot.pos[2]];
@@ -7025,6 +7028,7 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   applyDamageToPlayer(damageAmount, attackerName = 'Enemy Bot') {
+    if (!this.isMatchActive) return;
     let absorbPct = 0.50;
     if (this.playerArmorType === 'red') absorbPct = 0.75;
     else if (this.playerArmorType === 'yellow') absorbPct = 0.60;
@@ -7411,6 +7415,7 @@ else if (typeof define === 'function' && define['amd'])
         const team = playerTeamSelect ? playerTeamSelect.value : 'Red';
 
         this.hideFpsStartupMenu();
+        this.isMatchActive = true;
         this.sync3DBotsFromLobby();
         this.state.cameraMode = 3; // FPS Mode
         const camSelect = document.getElementById('camera-mode-select');
@@ -7458,6 +7463,7 @@ else if (typeof define === 'function' && define['amd'])
       this.renderFpsLobbyPlayers();
       this.fetchLobbyStateFromServer();
     }
+    this.isMatchActive = false;
     if (document.pointerLockElement) {
       try {
         document.exitPointerLock();
@@ -7470,6 +7476,7 @@ else if (typeof define === 'function' && define['amd'])
     if (overlay) {
       overlay.style.display = 'none';
     }
+    this.isMatchActive = true;
   }
 
   renderFpsLobbyPlayers() {
