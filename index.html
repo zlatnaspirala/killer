@@ -32,6 +32,11 @@
             <span class="status-dot"></span>
             <span class="status-text" id="backend-status-text">Backend: Connecting...</span>
           </div>
+          <div class="status-pill net-pill" id="net-header-status-pill" title="Network Transport Mode & Media Server">
+            <span class="status-dot" style="background:#10b981;"></span>
+            <span class="status-text" id="net-header-status-text">Net: WebRTC / OpenVidu</span>
+            <span class="fps-badge" id="net-ping-badge" style="margin-left: 6px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; padding: 2px 6px; border-radius: 4px; font-size: 11px;">18ms</span>
+          </div>
           <div class="fps-badge" id="fps-counter">60.0 FPS</div>
           <button id="btn-fullscreen" class="btn-action" title="Toggle Fullscreen">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
@@ -98,12 +103,171 @@
               <div class="fps-hitmarker" id="fps-hitmarker"></div>
             </div>
 
+            <!-- Full Screen Red Damage Flash Overlay -->
+            <div class="fps-damage-flash" id="fps-damage-flash"></div>
+
             <!-- Floating 3D Damage Indicator Container -->
             <div class="damage-container" id="damage-container"></div>
 
             <!-- FPS Shooter Pointer Lock Prompt / Banner -->
             <div class="fps-pointerlock-banner" id="fps-pointerlock-banner" style="display: none;">
-              <span>🎯 <b>FPS Shooter Active</b>: Click viewport to Lock Mouse Look &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click</b> to Shoot &bull; <b>Space</b> to Jump</span>
+              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <span id="fps-banner-text">🎯 <b>FPS Shooter Active</b>: Click viewport to Lock Mouse Look &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click</b> to Shoot &bull; <b>Space</b> to Jump</span>
+                <button id="btn-open-fps-menu" class="btn-action" style="margin-left: 12px; background: rgba(6, 182, 212, 0.25); border: 1px solid #06b6d4; color: #38bdf8; padding: 4px 10px; font-weight: bold; border-radius: 6px; cursor: pointer; white-space: nowrap;">🎮 Arena Menu</button>
+              </div>
+            </div>
+
+            <!-- FPS Startup Menu & Multiplayer Lobby Overlay (Demo 07) -->
+            <div class="fps-startup-overlay" id="fps-startup-overlay" style="display: none;">
+              <div class="fps-menu-card">
+                <!-- Header Banner -->
+                <div class="fps-menu-header">
+                  <div class="fps-menu-title-group">
+                    <span class="fps-badge-tag">DEMO 07 &bull; C++ NATIVE GRAPHICS</span>
+                    <h2 class="fps-menu-title">⚡ QUAKE ARENA FPS &amp; LOBBY</h2>
+                    <p class="fps-menu-sub">Fast-Paced Arena Combat &bull; Zero-Alloc C++ Kinematics &bull; WebRTC / WS Synchronization</p>
+                  </div>
+                  <button class="fps-menu-close-btn" id="btn-close-fps-menu" title="Close Menu (Return to Arena)">✕</button>
+                </div>
+
+                <!-- Main Content Grid -->
+                <div class="fps-menu-grid">
+                  <!-- Column 1: Match & Arena Settings -->
+                  <div class="fps-menu-col">
+                    <div class="fps-menu-section">
+                      <h3 class="fps-section-heading">🗺️ Select Arena Map</h3>
+                      <div class="fps-map-grid" id="fps-map-select-grid">
+                        <div class="fps-map-card active" data-map="q3dm17">
+                          <div class="map-card-thumb map-q3dm17">
+                            <span class="map-tag">POPULAR</span>
+                          </div>
+                          <div class="map-card-info">
+                            <span class="map-name">The Longest Yard (q3dm17)</span>
+                            <span class="map-desc">Low-gravity void platforms, bounce pads, rocket launchers &amp; railguns.</span>
+                          </div>
+                        </div>
+
+                        <div class="fps-map-card" data-map="dm6">
+                          <div class="map-card-thumb map-dm6"></div>
+                          <div class="map-card-info">
+                            <span class="map-name">The Dark Majesty (dm6)</span>
+                            <span class="map-desc">Gothic pillars, teleporters, quad damage powerup chamber &amp; lifts.</span>
+                          </div>
+                        </div>
+
+                        <div class="fps-map-card" data-map="dm4">
+                          <div class="map-card-thumb map-dm4"></div>
+                          <div class="map-card-info">
+                            <span class="map-name">The Bad Place (dm4)</span>
+                            <span class="map-desc">Tight corridors, lava pools, rocket arena &amp; health powerups.</span>
+                          </div>
+                        </div>
+
+                        <div class="fps-map-card" data-map="ztn">
+                          <div class="map-card-thumb map-ztn"></div>
+                          <div class="map-card-info">
+                            <span class="map-name">Tourney Arena 3 (ztn3)</span>
+                            <span class="map-desc">Duel-focused layout with double jump ramps and plasma corridors.</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="fps-menu-section">
+                      <h3 class="fps-section-heading">⚙️ Champion Loadout &amp; Team</h3>
+                      <div class="fps-form-row">
+                        <div class="fps-form-group">
+                          <label class="fps-label">Player Alias:</label>
+                          <input type="text" id="fps-player-name" class="fps-input" value="Ranger" placeholder="Enter Callsign..." />
+                        </div>
+                        <div class="fps-form-group">
+                          <label class="fps-label">Champion Skin:</label>
+                          <select id="fps-player-skin" class="fps-select">
+                            <option value="Phantam" selected>Phantam Cyber-Suit</option>
+                            <option value="Visor">Visor Cyber-Gladiator</option>
+                            <option value="Sarge">Sarge Veteran</option>
+                            <option value="Doom">Doom Slayer Alpha</option>
+                            <option value="Anarki">Anarki Hover-Skater</option>
+                          </select>
+                        </div>
+                        <div class="fps-form-group">
+                          <label class="fps-label">Team / Faction:</label>
+                          <select id="fps-player-team" class="fps-select">
+                            <option value="Red" selected>🔴 Red Team</option>
+                            <option value="Blue">🔵 Blue Team</option>
+                            <option value="FFA">⚔️ Free For All</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div class="fps-form-group" style="margin-top: 10px;">
+                        <label class="fps-label">Primary Weapon Loadout:</label>
+                        <div class="fps-loadout-grid">
+                          <button class="fps-loadout-btn active" data-weapon="plasma">⚡ Plasma Rifle (25 DMG / 50 m/s)</button>
+                          <button class="fps-loadout-btn" data-weapon="rocket">🚀 Rocket Launcher (85 DMG Splash)</button>
+                          <button class="fps-loadout-btn" data-weapon="railgun">🎯 Railgun (100 DMG Instant)</button>
+                          <button class="fps-loadout-btn" data-weapon="hmg">💥 Heavy Machine Gun (15 DMG High-ROF)</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Column 2: Live Lobby, Bots & Network Pipeline -->
+                  <div class="fps-menu-col">
+                    <div class="fps-menu-section">
+                      <div class="section-title-row">
+                        <h3 class="fps-section-heading">👥 Matchmaking Lobby Players</h3>
+                        <span class="fps-badge-count" id="fps-lobby-player-count">1 / 10 Players</span>
+                      </div>
+
+                      <div class="fps-lobby-players-box" id="fps-lobby-players-list">
+                        <!-- Dynamic player list from server state / bots -->
+                      </div>
+
+                      <div class="fps-lobby-actions-row">
+                        <button class="fps-secondary-btn" id="btn-fps-add-bot">🤖 Add AI Bot</button>
+                        <button class="fps-secondary-btn" id="btn-fps-clear-bots">🧹 Clear Bots</button>
+                        <button class="fps-secondary-btn" id="btn-fps-sync-lobby">🔄 Refresh State</button>
+                      </div>
+                    </div>
+
+                    <div class="fps-menu-section">
+                      <h3 class="fps-section-heading">🌐 Network Pipeline Status</h3>
+                      <div class="fps-net-status-box">
+                        <div class="net-status-row">
+                          <span class="net-label">Active Transport:</span>
+                          <span class="net-val" id="fps-net-transport-val">WebSocket / WebRTC</span>
+                        </div>
+                        <div class="net-status-row">
+                          <span class="net-label">Media Server SFU:</span>
+                          <span class="net-val" id="fps-net-mediaserver-val">OpenVidu / KMS</span>
+                        </div>
+                        <div class="net-status-row">
+                          <span class="net-label">Roundtrip Ping:</span>
+                          <span class="net-val ping" id="fps-net-ping-val">18 ms</span>
+                        </div>
+                        <div class="net-status-row">
+                          <span class="net-label">Lobby Status:</span>
+                          <span class="net-val ready" id="fps-net-lobby-status">READY TO SPAWN</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Footer Action Buttons -->
+                <div class="fps-menu-footer">
+                  <div class="fps-footer-left">
+                    <span class="fps-hint-text">💡 Press <b>ESC</b> during gameplay to re-open menu or release mouse pointer.</span>
+                  </div>
+                  <div class="fps-footer-right">
+                    <button class="fps-start-btn" id="btn-start-fps-match">
+                      <span class="btn-icon">⚡</span>
+                      <span>ENTER ARENA &amp; START MATCH</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- Item Pickup Toast Notification Overlay -->
@@ -367,6 +531,65 @@
             <div class="controls-grid">
               <!-- Column 1: Demo & Camera -->
               <div class="controls-col">
+                <div class="panel-section" id="network-config-panel">
+                  <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 class="section-title" style="margin: 0;">🌐 Network Transport &amp; Media Server</h3>
+                    <span class="net-pill-badge" id="net-transport-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; font-family: monospace;">WebRTC (UDP)</span>
+                  </div>
+
+                  <div class="select-group">
+                    <label for="net-transport-select" class="hud-label">Active Transport Layer:</label>
+                    <select id="net-transport-select" class="input-select font-mono">
+                      <option value="webrtc" selected>WebRTC DataChannels (SCTP/UDP Low-Latency)</option>
+                      <option value="websocket">Classic WebSockets (ws:// / wss:// TCP)</option>
+                      <option value="openvidu">OpenVidu Media Server (SFU DataChannel)</option>
+                      <option value="kurento">Kurento Media Server (KMS JSON-RPC / WebRtcEndpoint)</option>
+                      <option value="geckos">Geckos.io (UDP-over-WebRTC Gaming Protocol)</option>
+                    </select>
+                  </div>
+
+                  <div class="select-group" style="margin-top: 10px;">
+                    <label for="net-mediaserver-select" class="hud-label">Media Server Provider Switch:</label>
+                    <select id="net-mediaserver-select" class="input-select font-mono">
+                      <option value="openvidu" selected>OpenVidu SFU Engine (OpenVidu / KMS)</option>
+                      <option value="kurento">Kurento Media Server (KMS WebRtcEndpoint)</option>
+                      <option value="geckos">Geckos.io Node/WASM Server</option>
+                      <option value="mesh">Direct P2P Mesh Network</option>
+                      <option value="websocket_server">Standard WebSocket Server</option>
+                    </select>
+                  </div>
+
+                  <div class="checkbox-group" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+                      <input type="checkbox" id="chk-net-autofallback" checked />
+                      <span>Auto-fallback to Classic WebSocket if WebRTC fails ICE</span>
+                    </label>
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+                      <input type="checkbox" id="chk-net-binary" checked />
+                      <span>Zero-Alloc Binary Packets (Float32Array ArrayBuffers)</span>
+                    </label>
+                  </div>
+
+                  <div class="net-telemetry-box" style="margin-top: 12px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; font-family: monospace; font-size: 11px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                      <span style="color: #94a3b8;">Connection Status:</span>
+                      <span id="net-telemetry-status" style="color: #10b981; font-weight: bold;">CONNECTED</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                      <span style="color: #94a3b8;">Latency / Ping:</span>
+                      <span id="net-telemetry-ping" style="color: #38bdf8;">18 ms</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                      <span style="color: #94a3b8;">Tick Rate:</span>
+                      <span>30 Hz (33.3ms / packet)</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                      <span style="color: #94a3b8;">Main Config File:</span>
+                      <span style="color: #f59e0b;">/network.config.js</span>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="panel-section">
                   <h3 class="section-title">Active Live Demo Scene</h3>
                   <div class="select-group">
@@ -378,8 +601,8 @@
                       <option value="04_wasm_webgl_wrapper.cpp">Demo 04: WASM WebGL Wrapper (04_wasm_webgl_wrapper.cpp)</option>
                       <option value="05_desktop_standalone_app.cpp">Demo 05: Desktop Standalone SDL2 App (05_desktop_standalone_app.cpp)</option>
                       <option value="06_glb_character_collision_player.cpp">Demo 06: GLB Character, Collision &amp; Player Controller (06_glb_character_collision_player.cpp)</option>
-                      <option value="07_fps_shooter_damage_system.cpp">Demo 07: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
-                      <option value="08_all_materials_presentation.cpp" selected>Demo 08: All Materials Presentation Showcase (08_all_materials_presentation.cpp)</option>
+                      <option value="07_fps_shooter_damage_system.cpp" selected>Demo 07: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
+                      <option value="08_all_materials_presentation.cpp">Demo 08: All Materials Presentation Showcase (08_all_materials_presentation.cpp)</option>
                     </select>
                   </div>
                 </div>

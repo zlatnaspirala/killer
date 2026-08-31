@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import os from 'os';
+import { WebSocketServer } from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +23,16 @@ function addLog(entry) {
   });
   if (executionLogs.length > MAX_LOGS) executionLogs.pop();
 }
+
+// Multiplayer Matchmaking Lobby State
+const matchLobbyState = {
+  minimumplayers: 2,
+  maximumplayers: 10,
+  mapId: 'q3dm17',
+  status: 'waiting', // 'waiting' | 'countdown' | 'ingame'
+  countdown: 5,
+  players: []
+};
 
 async function detectToolchain() {
   const tools = [
@@ -80,6 +91,67 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
       res.statusCode = 204;
       res.end();
+      return;
+    }
+  }
+
+  // WebRTC & Media Server (OpenVidu / Kurento / Geckos / Direct P2P) Signaling Endpoint
+  if (pathname === '/api/webrtc/signal' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => (body += c));
+    req.on('end', () => {
+      try {
+        const signalData = body ? JSON.parse(body) : {};
+        const mediaServer = parsedUrl.searchParams.get('mediaServer') || 'p2p';
+        console.log(`[Signaling] WebRTC SDP Signal received (${mediaServer}) from ${signalData.from || 'client'}`);
+
+        // Return synthetic SDP answer for WebRTC media server handshake simulation
+        const mockAnswer = signalData.offer ? {
+          type: 'answer',
+          sdp: signalData.offer.sdp ? signalData.offer.sdp.replace('a=sendrecv', 'a=recvonly') : 'v=0\r\no=- 0 0 IN IP4 127.0.0.1...'
+        } : null;
+
+        res.statusCode = 200;
+        res.end(JSON.stringify({
+          success: true,
+          mediaServer,
+          answer: mockAnswer,
+          sessionId: `sess_${Date.now()}`
+        }));
+      } catch (err) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // Matchmaking Lobby State API Endpoint
+  if (pathname === '/api/matchmaking/lobby') {
+    if (req.method === 'GET') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(matchLobbyState));
+      return;
+    } else if (req.method === 'POST') {
+      let body = '';
+      req.on('data', c => (body += c));
+      req.on('end', () => {
+        try {
+          const action = body ? JSON.parse(body) : {};
+          if (action.type === 'config') {
+            if (action.minimumplayers) matchLobbyState.minimumplayers = action.minimumplayers;
+            if (action.maximumplayers) matchLobbyState.maximumplayers = action.maximumplayers;
+            if (action.mapId) matchLobbyState.mapId = action.mapId;
+          }
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ success: true, lobby: matchLobbyState }));
+        } catch (e) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
       return;
     }
   }
@@ -442,3 +514,107 @@ var Module = (function() {
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`C++ Graphics Backend Server listening on port ${PORT}`);
 });
+
+// Create WebSocket server for classic WS transport and WebRTC fallback
+const wss = new WebSocketServer({ server, path: '/ws' });
+const connectedClients = new Set();
+
+function broadcastLobbyState() {
+  const payload = JSON.stringify({
+    event: 'lobbyStateUpdate',
+    payload: matchLobbyState
+  });
+  for (const client of connectedClients) {
+    if (client.readyState === 1) {
+      client.send(payload);
+    }
+  }
+}
+
+wss.on('connection', (ws) => {
+  connectedClients.add(ws);
+  console.log(`[WS] Client connected. Total online: ${connectedClients.size}`);
+
+  // Send initial lobby state on connect
+  ws.send(JSON.stringify({ event: 'lobbyStateUpdate', payload: matchLobbyState }));
+
+  ws.on('message', (message, isBinary) => {
+    if (isBinary) {
+      // Broadcast binary position telemetry to room
+      for (const client of connectedClients) {
+        if (client !== ws && client.readyState === 1) {
+          client.send(message, { binary: true });
+        }
+      }
+      return;
+    }
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(message.toString());
+    } catch (e) {}
+
+    if (parsed && parsed.event) {
+      if (parsed.event === 'lobby:join') {
+        const p = parsed.payload || {};
+        const existing = matchLobbyState.players.find(item => item.id === p.id);
+        if (!existing) {
+          matchLobbyState.players.push({
+            id: p.id || 'player_' + Math.random().toString(36).substr(2, 5),
+            name: p.name || 'Ranger',
+            skin: p.skin || 'Phantam',
+            team: p.team || 'Red',
+            isBot: false,
+            ready: true,
+            ping: Math.floor(15 + Math.random() * 20)
+          });
+        } else {
+          existing.name = p.name || existing.name;
+          existing.skin = p.skin || existing.skin;
+          existing.team = p.team || existing.team;
+        }
+        broadcastLobbyState();
+        return;
+      } else if (parsed.event === 'lobby:add_bot') {
+        if (matchLobbyState.players.length < matchLobbyState.maximumplayers) {
+          const botNames = ['Visor', 'Bitterman', 'Sarge', 'Doom', 'Keel', 'Klesk', 'Anarki', 'Slash', 'Ranger', 'Crash'];
+          const unusedName = botNames.find(n => !matchLobbyState.players.some(p => p.name === n)) || `Bot_${matchLobbyState.players.length + 1}`;
+          matchLobbyState.players.push({
+            id: 'bot_' + Math.random().toString(36).substr(2, 5),
+            name: unusedName,
+            skin: 'Cyber-Gladiator',
+            team: Math.random() > 0.5 ? 'Blue' : 'Red',
+            isBot: true,
+            ready: true,
+            ping: Math.floor(5 + Math.random() * 10)
+          });
+          broadcastLobbyState();
+        }
+        return;
+      } else if (parsed.event === 'lobby:clear_bots') {
+        matchLobbyState.players = matchLobbyState.players.filter(p => !p.isBot);
+        broadcastLobbyState();
+        return;
+      } else if (parsed.event === 'lobby:set_config') {
+        if (parsed.payload.minimumplayers) matchLobbyState.minimumplayers = parsed.payload.minimumplayers;
+        if (parsed.payload.maximumplayers) matchLobbyState.maximumplayers = parsed.payload.maximumplayers;
+        if (parsed.payload.mapId) matchLobbyState.mapId = parsed.payload.mapId;
+        broadcastLobbyState();
+        return;
+      }
+    }
+
+    // Default broadcast message to all other connected peers
+    for (const client of connectedClients) {
+      if (client !== ws && client.readyState === 1) {
+        client.send(message, { binary: isBinary });
+      }
+    }
+  });
+
+  ws.on('close', () => {
+    connectedClients.delete(ws);
+    console.log(`[WS] Client disconnected. Remaining: ${connectedClients.size}`);
+  });
+});
+

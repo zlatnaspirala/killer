@@ -12,6 +12,9 @@ import {
   FILAMENT_MATERIALS_CATALOG,
   generateStairs
 } from './maps/index.js';
+import { globalNetworkManager } from './src/net/NetworkManager.js';
+import { NetworkConfig } from './network.config.js';
+
 
 const SOURCE_FILES = {
   '01_pbr_material_preview.cpp': `// examples/01_pbr_material_preview.cpp
@@ -2878,7 +2881,7 @@ class NativeApp {
     }
 
     this.state = {
-      demoScene: '08_all_materials_presentation.cpp', // Default to Demo 08 All Materials Presentation
+      demoScene: '07_fps_shooter_damage_system.cpp', // Default to Demo 07 First-Person Shooter & Damage System
       activeMesh: 0,
       activeShader: 0,
       roughness: 0.35,
@@ -2897,14 +2900,14 @@ class NativeApp {
       showroomFocusedMatKey: 'wood',
 
       // Camera & Input state
-      cameraMode: 0, // 0: Orbit, 1: FP Drag Look, 2: Free-Fly, 3: FPS Shooter
-      invertMouseX: false,
+      cameraMode: 3, // 0: Orbit, 1: FP Drag Look, 2: Free-Fly, 3: FPS Shooter
+      invertMouseX: true,
       invertMouseY: false,
       camYaw: 0.0,
-      camPitch: 0.30,
+      camPitch: 0.0,
       camRadius: 14.5,
-      camPos: new Float32Array([0.0, 4.0, 14.0]),
-      camTarget: new Float32Array([0.0, 0.8, 0.0]),
+      camPos: new Float32Array([0.0, 1.7, 5.0]),
+      camTarget: new Float32Array([0.0, 1.7, 4.0]),
       camFront: new Float32Array([0.0, 0.0, -1.0]),
       camRight: new Float32Array([1.0, 0.0, 0.0]),
       moveSpeed: 6.5,
@@ -3035,6 +3038,9 @@ class NativeApp {
       muzzleFlash: 0.0
     };
 
+    // Initialize Active 3D AI Combat Bots & Bot Projectiles Pool
+    this.init3DBots();
+
     this.damageEvents = [];
     this.totalDamageDealt = 0;
 
@@ -3153,6 +3159,10 @@ class NativeApp {
     this.initGeneratedJSViewer();
     this.initProjectWorkspace();
     this.initShowroomUI();
+    this.initNetworkSystem();
+    this.initFpsStartupMenu();
+    this.sync3DBotsFromLobby();
+    this.showFpsStartupMenu();
     
     this.log("Filament Architecture & WebGPU/GLES3 pipeline initialized.", "cpp");
     this.log("First-Person & Orbit Camera bitmask input listeners ACTIVE.", "success");
@@ -3708,6 +3718,10 @@ class NativeApp {
 
     // Viewport Click (Request Pointer Lock + Fire Weapon in FPS Mode)
     canvasContainer.addEventListener('click', (e) => {
+      const fpsOverlay = document.getElementById('fps-startup-overlay');
+      if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
+      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner')) return;
+
       if (this.state.cameraMode === 3) {
         if (document.pointerLockElement !== this.canvas && document.pointerLockElement !== canvasContainer) {
           try {
@@ -3720,6 +3734,10 @@ class NativeApp {
 
     // Mouse Down
     canvasContainer.addEventListener('mousedown', (e) => {
+      const fpsOverlay = document.getElementById('fps-startup-overlay');
+      if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
+      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner')) return;
+
       this.state.isDragging = true;
       this.state.mouseButton = e.button; // 0: Left, 1: Middle, 2: Right
       this.state.lastMouseX = e.clientX;
@@ -3729,6 +3747,9 @@ class NativeApp {
 
     // Mouse Move (Orbit / Pan / FP Look / FPS Direct Look without Mouse Down)
     window.addEventListener('mousemove', (e) => {
+      const fpsOverlay = document.getElementById('fps-startup-overlay');
+      if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
+
       const invX = this.state.invertMouseX ? -1 : 1;
       const invY = this.state.invertMouseY ? -1 : 1;
 
@@ -3779,6 +3800,8 @@ class NativeApp {
 
     // Wheel (Zoom or Speed)
     canvasContainer.addEventListener('wheel', (e) => {
+      const fpsOverlay = document.getElementById('fps-startup-overlay');
+      if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
       e.preventDefault();
       if (this.state.cameraMode === 0) {
         this.state.camRadius = Math.max(0.8, Math.min(30.0, this.state.camRadius + e.deltaY * 0.004));
@@ -3790,6 +3813,23 @@ class NativeApp {
 
     // Keyboard Events (WASD / QE / Space / Shift)
     window.addEventListener('keydown', (e) => {
+      const activeTag = document.activeElement ? document.activeElement.tagName : '';
+      const isTyping = activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA';
+      const fpsOverlay = document.getElementById('fps-startup-overlay');
+      const isOverlayOpen = fpsOverlay && fpsOverlay.style.display !== 'none';
+
+      if (e.key === 'Escape' || e.code === 'Escape') {
+        if (isOverlayOpen) {
+          this.hideFpsStartupMenu();
+          return;
+        } else if (this.state.cameraMode === 3) {
+          this.showFpsStartupMenu();
+          return;
+        }
+      }
+
+      if (isTyping || isOverlayOpen) return;
+
       const k = e.key.toLowerCase();
       if (k === 'w') this.state.keys.w = true;
       if (k === 'a') this.state.keys.a = true;
@@ -3804,6 +3844,21 @@ class NativeApp {
     });
 
     window.addEventListener('keyup', (e) => {
+      const fpsOverlay = document.getElementById('fps-startup-overlay');
+      const isOverlayOpen = fpsOverlay && fpsOverlay.style.display !== 'none';
+
+      if (isOverlayOpen) {
+        this.state.keys.w = false;
+        this.state.keys.a = false;
+        this.state.keys.s = false;
+        this.state.keys.d = false;
+        this.state.keys.q = false;
+        this.state.keys.e = false;
+        this.state.keys.space = false;
+        this.state.keys.shift = false;
+        return;
+      }
+
       const k = e.key.toLowerCase();
       if (k === 'w') this.state.keys.w = false;
       if (k === 'a') this.state.keys.a = false;
@@ -3841,8 +3896,9 @@ class NativeApp {
           this.state.camYaw = 0.0;
           this.state.camPitch = 0.0;
           updateFPSOverlays();
+          this.showFpsStartupMenu();
           this.log("Loaded Demo 07: First-Person Shooter & Damage System", "cpp");
-          this.log("FPS Direct-Look Active: Aim and L-Click to fire projectiles, Space to Jump!", "success");
+          this.log("FPS Direct-Look Active: Click 'ENTER ARENA' in startup menu to begin!", "success");
         } else if (this.state.demoScene === '02_metallic_roughness_matrix.cpp' || this.state.demoScene === 'matrix') {
           this.state.cameraMode = 0;
           const camSelect = document.getElementById('camera-mode-select');
@@ -6445,6 +6501,23 @@ else if (typeof define === 'function' && define['amd'])
         return;
       }
 
+      // Check wall / obstacle collision for player projectile
+      if (this.sceneEntities) {
+        for (let i = 0; i < this.sceneEntities.length; i++) {
+          const ent = this.sceneEntities[i];
+          if (ent.trigger || ent.isLight || ent.type === "Kinematic Character" || ent.name === "Player_Character") continue;
+          if (ent.layer === "Layer_Light" || ent.layer === "Layer_Trigger") continue;
+          if (!ent.pos || !ent.scale) continue;
+          if (ent.name && ent.name.toLowerCase().includes("ground") && ent.pos[1] < 0.0) continue;
+
+          if (this.segmentIntersectsAABB(p.prevPos, p.pos, ent.pos, ent.scale) ||
+              this.pointInAABB(p.pos, ent.pos, ent.scale, p.radius || 0.2)) {
+            p.active = false;
+            return;
+          }
+        }
+      }
+
       // Check swept collision against DAMAGE Group Actors (Layer_Damageable)
       for (let actor of this.damageActors) {
         if (!actor.alive) continue;
@@ -6463,6 +6536,510 @@ else if (typeof define === 'function' && define['amd'])
         }
       }
     });
+
+    // 5. Tick Active 3D AI Combat Bots & Bot Projectiles Shooting Player
+    this.updateBotsAndProjectiles(dt, timestamp);
+  }
+
+  init3DBots() {
+    this.active3DBots = [
+      {
+        id: 101,
+        alias: 'Bot_Phantam',
+        skin: 'Phantam',
+        team: 'Red',
+        pos: [-8.0, 0.0, -8.0],
+        velocity: [0, 0, 0],
+        yaw: 0.5,
+        pitch: 0,
+        health: 100.0,
+        maxHealth: 100.0,
+        alive: true,
+        respawnTimer: 0.0,
+        fireTimer: 1.2,
+        color: [0.95, 0.25, 0.20],
+        weapon: 'plasma',
+        hitFlashTimer: 0.0,
+        radius: 0.65,
+        height: 1.8,
+        kills: 0,
+        deaths: 0
+      },
+      {
+        id: 102,
+        alias: 'Bot_Anarki',
+        skin: 'Anarki',
+        team: 'Blue',
+        pos: [8.0, 0.0, -8.0],
+        velocity: [0, 0, 0],
+        yaw: -0.8,
+        pitch: 0,
+        health: 100.0,
+        maxHealth: 100.0,
+        alive: true,
+        respawnTimer: 0.0,
+        fireTimer: 2.0,
+        color: [0.15, 0.65, 0.95],
+        weapon: 'rocket',
+        hitFlashTimer: 0.0,
+        radius: 0.65,
+        height: 1.8,
+        kills: 0,
+        deaths: 0
+      },
+      {
+        id: 103,
+        alias: 'Bot_Visor',
+        skin: 'Visor',
+        team: 'Red',
+        pos: [0.0, 1.8, 8.0],
+        velocity: [0, 0, 0],
+        yaw: 3.14,
+        pitch: 0,
+        health: 100.0,
+        maxHealth: 100.0,
+        alive: true,
+        respawnTimer: 0.0,
+        fireTimer: 1.5,
+        color: [0.95, 0.65, 0.15],
+        weapon: 'railgun',
+        hitFlashTimer: 0.0,
+        radius: 0.65,
+        height: 1.8,
+        kills: 0,
+        deaths: 0
+      }
+    ];
+
+    // Pool for Bot Projectiles (32 fixed size pool)
+    this.botProjectilePool = [];
+    for (let i = 0; i < 32; i++) {
+      this.botProjectilePool.push({
+        id: i + 1,
+        active: false,
+        attackerName: 'Bot',
+        pos: [0, 0, 0],
+        velocity: [0, 0, 0],
+        speed: 40.0,
+        damage: 18.0,
+        lifetime: 3.5,
+        age: 0.0,
+        radius: 0.22,
+        color: [0.95, 0.25, 0.20]
+      });
+    }
+  }
+
+  sync3DBotsFromLobby() {
+    if (!this.fpsBots || this.fpsBots.length === 0) return;
+    const spawnLocations = [
+      [-8.0, 0.0, -8.0],
+      [8.0, 0.0, -8.0],
+      [0.0, 1.8, 8.0],
+      [-6.0, 0.0, 6.0],
+      [6.0, 0.0, 6.0],
+      [0.0, 0.0, -12.0]
+    ];
+    const weapons = ['plasma', 'rocket', 'railgun'];
+
+    this.active3DBots = this.fpsBots.map((bot, idx) => {
+      const loc = spawnLocations[idx % spawnLocations.length];
+      const wType = weapons[idx % weapons.length];
+      return {
+        id: 201 + idx,
+        alias: bot.alias,
+        skin: bot.skin || 'Phantam',
+        team: bot.team || 'Red',
+        pos: [...loc],
+        velocity: [0, 0, 0],
+        yaw: Math.random() * 6.28,
+        pitch: 0,
+        health: 100.0,
+        maxHealth: 100.0,
+        alive: true,
+        respawnTimer: 0.0,
+        fireTimer: 0.8 + Math.random() * 1.5,
+        color: bot.team === 'Blue' ? [0.15, 0.65, 0.95] : (bot.team === 'Red' ? [0.95, 0.25, 0.20] : [0.95, 0.75, 0.15]),
+        weapon: wType,
+        hitFlashTimer: 0.0,
+        radius: 0.65,
+        height: 1.8,
+        kills: 0,
+        deaths: 0
+      };
+    });
+  }
+
+  segmentIntersectsAABB(p1, p2, boxPos, boxScale) {
+    const halfX = boxScale[0] * 0.5;
+    const halfY = boxScale[1] * 0.5;
+    const halfZ = boxScale[2] * 0.5;
+
+    const minX = boxPos[0] - halfX;
+    const maxX = boxPos[0] + halfX;
+    const minY = boxPos[1] - halfY;
+    const maxY = boxPos[1] + halfY;
+    const minZ = boxPos[2] - halfZ;
+    const maxZ = boxPos[2] + halfZ;
+
+    let tmin = 0.0;
+    let tmax = 1.0;
+
+    for (let i = 0; i < 3; i++) {
+      const origin = p1[i];
+      const destination = p2[i];
+      const delta = destination - origin;
+      const bMin = i === 0 ? minX : (i === 1 ? minY : minZ);
+      const bMax = i === 0 ? maxX : (i === 1 ? maxY : maxZ);
+
+      if (Math.abs(delta) < 1e-8) {
+        if (origin < bMin || origin > bMax) return false;
+      } else {
+        const invD = 1.0 / delta;
+        let t1 = (bMin - origin) * invD;
+        let t2 = (bMax - origin) * invD;
+        if (t1 > t2) {
+          const tmp = t1; t1 = t2; t2 = tmp;
+        }
+        tmin = Math.max(tmin, t1);
+        tmax = Math.min(tmax, t2);
+        if (tmin > tmax) return false;
+      }
+    }
+
+    return true;
+  }
+
+  pointInAABB(point, boxPos, boxScale, padding = 0.0) {
+    const halfX = boxScale[0] * 0.5 + padding;
+    const halfY = boxScale[1] * 0.5 + padding;
+    const halfZ = boxScale[2] * 0.5 + padding;
+
+    return (
+      point[0] >= boxPos[0] - halfX && point[0] <= boxPos[0] + halfX &&
+      point[1] >= boxPos[1] - halfY && point[1] <= boxPos[1] + halfY &&
+      point[2] >= boxPos[2] - halfZ && point[2] <= boxPos[2] + halfZ
+    );
+  }
+
+  checkLineOfSight(fromPos, toPos) {
+    if (!this.sceneEntities) return true;
+
+    for (let i = 0; i < this.sceneEntities.length; i++) {
+      const ent = this.sceneEntities[i];
+      if (ent.trigger || ent.isLight || ent.type === "Kinematic Character" || ent.name === "Player_Character") continue;
+      if (ent.layer === "Layer_Light" || ent.layer === "Layer_Trigger") continue;
+      if (!ent.pos || !ent.scale) continue;
+      if (ent.name && ent.name.toLowerCase().includes("ground") && ent.pos[1] < 0.0) continue;
+
+      if (this.segmentIntersectsAABB(fromPos, toPos, ent.pos, ent.scale)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  resolvePlayerCollision(pos, velocity, radius = 0.65, height = 1.8) {
+    if (!this.sceneEntities) return;
+
+    for (let i = 0; i < this.sceneEntities.length; i++) {
+      const ent = this.sceneEntities[i];
+      if (ent.trigger || ent.isLight || ent.type === "Kinematic Character" || ent.name === "Player_Character") continue;
+      if (ent.layer === "Layer_Light" || ent.layer === "Layer_Trigger") continue;
+      if (!ent.pos || !ent.scale) continue;
+      if (ent.name && ent.name.toLowerCase().includes("ground") && ent.pos[1] < 0.0) continue;
+
+      const minX = ent.pos[0] - ent.scale[0] * 0.5 - radius;
+      const maxX = ent.pos[0] + ent.scale[0] * 0.5 + radius;
+      const minZ = ent.pos[2] - ent.scale[2] * 0.5 - radius;
+      const maxZ = ent.pos[2] + ent.scale[2] * 0.5 + radius;
+
+      const minY = ent.pos[1] - ent.scale[1] * 0.5;
+      const maxY = ent.pos[1] + ent.scale[1] * 0.5;
+
+      if (pos[1] + height >= minY && pos[1] <= maxY) {
+        if (pos[0] > minX && pos[0] < maxX && pos[2] > minZ && pos[2] < maxZ) {
+          const distMinX = Math.abs(pos[0] - minX);
+          const distMaxX = Math.abs(pos[0] - maxX);
+          const distMinZ = Math.abs(pos[2] - minZ);
+          const distMaxZ = Math.abs(pos[2] - maxZ);
+
+          const minDist = Math.min(distMinX, distMaxX, distMinZ, distMaxZ);
+
+          if (minDist === distMinX) { pos[0] = minX; if (velocity) velocity[0] = 0; }
+          else if (minDist === distMaxX) { pos[0] = maxX; if (velocity) velocity[0] = 0; }
+          else if (minDist === distMinZ) { pos[2] = minZ; if (velocity) velocity[2] = 0; }
+          else if (minDist === distMaxZ) { pos[2] = maxZ; if (velocity) velocity[2] = 0; }
+        }
+      }
+    }
+  }
+
+  updateBotsAndProjectiles(dt, timestamp) {
+    if (!this.active3DBots) return;
+
+    const pEye = [this.state.camPos[0], this.state.camPos[1] - 0.2, this.state.camPos[2]];
+    const pFeet = [this.state.camPos[0], this.state.camPos[1] - 1.7, this.state.camPos[2]];
+    const isFpsMode = this.state.cameraMode === 3;
+
+    // 1. Tick Active 3D Bots AI
+    this.active3DBots.forEach(bot => {
+      if (bot.hitFlashTimer > 0) {
+        bot.hitFlashTimer = Math.max(0, bot.hitFlashTimer - dt);
+      }
+
+      if (!bot.alive) {
+        bot.respawnTimer -= dt;
+        if (bot.respawnTimer <= 0) {
+          bot.alive = true;
+          bot.health = bot.maxHealth;
+          const spawnLocations = [[-8.0, 0.0, -8.0], [8.0, 0.0, -8.0], [0.0, 1.8, 8.0], [-6.0, 0.0, 6.0], [6.0, 0.0, 6.0]];
+          const loc = spawnLocations[Math.floor(Math.random() * spawnLocations.length)];
+          bot.pos = [...loc];
+          bot.velocity = [0, 0, 0];
+          bot.isGrounded = false;
+          bot.fireTimer = 1.0 + Math.random();
+          this.log(`🤖 [BOT RESPAWNED] ${bot.alias} re-entered the arena!`, "info");
+        }
+        return;
+      }
+
+      // AI Movement & Aiming Towards Player
+      const dx = pEye[0] - bot.pos[0];
+      const dy = pEye[1] - (bot.pos[1] + 1.2);
+      const dz = pEye[2] - bot.pos[2];
+      const distToPlayer = Math.hypot(dx, dz);
+      const totalDist = Math.hypot(dx, dy, dz);
+
+      if (distToPlayer > 0.1) {
+        bot.yaw = Math.atan2(dx, dz);
+      }
+
+      // 1. Gravity & Vertical Position Integration for Bot
+      const botGravity = -22.0;
+      if (!bot.isGrounded) {
+        bot.velocity[1] += botGravity * dt;
+      }
+      bot.pos[1] += bot.velocity[1] * dt;
+
+      // 2. Strafe / Patrol movement when player is in arena
+      if (distToPlayer > 3.0 && distToPlayer < 35.0 && isFpsMode) {
+        const moveSpeed = 3.2;
+        const strafe = Math.sin(timestamp * 0.003 + bot.id) * 2.5;
+        const dirX = dx / distToPlayer;
+        const dirZ = dz / distToPlayer;
+
+        bot.velocity[0] = dirX * moveSpeed + dirZ * strafe;
+        bot.velocity[2] = dirZ * moveSpeed - dirX * strafe;
+
+        bot.pos[0] += bot.velocity[0] * dt;
+        bot.pos[2] += bot.velocity[2] * dt;
+      } else {
+        bot.velocity[0] *= Math.max(0, 1.0 - 8.0 * dt);
+        bot.velocity[2] *= Math.max(0, 1.0 - 8.0 * dt);
+      }
+
+      // 3. Resolve Kinematic World Collision & Grounding for Bot (Stairs, Platforms, Ground)
+      const botColRes = this.resolvePlayerCollision(bot.pos, bot.velocity, bot.radius || 0.65, bot.height || 1.8);
+      bot.isGrounded = botColRes.isGrounded;
+
+      // AI Shooting Logic: Bot shoots at player ONLY if line of sight is clear!
+      bot.fireTimer -= dt;
+      if (bot.fireTimer <= 0 && totalDist < 40.0 && isFpsMode) {
+        bot.fireTimer = 1.3 + Math.random() * 1.7; // Fire every 1.3s to 3.0s
+
+        const botEye = [bot.pos[0], bot.pos[1] + 1.3, bot.pos[2]];
+        const hasLOS = this.checkLineOfSight(botEye, pEye);
+
+        if (hasLOS) {
+          const proj = this.botProjectilePool.find(p => !p.active);
+          if (proj) {
+            const invLen = 1.0 / (totalDist || 1.0);
+            const aimSpread = 0.06;
+            const dir = [
+              (dx * invLen) + (Math.random() - 0.5) * aimSpread,
+              (dy * invLen) + (Math.random() - 0.5) * aimSpread,
+              (dz * invLen) + (Math.random() - 0.5) * aimSpread
+            ];
+
+            proj.active = true;
+            proj.attackerName = bot.alias;
+            proj.pos = [bot.pos[0], bot.pos[1] + 1.3, bot.pos[2]];
+            proj.prevPos = [bot.pos[0], bot.pos[1] + 1.3, bot.pos[2]];
+            proj.speed = bot.weapon === 'railgun' ? 70.0 : (bot.weapon === 'rocket' ? 32.0 : 45.0);
+            proj.velocity = [dir[0] * proj.speed, dir[1] * proj.speed, dir[2] * proj.speed];
+            proj.damage = bot.weapon === 'railgun' ? 28.0 : (bot.weapon === 'rocket' ? 38.0 : 18.0);
+            proj.color = bot.weapon === 'railgun' ? [0.95, 0.2, 0.95] : (bot.weapon === 'rocket' ? [1.0, 0.5, 0.1] : [0.95, 0.25, 0.20]);
+            proj.lifetime = 3.5;
+            proj.age = 0.0;
+            proj.radius = 0.25;
+
+            if (this.synth) this.synth.play('fire');
+            this.log(`🤖 [BOT SHOOTS] ${bot.alias} fired ${bot.weapon.toUpperCase()} at player!`, "warning");
+          }
+        }
+      }
+    });
+
+    // 2. Tick Bot Projectiles & Check Collision against Player and Map Geometry Walls
+    this.botProjectilePool.forEach(bp => {
+      if (!bp.active) return;
+
+      if (!bp.prevPos) bp.prevPos = [...bp.pos];
+
+      const startPos = [...bp.pos];
+      bp.pos[0] += bp.velocity[0] * dt;
+      bp.pos[1] += bp.velocity[1] * dt;
+      bp.pos[2] += bp.velocity[2] * dt;
+      bp.age += dt;
+
+      if (bp.age >= bp.lifetime || bp.pos[1] < -2.0) {
+        bp.active = false;
+        return;
+      }
+
+      // Wall / Obstacle collision check for bot projectile
+      if (this.sceneEntities) {
+        for (let i = 0; i < this.sceneEntities.length; i++) {
+          const ent = this.sceneEntities[i];
+          if (ent.trigger || ent.isLight || ent.type === "Kinematic Character" || ent.name === "Player_Character") continue;
+          if (ent.layer === "Layer_Light" || ent.layer === "Layer_Trigger") continue;
+          if (!ent.pos || !ent.scale) continue;
+          if (ent.name && ent.name.toLowerCase().includes("ground") && ent.pos[1] < 0.0) continue;
+
+          if (this.segmentIntersectsAABB(startPos, bp.pos, ent.pos, ent.scale) ||
+              this.pointInAABB(bp.pos, ent.pos, ent.scale, bp.radius || 0.25)) {
+            bp.active = false;
+            return;
+          }
+        }
+      }
+
+      if (isFpsMode) {
+        const dx = bp.pos[0] - pFeet[0];
+        const dy = bp.pos[1] - (pFeet[1] + 0.9);
+        const dz = bp.pos[2] - pFeet[2];
+        const dist = Math.hypot(dx, dy, dz);
+
+        if (dist <= 0.95) {
+          // PLAYER WAS HIT BY BOT PROJECTILE!
+          bp.active = false;
+          this.applyDamageToPlayer(bp.damage, bp.attackerName);
+        }
+      }
+
+      bp.prevPos = startPos;
+    });
+
+    // 3. Check Player's Projectiles against Bots
+    this.projectilePool.forEach(p => {
+      if (!p.active) return;
+      this.active3DBots.forEach(bot => {
+        if (!bot.alive) return;
+        const dx = p.pos[0] - bot.pos[0];
+        const dy = p.pos[1] - (bot.pos[1] + 0.9);
+        const dz = p.pos[2] - bot.pos[2];
+        const dist = Math.hypot(dx, dy, dz);
+
+        if (dist <= bot.radius + p.radius) {
+          const hitPos = [...p.pos];
+          this.applyDamageToBot(bot, p.damage, hitPos);
+          p.active = false;
+        }
+      });
+    });
+  }
+
+  applyDamageToBot(bot, damageAmount, hitPos) {
+    if (!bot.alive) return;
+    bot.health = Math.max(0, bot.health - damageAmount);
+    bot.hitFlashTimer = 0.3;
+    const isDestroyed = bot.health <= 0;
+
+    if (isDestroyed) {
+      bot.alive = false;
+      bot.respawnTimer = 4.0;
+      bot.deaths++;
+    }
+
+    this.totalDamageDealt += damageAmount;
+    this.triggerHitmarker();
+    this.spawnFloatingDamageNumber(hitPos, damageAmount, isDestroyed);
+
+    const evt = {
+      time: new Date().toLocaleTimeString(),
+      targetName: bot.alias,
+      damageGroup: `AI Bot (${bot.team})`,
+      damageAmount: damageAmount,
+      remainingHealth: bot.health,
+      maxHealth: bot.maxHealth,
+      hitPoint: hitPos,
+      isDestroyed: isDestroyed
+    };
+    this.damageEvents.unshift(evt);
+    if (this.damageEvents.length > 60) this.damageEvents.pop();
+
+    this.log(`🎯 [PLAYER HIT BOT] Hit "${bot.alias}" | DMG: -${damageAmount.toFixed(0)} | Bot HP: ${bot.health.toFixed(0)}/${bot.maxHealth}`, isDestroyed ? "success" : "warning");
+
+    if (isDestroyed) {
+      if (this.synth) this.synth.play('megahealth');
+      this.showPickupToast("🎯 BOT ELIMINATED", `You killed ${bot.alias}! (+100 PTS)`, "powerup");
+      this.log(`💥 [ELIMINATION] You eliminated AI Combat Bot "${bot.alias}"! Respawning in 4s...`, "success");
+    }
+
+    this.updateDamageEventsUI();
+  }
+
+  triggerPlayerDamageFlash() {
+    const flash = document.getElementById('fps-damage-flash');
+    if (!flash) return;
+    flash.classList.remove('active');
+    void flash.offsetWidth;
+    flash.classList.add('active');
+    setTimeout(() => flash.classList.remove('active'), 220);
+  }
+
+  applyDamageToPlayer(damageAmount, attackerName = 'Enemy Bot') {
+    let absorbPct = 0.50;
+    if (this.playerArmorType === 'red') absorbPct = 0.75;
+    else if (this.playerArmorType === 'yellow') absorbPct = 0.60;
+
+    let armorDmg = 0;
+    if (this.playerArmor > 0) {
+      armorDmg = Math.min(this.playerArmor, damageAmount * absorbPct);
+      this.playerArmor -= armorDmg;
+    }
+    let hpDmg = damageAmount - armorDmg;
+    this.playerHealth = Math.max(0, this.playerHealth - hpDmg);
+
+    this.updateFpsPlayerHud();
+    this.triggerPlayerDamageFlash();
+    if (this.synth) this.synth.play('damage');
+
+    this.log(`⚠️ [PLAYER HIT] Took -${damageAmount.toFixed(0)} HP damage from ${attackerName}! (HP: ${this.playerHealth.toFixed(0)} | AP: ${this.playerArmor.toFixed(0)})`, "danger");
+
+    if (this.playerHealth <= 0) {
+      this.handlePlayerDeath(attackerName);
+    }
+  }
+
+  handlePlayerDeath(attackerName) {
+    if (this.synth) this.synth.play('teleport');
+    this.showPickupToast("💥 YOU WERE ELIMINATED", `Killed by [${attackerName}]! Respawning...`, "health");
+    this.log(`💀 [PLAYER DIED] Slain in combat by ${attackerName}! Respawning at spawn pad...`, "danger");
+
+    setTimeout(() => {
+      this.playerHealth = 100.0;
+      this.playerArmor = 50.0;
+      this.playerArmorType = 'green';
+      const spawns = [[0, 0, 2], [-8, 0, -8], [8, 0, -8], [0, 1.8, 10]];
+      const sp = spawns[Math.floor(Math.random() * spawns.length)];
+      this.state.camPos[0] = sp[0];
+      this.state.camPos[1] = sp[1] + 1.7;
+      this.state.camPos[2] = sp[2];
+      this.updateFpsPlayerHud();
+      this.showPickupToast("⚡ RESPAWNED IN ARENA", "Fight back and eliminate the bots!", "powerup");
+    }, 2000);
   }
 
   updateElevators(dt) {
@@ -6565,8 +7142,381 @@ else if (typeof define === 'function' && define['amd'])
         if (this.synth) this.synth.play('teleport');
         this.showPickupToast("⚡ QUANTUM TELEPORT", `Warped to: [${target.map(v=>v.toFixed(1)).join(', ')}]`, "powerup");
         this.log(`Teleported via "${tp.name}" to [${target.join(', ')}]`, "success");
+
+        // Broadcast teleport event across network transport
+        if (this.net) this.net.sendTeleportEvent(tp.id, target);
       }
     });
+  }
+
+  initNetworkSystem() {
+    this.net = globalNetworkManager;
+    this.remotePlayers = new Map();
+    this.lastNetTick = 0;
+
+    // Listen to network manager events
+    this.net.on('status', (evt) => {
+      this.updateNetworkTelemetryUI(evt);
+    });
+
+    this.net.on('ping', (pingMs) => {
+      const pingBadge = document.getElementById('net-ping-badge');
+      if (pingBadge) pingBadge.textContent = `${pingMs} ms`;
+      const telemPing = document.getElementById('net-telemetry-ping');
+      if (telemPing) telemPing.textContent = `${pingMs} ms`;
+    });
+
+    this.net.on('playerTransform', (data) => {
+      if (!data) return;
+      this.remotePlayers.set(data.id || 'remote_peer', {
+        pos: data.pos,
+        rot: data.rot,
+        lastUpdate: performance.now()
+      });
+    });
+
+    this.net.on('playerFire', (data) => {
+      if (!data) return;
+      if (this.synth) this.synth.play('fire');
+      this.spawnProjectile(data.origin || [0, 2, 0], data.dir || [0, 0, -1], data.weapon || 'plasma');
+    });
+
+    this.net.on('worldElevator', (data) => {
+      if (!data || !this.elevators) return;
+      const el = this.elevators.find(e => e.id === data.id);
+      if (el) {
+        el.pos[1] = data.y;
+        el.movingUp = data.up;
+      }
+    });
+
+    this.net.on('worldTeleport', (data) => {
+      if (this.synth) this.synth.play('teleport');
+      this.showPickupToast("⚡ REMOTE TELEPORT", `Peer ${data.playerId} warped via portal`, "powerup");
+    });
+
+    // Wire UI Controls
+    const transportSelect = document.getElementById('net-transport-select');
+    if (transportSelect) {
+      transportSelect.value = this.net.transportName;
+      transportSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        this.net.switchTransport(val);
+        this.log(`Switched Network Transport to: ${val.toUpperCase()}`, "info");
+      });
+    }
+
+    const mediaServerSelect = document.getElementById('net-mediaserver-select');
+    if (mediaServerSelect) {
+      mediaServerSelect.value = this.net.mediaServer;
+      mediaServerSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        this.net.switchMediaServer(val);
+        this.log(`Switched Media Server backend to: ${val.toUpperCase()}`, "info");
+      });
+    }
+
+    const chkFallback = document.getElementById('chk-net-autofallback');
+    if (chkFallback) {
+      chkFallback.checked = this.net.isAutoFallbackEnabled;
+      chkFallback.addEventListener('change', (e) => {
+        this.net.isAutoFallbackEnabled = e.target.checked;
+      });
+    }
+
+    const chkBinary = document.getElementById('chk-net-binary');
+    if (chkBinary) {
+      chkBinary.checked = this.net.config.enableBinaryPackets;
+      chkBinary.addEventListener('change', (e) => {
+        this.net.config.enableBinaryPackets = e.target.checked;
+      });
+    }
+
+    // Initialize Network Manager
+    this.net.init();
+    this.updateNetworkTelemetryUI({ state: 'connecting', message: 'Initializing Network Transport...' });
+  }
+
+  updateNetworkTelemetryUI(evt) {
+    const headerPill = document.getElementById('net-header-status-text');
+    if (headerPill) {
+      headerPill.textContent = `Net: ${this.net.transportName.toUpperCase()} / ${this.net.mediaServer.toUpperCase()}`;
+    }
+
+    const badge = document.getElementById('net-transport-badge');
+    if (badge) {
+      badge.textContent = `${this.net.transportName.toUpperCase()} (${this.net.mediaServer.toUpperCase()})`;
+    }
+
+    const statusEl = document.getElementById('net-telemetry-status');
+    if (statusEl) {
+      statusEl.textContent = (evt.state || 'CONNECTED').toUpperCase();
+      statusEl.style.color = evt.state === 'connected' ? '#10b981' : (evt.state === 'error' ? '#ef4444' : '#f59e0b');
+    }
+  }
+
+  tickNetworkSync(now) {
+    if (!this.net || !this.net.activeTransport || !this.net.activeTransport.connected) return;
+
+    // Send transform snapshot at snapshotRateHz (30 Hz = every 33.3ms)
+    const interval = 1000 / (this.net.config.snapshotRateHz || 30);
+    if (now - this.lastNetTick >= interval) {
+      this.lastNetTick = now;
+
+      const pc = this.playerController;
+      const pos = pc ? pc.pos : [this.state.camPos[0], this.state.camPos[1] - 1.7, this.state.camPos[2]];
+      const rot = [0, this.state.camYaw || 0, this.state.camPitch || 0];
+
+      this.net.sendTransform(pos, rot, 0);
+    }
+  }
+
+  initFpsStartupMenu() {
+    const fpsOverlay = document.getElementById('fps-startup-overlay');
+    if (fpsOverlay) {
+      const stopProp = (e) => {
+        e.stopPropagation();
+      };
+      ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'contextmenu', 'wheel', 'keydown', 'keyup', 'keypress', 'touchstart', 'touchend', 'touchmove'].forEach(evt => {
+        fpsOverlay.addEventListener(evt, stopProp);
+      });
+    }
+
+    const btnOpen = document.getElementById('btn-open-fps-menu');
+    const btnClose = document.getElementById('btn-close-fps-menu');
+    const btnStart = document.getElementById('btn-start-fps-match');
+
+    const mapCards = document.querySelectorAll('#fps-map-select-grid .fps-map-card');
+    const loadoutBtns = document.querySelectorAll('.fps-loadout-btn');
+    const playerNameInput = document.getElementById('fps-player-name');
+    const playerSkinSelect = document.getElementById('fps-player-skin');
+    const playerTeamSelect = document.getElementById('fps-player-team');
+
+    const btnAddBot = document.getElementById('btn-fps-add-bot');
+    const btnClearBots = document.getElementById('btn-fps-clear-bots');
+    const btnSyncLobby = document.getElementById('btn-fps-sync-lobby');
+
+    this.fpsBots = [
+      { alias: 'Bot_Phantam', skin: 'Phantam', ping: 5, isBot: true, team: 'Red' },
+      { alias: 'Bot_Anarki', skin: 'Anarki', ping: 8, isBot: true, team: 'Blue' }
+    ];
+
+    this.selectedFpsMap = 'q3dm17';
+    this.selectedFpsWeapon = 'plasma';
+
+    // Map selection
+    mapCards.forEach(card => {
+      card.addEventListener('click', () => {
+        mapCards.forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        this.selectedFpsMap = card.dataset.map;
+        this.currentMapId = this.selectedFpsMap;
+        this.log(`FPS Arena Map set to [${this.selectedFpsMap}]`, "cpp");
+      });
+    });
+
+    // Weapon Loadout selection
+    loadoutBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        loadoutBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.selectedFpsWeapon = btn.dataset.weapon;
+        if (this.selectedFpsWeapon === 'rocket') {
+          this.weaponConfig = { type: 'rocket', name: 'Rocket Launcher', damage: 85.0, speed: 38.0, lifetime: 4.0, color: [0.95, 0.45, 0.10] };
+        } else if (this.selectedFpsWeapon === 'railgun') {
+          this.weaponConfig = { type: 'railgun', name: 'Electro-Railgun', damage: 100.0, speed: 120.0, lifetime: 2.0, color: [0.90, 0.15, 0.95] };
+        } else if (this.selectedFpsWeapon === 'hmg') {
+          this.weaponConfig = { type: 'hmg', name: 'Heavy Machine Gun', damage: 15.0, speed: 65.0, lifetime: 2.5, color: [0.95, 0.85, 0.15] };
+        } else {
+          this.weaponConfig = { type: 'plasma', name: 'High-Yield Plasma Bolt', damage: 25.0, speed: 50.0, lifetime: 3.0, color: [0.06, 0.85, 0.95] };
+        }
+        this.updateHUDWeaponStats();
+      });
+    });
+
+    // Open / Close actions
+    if (btnOpen) {
+      btnOpen.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.showFpsStartupMenu();
+      });
+    }
+
+    if (btnClose) {
+      btnClose.addEventListener('click', () => {
+        this.hideFpsStartupMenu();
+      });
+    }
+
+    // Add Bot
+    if (btnAddBot) {
+      btnAddBot.addEventListener('click', () => {
+        const botNames = ['Visor_AI', 'Sarge_Bot', 'Slayer_Bot', 'Xero_Bot', 'Doom_Bot'];
+        const skins = ['Visor', 'Sarge', 'Doom', 'Phantam'];
+        const randomName = botNames[Math.floor(Math.random() * botNames.length)] + '_' + (this.fpsBots.length + 1);
+        const randomSkin = skins[Math.floor(Math.random() * skins.length)];
+        this.fpsBots.push({ alias: randomName, skin: randomSkin, ping: Math.floor(Math.random() * 8) + 4, isBot: true, team: Math.random() > 0.5 ? 'Red' : 'Blue' });
+        this.renderFpsLobbyPlayers();
+        this.log(`Added AI Combat Bot: ${randomName}`, "info");
+        if (this.synth) this.synth.play('pickup');
+      });
+    }
+
+    // Clear Bots
+    if (btnClearBots) {
+      btnClearBots.addEventListener('click', () => {
+        this.fpsBots = [];
+        this.renderFpsLobbyPlayers();
+        this.log(`Cleared all AI Bots from match lobby.`, "info");
+      });
+    }
+
+    // Refresh State
+    if (btnSyncLobby) {
+      btnSyncLobby.addEventListener('click', () => {
+        this.fetchLobbyStateFromServer();
+      });
+    }
+
+    // Start Match
+    if (btnStart) {
+      btnStart.addEventListener('click', () => {
+        const name = (playerNameInput ? playerNameInput.value.trim() : '') || 'Ranger';
+        const skin = playerSkinSelect ? playerSkinSelect.value : 'Phantam';
+        const team = playerTeamSelect ? playerTeamSelect.value : 'Red';
+
+        this.hideFpsStartupMenu();
+        this.sync3DBotsFromLobby();
+        this.state.cameraMode = 3; // FPS Mode
+        const camSelect = document.getElementById('camera-mode-select');
+        if (camSelect) camSelect.value = "3";
+
+        // Lock mouse
+        try {
+          this.canvas.requestPointerLock?.();
+        } catch(e) {}
+
+        if (this.synth) this.synth.play('teleport');
+        this.showPickupToast("⚡ ARENA MATCH STARTED", `Welcome Player [${name}]! Target Bots & Fire!`, "powerup");
+        this.log(`Match Started! Player: ${name} (${team} Team) | Map: ${this.selectedFpsMap} | Loadout: ${this.selectedFpsWeapon.toUpperCase()}`, "success");
+
+        // Broadcast join event via WebSockets if connected
+        if (this.net && this.net.ws && this.net.ws.readyState === WebSocket.OPEN) {
+          try {
+            this.net.ws.send(JSON.stringify({
+              type: 'lobby:join',
+              name: name,
+              skin: skin,
+              team: team,
+              map: this.selectedFpsMap
+            }));
+          } catch(e) {}
+        }
+      });
+    }
+
+    // Listen to network lobbyStateUpdate if emitted
+    if (this.net) {
+      this.net.on('lobbyState', (state) => {
+        if (state && state.players) {
+          this.serverLobbyPlayers = state.players;
+          this.renderFpsLobbyPlayers();
+        }
+      });
+    }
+  }
+
+  showFpsStartupMenu() {
+    const overlay = document.getElementById('fps-startup-overlay');
+    if (overlay) {
+      overlay.style.display = 'flex';
+      this.renderFpsLobbyPlayers();
+      this.fetchLobbyStateFromServer();
+    }
+    if (document.pointerLockElement) {
+      try {
+        document.exitPointerLock();
+      } catch(e) {}
+    }
+  }
+
+  hideFpsStartupMenu() {
+    const overlay = document.getElementById('fps-startup-overlay');
+    if (overlay) {
+      overlay.style.display = 'none';
+    }
+  }
+
+  renderFpsLobbyPlayers() {
+    const listEl = document.getElementById('fps-lobby-players-list');
+    const countEl = document.getElementById('fps-lobby-player-count');
+    if (!listEl) return;
+
+    const playerNameInput = document.getElementById('fps-player-name');
+    const playerSkinSelect = document.getElementById('fps-player-skin');
+    const playerTeamSelect = document.getElementById('fps-player-team');
+
+    const myAlias = (playerNameInput ? playerNameInput.value.trim() : '') || 'Ranger';
+    const mySkin = playerSkinSelect ? playerSkinSelect.value : 'Phantam';
+    const myTeam = playerTeamSelect ? playerTeamSelect.value : 'Red';
+
+    let players = [
+      { alias: `${myAlias} (YOU)`, skin: mySkin, ping: 0, isBot: false, team: myTeam }
+    ];
+
+    if (this.fpsBots && this.fpsBots.length > 0) {
+      players = players.concat(this.fpsBots);
+    }
+
+    if (this.serverLobbyPlayers && Array.isArray(this.serverLobbyPlayers)) {
+      this.serverLobbyPlayers.forEach(p => {
+        if (p.alias !== myAlias) {
+          players.push({ alias: p.alias || p.id, skin: p.skin || 'Gladiator', ping: p.ping || 24, isBot: false, team: p.team || 'Blue' });
+        }
+      });
+    }
+
+    if (countEl) {
+      countEl.textContent = `${players.length} / 10 Players`;
+    }
+
+    listEl.innerHTML = players.map(p => `
+      <div class="fps-lobby-player-item">
+        <div class="fps-player-left">
+          <span class="fps-player-status-dot ${p.isBot ? 'bot' : ''}"></span>
+          <span class="fps-player-alias">${p.alias}</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span class="fps-player-badge">${p.skin}</span>
+          <span class="fps-player-badge" style="color: ${p.team === 'Red' ? '#f87171' : (p.team === 'Blue' ? '#60a5fa' : '#34d399')};">${p.team}</span>
+          <span class="fps-player-badge font-mono">${p.isBot ? 'BOT' : p.ping + 'ms'}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async fetchLobbyStateFromServer() {
+    try {
+      const res = await fetch('/api/matchmaking/lobby');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.lobby) {
+          const netTransport = document.getElementById('fps-net-transport-val');
+          const netMedia = document.getElementById('fps-net-mediaserver-val');
+          if (netTransport) netTransport.textContent = data.lobby.transport || 'WebSocket / WebRTC';
+          if (netMedia) netMedia.textContent = data.lobby.mediaServer || 'OpenVidu / KMS';
+        }
+      }
+    } catch(e) {}
+  }
+
+  updateHUDWeaponStats() {
+    const titleEl = document.querySelector('#fps-weapon-hud .weapon-title');
+    const dmgEl = document.getElementById('hud-weapon-dmg');
+    const velEl = document.getElementById('hud-weapon-vel');
+    if (titleEl) titleEl.textContent = `⚡ ${this.weaponConfig.name}`;
+    if (dmgEl) dmgEl.textContent = `${this.weaponConfig.damage} HP`;
+    if (velEl) velEl.textContent = `${this.weaponConfig.speed} m/s`;
   }
 
   initMaterialsWorkspace() {
@@ -8053,11 +9003,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const isCharacterDemo = (this.state.demoScene.includes('06_glb') || this.state.demoScene === 'character') && !isFpsMode && !isShowroomDemo;
     const isFpsDemo = (this.state.demoScene.includes('07_fps') || isFpsMode) && !isShowroomDemo;
 
-    // Tick Damage System, Elevators, Teleporters, and Projectiles on every frame
+    // Tick Damage System, Elevators, Teleporters, Network Sync, and Projectiles on every frame
     this.updateProjectilesAndDamage(dt, timestamp);
     this.updateElevators(dt);
     this.updateTeleporters(dt);
     this.updateHzbTelemetry(dt);
+    this.tickNetworkSync(timestamp);
 
     if (isCharacterDemo) {
       // -------------------------------------------------------------
@@ -8773,6 +9724,123 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.05);
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12); // neon emissive
+          if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+          if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
+          if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+
+          gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        });
+      }
+
+      // 3b. Render Active 3D AI Combat Bots (Gladiator / Cyber Suits with Weapons & Walk Animation)
+      if (this.active3DBots && this.active3DBots.length > 0 && cubeMesh && sphereMesh) {
+        this.active3DBots.forEach(bot => {
+          if (!bot.alive) return;
+
+          const charYaw = bot.yaw || 0;
+          const charPos = bot.pos;
+          const swingAngle = Math.sin(timestamp * 0.008 + bot.id) * 0.45;
+
+          const drawBotPart = (mesh, offsetX, offsetY, offsetZ, sizeX, sizeY, sizeZ, color, rough = 0.25, metal = 0.85, pMatType = 0, pClearCoat = 0.15) => {
+            if (!mesh) return;
+            gl.bindVertexArray(mesh.vao);
+
+            const cy = Math.cos(charYaw);
+            const sy = Math.sin(charYaw);
+
+            const wx = charPos[0] + (offsetX * cy + offsetZ * sy);
+            const wy = charPos[1] + offsetY;
+            const wz = charPos[2] + (-offsetX * sy + offsetZ * cy);
+
+            this.instanceMatrix[0] = cy * sizeX;
+            this.instanceMatrix[1] = 0;
+            this.instanceMatrix[2] = sy * sizeX;
+            this.instanceMatrix[3] = 0;
+
+            this.instanceMatrix[4] = 0;
+            this.instanceMatrix[5] = sizeY;
+            this.instanceMatrix[6] = 0;
+            this.instanceMatrix[7] = 0;
+
+            this.instanceMatrix[8] = -sy * sizeZ;
+            this.instanceMatrix[9] = 0;
+            this.instanceMatrix[10] = cy * sizeZ;
+            this.instanceMatrix[11] = 0;
+
+            this.instanceMatrix[12] = wx;
+            this.instanceMatrix[13] = wy;
+            this.instanceMatrix[14] = wz;
+            this.instanceMatrix[15] = 1;
+
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+
+            let drawCol = color;
+            if (bot.hitFlashTimer > 0) drawCol = [1.0, 0.3, 0.3];
+
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, drawCol);
+            if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+            if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+            if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, pMatType);
+            if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+            if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, pClearCoat);
+            if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+
+            gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          };
+
+          // Bot Torso Body
+          drawBotPart(cubeMesh, 0, 1.1, 0, 0.45, 0.6, 0.25, bot.color, 0.25, 0.85, 3, 0.5);
+          // Bot Head
+          drawBotPart(sphereMesh, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.85, 0.85, 0.88], 0.35, 0.10, 0, 0.0);
+          // Bot Neon Visor
+          drawBotPart(cubeMesh, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95, 12, 0.9);
+          // Bot Left & Right Arms (Swinging)
+          drawBotPart(cubeMesh, -0.32, 1.05 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, bot.color, 0.25, 0.85, 3, 0.3);
+          drawBotPart(cubeMesh, 0.32, 1.05 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, bot.color, 0.25, 0.85, 3, 0.3);
+          // Bot Left & Right Legs
+          drawBotPart(cubeMesh, -0.16, 0.45 - Math.sin(swingAngle)*0.06, -Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
+          drawBotPart(cubeMesh, 0.16, 0.45 + Math.sin(swingAngle)*0.06, Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
+          // Bot Weapon
+          drawBotPart(cubeMesh, 0.35, 1.1, 0.35, 0.12, 0.15, 0.60, [0.2, 0.2, 0.25], 0.15, 0.9, 3, 0.2);
+        });
+      }
+
+      // 3c. Render Bot Projectiles (Neon glowing spheres traveling at player)
+      if (this.botProjectilePool && sphereMesh) {
+        gl.bindVertexArray(sphereMesh.vao);
+        this.botProjectilePool.forEach(bp => {
+          if (!bp.active) return;
+          const r = bp.radius || 0.22;
+          this.instanceMatrix[0] = r;
+          this.instanceMatrix[1] = 0;
+          this.instanceMatrix[2] = 0;
+          this.instanceMatrix[3] = 0;
+
+          this.instanceMatrix[4] = 0;
+          this.instanceMatrix[5] = r;
+          this.instanceMatrix[6] = 0;
+          this.instanceMatrix[7] = 0;
+
+          this.instanceMatrix[8] = 0;
+          this.instanceMatrix[9] = 0;
+          this.instanceMatrix[10] = r;
+          this.instanceMatrix[11] = 0;
+
+          this.instanceMatrix[12] = bp.pos[0];
+          this.instanceMatrix[13] = bp.pos[1];
+          this.instanceMatrix[14] = bp.pos[2];
+          this.instanceMatrix[15] = 1;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, bp.color || [1, 0.2, 0.2]);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.05);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12); // emissive neon
           if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
           if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
           if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
