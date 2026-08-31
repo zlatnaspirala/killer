@@ -1,4 +1,6 @@
-# killer — C++17 & Google Filament 3D Engine Studio
+# Killer  
+## C++17 & Google Filament 3D Engine Studio
+## with multiplayer backend support
 
 **High-performance C++17 / WebAssembly 3D graphics & gameplay workbench**  
 Built on **Google Filament** physically-based rendering, zero-allocation frame loops, kinematic player locomotion, continuous collision detection (CCD), and a modular FPS damage system.
@@ -7,6 +9,10 @@ Built on **Google Filament** physically-based rendering, zero-allocation frame l
 > Desktop · Web (WASM) · Android — from a single C++17 codebase.
 
 ---
+
+## Logo
+<img src="https://raw.githubusercontent.com/zlatnaspirala/killer/refs/heads/main/logo.webp" width="320" />
+
 
 ## Why this engine exists
 
