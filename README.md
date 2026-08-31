@@ -97,6 +97,18 @@ In short: SDL2 removes 90 % of the pain of multi-platform support so you can foc
 - **Bi-directional State Synchronization**: Live server-side communication utilizing lightweight WebSockets (`ws`) to synchronize lobby players, dynamic chat feeds, and server status.
 - **Active Combat Event Feed**: Real-time broadcasting of combat telemetry, including hitmarkers, critical damage notifications, bot eliminations, and self-elimination tracking.
 
+============================================================================
+MAIN NETWORK & MEDIA SERVER CONFIGURATION FILE
+============================================================================
+Central configuration for WebGL & WASM Engine Multiplayer Networking.
+
+ Supports switching between:
+  1. Classic WebSockets ('websocket')
+  2. Direct WebRTC DataChannels ('webrtc')
+  3. Geckos.io UDP-over-WebRTC ('geckos')
+  4. OpenVidu Media Server ('openvidu')
+  5. Kurento Media Server ('kurento')
+
 ---
 
 ## 🌐 WebSocket Real-Time Multiplayer Architecture
@@ -230,7 +242,7 @@ Google Filament, SDL2, Emscripten, WebAssembly, OpenGL, WebGL, and related logos
 
 These names, badges, and any logos used in this repository are for identification, reference, and attribution purposes only. 
 
-*This project is an independent, non-commercial education-focused workbench and is not affiliated with, endorsed by, or sponsored by Google LLC, the SDL project, the Khronos Group, or any of the above-mentioned organizations.*
+*This project is an independent, open source focused workbench and is not affiliated with, endorsed by, or sponsored by Google LLC, the SDL project, the Khronos Group, or any of the above-mentioned organizations.*
 
 ---
 
