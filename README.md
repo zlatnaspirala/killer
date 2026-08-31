@@ -86,6 +86,11 @@ In short: SDL2 removes 90 % of the pain of multi-platform support so you can foc
 - Enemies, destructibles, practice targets
 - Floating combat feedback, hitmarkers, hit-flash, health bars, auto-respawn
 
+### 5. WebSocket Real-Time Multiplayer & Lobby Orchestration
+- **Dynamic Arena Matchmaking Lobby**: Real-time lobby orchestration allowing players to join/leave, configure teams, customize team balances, and coordinate game restarts.
+- **Bi-directional State Synchronization**: Live server-side communication utilizing lightweight WebSockets (`ws`) to synchronize lobby players, dynamic chat feeds, and server status.
+- **Active Combat Event Feed**: Real-time broadcasting of combat telemetry, including hitmarkers, critical damage notifications, bot eliminations, and self-elimination tracking.
+
 ---
 
 ## Repository Structure
@@ -159,22 +164,46 @@ export ANDROID_NDK_ROOT=/path/to/android-ndk
 chmod +x build_android.sh
 ```
 
-Technology Stack & Attribution
-Core technologies
+---
 
-Google Filament — real-time physically based rendering engine
-SDL2 — cross-platform windowing, input & audio
-Emscripten — C++ → WebAssembly toolchain
-C++17, OpenGL ES 3.0 / WebGL 2.0, CMake, Android NDK
+## 🛠️ Technology Stack & Attribution
 
-Legal note / Trademark notice
-Google Filament, SDL, Emscripten, WebAssembly, OpenGL, WebGL and related logos are trademarks or registered trademarks of their respective owners (Google LLC, the SDL project / zlib license, the Emscripten project, the Khronos Group, etc.).
+### Core Technologies
+<div align="left" style="margin-top: 10px; margin-bottom: 20px;">
+  <a href="https://github.com/google/filament" target="_blank">
+    <img src="https://img.shields.io/badge/Google%20Filament-PBR%20Rendering-orange?style=for-the-badge&logo=google&logoColor=white" alt="Google Filament Badge" />
+  </a>
+  <a href="https://www.libsdl.org/" target="_blank">
+    <img src="https://img.shields.io/badge/SDL2-Multiplatform%20Input%20%26%20Audio-blue?style=for-the-badge&logo=sdl&logoColor=white" alt="SDL2 Badge" />
+  </a>
+  <a href="https://emscripten.org/" target="_blank">
+    <img src="https://img.shields.io/badge/Emscripten-WASM%20Toolchain-red?style=for-the-badge&logo=webassembly&logoColor=white" alt="Emscripten Badge" />
+  </a>
+  <a href="https://isocpp.org/" target="_blank">
+    <img src="https://img.shields.io/badge/C%2B%2B-17--Standard-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white" alt="C++17 Badge" />
+  </a>
+</div>
 
-These names and any logos used in this repository are for identification and attribution purposes only.
+- **Google Filament**: Real-time physically based rendering (PBR) engine for mobile, web, and desktop.
+- **SDL2**: Cross-platform Windowing, Input events, and Audio layer.
+- **Emscripten**: LLVM-to-JavaScript/WebAssembly compiler toolchain.
+- **Standards & APIs**: C++17, OpenGL ES 3.0 / WebGL 2.0, CMake, Android NDK.
 
-This project is not affiliated with, endorsed by, or sponsored by Google, the SDL project, the Khronos Group, or any of the above organizations.
+---
 
-License
+### ⚖️ Legal Note / Trademark Notice
+
+Google Filament, SDL2, Emscripten, WebAssembly, OpenGL, WebGL, and related logos are trademarks or registered trademarks of their respective owners (Google LLC, the SDL project / zlib license, the Emscripten project, the Khronos Group, etc.). 
+
+These names, badges, and any logos used in this repository are for identification, reference, and attribution purposes only. 
+
+*This project is an independent, non-commercial education-focused workbench and is not affiliated with, endorsed by, or sponsored by Google LLC, the SDL project, the Khronos Group, or any of the above-mentioned organizations.*
+
+---
+
+### 📄 License
+
 MIT License.
 
 Built with Google Filament PBR principles and modern C++17.
+
