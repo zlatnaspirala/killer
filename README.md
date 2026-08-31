@@ -89,7 +89,7 @@ In short: SDL2 removes 90 % of the pain of multi-platform support so you can foc
 ---
 
 ## Repository Structure
-
+<pre>
 ├── include/engine/
 │   ├── Engine.hpp
 │   ├── Camera.hpp
@@ -116,10 +116,10 @@ In short: SDL2 removes 90 % of the pain of multi-platform support so you can foc
 ├── build_wasm.sh
 ├── build_desktop.sh
 └── build_android.sh
-text---
+</pre>
 
 ## Controls
-
+<pre>
 | Action                        | Keyboard / Mouse                          | Touch / Mobile              |
 |-------------------------------|-------------------------------------------|-----------------------------|
 | Move Forward / Back           | `W` / `S`                                 | Left Virtual Joystick       |
@@ -130,7 +130,7 @@ text---
 | Fire Weapon                   | Left Mouse                                | Tap / Action button         |
 | Fly Up / Down (6-DOF only)    | `E` / `Q`                                 | ▲ UP / ▼ DOWN               |
 | Cycle Cameras                 | Top-bar dropdown                          | Top-bar selector            |
-
+</pre>
 ---
 
 ## Build Instructions
