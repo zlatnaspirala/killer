@@ -107,9 +107,12 @@
 
             <!-- FPS Shooter Pointer Lock Prompt / Banner -->
             <div class="fps-pointerlock-banner" id="fps-pointerlock-banner" style="display: none;">
-              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 8px;">
                 <span id="fps-banner-text">🎯 <b>FPS Shooter Active</b>: Click viewport to Lock Mouse Look &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click</b> to Shoot &bull; <b>Space</b> to Jump</span>
-                <button id="btn-open-fps-menu" class="btn-action" style="margin-left: 12px; background: rgba(6, 182, 212, 0.25); border: 1px solid #06b6d4; color: #38bdf8; padding: 4px 10px; font-weight: bold; border-radius: 6px; cursor: pointer; white-space: nowrap;">🎮 Arena Menu</button>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <button id="btn-fps-cheap-mat-toggle" class="btn-action" style="background: rgba(16, 185, 129, 0.25); border: 1px solid #10b981; color: #34d399; padding: 4px 10px; font-weight: bold; border-radius: 6px; cursor: pointer; white-space: nowrap;" title="Toggle Cheap Low-Cost Material for Mobile 60-120 FPS">⚡ Cheap Mat: ON (Mobile 60+ FPS)</button>
+                  <button id="btn-open-fps-menu" class="btn-action" style="background: rgba(6, 182, 212, 0.25); border: 1px solid #06b6d4; color: #38bdf8; padding: 4px 10px; font-weight: bold; border-radius: 6px; cursor: pointer; white-space: nowrap;">🎮 Arena Menu</button>
+                </div>
               </div>
             </div>
 
@@ -304,6 +307,15 @@
                             <option value="low">💤 Low / Silent</option>
                           </select>
                         </div>
+                      </div>
+
+                      <!-- 🚀 Performance & Material Profile Settings -->
+                      <div class="fps-form-group" style="margin-top: 10px;">
+                        <label class="fps-label">🚀 Mobile Performance &amp; Material Engine:</label>
+                        <select id="fps-material-profile-select" class="fps-select" style="border: 1px solid #10b981; font-weight: bold; color: #10b981; background: rgba(6, 78, 59, 0.4);">
+                          <option value="cheap" selected>⚡ Cheap Mobile Material (Zero Noise ALU • 60-120 FPS Max Smoothness)</option>
+                          <option value="filament_pbr">✨ Filament Studio PBR (Cook-Torrance GGX &amp; Procedural Synthesizers)</option>
+                        </select>
                       </div>
 
                       <div class="fps-form-group" style="margin-top: 10px;">
@@ -577,7 +589,7 @@
           </div>
 
           <!-- Bottom Console / Telemetry & Backend Shell Log -->
-          <div class="console-card" id="viewport-console-card">
+          <div class="console-card minimized" id="viewport-console-card">
             <div class="card-header">
               <div class="console-tab-group">
                 <button class="console-tab-btn active" id="tab-btn-engine" data-console-mode="engine">
@@ -795,6 +807,7 @@
                   <div class="select-group">
                     <label for="shader-select" class="hud-label">Active Program:</label>
                     <select id="shader-select" class="input-select">
+                      <option value="4" selected>⚡ Cheap Material (Ultra-Fast Mobile Blinn-Lambert • 60-120 FPS)</option>
                       <option value="0">Filament Standard PBR (Cook-Torrance GGX / Schlick-Smith + IBL)</option>
                       <option value="1">GLES3 Standard Derivatives (Wireframe HUD)</option>
                       <option value="2">Normal Vector Visualizer</option>

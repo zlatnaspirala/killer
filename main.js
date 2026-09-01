@@ -1068,6 +1068,82 @@ int main() {
 }
 `,
 
+  '09_slot_machine.cpp': `// examples/09_slot_machine.cpp
+// Filament / Native C++ Demo 09: 3D Casino Slot Machine & Particle Coins Showcase
+// Demonstrates spinning cylinder/torus reels, animated levers with damped sine physics,
+// instanced 3D coin particle solvers, and multi-symbol PBR material rendering.
+
+#include <iostream>
+#include <vector>
+#include <random>
+#include <cmath>
+#include <memory>
+#include <string>
+
+namespace CasinoDemo {
+    struct Vec3 { float x = 0.0f, y = 0.0f, z = 0.0f; };
+    enum SymbolType { Symbol_Cherry, Symbol_Donut, Symbol_Gem, Symbol_GoldCube, Symbol_WildTrefoil, Symbol_COUNT };
+    struct Reel { float angle = 0.0f, speed = 0.0f; bool spinning = false; SymbolType currentSymbol = Symbol_Cherry; float stopTimer = 0.0f; };
+    struct CoinParticle { Vec3 position, velocity; float lifetime = 0.0f, maxLifetime = 3.0f; bool active = false; };
+
+    class SlotMachine {
+    public:
+        int credits = 1000, bet = 10;
+        Reel reels[3];
+        float leverAngle = 0.0f, leverVelocity = 0.0f;
+        bool leverPulled = false;
+        std::vector<CoinParticle> coins;
+
+        SlotMachine() {
+            for(int i = 0; i < 3; ++i) {
+                reels[i].currentSymbol = static_cast<SymbolType>(i % Symbol_COUNT);
+                reels[i].angle = reels[i].currentSymbol * (360.0f / Symbol_COUNT);
+            }
+            coins.resize(100);
+        }
+
+        void Spin(int playerBet) {
+            if (playerBet > credits) return;
+            credits -= playerBet; bet = playerBet;
+            leverPulled = true; leverVelocity = 15.0f;
+            for(int i = 0; i < 3; ++i) {
+                reels[i].spinning = true;
+                reels[i].speed = 40.0f + i * 15.0f;
+                reels[i].stopTimer = 1.0f + i * 0.75f;
+            }
+        }
+
+        void Update(float dt) {
+            for(int i = 0; i < 3; ++i) {
+                if (reels[i].spinning) {
+                    reels[i].angle += reels[i].speed * 10.0f * dt;
+                    reels[i].stopTimer -= dt;
+                    if (reels[i].stopTimer <= 0.0f) {
+                        reels[i].spinning = false; reels[i].speed = 0.0f;
+                        reels[i].angle = reels[i].currentSymbol * (360.0f / Symbol_COUNT);
+                    }
+                }
+            }
+            if (leverPulled) {
+                leverAngle += leverVelocity * dt;
+                if (leverAngle > 0.8f) { leverAngle = 0.8f; leverVelocity = -12.0f; }
+                leverVelocity += (0.0f - leverAngle) * 45.0f * dt;
+                leverVelocity *= std::exp(-8.0f * dt);
+                if (std::abs(leverAngle) < 0.01f && std::abs(leverVelocity) < 0.05f) { leverPulled = false; }
+            }
+        }
+    };
+}
+
+int main() {
+    std::cout << "FILAMENT C++ DEMO 09: 3D CASINO SLOT MACHINE & PARTICLES\\n";
+    CasinoDemo::SlotMachine game;
+    game.Spin(20);
+    game.Update(0.1f);
+    return 0;
+}
+`,
+
   'CMakeLists.txt': `cmake_minimum_required(VERSION 3.15)
 project(NativeCppEngine CXX)
 
@@ -1091,6 +1167,34 @@ endif()`
 };
 
 // Shaders in GLSL ES 3.00 (OpenGL ES 3.0 / WebGL2)
+const VS_BILLBOARD = `#version 300 es
+layout(location = 0) in vec3 a_position;
+layout(location = 2) in vec2 a_uv;
+
+uniform mat4 u_model;
+uniform mat4 u_viewProj;
+
+out vec2 v_uv;
+
+void main() {
+    v_uv = a_uv;
+    gl_Position = u_viewProj * u_model * vec4(a_position, 1.0);
+}
+`;
+
+const FS_BILLBOARD = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_textTexture;
+out vec4 fragColor;
+
+void main() {
+    vec4 col = texture(u_textTexture, v_uv);
+    if (col.a < 0.05) discard;
+    fragColor = col;
+}
+`;
+
 const VS_COMMON = `#version 300 es
 layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_normal;
@@ -1726,6 +1830,55 @@ void main() {
     
     vec3 glow = u_baseColor * (fresnel * 1.4 + scanline * 0.5 + 0.15);
     fragColor = vec4(glow, 0.88);
+}
+`;
+
+// Ultra-Fast Low-Cost Material Shader for Mobile Browsers & High FPS Arena Play (Zero Procedural Noise ALU)
+const FS_CHEAP_FPS = `#version 300 es
+precision mediump float;
+
+in vec3 v_worldPos;
+in vec3 v_normal;
+in vec2 v_uv;
+
+uniform vec3 u_baseColor;
+uniform float u_roughness;
+uniform float u_metallic;
+uniform int u_matType;
+uniform vec3 u_camPos;
+uniform vec3 u_lightDir;
+uniform vec3 u_lightColor;
+
+out vec4 fragColor;
+
+void main() {
+    vec3 N = normalize(v_normal);
+    vec3 V = normalize(u_camPos - v_worldPos);
+
+    // Directional Key Light with Smooth Half-Lambert wrap (fast, zero branching, beautiful lighting)
+    vec3 L = (length(u_lightDir) > 0.001) ? normalize(u_lightDir) : normalize(vec3(0.4, 0.85, 0.35));
+    vec3 lCol = (length(u_lightColor) > 0.001) ? u_lightColor : vec3(1.0, 0.98, 0.94);
+    float NdotL = max(dot(N, L), 0.0);
+
+    // Fast Blinn-Phong Specular (Single pow instruction, no microfacet numerical integrations)
+    vec3 H = normalize(V + L);
+    float NdotH = max(dot(N, H), 0.0);
+    float specPower = mix(10.0, 48.0, 1.0 - clamp(u_roughness, 0.0, 1.0));
+    float spec = pow(NdotH, specPower) * u_metallic * 0.45;
+
+    // Two-Tone Sky & Ground Ambient Fill
+    vec3 ambient = mix(vec3(0.14, 0.16, 0.20), vec3(0.35, 0.38, 0.42), N.y * 0.5 + 0.5);
+
+    vec3 diff = u_baseColor * (lCol * (NdotL * 0.72 + 0.20) + ambient);
+    vec3 col = diff + vec3(spec);
+
+    // Fast Glow / Neon Highlight for Laser bolts, Holograms, Visors, Item pickups
+    if (u_matType == 11 || u_matType == 12 || u_matType == 7) {
+        float fresnel = 1.0 - max(dot(N, V), 0.0);
+        col = u_baseColor * (1.6 + fresnel * 0.85);
+    }
+
+    fragColor = vec4(col, 1.0);
 }
 `;
 
@@ -2424,82 +2577,6 @@ void Renderer::EndFrame() {
 } // namespace EngineCore
 `,
 
-  '09_slot_machine.cpp': `// examples/09_slot_machine.cpp
-// Filament / Native C++ Demo 09: 3D Casino Slot Machine & Particle Coins Showcase
-// Demonstrates spinning cylinder/torus reels, animated levers with damped sine physics,
-// instanced 3D coin particle solvers, and multi-symbol PBR material rendering.
-
-#include <iostream>
-#include <vector>
-#include <random>
-#include <cmath>
-#include <memory>
-#include <string>
-
-namespace CasinoDemo {
-    struct Vec3 { float x = 0.0f, y = 0.0f, z = 0.0f; };
-    enum SymbolType { Symbol_Cherry, Symbol_Donut, Symbol_Gem, Symbol_GoldCube, Symbol_WildTrefoil, Symbol_COUNT };
-    struct Reel { float angle = 0.0f, speed = 0.0f; bool spinning = false; SymbolType currentSymbol = Symbol_Cherry; float stopTimer = 0.0f; };
-    struct CoinParticle { Vec3 position, velocity; float lifetime = 0.0f, maxLifetime = 3.0f; bool active = false; };
-
-    class SlotMachine {
-    public:
-        int credits = 1000, bet = 10;
-        Reel reels[3];
-        float leverAngle = 0.0f, leverVelocity = 0.0f;
-        bool leverPulled = false;
-        std::vector<CoinParticle> coins;
-
-        SlotMachine() {
-            for(int i = 0; i < 3; ++i) {
-                reels[i].currentSymbol = static_cast<SymbolType>(i % Symbol_COUNT);
-                reels[i].angle = reels[i].currentSymbol * (360.0f / Symbol_COUNT);
-            }
-            coins.resize(100);
-        }
-
-        void Spin(int playerBet) {
-            if (playerBet > credits) return;
-            credits -= playerBet; bet = playerBet;
-            leverPulled = true; leverVelocity = 15.0f;
-            for(int i = 0; i < 3; ++i) {
-                reels[i].spinning = true;
-                reels[i].speed = 40.0f + i * 15.0f;
-                reels[i].stopTimer = 1.0f + i * 0.75f;
-            }
-        }
-
-        void Update(float dt) {
-            for(int i = 0; i < 3; ++i) {
-                if (reels[i].spinning) {
-                    reels[i].angle += reels[i].speed * 10.0f * dt;
-                    reels[i].stopTimer -= dt;
-                    if (reels[i].stopTimer <= 0.0f) {
-                        reels[i].spinning = false; reels[i].speed = 0.0f;
-                        reels[i].angle = reels[i].currentSymbol * (360.0f / Symbol_COUNT);
-                    }
-                }
-            }
-            if (leverPulled) {
-                leverAngle += leverVelocity * dt;
-                if (leverAngle > 0.8f) { leverAngle = 0.8f; leverVelocity = -12.0f; }
-                leverVelocity += (0.0f - leverAngle) * 45.0f * dt;
-                leverVelocity *= std::exp(-8.0f * dt);
-                if (std::abs(leverAngle) < 0.01f && std::abs(leverVelocity) < 0.05f) { leverPulled = false; }
-            }
-        }
-    };
-}
-
-int main() {
-    std::cout << "FILAMENT C++ DEMO 09: 3D CASINO SLOT MACHINE & PARTICLES\\n";
-    CasinoDemo::SlotMachine game;
-    game.Spin(20);
-    game.Update(0.1f);
-    return 0;
-}
-`,
-
   'src/core/Bindings.cpp': `// src/core/Bindings.cpp
 // Emscripten WebIDL / Embind Table linking C++ Engine to WebAssembly
 
@@ -2755,6 +2832,39 @@ function createCube(size = 1.0) {
     uvs.push(0,0, 1,0, 1,1, 0,1);
   }
   return { name: "Cube", positions: rawPos, normals: rawNorm, uvs, barys, indices };
+}
+
+function createQuad(size = 1.0) {
+  const hs = size * 0.5;
+  const positions = [
+    -hs, -hs, 0.0,
+     hs, -hs, 0.0,
+     hs,  hs, 0.0,
+    -hs,  hs, 0.0
+  ];
+  const normals = [
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0
+  ];
+  const uvs = [
+    0.0, 0.0,
+    1.0, 0.0,
+    1.0, 1.0,
+    0.0, 1.0
+  ];
+  const barys = [
+    1.0, 0.0, 0.0,
+    0.0, 1.0, 0.0,
+    0.0, 0.0, 1.0,
+    1.0, 0.0, 0.0
+  ];
+  const indices = [
+    0, 1, 2,
+    0, 2, 3
+  ];
+  return { name: "BillboardQuad", positions, normals, uvs, barys, indices };
 }
 
 function createIcosahedron(radius = 1.3) {
@@ -3067,7 +3177,8 @@ class NativeApp {
     this.state = {
       demoScene: '07_fps_shooter_damage_system.cpp', // Default to Demo 07 First-Person Shooter & Damage System
       activeMesh: 0,
-      activeShader: 0,
+      activeShader: 4, // Default to Ultra-Fast Cheap Mobile Material
+      fpsCheapMaterial: true, // Cheap material flag for 60-120 FPS mobile performance
       roughness: 0.35,
       metallic: 0.80,
       speed: 0.8,
@@ -3325,6 +3436,27 @@ class NativeApp {
     this.upVec = new Float32Array([0, 1, 0]);
     this.gridColor = new Float32Array([0.92, 0.93, 0.96]);
 
+    // Pre-allocated lighting and ray vectors (zero allocations in hot loops)
+    this._pointLightsList = [];
+    this._spotLightsList = [];
+    this._spotNormDir = new Float32Array(3);
+    this._sunWorld = new Float32Array(4);
+    this._sunClip = new Float32Array(4);
+    this._cUp = new Float32Array(3);
+    this._cU = this._cUp;
+    this._gunAnchor = new Float32Array(3);
+    this._pEye = new Float32Array(3);
+    this._pFeet = new Float32Array(3);
+    this._botEye = new Float32Array(3);
+    this._botDir = new Float32Array(3);
+    this._hitPos = [0, 0, 0];
+    this._hitNorm = [0, 1, 0];
+    this._netPos = [0, 0, 0];
+    this._netRot = [0, 0, 0];
+    this._colResult = { isGrounded: false };
+    this._renderLoopBound = this.renderLoop.bind(this);
+    this.containerEl = null;
+
     this.lastTime = performance.now();
     this.frameCount = 0;
     this.lastFpsUpdate = performance.now();
@@ -3355,7 +3487,7 @@ class NativeApp {
     this.log("Mobile virtual joystick & touch controller pipeline ACTIVE.", "success");
     this.log("Filament PBR examples & WASM export procedures loaded.", "info");
     
-    requestAnimationFrame(this.renderLoop.bind(this));
+    requestAnimationFrame(this._renderLoopBound);
   }
 
   log(msg, type = "info") {
@@ -3484,12 +3616,29 @@ class NativeApp {
   }
 
   initPipeline() {
+    const gl = this.gl;
     this.programs = [
       this.createProgram(VS_COMMON, FS_PBR),
       this.createProgram(VS_COMMON, FS_WIREFRAME),
       this.createProgram(VS_COMMON, FS_NORMALS),
-      this.createProgram(VS_COMMON, FS_HOLOGRAM)
+      this.createProgram(VS_COMMON, FS_HOLOGRAM),
+      this.createProgram(VS_COMMON, FS_CHEAP_FPS)
     ];
+
+    // Compile and link billboard shader program (completely platform-independent / native 3D text billboarding)
+    const vsB = this.compileShader(gl.VERTEX_SHADER, VS_BILLBOARD);
+    const fsB = this.compileShader(gl.FRAGMENT_SHADER, FS_BILLBOARD);
+    const progB = gl.createProgram();
+    gl.attachShader(progB, vsB);
+    gl.attachShader(progB, fsB);
+    gl.linkProgram(progB);
+    this.billboardProg = {
+      prog: progB,
+      uModel: gl.getUniformLocation(progB, "u_model"),
+      uViewProj: gl.getUniformLocation(progB, "u_viewProj"),
+      uTextTexture: gl.getUniformLocation(progB, "u_textTexture")
+    };
+
     this.initPostProcessing();
   }
 
@@ -3607,7 +3756,8 @@ class NativeApp {
       createCube(1.0),
       createIcosahedron(1.4),
       createTrefoilKnot(120, 20, 0.28),
-      createTorus(0.45, 1.1, 48, 24)
+      createTorus(0.45, 1.1, 48, 24),
+      createQuad(1.0)
     ];
 
     this.meshBuffers = this.rawMeshes.map(data => {
@@ -3860,6 +4010,23 @@ class NativeApp {
   bindEvents() {
     const canvasContainer = document.getElementById('canvas-container');
 
+    let bannerTimeout = null;
+    const showBannerTemporarily = (banner) => {
+      if (!banner) return;
+      if (bannerTimeout) {
+        clearTimeout(bannerTimeout);
+      }
+      banner.style.opacity = '1';
+      banner.style.pointerEvents = 'auto';
+      banner.style.transform = 'translateX(-50%) translateY(0)';
+      
+      bannerTimeout = setTimeout(() => {
+        banner.style.opacity = '0';
+        banner.style.pointerEvents = 'none';
+        banner.style.transform = 'translateX(-50%) translateY(-10px)';
+      }, 3000);
+    };
+
     const updateFPSOverlays = () => {
       const isShowroom = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
       const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
@@ -3877,7 +4044,18 @@ class NativeApp {
       const slotBannerEl = document.getElementById('slot-machine-banner');
 
       if (crosshairEl) crosshairEl.style.display = isFPS ? 'flex' : 'none';
-      if (bannerEl) bannerEl.style.display = isFPS ? 'block' : 'none';
+      if (bannerEl) {
+        if (isFPS) {
+          bannerEl.style.display = 'flex';
+          showBannerTemporarily(bannerEl);
+        } else {
+          bannerEl.style.display = 'none';
+          if (bannerTimeout) {
+            clearTimeout(bannerTimeout);
+            bannerTimeout = null;
+          }
+        }
+      }
       if (weaponHudEl) weaponHudEl.style.display = isFPS ? 'flex' : 'none';
       if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine) ? 'block' : 'none';
 
@@ -3911,6 +4089,7 @@ class NativeApp {
           banner.innerHTML = `<span>🎯 <b>FPS Shooter Active</b>: Click viewport to Lock Mouse Look (No Mouse-Down needed!) &bull; Press <b>ESC</b> to unlock</span>`;
           banner.classList.remove('locked');
         }
+        showBannerTemporarily(banner);
       }
     });
 
@@ -4202,9 +4381,21 @@ class NativeApp {
     // Shader select
     const shaderSelect = document.getElementById('shader-select');
     if (shaderSelect) {
+      shaderSelect.value = String(this.state.activeShader);
       shaderSelect.addEventListener('change', (e) => {
         this.state.activeShader = parseInt(e.target.value, 10);
+        this.state.fpsCheapMaterial = (this.state.activeShader === 4);
+        this.toggleCheapMaterial(this.state.fpsCheapMaterial);
         this.log(`Switched active Shader Program to #${this.state.activeShader}`, "info");
+      });
+    }
+
+    // Viewport HUD Cheap Material quick toggle button
+    const btnCheapMat = document.getElementById('btn-fps-cheap-mat-toggle');
+    if (btnCheapMat) {
+      btnCheapMat.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleCheapMaterial();
       });
     }
 
@@ -6703,7 +6894,9 @@ else if (typeof define === 'function' && define['amd'])
 
     // 3. Tick Target Actors & Respawns
     let needsRosterUpdate = false;
-    this.damageActors.forEach(actor => {
+    const numActors = this.damageActors ? this.damageActors.length : 0;
+    for (let i = 0; i < numActors; i++) {
+      const actor = this.damageActors[i];
       if (actor.hitFlashTimer > 0) {
         actor.hitFlashTimer = Math.max(0, actor.hitFlashTimer - dt);
       }
@@ -6716,15 +6909,17 @@ else if (typeof define === 'function' && define['amd'])
           this.log(`[TARGET RESPAWNED] ${actor.name} in group [${actor.damageGroup}] restored with ${actor.maxHealth} HP!`, "success");
         }
       }
-    });
+    }
 
     if (needsRosterUpdate) {
       this.renderDamageActorsRoster();
     }
 
     // 4. Tick Active Projectiles & Swept Collisions
-    this.projectilePool.forEach(p => {
-      if (!p.active) return;
+    const numProjectiles = this.projectilePool ? this.projectilePool.length : 0;
+    for (let pi = 0; pi < numProjectiles; pi++) {
+      const p = this.projectilePool[pi];
+      if (!p.active) continue;
       p.prevPos[0] = p.pos[0];
       p.prevPos[1] = p.pos[1];
       p.prevPos[2] = p.pos[2];
@@ -6736,12 +6931,14 @@ else if (typeof define === 'function' && define['amd'])
 
       if (p.age >= p.lifetime || p.pos[1] < -2.0) {
         p.active = false;
-        return;
+        continue;
       }
 
       // Check wall / obstacle collision for player projectile
+      let collidedWithMap = false;
       if (this.sceneEntities) {
-        for (let i = 0; i < this.sceneEntities.length; i++) {
+        const numEntities = this.sceneEntities.length;
+        for (let i = 0; i < numEntities; i++) {
           const ent = this.sceneEntities[i];
           if (ent.trigger || ent.isLight || ent.type === "Kinematic Character" || ent.name === "Player_Character") continue;
           if (ent.layer === "Layer_Light" || ent.layer === "Layer_Trigger") continue;
@@ -6751,13 +6948,16 @@ else if (typeof define === 'function' && define['amd'])
           if (this.segmentIntersectsAABB(p.prevPos, p.pos, ent.pos, ent.scale) ||
               this.pointInAABB(p.pos, ent.pos, ent.scale, p.radius || 0.2)) {
             p.active = false;
-            return;
+            collidedWithMap = true;
+            break;
           }
         }
       }
+      if (collidedWithMap) continue;
 
       // Check swept collision against DAMAGE Group Actors (Layer_Damageable)
-      for (let actor of this.damageActors) {
+      for (let ai = 0; ai < numActors; ai++) {
+        const actor = this.damageActors[ai];
         if (!actor.alive) continue;
         const dx = p.pos[0] - actor.pos[0];
         const dy = p.pos[1] - actor.pos[1];
@@ -6766,14 +6966,22 @@ else if (typeof define === 'function' && define['amd'])
         const hitThreshold = actor.radius + p.radius;
 
         if (dist <= hitThreshold) {
-          const hitPos = [...p.pos];
-          const hitNorm = dist > 0.0001 ? [dx / dist, dy / dist, dz / dist] : [0, 1, 0];
-          this.applyDamageToActor(actor, p.damage, hitPos, hitNorm);
+          this._hitPos[0] = p.pos[0];
+          this._hitPos[1] = p.pos[1];
+          this._hitPos[2] = p.pos[2];
+          if (dist > 0.0001) {
+            this._hitNorm[0] = dx / dist;
+            this._hitNorm[1] = dy / dist;
+            this._hitNorm[2] = dz / dist;
+          } else {
+            this._hitNorm[0] = 0; this._hitNorm[1] = 1; this._hitNorm[2] = 0;
+          }
+          this.applyDamageToActor(actor, p.damage, this._hitPos, this._hitNorm);
           p.active = false;
           break;
         }
       }
-    });
+    }
 
     // 5. Tick Active 3D AI Combat Bots & Bot Projectiles Shooting Player
     this.updateBotsAndProjectiles(dt, timestamp);
@@ -6857,6 +7065,7 @@ else if (typeof define === 'function' && define['amd'])
         active: false,
         attackerName: 'Bot',
         pos: [0, 0, 0],
+        prevPos: [0, 0, 0],
         velocity: [0, 0, 0],
         speed: 40.0,
         damage: 18.0,
@@ -7016,12 +7225,20 @@ else if (typeof define === 'function' && define['amd'])
   updateBotsAndProjectiles(dt, timestamp) {
     if (!this.active3DBots) return;
 
-    const pEye = [this.state.camPos[0], this.state.camPos[1] - 0.2, this.state.camPos[2]];
-    const pFeet = [this.state.camPos[0], this.state.camPos[1] - 1.7, this.state.camPos[2]];
+    this._pEye[0] = this.state.camPos[0];
+    this._pEye[1] = this.state.camPos[1] - 0.2;
+    this._pEye[2] = this.state.camPos[2];
+
+    this._pFeet[0] = this.state.camPos[0];
+    this._pFeet[1] = this.state.camPos[1] - 1.7;
+    this._pFeet[2] = this.state.camPos[2];
+
     const isFpsMode = this.state.cameraMode === 3;
+    const numBots = this.active3DBots.length;
 
     // 1. Tick Active 3D Bots AI
-    this.active3DBots.forEach(bot => {
+    for (let bi = 0; bi < numBots; bi++) {
+      const bot = this.active3DBots[bi];
       if (bot.hitFlashTimer > 0) {
         bot.hitFlashTimer = Math.max(0, bot.hitFlashTimer - dt);
       }
@@ -7033,13 +7250,17 @@ else if (typeof define === 'function' && define['amd'])
           bot.health = bot.maxHealth;
           const spawnLocations = [[-8.0, 0.0, -8.0], [8.0, 0.0, -8.0], [0.0, 1.8, 8.0], [-6.0, 0.0, 6.0], [6.0, 0.0, 6.0]];
           const loc = spawnLocations[Math.floor(Math.random() * spawnLocations.length)];
-          bot.pos = [...loc];
-          bot.velocity = [0, 0, 0];
+          bot.pos[0] = loc[0];
+          bot.pos[1] = loc[1];
+          bot.pos[2] = loc[2];
+          bot.velocity[0] = 0;
+          bot.velocity[1] = 0;
+          bot.velocity[2] = 0;
           bot.isGrounded = false;
           bot.fireTimer = 1.0 + Math.random();
           this.log(`🤖 [BOT RESPAWNED] ${bot.alias} re-entered the arena!`, "info");
         }
-        return;
+        continue;
       }
 
       // Randomly play active zombie ambient growl sounds if match is active
@@ -7050,9 +7271,9 @@ else if (typeof define === 'function' && define['amd'])
       }
 
       // AI Movement & Aiming Towards Player
-      const dx = pEye[0] - bot.pos[0];
-      const dy = pEye[1] - (bot.pos[1] + 1.2);
-      const dz = pEye[2] - bot.pos[2];
+      const dx = this._pEye[0] - bot.pos[0];
+      const dy = this._pEye[1] - (bot.pos[1] + 1.2);
+      const dz = this._pEye[2] - bot.pos[2];
       const distToPlayer = Math.hypot(dx, dz);
       const totalDist = Math.hypot(dx, dy, dz);
 
@@ -7093,26 +7314,39 @@ else if (typeof define === 'function' && define['amd'])
       if (bot.fireTimer <= 0 && totalDist < 40.0 && isFpsMode && this.isMatchActive) {
         bot.fireTimer = 1.3 + Math.random() * 1.7; // Fire every 1.3s to 3.0s
 
-        const botEye = [bot.pos[0], bot.pos[1] + 1.3, bot.pos[2]];
-        const hasLOS = this.checkLineOfSight(botEye, pEye);
+        this._botEye[0] = bot.pos[0];
+        this._botEye[1] = bot.pos[1] + 1.3;
+        this._botEye[2] = bot.pos[2];
 
-        if (hasLOS) {
-          const proj = this.botProjectilePool.find(p => !p.active);
+        const hasLOS = this.checkLineOfSight(this._botEye, this._pEye);
+
+        if (hasLOS && this.botProjectilePool) {
+          let proj = null;
+          for (let pi = 0; pi < this.botProjectilePool.length; pi++) {
+            if (!this.botProjectilePool[pi].active) {
+              proj = this.botProjectilePool[pi];
+              break;
+            }
+          }
           if (proj) {
             const invLen = 1.0 / (totalDist || 1.0);
             const aimSpread = 0.06;
-            const dir = [
-              (dx * invLen) + (Math.random() - 0.5) * aimSpread,
-              (dy * invLen) + (Math.random() - 0.5) * aimSpread,
-              (dz * invLen) + (Math.random() - 0.5) * aimSpread
-            ];
+            const dirX = (dx * invLen) + (Math.random() - 0.5) * aimSpread;
+            const dirY = (dy * invLen) + (Math.random() - 0.5) * aimSpread;
+            const dirZ = (dz * invLen) + (Math.random() - 0.5) * aimSpread;
 
             proj.active = true;
             proj.attackerName = bot.alias;
-            proj.pos = [bot.pos[0], bot.pos[1] + 1.3, bot.pos[2]];
-            proj.prevPos = [bot.pos[0], bot.pos[1] + 1.3, bot.pos[2]];
+            proj.pos[0] = this._botEye[0];
+            proj.pos[1] = this._botEye[1];
+            proj.pos[2] = this._botEye[2];
+            proj.prevPos[0] = this._botEye[0];
+            proj.prevPos[1] = this._botEye[1];
+            proj.prevPos[2] = this._botEye[2];
             proj.speed = bot.weapon === 'railgun' ? 70.0 : (bot.weapon === 'rocket' ? 32.0 : 45.0);
-            proj.velocity = [dir[0] * proj.speed, dir[1] * proj.speed, dir[2] * proj.speed];
+            proj.velocity[0] = dirX * proj.speed;
+            proj.velocity[1] = dirY * proj.speed;
+            proj.velocity[2] = dirZ * proj.speed;
             proj.damage = bot.weapon === 'railgun' ? 28.0 : (bot.weapon === 'rocket' ? 38.0 : 18.0);
             proj.color = bot.weapon === 'railgun' ? [0.95, 0.2, 0.95] : (bot.weapon === 'rocket' ? [1.0, 0.5, 0.1] : [0.95, 0.25, 0.20]);
             proj.lifetime = 3.5;
@@ -7124,75 +7358,95 @@ else if (typeof define === 'function' && define['amd'])
           }
         }
       }
-    });
+    }
 
     // 2. Tick Bot Projectiles & Check Collision against Player and Map Geometry Walls
-    this.botProjectilePool.forEach(bp => {
-      if (!bp.active) return;
+    if (this.botProjectilePool) {
+      const numBotProj = this.botProjectilePool.length;
+      for (let bpi = 0; bpi < numBotProj; bpi++) {
+        const bp = this.botProjectilePool[bpi];
+        if (!bp.active) continue;
 
-      if (!bp.prevPos) bp.prevPos = [...bp.pos];
+        if (!bp.prevPos) {
+          bp.prevPos = [bp.pos[0], bp.pos[1], bp.pos[2]];
+        } else {
+          bp.prevPos[0] = bp.pos[0];
+          bp.prevPos[1] = bp.pos[1];
+          bp.prevPos[2] = bp.pos[2];
+        }
 
-      const startPos = [...bp.pos];
-      bp.pos[0] += bp.velocity[0] * dt;
-      bp.pos[1] += bp.velocity[1] * dt;
-      bp.pos[2] += bp.velocity[2] * dt;
-      bp.age += dt;
+        bp.pos[0] += bp.velocity[0] * dt;
+        bp.pos[1] += bp.velocity[1] * dt;
+        bp.pos[2] += bp.velocity[2] * dt;
+        bp.age += dt;
 
-      if (bp.age >= bp.lifetime || bp.pos[1] < -2.0) {
-        bp.active = false;
-        return;
-      }
+        if (bp.age >= bp.lifetime || bp.pos[1] < -2.0) {
+          bp.active = false;
+          continue;
+        }
 
-      // Wall / Obstacle collision check for bot projectile
-      if (this.sceneEntities) {
-        for (let i = 0; i < this.sceneEntities.length; i++) {
-          const ent = this.sceneEntities[i];
-          if (ent.trigger || ent.isLight || ent.type === "Kinematic Character" || ent.name === "Player_Character") continue;
-          if (ent.layer === "Layer_Light" || ent.layer === "Layer_Trigger") continue;
-          if (!ent.pos || !ent.scale) continue;
-          if (ent.name && ent.name.toLowerCase().includes("ground") && ent.pos[1] < 0.0) continue;
+        // Wall / Obstacle collision check for bot projectile
+        let botProjHitWall = false;
+        if (this.sceneEntities) {
+          const numEnts = this.sceneEntities.length;
+          for (let i = 0; i < numEnts; i++) {
+            const ent = this.sceneEntities[i];
+            if (ent.trigger || ent.isLight || ent.type === "Kinematic Character" || ent.name === "Player_Character") continue;
+            if (ent.layer === "Layer_Light" || ent.layer === "Layer_Trigger") continue;
+            if (!ent.pos || !ent.scale) continue;
+            if (ent.name && ent.name.toLowerCase().includes("ground") && ent.pos[1] < 0.0) continue;
 
-          if (this.segmentIntersectsAABB(startPos, bp.pos, ent.pos, ent.scale) ||
-              this.pointInAABB(bp.pos, ent.pos, ent.scale, bp.radius || 0.25)) {
+            if (this.segmentIntersectsAABB(bp.prevPos, bp.pos, ent.pos, ent.scale) ||
+                this.pointInAABB(bp.pos, ent.pos, ent.scale, bp.radius || 0.25)) {
+              bp.active = false;
+              botProjHitWall = true;
+              break;
+            }
+          }
+        }
+        if (botProjHitWall) continue;
+
+        if (isFpsMode) {
+          const dx = bp.pos[0] - this._pFeet[0];
+          const dy = bp.pos[1] - (this._pFeet[1] + 0.9);
+          const dz = bp.pos[2] - this._pFeet[2];
+          const dist = Math.hypot(dx, dy, dz);
+
+          if (dist <= 0.95) {
+            // PLAYER WAS HIT BY BOT PROJECTILE!
             bp.active = false;
-            return;
+            this.applyDamageToPlayer(bp.damage, bp.attackerName);
           }
         }
       }
-
-      if (isFpsMode) {
-        const dx = bp.pos[0] - pFeet[0];
-        const dy = bp.pos[1] - (pFeet[1] + 0.9);
-        const dz = bp.pos[2] - pFeet[2];
-        const dist = Math.hypot(dx, dy, dz);
-
-        if (dist <= 0.95) {
-          // PLAYER WAS HIT BY BOT PROJECTILE!
-          bp.active = false;
-          this.applyDamageToPlayer(bp.damage, bp.attackerName);
-        }
-      }
-
-      bp.prevPos = startPos;
-    });
+    }
 
     // 3. Check Player's Projectiles against Bots
-    this.projectilePool.forEach(p => {
-      if (!p.active) return;
-      this.active3DBots.forEach(bot => {
-        if (!bot.alive) return;
-        const dx = p.pos[0] - bot.pos[0];
-        const dy = p.pos[1] - (bot.pos[1] + 0.9);
-        const dz = p.pos[2] - bot.pos[2];
-        const dist = Math.hypot(dx, dy, dz);
+    if (this.projectilePool) {
+      const numProj = this.projectilePool.length;
+      for (let pi = 0; pi < numProj; pi++) {
+        const p = this.projectilePool[pi];
+        if (!p.active) continue;
 
-        if (dist <= bot.radius + p.radius) {
-          const hitPos = [...p.pos];
-          this.applyDamageToBot(bot, p.damage, hitPos);
-          p.active = false;
+        for (let bi = 0; bi < numBots; bi++) {
+          const bot = this.active3DBots[bi];
+          if (!bot.alive) continue;
+          const dx = p.pos[0] - bot.pos[0];
+          const dy = p.pos[1] - (bot.pos[1] + 0.9);
+          const dz = p.pos[2] - bot.pos[2];
+          const dist = Math.hypot(dx, dy, dz);
+
+          if (dist <= bot.radius + p.radius) {
+            this._hitPos[0] = p.pos[0];
+            this._hitPos[1] = p.pos[1];
+            this._hitPos[2] = p.pos[2];
+            this.applyDamageToBot(bot, p.damage, this._hitPos);
+            p.active = false;
+            break;
+          }
         }
-      });
-    });
+      }
+    }
   }
 
   applyDamageToBot(bot, damageAmount, hitPos) {
@@ -7647,6 +7901,16 @@ else if (typeof define === 'function' && define['amd'])
     if (sfxToggle) sfxToggle.addEventListener('change', updateAudioSettings);
     if (zombieDensitySelect) zombieDensitySelect.addEventListener('change', updateAudioSettings);
 
+    // Mobile Performance & Material Profile Select
+    const matProfileSelect = document.getElementById('fps-material-profile-select');
+    if (matProfileSelect) {
+      matProfileSelect.value = this.state.fpsCheapMaterial ? 'cheap' : 'filament_pbr';
+      matProfileSelect.addEventListener('change', (e) => {
+        const isCheap = e.target.value === 'cheap';
+        this.toggleCheapMaterial(isCheap);
+      });
+    }
+
     // Start Match
     if (btnStart) {
       btnStart.addEventListener('click', () => {
@@ -7700,6 +7964,130 @@ else if (typeof define === 'function' && define['amd'])
         }
       });
     }
+  }
+
+  toggleCheapMaterial(forceState) {
+    if (forceState !== undefined) {
+      this.state.fpsCheapMaterial = forceState;
+    } else {
+      this.state.fpsCheapMaterial = !this.state.fpsCheapMaterial;
+    }
+    this.state.activeShader = this.state.fpsCheapMaterial ? 4 : 0;
+    
+    // Update HUD toggle button
+    const btnCheap = document.getElementById('btn-fps-cheap-mat-toggle');
+    if (btnCheap) {
+      if (this.state.fpsCheapMaterial) {
+        btnCheap.textContent = "⚡ Cheap Mat: ON (Mobile 60-120 FPS)";
+        btnCheap.style.background = "rgba(16, 185, 129, 0.25)";
+        btnCheap.style.borderColor = "#10b981";
+        btnCheap.style.color = "#34d399";
+      } else {
+        btnCheap.textContent = "✨ Filament PBR: ON (Studio Mode)";
+        btnCheap.style.background = "rgba(147, 51, 234, 0.25)";
+        btnCheap.style.borderColor = "#a855f7";
+        btnCheap.style.color = "#c084fc";
+      }
+    }
+    
+    // Update Select Dropdowns
+    const shaderSelect = document.getElementById('shader-select');
+    if (shaderSelect) shaderSelect.value = String(this.state.activeShader);
+    
+    const matProfileSelect = document.getElementById('fps-material-profile-select');
+    if (matProfileSelect) matProfileSelect.value = this.state.fpsCheapMaterial ? 'cheap' : 'filament_pbr';
+    
+    this.log(`Material Engine: ${this.state.fpsCheapMaterial ? '⚡ Ultra-Fast Cheap Material (Optimized for Mobile 60-120 FPS)' : '✨ Filament Studio PBR'}`, 'info');
+  }
+
+  drawGunPart(progInfo, mesh, pPos, cF, cR, cU, fOffset, rOffset, uOffset, sx, sy, sz, col, rough, metal, wMatType = 0, wNoise = 1.0, wClearCoat = 0.0, wBump = 0.0) {
+    if (!mesh) return;
+    const gl = this.gl;
+    gl.bindVertexArray(mesh.vao);
+    const px = pPos[0] + cF[0] * fOffset + cR[0] * rOffset + cU[0] * uOffset;
+    const py = pPos[1] + cF[1] * fOffset + cR[1] * rOffset + cU[1] * uOffset;
+    const pz = pPos[2] + cF[2] * fOffset + cR[2] * rOffset + cU[2] * uOffset;
+
+    this.instanceMatrix[0] = cR[0] * sx;
+    this.instanceMatrix[1] = cR[1] * sx;
+    this.instanceMatrix[2] = cR[2] * sx;
+    this.instanceMatrix[3] = 0;
+
+    this.instanceMatrix[4] = cU[0] * sy;
+    this.instanceMatrix[5] = cU[1] * sy;
+    this.instanceMatrix[6] = cU[2] * sy;
+    this.instanceMatrix[7] = 0;
+
+    this.instanceMatrix[8] = -cF[0] * sz;
+    this.instanceMatrix[9] = -cF[1] * sz;
+    this.instanceMatrix[10] = -cF[2] * sz;
+    this.instanceMatrix[11] = 0;
+
+    this.instanceMatrix[12] = px;
+    this.instanceMatrix[13] = py;
+    this.instanceMatrix[14] = pz;
+    this.instanceMatrix[15] = 1;
+
+    Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+
+    gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+    if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+    if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, col);
+    if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+    if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+    if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, wMatType);
+    if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, wNoise);
+    if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, wClearCoat);
+    if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, wBump);
+
+    gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
+  }
+
+  drawBotMeshPart(progInfo, mesh, charPos, charYaw, offsetX, offsetY, offsetZ, sizeX, sizeY, sizeZ, color, rough = 0.25, metal = 0.85, pMatType = 0, pClearCoat = 0.15) {
+    if (!mesh) return;
+    const gl = this.gl;
+    gl.bindVertexArray(mesh.vao);
+
+    const cy = Math.cos(charYaw);
+    const sy = Math.sin(charYaw);
+
+    const wx = charPos[0] + (offsetX * cy + offsetZ * sy);
+    const wy = charPos[1] + offsetY;
+    const wz = charPos[2] + (-offsetX * sy + offsetZ * cy);
+
+    this.instanceMatrix[0] = cy * sizeX;
+    this.instanceMatrix[1] = 0;
+    this.instanceMatrix[2] = sy * sizeX;
+    this.instanceMatrix[3] = 0;
+
+    this.instanceMatrix[4] = 0;
+    this.instanceMatrix[5] = sizeY;
+    this.instanceMatrix[6] = 0;
+    this.instanceMatrix[7] = 0;
+
+    this.instanceMatrix[8] = -sy * sizeZ;
+    this.instanceMatrix[9] = 0;
+    this.instanceMatrix[10] = cy * sizeZ;
+    this.instanceMatrix[11] = 0;
+
+    this.instanceMatrix[12] = wx;
+    this.instanceMatrix[13] = wy;
+    this.instanceMatrix[14] = wz;
+    this.instanceMatrix[15] = 1;
+
+    Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+
+    gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+    if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+    if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+    if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+    if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+    if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, pMatType);
+    if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+    if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, pClearCoat);
+    if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+
+    gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
   }
 
   initSlotMachineDemo() {
@@ -8090,7 +8478,7 @@ else if (typeof define === 'function' && define['amd'])
     }
   }
 
-  render3DSlotMachine(progInfo) {
+  render3DSlotMachine(progInfo, timestamp) {
     const gl = this.gl;
     const sm = this.slotMachine;
     if (!sm) return;
@@ -9831,16 +10219,24 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
     }
 
-    return { isGrounded };
+    this._colResult.isGrounded = isGrounded;
+    return this._colResult;
   }
 
   onResize() {
-    const container = document.getElementById('canvas-container');
+    if (!this.containerEl) {
+      this.containerEl = document.getElementById('canvas-container');
+    }
+    const container = this.containerEl;
     if (!container) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width <= 0 || height <= 0) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    
+    // Performance optimization: Cap DPR for mobile devices or Cheap Material mode to eliminate fillrate bottlenecks
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 800;
+    const maxDpr = (this.state.fpsCheapMaterial || isMobile) ? 1.0 : 1.5;
+    const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
     
     const targetW = Math.floor(width * dpr);
     const targetH = Math.floor(height * dpr);
@@ -10190,9 +10586,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
 
-    const progInfo = this.programs[this.state.activeShader];
+    let activeShaderIdx = this.state.activeShader;
+    if (this.state.fpsCheapMaterial || activeShaderIdx === 4) {
+      activeShaderIdx = 4;
+    }
+    const progInfo = this.programs[activeShaderIdx] || this.programs[0];
     if (!progInfo) {
-      requestAnimationFrame(this.renderLoop.bind(this));
+      requestAnimationFrame(this._renderLoopBound);
       return;
     }
 
@@ -10201,27 +10601,29 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (progInfo.uCamPos) gl.uniform3fv(progInfo.uCamPos, this.state.camPos);
     if (progInfo.uTime) gl.uniform1f(progInfo.uTime, timestamp * 0.001);
 
-    // Dynamic Point & Spot Light Uniform Upload
-    const pointLightsList = [];
-    const spotLightsList = [];
+    // Dynamic Point & Spot Light Uniform Upload (Zero Array Allocations)
+    this._pointLightsList.length = 0;
+    this._spotLightsList.length = 0;
 
-    this.sceneEntities.forEach(ent => {
+    const numEntities = this.sceneEntities ? this.sceneEntities.length : 0;
+    for (let i = 0; i < numEntities; i++) {
+      const ent = this.sceneEntities[i];
       if (ent.isLight || ent.layer === 'Layer_Light') {
-        if (ent.lightType === 'spot' && spotLightsList.length < 4) {
-          spotLightsList.push(ent);
-        } else if ((ent.lightType === 'point' || !ent.lightType) && pointLightsList.length < 6) {
-          pointLightsList.push(ent);
+        if (ent.lightType === 'spot' && this._spotLightsList.length < 4) {
+          this._spotLightsList.push(ent);
+        } else if ((ent.lightType === 'point' || !ent.lightType) && this._pointLightsList.length < 6) {
+          this._pointLightsList.push(ent);
         }
       }
-    });
+    }
 
     if (progInfo.uNumPointLights) {
-      gl.uniform1i(progInfo.uNumPointLights, pointLightsList.length);
+      gl.uniform1i(progInfo.uNumPointLights, this._pointLightsList.length);
       for (let i = 0; i < 6; i++) {
         const u = progInfo.pointLights ? progInfo.pointLights[i] : null;
         if (!u) continue;
-        if (i < pointLightsList.length) {
-          const l = pointLightsList[i];
+        if (i < this._pointLightsList.length) {
+          const l = this._pointLightsList[i];
           if (u.pos) gl.uniform3fv(u.pos, l.pos);
           if (u.color) gl.uniform3fv(u.color, l.color || [1, 1, 1]);
           if (u.intensity) gl.uniform1f(u.intensity, l.intensity !== undefined ? l.intensity : 15.0);
@@ -10233,17 +10635,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     if (progInfo.uNumSpotLights) {
-      gl.uniform1i(progInfo.uNumSpotLights, spotLightsList.length);
+      gl.uniform1i(progInfo.uNumSpotLights, this._spotLightsList.length);
       for (let i = 0; i < 4; i++) {
         const u = progInfo.spotLights ? progInfo.spotLights[i] : null;
         if (!u) continue;
-        if (i < spotLightsList.length) {
-          const l = spotLightsList[i];
+        if (i < this._spotLightsList.length) {
+          const l = this._spotLightsList[i];
           const dir = l.lightDir || [0, -1, 0];
           const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-          const normDir = [dir[0]/len, dir[1]/len, dir[2]/len];
+          this._spotNormDir[0] = dir[0] / len;
+          this._spotNormDir[1] = dir[1] / len;
+          this._spotNormDir[2] = dir[2] / len;
           if (u.pos) gl.uniform3fv(u.pos, l.pos);
-          if (u.dir) gl.uniform3fv(u.dir, normDir);
+          if (u.dir) gl.uniform3fv(u.dir, this._spotNormDir);
           if (u.color) gl.uniform3fv(u.color, l.color || [1, 1, 1]);
           if (u.intensity) gl.uniform1f(u.intensity, l.intensity !== undefined ? l.intensity : 20.0);
           if (u.cutoff) gl.uniform1f(u.cutoff, l.spotCutoff !== undefined ? l.spotCutoff : Math.cos(35 * Math.PI / 180));
@@ -10430,14 +10834,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const icosaMesh = this.meshBuffers[4]; // Gem / Kinetic Core
 
       // 1. Render Environment (Ground, Obstacle Pillars, Boulders)
-      this.sceneEntities.forEach(ent => {
-        if (ent.id === 0) return; // Character hidden in FPS mode
+      const numSceneEnts = this.sceneEntities ? this.sceneEntities.length : 0;
+      for (let i = 0; i < numSceneEnts; i++) {
+        const ent = this.sceneEntities[i];
+        if (ent.id === 0) continue; // Character hidden in FPS mode
 
         let meshToDraw = cubeMesh;
-        if (ent.collider.includes('Sphere')) meshToDraw = sphereMesh;
+        if (ent.collider && ent.collider.includes('Sphere')) meshToDraw = sphereMesh;
         else if (ent.trigger) meshToDraw = icosaMesh;
 
-        if (!meshToDraw) return;
+        if (!meshToDraw) continue;
         gl.bindVertexArray(meshToDraw.vao);
 
         const posX = ent.pos[0];
@@ -10473,7 +10879,6 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const matType = mat ? (mat.matTypeId !== undefined ? mat.matTypeId : 0) : 0;
         const noiseScale = mat ? (mat.noiseScale || 1.0) : 1.0;
         const clearCoat = mat ? (mat.clearCoat || 0.0) : 0.0;
-        const anisotropy = mat ? (mat.anisotropy || 0.0) : 0.0;
         const bumpStrength = mat ? (mat.bumpStrength || 0.0) : 0.0;
 
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
@@ -10484,18 +10889,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
         if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, noiseScale);
         if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
-        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, anisotropy);
         if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, bumpStrength);
 
         gl.drawElements(gl.TRIANGLES, meshToDraw.indexCount, gl.UNSIGNED_SHORT, 0);
-      });
+      }
 
       // 2. Render DAMAGE Group Actors (Targets, Enemies, Destructibles)
-      this.damageActors.forEach(actor => {
+      const numDmgActors = this.damageActors ? this.damageActors.length : 0;
+      for (let i = 0; i < numDmgActors; i++) {
+        const actor = this.damageActors[i];
         let meshToDraw = cubeMesh;
-        if (actor.collider.includes('Sphere')) meshToDraw = sphereMesh;
+        if (actor.collider && actor.collider.includes('Sphere')) meshToDraw = sphereMesh;
 
-        if (!meshToDraw) return;
+        if (!meshToDraw) continue;
         gl.bindVertexArray(meshToDraw.vao);
 
         let posX = actor.pos[0];
@@ -10507,7 +10913,6 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
         let rotY = 0;
         if (actor.name.includes('Drone') && actor.alive) {
-          // Floating drone hover animation
           posY += Math.sin(timestamp * 0.003 + actor.id) * 0.25;
           rotY = timestamp * 0.0015;
         } else if (actor.name.includes('Sphere') && actor.alive) {
@@ -10518,7 +10923,6 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const sinR = Math.sin(rotY);
 
         if (!actor.alive) {
-          // Flatten destroyed actors slightly
           scaY *= 0.35;
         }
 
@@ -10583,17 +10987,18 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, actMatType);
         if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, actNoise);
         if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
-        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
         if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, actBump);
 
         gl.drawElements(gl.TRIANGLES, meshToDraw.indexCount, gl.UNSIGNED_SHORT, 0);
-      });
+      }
 
       // 3. Render Active Weapon Projectiles
-      if (sphereMesh) {
+      if (sphereMesh && this.projectilePool) {
         gl.bindVertexArray(sphereMesh.vao);
-        this.projectilePool.forEach(p => {
-          if (!p.active) return;
+        const numProj = this.projectilePool.length;
+        for (let pi = 0; pi < numProj; pi++) {
+          const p = this.projectilePool[pi];
+          if (!p.active) continue;
 
           const r = p.radius || 0.18;
           this.instanceMatrix[0] = r;
@@ -10629,89 +11034,45 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
           gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-        });
+        }
       }
 
       // 3b. Render Active 3D AI Combat Bots (Gladiator / Cyber Suits with Weapons & Walk Animation)
-      if (this.active3DBots && this.active3DBots.length > 0 && cubeMesh && sphereMesh) {
-        this.active3DBots.forEach(bot => {
-          if (!bot.alive) return;
+      if (this.active3DBots && cubeMesh && sphereMesh) {
+        const numBots = this.active3DBots.length;
+        for (let bi = 0; bi < numBots; bi++) {
+          const bot = this.active3DBots[bi];
+          if (!bot.alive) continue;
 
           const charYaw = bot.yaw || 0;
           const charPos = bot.pos;
           const swingAngle = Math.sin(timestamp * 0.008 + bot.id) * 0.45;
-
-          const drawBotPart = (mesh, offsetX, offsetY, offsetZ, sizeX, sizeY, sizeZ, color, rough = 0.25, metal = 0.85, pMatType = 0, pClearCoat = 0.15) => {
-            if (!mesh) return;
-            gl.bindVertexArray(mesh.vao);
-
-            const cy = Math.cos(charYaw);
-            const sy = Math.sin(charYaw);
-
-            const wx = charPos[0] + (offsetX * cy + offsetZ * sy);
-            const wy = charPos[1] + offsetY;
-            const wz = charPos[2] + (-offsetX * sy + offsetZ * cy);
-
-            this.instanceMatrix[0] = cy * sizeX;
-            this.instanceMatrix[1] = 0;
-            this.instanceMatrix[2] = sy * sizeX;
-            this.instanceMatrix[3] = 0;
-
-            this.instanceMatrix[4] = 0;
-            this.instanceMatrix[5] = sizeY;
-            this.instanceMatrix[6] = 0;
-            this.instanceMatrix[7] = 0;
-
-            this.instanceMatrix[8] = -sy * sizeZ;
-            this.instanceMatrix[9] = 0;
-            this.instanceMatrix[10] = cy * sizeZ;
-            this.instanceMatrix[11] = 0;
-
-            this.instanceMatrix[12] = wx;
-            this.instanceMatrix[13] = wy;
-            this.instanceMatrix[14] = wz;
-            this.instanceMatrix[15] = 1;
-
-            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
-
-            let drawCol = color;
-            if (bot.hitFlashTimer > 0) drawCol = [1.0, 0.3, 0.3];
-
-            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, drawCol);
-            if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
-            if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
-            if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, pMatType);
-            if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
-            if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, pClearCoat);
-            if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
-
-            gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
-          };
+          const drawCol = bot.hitFlashTimer > 0 ? [1.0, 0.3, 0.3] : bot.color;
 
           // Bot Torso Body
-          drawBotPart(cubeMesh, 0, 1.1, 0, 0.45, 0.6, 0.25, bot.color, 0.25, 0.85, 3, 0.5);
+          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0, 1.1, 0, 0.45, 0.6, 0.25, drawCol, 0.25, 0.85, 3, 0.5);
           // Bot Head
-          drawBotPart(sphereMesh, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.85, 0.85, 0.88], 0.35, 0.10, 0, 0.0);
+          this.drawBotMeshPart(progInfo, sphereMesh, charPos, charYaw, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.85, 0.85, 0.88], 0.35, 0.10, 0, 0.0);
           // Bot Neon Visor
-          drawBotPart(cubeMesh, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95, 12, 0.9);
+          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95, 12, 0.9);
           // Bot Left & Right Arms (Swinging)
-          drawBotPart(cubeMesh, -0.32, 1.05 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, bot.color, 0.25, 0.85, 3, 0.3);
-          drawBotPart(cubeMesh, 0.32, 1.05 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, bot.color, 0.25, 0.85, 3, 0.3);
+          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, -0.32, 1.05 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, drawCol, 0.25, 0.85, 3, 0.3);
+          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.32, 1.05 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, drawCol, 0.25, 0.85, 3, 0.3);
           // Bot Left & Right Legs
-          drawBotPart(cubeMesh, -0.16, 0.45 - Math.sin(swingAngle)*0.06, -Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
-          drawBotPart(cubeMesh, 0.16, 0.45 + Math.sin(swingAngle)*0.06, Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
+          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, -0.16, 0.45 - Math.sin(swingAngle)*0.06, -Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
+          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.16, 0.45 + Math.sin(swingAngle)*0.06, Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
           // Bot Weapon
-          drawBotPart(cubeMesh, 0.35, 1.1, 0.35, 0.12, 0.15, 0.60, [0.2, 0.2, 0.25], 0.15, 0.9, 3, 0.2);
-        });
+          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.35, 1.1, 0.35, 0.12, 0.15, 0.60, [0.2, 0.2, 0.25], 0.15, 0.9, 3, 0.2);
+        }
       }
 
       // 3c. Render Bot Projectiles (Neon glowing spheres traveling at player)
       if (this.botProjectilePool && sphereMesh) {
         gl.bindVertexArray(sphereMesh.vao);
-        this.botProjectilePool.forEach(bp => {
-          if (!bp.active) return;
+        const numBotProj = this.botProjectilePool.length;
+        for (let bpi = 0; bpi < numBotProj; bpi++) {
+          const bp = this.botProjectilePool[bpi];
+          if (!bp.active) continue;
           const r = bp.radius || 0.22;
           this.instanceMatrix[0] = r;
           this.instanceMatrix[1] = 0;
@@ -10746,14 +11107,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
           gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-        });
+        }
       }
 
       // 4. Render Quake Item Pickups (Health, Armor, Ammo, Powerups) with 3D Rotating Models
       if (this.itemPickups && this.itemPickups.length > 0) {
         const torusMesh = this.meshBuffers[3];
-        this.itemPickups.forEach(item => {
-          if (!item.active) return; // Skip currently respawning items
+        const numItems = this.itemPickups.length;
+        for (let i = 0; i < numItems; i++) {
+          const item = this.itemPickups[i];
+          if (!item.active) continue;
 
           let meshToDraw = cubeMesh;
           if (item.meshType === 'sphere' && sphereMesh) meshToDraw = sphereMesh;
@@ -10761,7 +11124,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           else if (item.meshType === 'icosa' && icosaMesh) meshToDraw = icosaMesh;
           else if (item.meshType === 'cube' && cubeMesh) meshToDraw = cubeMesh;
 
-          if (!meshToDraw) return;
+          if (!meshToDraw) continue;
           gl.bindVertexArray(meshToDraw.vao);
 
           const rotY = timestamp * 0.0028 + (item.id * 1.3);
@@ -10806,13 +11169,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
           gl.drawElements(gl.TRIANGLES, meshToDraw.indexCount, gl.UNSIGNED_SHORT, 0);
-        });
+        }
       }
 
       // 5. Render Player Spawn Pads (Luminescent Base Markings)
       if (this.spawnPoints && this.spawnPoints.length > 0 && cubeMesh) {
         gl.bindVertexArray(cubeMesh.vao);
-        this.spawnPoints.forEach(sp => {
+        const numSpawn = this.spawnPoints.length;
+        for (let i = 0; i < numSpawn; i++) {
+          const sp = this.spawnPoints[i];
           this.instanceMatrix[0] = 0.9;
           this.instanceMatrix[1] = 0;
           this.instanceMatrix[2] = 0;
@@ -10846,10 +11211,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
           gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-        });
+        }
       }
 
-      // 6. Render Authentic First-Person FPS Weapon Viewmodel (NO 3rd Person Character!)
+      // 6. Render Authentic First-Person FPS Weapon Viewmodel (Zero Memory Allocations)
       if (cubeMesh && sphereMesh) {
         const bobT = this.weaponState ? this.weaponState.bobTimer : 0;
         const recoil = this.weaponState ? this.weaponState.recoil : 0;
@@ -10858,94 +11223,42 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const bobX = Math.cos(bobT * 0.5) * 0.012;
         const bobY = Math.sin(bobT) * 0.008;
 
-        // Camera basis vectors in world space
         const cF = this.state.camFront;
         const cR = this.state.camRight;
         // cUp = cR x cF
-        const cU = [
-          cR[1]*cF[2] - cR[2]*cF[1],
-          cR[2]*cF[0] - cR[0]*cF[2],
-          cR[0]*cF[1] - cR[1]*cF[0]
-        ];
+        this._cUp[0] = cR[1] * cF[2] - cR[2] * cF[1];
+        this._cUp[1] = cR[2] * cF[0] - cR[0] * cF[2];
+        this._cUp[2] = cR[0] * cF[1] - cR[1] * cF[0];
 
-        // Gun anchor in view space (lower right corner of viewport)
         const forwardDist = 0.42 - recoil * 0.05;
         const rightDist = 0.17 + bobX;
         const upDist = -0.13 + bobY + recoil * 0.015;
 
-        const gunAnchor = [
-          this.state.camPos[0] + cF[0] * forwardDist + cR[0] * rightDist + cU[0] * upDist,
-          this.state.camPos[1] + cF[1] * forwardDist + cR[1] * rightDist + cU[1] * upDist,
-          this.state.camPos[2] + cF[2] * forwardDist + cR[2] * rightDist + cU[2] * upDist
-        ];
-
-        // Helper to draw a gun viewmodel component with camera orientation
-        const drawGunComponent = (mesh, fOffset, rOffset, uOffset, sX, sY, sZ, col, rough = 0.25, metal = 0.85, wMatType = 0, wBump = 0.0, wClearCoat = 0.0, wNoise = 1.0) => {
-          if (!mesh) return;
-          gl.bindVertexArray(mesh.vao);
-
-          const px = gunAnchor[0] + cF[0] * fOffset + cR[0] * rOffset + cU[0] * uOffset;
-          const py = gunAnchor[1] + cF[1] * fOffset + cR[1] * rOffset + cU[1] * uOffset;
-          const pz = gunAnchor[2] + cF[2] * fOffset + cR[2] * rOffset + cU[2] * uOffset;
-
-          // Align component with camera rotation basis
-          this.instanceMatrix[0] = cR[0] * sX;
-          this.instanceMatrix[1] = cR[1] * sX;
-          this.instanceMatrix[2] = cR[2] * sX;
-          this.instanceMatrix[3] = 0;
-
-          this.instanceMatrix[4] = cU[0] * sY;
-          this.instanceMatrix[5] = cU[1] * sY;
-          this.instanceMatrix[6] = cU[2] * sY;
-          this.instanceMatrix[7] = 0;
-
-          this.instanceMatrix[8] = -cF[0] * sZ;
-          this.instanceMatrix[9] = -cF[1] * sZ;
-          this.instanceMatrix[10] = -cF[2] * sZ;
-          this.instanceMatrix[11] = 0;
-
-          this.instanceMatrix[12] = px;
-          this.instanceMatrix[13] = py;
-          this.instanceMatrix[14] = pz;
-          this.instanceMatrix[15] = 1;
-
-          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
-
-          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, col);
-          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
-          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
-          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, wMatType);
-          if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, wNoise);
-          if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, wClearCoat);
-          if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
-          if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, wBump);
-
-          gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
-        };
+        this._gunAnchor[0] = this.state.camPos[0] + cF[0] * forwardDist + cR[0] * rightDist + this._cUp[0] * upDist;
+        this._gunAnchor[1] = this.state.camPos[1] + cF[1] * forwardDist + cR[1] * rightDist + this._cUp[1] * upDist;
+        this._gunAnchor[2] = this.state.camPos[2] + cF[2] * forwardDist + cR[2] * rightDist + this._cUp[2] * upDist;
 
         const wColor = this.weaponConfig ? this.weaponConfig.color : [0.06, 0.85, 0.95];
 
         // 1. Gun Main Receiver Chassis (Twill Carbon Fiber)
-        drawGunComponent(cubeMesh, 0.0, 0.0, 0.0, 0.065, 0.075, 0.22, [0.12, 0.14, 0.18], 0.30, 0.85, 5, 1.6, 0.9, 45.0);
+        this.drawGunPart(progInfo, cubeMesh, this._gunAnchor, cF, cR, this._cUp, 0.0, 0.0, 0.0, 0.065, 0.075, 0.22, [0.12, 0.14, 0.18], 0.30, 0.85, 5, 45.0, 0.9, 1.6);
 
         // 2. Gun Lower Grip / Battery Handle (Pebble Grain Leather)
-        drawGunComponent(cubeMesh, -0.05, 0.0, -0.065, 0.045, 0.08, 0.05, [0.08, 0.09, 0.12], 0.60, 0.20, 14, 1.8, 0.1, 28.0);
+        this.drawGunPart(progInfo, cubeMesh, this._gunAnchor, cF, cR, this._cUp, -0.05, 0.0, -0.065, 0.045, 0.08, 0.05, [0.08, 0.09, 0.12], 0.60, 0.20, 14, 28.0, 0.1, 1.8);
 
         // 3. Gun Upper Heavy Barrel Rails (Brushed Aerospace Titanium)
-        drawGunComponent(cubeMesh, 0.14, 0.0, 0.015, 0.045, 0.045, 0.16, [0.18, 0.22, 0.28], 0.20, 0.95, 3, 1.4, 0.0, 35.0);
+        this.drawGunPart(progInfo, cubeMesh, this._gunAnchor, cF, cR, this._cUp, 0.14, 0.0, 0.015, 0.045, 0.045, 0.16, [0.18, 0.22, 0.28], 0.20, 0.95, 3, 35.0, 0.0, 1.4);
 
         // 4. Glowing Plasma Energy Chamber (Illuminated Core Neon)
-        drawGunComponent(cubeMesh, 0.02, 0.0, 0.028, 0.035, 0.035, 0.12, wColor, 0.05, 0.95, 12, 0.0, 0.0, 1.0);
+        this.drawGunPart(progInfo, cubeMesh, this._gunAnchor, cF, cR, this._cUp, 0.02, 0.0, 0.028, 0.035, 0.035, 0.12, wColor, 0.05, 0.95, 12, 1.0, 0.0, 0.0);
 
         // 5. High-Tech Muzzle Aperture Tip
-        drawGunComponent(cubeMesh, 0.23, 0.0, 0.015, 0.055, 0.055, 0.04, [0.30, 0.32, 0.38], 0.15, 0.95, 3, 1.2, 0.0, 35.0);
+        this.drawGunPart(progInfo, cubeMesh, this._gunAnchor, cF, cR, this._cUp, 0.23, 0.0, 0.015, 0.055, 0.055, 0.04, [0.30, 0.32, 0.38], 0.15, 0.95, 3, 35.0, 0.0, 1.2);
 
         // 6. Dynamic Muzzle Flash on Fire
         if (mFlash > 0.05) {
           const flashScale = 0.08 * mFlash;
-          drawGunComponent(sphereMesh, 0.28, 0.0, 0.015, flashScale, flashScale, flashScale, [1.0, 0.95, 0.6], 0.0, 1.0, 12, 0.0, 0.0, 1.0);
+          this.drawGunPart(progInfo, sphereMesh, this._gunAnchor, cF, cR, this._cUp, 0.28, 0.0, 0.015, flashScale, flashScale, flashScale, [1.0, 0.95, 0.6], 0.0, 1.0, 12, 1.0, 0.0, 0.0);
         }
       }
 
@@ -11132,7 +11445,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // DEMO 09: 3D CASINO SLOT MACHINE & GOLD COIN PARTICLES
       // -------------------------------------------------------------
       this.updateSlotMachinePhysics(dt);
-      this.render3DSlotMachine(progInfo);
+      this.render3DSlotMachine(progInfo, timestamp);
     } else {
       // DEMO 1 & DEMO 3: SINGLE OBJECT PBR / STUDIO
       const mesh = this.meshBuffers[this.state.activeMesh];
@@ -11187,6 +11500,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     gl.bindVertexArray(null);
+
+    // Render Platform-Agnostic 3D Billboard Labels directly into the scene framebuffer
+    this.renderBillboardLabels(timestamp);
 
     // =========================================================================
     // POST-PROCESSING MASTER PASS (HZB Occlusion, HDR Bloom, Volumetric Rays)
@@ -11294,7 +11610,352 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       gl.bindTexture(gl.TEXTURE_2D, null);
     }
 
-    requestAnimationFrame(this.renderLoop.bind(this));
+    requestAnimationFrame(this._renderLoopBound);
+  }
+
+  renderBillboardLabels(timestamp) {
+    const gl = this.gl;
+
+    // 1. Set Blend & Depth States for labels rendering on top of geometry
+    gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    const isShowroomDemo = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
+    const isFpsMode = (this.state.cameraMode === 3 || (this.state.cameraMode === 1 && !isShowroomDemo) || this.state.demoScene.includes('07_fps')) && !isShowroomDemo;
+    const isCharacterDemo = (this.state.demoScene.includes('06_glb') || this.state.demoScene === 'character') && !isFpsMode && !isShowroomDemo;
+    const isFpsDemo = (this.state.demoScene.includes('07_fps') || isFpsMode) && !isShowroomDemo;
+    const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
+    const isMatrix = this.state.demoScene === 'matrix' || this.state.demoScene === '02_metallic_roughness_matrix.cpp';
+    const isStudio = this.state.demoScene.includes('03_trefoil') || this.state.demoScene === 'studio';
+    const isSingle = this.state.demoScene.includes('01_pbr') || this.state.demoScene === 'single';
+
+    // 2. Clear old text canvas cached entries if too large to avoid memory leakage
+    if (this.textTextureCache && Object.keys(this.textTextureCache).length > 150) {
+      Object.values(this.textTextureCache).forEach(entry => gl.deleteTexture(entry.texture));
+      this.textTextureCache = {};
+    }
+
+    const items = [];
+
+    // Collect elements
+    if (isShowroomDemo) {
+      const matKeys = Object.keys(FILAMENT_MATERIALS_CATALOG);
+      const totalMats = matKeys.length;
+      for (let i = 0; i < totalMats; i++) {
+        const key = matKeys[i];
+        const mat = FILAMENT_MATERIALS_CATALOG[key];
+        const pos = this.getShowroomPedestalPos(i, totalMats, this.state.showroomLayout);
+        const isFocused = (this.state.showroomFocusedMatKey === key);
+        const focusStr = isFocused ? " [SELECTED]" : "";
+        items.push({
+          pos: [pos[0], pos[1] + 2.1, pos[2]],
+          text: `SPECIMEN ${i+1}: ${mat.label || key}${focusStr}`,
+          isFocused: isFocused
+        });
+      }
+    } else if (isMatrix) {
+      const rows = 5, cols = 5;
+      const spacing = 1.35;
+      const offsetX = (cols - 1) * spacing * 0.5;
+      const offsetY = (rows - 1) * spacing * 0.5;
+      for (let r = 0; r < rows; r++) {
+        const roughness = 0.05 + (r / (rows - 1)) * 0.95;
+        for (let c = 0; c < cols; c++) {
+          const metallic = c / (cols - 1);
+          const posX = c * spacing - offsetX;
+          const posY = (rows - 1 - r) * spacing - offsetY;
+          items.push({
+            pos: [posX, posY + 0.65, 0],
+            text: `M: ${metallic.toFixed(2)} | R: ${roughness.toFixed(2)}`,
+            isFocused: false
+          });
+        }
+      }
+    } else if (isFpsDemo) {
+      // 3.1 AI Bots
+      if (this.active3DBots) {
+        for (let i = 0; i < this.active3DBots.length; i++) {
+          const bot = this.active3DBots[i];
+          if (bot.alive) {
+            items.push({
+              pos: [bot.pos[0], bot.pos[1] + 2.0, bot.pos[2]],
+              text: `${bot.team} - ${bot.alias} (${bot.health.toFixed(0)} HP)`,
+              isFocused: bot.team === 'Red'
+            });
+          }
+        }
+      }
+
+      // 3.2 Item Pickups
+      if (this.itemPickups) {
+        for (let i = 0; i < this.itemPickups.length; i++) {
+          const item = this.itemPickups[i];
+          if (item.active) {
+            items.push({
+              pos: [item.pos[0], item.pos[1] + 0.8, item.pos[2]],
+              text: `${item.icon || '📦'} ${item.name}`,
+              isFocused: false
+            });
+          } else {
+            items.push({
+              pos: [item.pos[0], item.pos[1] + 0.8, item.pos[2]],
+              text: `⏳ Respawning (${item.respawnTimer.toFixed(0)}s)`,
+              isFocused: false
+            });
+          }
+        }
+      }
+
+      // 3.3 Damage Actors
+      if (this.damageActors) {
+        for (let i = 0; i < this.damageActors.length; i++) {
+          const actor = this.damageActors[i];
+          const height = actor.scale ? actor.scale[1] : 1.5;
+          items.push({
+            pos: [actor.pos[0], actor.pos[1] + height + 0.3, actor.pos[2]],
+            text: `🎯 ${actor.name} (${actor.alive ? actor.health.toFixed(0) + ' HP' : 'DESTROYED'})`,
+            isFocused: actor.alive
+          });
+        }
+      }
+
+      // 3.4 Spawn Points
+      if (this.spawnPoints) {
+        for (let i = 0; i < this.spawnPoints.length; i++) {
+          const sp = this.spawnPoints[i];
+          items.push({
+            pos: [sp.pos[0], sp.pos[1] + 0.15, sp.pos[2]],
+            text: `SPAWN PAD ${i+1}`,
+            isFocused: false
+          });
+        }
+      }
+    } else if (isCharacterDemo) {
+      // Player
+      if (this.playerController) {
+        items.push({
+          pos: [this.playerController.pos[0], this.playerController.pos[1] + 2.0, this.playerController.pos[2]],
+          text: `👤 Gladiator (YOU) - ACTIVE`,
+          isFocused: true
+        });
+      }
+
+      // Scene entities
+      if (this.sceneEntities) {
+        for (let i = 0; i < this.sceneEntities.length; i++) {
+          const ent = this.sceneEntities[i];
+          if (ent.id > 1) { // Skip player and floor
+            const height = ent.scale ? ent.scale[1] : 1.0;
+            items.push({
+              pos: [ent.pos[0], ent.pos[1] + height + 0.3, ent.pos[2]],
+              text: `🧱 ${ent.name || 'Structure'}`,
+              isFocused: false
+            });
+          }
+        }
+      }
+    } else if (isSlotMachine) {
+      items.push({
+        pos: [0, 1.9, 0],
+        text: `🎰 3D Cyber Slot Reels (Drag to Rotate)`,
+        isFocused: true
+      });
+    } else if (isStudio) {
+      items.push({
+        pos: [0, 1.4, 0],
+        text: `🧬 Trefoil Knot Studio Specimen`,
+        isFocused: true
+      });
+    } else if (isSingle) {
+      items.push({
+        pos: [0, 1.4, 0],
+        text: `🔮 PBR Material Specimen`,
+        isFocused: true
+      });
+    }
+
+    // Render each collected item as a 3D Billboard in WebGL pipeline!
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const pos = item.pos;
+
+      // Distance culling to stay clean
+      const dx = pos[0] - this.state.camPos[0];
+      const dy = pos[1] - this.state.camPos[1];
+      const dz = pos[2] - this.state.camPos[2];
+      const dist = Math.hypot(dx, dy, dz);
+
+      if (dist > 35.0) continue;
+
+      // Behind camera check
+      const clipW = this.viewProjMatrix[3]*pos[0] + this.viewProjMatrix[7]*pos[1] + this.viewProjMatrix[11]*pos[2] + this.viewProjMatrix[15];
+      if (clipW <= 0.1) continue;
+
+      this.drawBillboardText(item.text, pos, item.isFocused);
+    }
+
+    // Restore WebGL depth and blend states
+    gl.disable(gl.BLEND);
+    gl.depthMask(true);
+    if (this.state.depthTest) {
+      gl.enable(gl.DEPTH_TEST);
+    }
+  }
+
+  drawBillboardText(text, pos, isFocused = false) {
+    const gl = this.gl;
+    const texData = this.getTextTexture(text, isFocused);
+    if (!texData) return;
+
+    // Define label size in 3D world meters (e.g. height = 0.28m, width based on aspect ratio)
+    const labelHeight = 0.26;
+    const labelWidth = labelHeight * texData.aspect;
+
+    const cF = this.state.camFront;
+    const cR = this.state.camRight;
+    const cU = this._cUp;
+
+    // Compute billboard orientation matrix (model matrix) on CPU
+    // We want the billboard to align with the camera's Right and Up vectors
+    this.instanceMatrix[0] = cR[0] * labelWidth;
+    this.instanceMatrix[1] = cR[1] * labelWidth;
+    this.instanceMatrix[2] = cR[2] * labelWidth;
+    this.instanceMatrix[3] = 0;
+
+    this.instanceMatrix[4] = cU[0] * labelHeight;
+    this.instanceMatrix[5] = cU[1] * labelHeight;
+    this.instanceMatrix[6] = cU[2] * labelHeight;
+    this.instanceMatrix[7] = 0;
+
+    // We can set Normal column to face camera (negative camFront)
+    this.instanceMatrix[8] = -cF[0];
+    this.instanceMatrix[9] = -cF[1];
+    this.instanceMatrix[10] = -cF[2];
+    this.instanceMatrix[11] = 0;
+
+    this.instanceMatrix[12] = pos[0];
+    this.instanceMatrix[13] = pos[1];
+    this.instanceMatrix[14] = pos[2];
+    this.instanceMatrix[15] = 1;
+
+    // Draw using our billboard shader program
+    const progInfo = this.billboardProg;
+    gl.useProgram(progInfo.prog);
+
+    // Uniforms
+    gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+    gl.uniformMatrix4fv(progInfo.uViewProj, false, this.viewProjMatrix);
+
+    // Bind texture
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texData.texture);
+    gl.uniform1i(progInfo.uTextTexture, 0);
+
+    // Draw the BillboardQuad mesh (index 5)
+    const quadMesh = this.meshBuffers[5];
+    if (quadMesh) {
+      gl.bindVertexArray(quadMesh.vao);
+      gl.drawElements(gl.TRIANGLES, quadMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+  }
+
+  getTextTexture(text, isFocused = false) {
+    if (!this.textTextureCache) {
+      this.textTextureCache = {};
+    }
+    const cacheKey = `${text}_${isFocused}`;
+    if (this.textTextureCache[cacheKey]) {
+      return this.textTextureCache[cacheKey];
+    }
+
+    const gl = this.gl;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Measure text to determine texture dimensions
+    ctx.font = "bold 24px 'Plus Jakarta Sans', system-ui, sans-serif";
+    const textMetrics = ctx.measureText(text.replace(/<[^>]*>/g, '')); // Strip any simple tags for measurement
+    
+    // Pad text bounds
+    const paddingX = 24;
+    const paddingY = 16;
+    const textWidth = Math.max(64, textMetrics.width);
+    const textHeight = 24; // approximation for height of text
+    
+    const canvasWidth = this.nextPowerOfTwo(textWidth + paddingX * 2);
+    const canvasHeight = this.nextPowerOfTwo(textHeight + paddingY * 2);
+
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+
+    // Draw background card with rounded corners and border
+    ctx.fillStyle = "rgba(15, 23, 42, 0.88)"; // Slate 900 with alpha
+    const rx = 4;
+    const ry = 4;
+    const rw = canvasWidth - 8;
+    const rh = canvasHeight - 8;
+    const radius = 12;
+
+    ctx.beginPath();
+    ctx.moveTo(rx + radius, ry);
+    ctx.lineTo(rx + rw - radius, ry);
+    ctx.quadraticCurveTo(rx + rw, ry, rx + rw, ry + radius);
+    ctx.lineTo(rx + rw, ry + rh - radius);
+    ctx.quadraticCurveTo(rx + rw, ry + rh, rx + rw - radius, ry + rh);
+    ctx.lineTo(rx + radius, ry + rh);
+    ctx.quadraticCurveTo(rx, ry + rh, rx, ry + rh - radius);
+    ctx.lineTo(rx, ry + radius);
+    ctx.quadraticCurveTo(rx, ry, rx + radius, ry);
+    ctx.closePath();
+    ctx.fill();
+
+    // Draw border
+    ctx.lineWidth = 3;
+    if (isFocused) {
+      ctx.strokeStyle = "rgba(6, 182, 212, 0.95)"; // Cyan 500
+    } else {
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.25)"; // White-ish transparent
+    }
+    ctx.stroke();
+
+    // Draw text (strip any html tags for drawing, since we are doing simple drawing)
+    ctx.fillStyle = "#f8fafc"; // Slate 50
+    ctx.font = "bold 24px 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    
+    // Strip simple HTML tags
+    const cleanText = text.replace(/<[^>]*>/g, '');
+    ctx.fillText(cleanText, canvasWidth / 2, canvasHeight / 2);
+
+    // Create GL texture
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.generateMipmap(gl.TEXTURE_2D);
+
+    const textureData = {
+      texture: tex,
+      width: canvasWidth,
+      height: canvasHeight,
+      aspect: canvasWidth / canvasHeight
+    };
+
+    this.textTextureCache[cacheKey] = textureData;
+    return textureData;
+  }
+
+  nextPowerOfTwo(val) {
+    let p = 1;
+    while (p < val) {
+      p *= 2;
+    }
+    return p;
   }
 }
 
