@@ -1,6 +1,6 @@
 {
   "name": "C++ Filament 3D Engine Studio",
-  "description": "High-performance C++ & WebAssembly 3D engine sandbox with custom physics, damage system, and active arena bots.",
+  "description": "High-performance C++ & WebAssembly 3D engine sandbox with custom physics, first-person shooter shooter, dynamic sliding puzzle, and 3D Plinko cascade engine.",
   "requestFramePermissions": [
     "camera",
     "microphone",

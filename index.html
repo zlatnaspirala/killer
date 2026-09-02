@@ -2,9 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Google Filament &amp; C++ Native Graphics Pipeline</title>
-    <meta name="description" content="Pure Native C++ Engine runtime, zero allocations per frame, Filament PBR renderer, First-Person & Orbit Camera, OBJ/JSON export." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>C++ Filament 3D Engine Studio</title>
+    <meta name="description" content="High-performance C++ & WebAssembly 3D engine sandbox with custom physics, first-person shooter shooter, dynamic sliding puzzle, and 3D Plinko cascade engine." />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -116,6 +116,84 @@
               </div>
             </div>
 
+            <!-- 🧩 3D Sliding Puzzle Interactive Panel (Demo 10) -->
+            <div id="puzzle-overlay" class="puzzle-overlay-panel" style="display: none;">
+              <div class="puzzle-header">
+                <div class="puzzle-title">🧩 3D SLIDING PUZZLE</div>
+                <div class="puzzle-subtitle">DYNAMIC UV SPLITTING & C++ CORE PHYSICS</div>
+              </div>
+
+              <!-- Stats Box -->
+              <div class="puzzle-stat-box">
+                <div class="puzzle-stat-cell">
+                  <span class="puzzle-stat-label">🔢 Moves</span>
+                  <span class="puzzle-stat-value" id="puzzle-moves-val">0</span>
+                </div>
+                <div class="puzzle-stat-cell">
+                  <span class="puzzle-stat-label">🏆 Status</span>
+                  <span class="puzzle-stat-value" id="puzzle-status-val" style="color: #10b981;">SOLVED</span>
+                </div>
+              </div>
+
+              <!-- Grid Size selector -->
+              <div class="puzzle-control-group">
+                <span class="puzzle-group-label">1. Grid Dimension</span>
+                <div class="puzzle-grid-selector" id="puzzle-grid-size-selector">
+                  <button class="puzzle-size-btn active" data-size="3">3x3</button>
+                  <button class="puzzle-size-btn" data-size="4">4x4</button>
+                  <button class="puzzle-size-btn" data-size="5">5x5</button>
+                </div>
+              </div>
+
+              <!-- Primary Actions -->
+              <div class="puzzle-control-group">
+                <span class="puzzle-group-label">2. Shuffle & Play</span>
+                <button id="btn-puzzle-shuffle" class="puzzle-primary-btn">🔀 SHUFFLE TILES</button>
+                <button id="btn-puzzle-reset" class="puzzle-secondary-btn" style="margin-top: 6px;">🔄 RESET TO SOLVED</button>
+              </div>
+
+              <!-- Custom Image Upload -->
+              <div class="puzzle-control-group">
+                <span class="puzzle-group-label">3. Custom Texture Image</span>
+                <div class="puzzle-upload-zone" id="puzzle-drop-zone">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom:6px; color:#06b6d4;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                  <span style="font-size:11px; text-align:center;">Drag &amp; Drop or Click here to upload custom image</span>
+                  <input type="file" id="puzzle-image-file" accept="image/*" style="display:none;" />
+                </div>
+              </div>
+
+              <!-- Predefined Textures Gallery -->
+              <div class="puzzle-control-group">
+                <span class="puzzle-group-label">4. Preset Materials</span>
+                <div class="puzzle-preset-grid" id="puzzle-preset-grid">
+                  <div class="puzzle-preset-card active" data-texture="assets/textures/tex01.webp" style="background-image: url('assets/textures/tex01.webp');" title="Default Abstract">
+                    <span class="preset-label">Abstract</span>
+                  </div>
+                  <div class="puzzle-preset-card" data-texture="assets/textures/matrix1.webp" style="background-image: url('assets/textures/matrix1.webp');" title="Matrix Grid Pattern">
+                    <span class="preset-label">Matrix</span>
+                  </div>
+                  <div class="puzzle-preset-card" data-texture="assets/textures/dark-rock.webp" style="background-image: url('assets/textures/dark-rock.webp');" title="Basalt Rock Texture">
+                    <span class="preset-label">Rock</span>
+                  </div>
+                  <div class="puzzle-preset-card" data-texture="assets/textures/floor1.webp" style="background-image: url('assets/textures/floor1.webp');" title="Aesthetic Marble Tiles">
+                    <span class="preset-label">Marble</span>
+                  </div>
+                  <div class="puzzle-preset-card" data-texture="assets/textures/gold-2.webp" style="background-image: url('assets/textures/gold-2.webp');" title="Lustrous Gold Foil">
+                    <span class="preset-label">Gold</span>
+                  </div>
+                  <div class="puzzle-preset-card" data-texture="assets/textures/xrp.webp" style="background-image: url('assets/textures/xrp.webp');" title="XRP Cyber Blue Coin">
+                    <span class="preset-label">XRP Blue</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 🧩 Sliding Puzzle Banner Info -->
+            <div id="puzzle-banner" class="puzzle-banner" style="display: none;">
+              <span>🧩 <b>Demo 10 Active: 3D Sliding Puzzle</b> &bull; Drag to rotate camera view &bull; Click adjacent blocks next to empty slot to slide!</span>
+              <span id="puzzle-stats-summary" style="color: #06b6d4; font-weight: bold;">Moves: 0 | Grid: 3x3</span>
+            </div>
+
             <!-- 🎰 3D Cyber Slot Machine Interactive Panel (Demo 09) -->
             <div id="slot-machine-overlay" class="slot-machine-overlay-panel" style="display: none;">
               <div class="slot-header">
@@ -199,6 +277,120 @@
               <span>🎰 <b>Demo 09 Active: 3D Casino Slot Machine</b> &bull; Drag to Rotate camera &bull; Pull lever or click SPIN!</span>
               <span id="slot-stats-summary" style="color: #fbbf24; font-weight: bold;">Spins: 0 | Win Rate: 0%</span>
             </div>
+
+            <!-- 🟢 3D Plinko Interactive Panel (Demo 11) -->
+            <div id="plinko-overlay" class="plinko-overlay-panel" style="display: none;">
+              <div class="plinko-header">
+                <div class="plinko-header-row">
+                  <div class="plinko-title">🟢 3D PLINKO CASCADE</div>
+                  <button id="btn-plinko-close" class="plinko-header-btn" title="Minimize Panel" aria-label="Minimize Panel">✕</button>
+                </div>
+                <div class="plinko-subtitle">REAL-TIME NATIVE PHYSICS SYSTEM</div>
+              </div>
+
+              <!-- Stats Box -->
+              <div class="plinko-stat-box">
+                <div class="plinko-stat-cell">
+                  <span class="plinko-stat-label">💰 Credits</span>
+                  <span class="plinko-stat-value gold" id="plinko-credits-val">1000</span>
+                </div>
+                <div class="plinko-stat-cell">
+                  <span class="plinko-stat-label">🔥 Last Win</span>
+                  <span class="plinko-stat-value green" id="plinko-payout-val">0</span>
+                </div>
+                <div class="plinko-stat-cell" style="margin-top: 6px;">
+                  <span class="plinko-stat-label">🔮 Dropped</span>
+                  <span class="plinko-stat-value" id="plinko-dropped-val">0</span>
+                </div>
+                <div class="plinko-stat-cell" style="margin-top: 6px;">
+                  <span class="plinko-stat-label">🏆 Best</span>
+                  <span class="plinko-stat-value gold" id="plinko-highscore-val">1000</span>
+                </div>
+              </div>
+
+              <!-- Peg Rows Selector -->
+              <div class="plinko-control-group">
+                <span class="plinko-group-label">1. Peg Rows (Pyramid Height)</span>
+                <div class="plinko-grid-selector" id="plinko-rows-selector">
+                  <button class="plinko-size-btn active" data-rows="8">8 Rows</button>
+                  <button class="plinko-size-btn" data-rows="10">10 Rows</button>
+                  <button class="plinko-size-btn" data-rows="12">12 Rows</button>
+                </div>
+              </div>
+
+              <!-- Ball Style Selector -->
+              <div class="plinko-control-group">
+                <span class="plinko-group-label">2. Ball Material / Aesthetics</span>
+                <div class="plinko-grid-selector" id="plinko-style-selector">
+                  <button class="plinko-type-btn active" data-type="neon">🟢 Neon</button>
+                  <button class="plinko-type-btn" data-type="chrome">💿 Chrome</button>
+                  <button class="plinko-type-btn" data-type="ruby">🔴 Ruby</button>
+                </div>
+              </div>
+
+              <!-- Peg Impact Visual Effect Selector -->
+              <div class="plinko-control-group">
+                <span class="plinko-group-label">3. Peg Impact Visual Effect (Radius Circles)</span>
+                <div class="plinko-grid-selector" id="plinko-effect-selector" style="grid-template-columns: 1fr 1fr; gap: 6px;">
+                  <button class="plinko-effect-btn active" data-effect="pulsering">⭕ Pulse Ring</button>
+                  <button class="plinko-effect-btn" data-effect="chromatic">🌈 Chromatic</button>
+                  <button class="plinko-effect-btn" data-effect="electro">⚡ Electro</button>
+                  <button class="plinko-effect-btn" data-effect="halo">✨ Radiant Halo</button>
+                </div>
+              </div>
+
+              <!-- Additive Trail Effect Selector -->
+              <div class="plinko-control-group">
+                <span class="plinko-group-label">4. Ball Trail (Blend Add &amp; Pulse)</span>
+                <div class="plinko-grid-selector" id="plinko-trail-selector">
+                  <button class="plinko-trail-btn active" data-trail="pulse">✨ Pulse Glow</button>
+                  <button class="plinko-trail-btn" data-trail="rainbow">🌈 Rainbow</button>
+                  <button class="plinko-trail-btn" data-trail="off">🚫 Off</button>
+                </div>
+              </div>
+
+              <!-- Real-time Physics Sliders -->
+              <div class="plinko-control-group">
+                <span class="plinko-group-label">5. Environmental Gravity &amp; Friction</span>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <div>
+                    <div style="display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; margin-bottom: 2px;">
+                      <span>Gravity Acceleration</span>
+                      <span id="plinko-gravity-lbl">-4.0 m/s²</span>
+                    </div>
+                    <input type="range" id="slider-plinko-gravity" min="-10.0" max="-1.0" step="0.5" value="-4.0" style="width: 100%; accent-color: #10b981; background: #1e293b; border-radius: 4px; height: 5px; cursor: pointer;" />
+                  </div>
+                  <div>
+                    <div style="display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; margin-bottom: 2px;">
+                      <span>Peg Bounciness (Restitution)</span>
+                      <span id="plinko-bounciness-lbl">55%</span>
+                    </div>
+                    <input type="range" id="slider-plinko-bounciness" min="0.1" max="0.9" step="0.05" value="0.55" style="width: 100%; accent-color: #10b981; background: #1e293b; border-radius: 4px; height: 5px; cursor: pointer;" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Primary Game Controls -->
+              <div class="plinko-control-group" style="border: none; margin-bottom: 0; padding-bottom: 0;">
+                <span class="plinko-group-label">6. Launch Mechanics</span>
+                <button id="btn-plinko-drop" class="plinko-primary-btn">🔮 DROP BALL (-10 Credits)</button>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px;">
+                  <button id="btn-plinko-autodrop" class="plinko-secondary-btn">🔄 AUTO-DROP: OFF</button>
+                  <button id="btn-plinko-reset" class="plinko-secondary-btn">🧹 RESET BOARD</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 🟢 Plinko Banner Info -->
+            <div id="plinko-banner" class="plinko-banner" style="display: none;">
+              <span>🟢 <b>Demo 11 Active: 3D Plinko Cascade</b> &bull; Left Drag to rotate board &bull; Click DROP BALL to test your luck!</span>
+              <span id="plinko-stats-summary" style="color: #34d399; font-weight: bold;">Cost: 10 | High Score: 1000</span>
+            </div>
+
+            <!-- 🟢 Floating Mobile Button to Reopen Plinko Controls -->
+            <button id="plinko-mobile-fab" class="plinko-mobile-fab" style="display: none;">
+              <span>⚙️ PLINKO CONTROLS</span>
+            </button>
 
             <!-- FPS Startup Menu & Multiplayer Lobby Overlay (Demo 07) -->
             <div class="fps-startup-overlay" id="fps-startup-overlay" style="display: none;">
@@ -722,6 +914,8 @@
                       <option value="07_fps_shooter_damage_system.cpp" selected>Demo 07: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
                       <option value="08_all_materials_presentation.cpp">Demo 08: All Materials Presentation Showcase (08_all_materials_presentation.cpp)</option>
                       <option value="09_slot_machine.cpp">Demo 09: 3D Casino Slot Machine &amp; Particles (09_slot_machine.cpp)</option>
+                      <option value="10_sliding_puzzle.cpp">Demo 10: Dynamic Sliding 3D Puzzle (10_sliding_puzzle.cpp)</option>
+                      <option value="11_plinko.cpp">Demo 11: 3D Plinko Cascade Showcase (11_plinko.cpp)</option>
                     </select>
                   </div>
                 </div>

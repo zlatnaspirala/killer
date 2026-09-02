@@ -15,10 +15,28 @@
   --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, monospace;
 }
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Allow text selection only in interactive input fields or explicit selectable areas */
+input, textarea, select, [contenteditable="true"], .selectable-text, pre, code {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+html {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 
 /* Fancy Custom Scrollbars for Web version */
@@ -288,6 +306,9 @@ body.app-body {
   overflow: hidden;
   cursor: grab;
   outline: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .canvas-container:active {
@@ -298,6 +319,9 @@ body.app-body {
   width: 100%;
   height: 100%;
   display: block;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Viewport HUD */
@@ -4323,6 +4347,650 @@ body.app-body {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
+
+/* 🧩 3D Sliding Puzzle Overlay Styles */
+.puzzle-overlay-panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 340px;
+  bottom: 16px;
+  background: rgba(10, 15, 30, 0.92);
+  border: 1.5px solid rgba(6, 182, 212, 0.45);
+  border-radius: 12px;
+  box-shadow: 0 0 35px rgba(0, 0, 0, 0.85), 0 0 15px rgba(6, 182, 212, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  z-index: 150;
+  padding: 16px;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-y: auto;
+}
+
+.puzzle-header {
+  text-align: center;
+  border-bottom: 1.5px solid rgba(6, 182, 212, 0.3);
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+
+.puzzle-title {
+  font-size: 16px;
+  font-weight: 900;
+  color: #06b6d4;
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 10px rgba(6, 182, 212, 0.6);
+  margin-bottom: 2px;
+}
+
+.puzzle-subtitle {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.puzzle-stat-box {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.puzzle-stat-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.puzzle-stat-label {
+  font-size: 9px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.puzzle-stat-value {
+  font-size: 16px;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.puzzle-control-group {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.puzzle-group-label {
+  font-size: 10px;
+  color: #38bdf8;
+  font-weight: bold;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+
+.puzzle-grid-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.puzzle-size-btn {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #94a3b8;
+  padding: 6px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.puzzle-size-btn:hover {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.4);
+  color: #e2e8f0;
+}
+
+.puzzle-size-btn.active {
+  background: rgba(6, 182, 212, 0.25);
+  border-color: #06b6d4;
+  color: #22d3ee;
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.25);
+}
+
+.puzzle-primary-btn {
+  background: linear-gradient(135deg, #0891b2 0%, #0369a1 100%);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  padding: 10px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.2);
+}
+
+.puzzle-primary-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(6, 182, 212, 0.35);
+  background: linear-gradient(135deg, #06b6d4 0%, #0284c7 100%);
+}
+
+.puzzle-secondary-btn {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #cbd5e1;
+  padding: 8px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.puzzle-secondary-btn:hover {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.puzzle-upload-zone {
+  border: 1.5px dashed rgba(6, 182, 212, 0.35);
+  border-radius: 8px;
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.4);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.puzzle-upload-zone:hover, .puzzle-upload-zone.dragover {
+  border-color: #06b6d4;
+  background: rgba(6, 182, 212, 0.08);
+}
+
+.puzzle-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.puzzle-preset-card {
+  height: 54px;
+  border-radius: 6px;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.puzzle-preset-card:hover {
+  transform: scale(1.04);
+  border-color: rgba(6, 182, 212, 0.5);
+}
+
+.puzzle-preset-card.active {
+  border-color: #06b6d4;
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.4);
+}
+
+.preset-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(10, 15, 30, 0.85);
+  font-size: 9px;
+  color: #e2e8f0;
+  text-align: center;
+  padding: 2px 0;
+  white-space: nowrap;
+}
+
+/* 🧩 Floating Top Banner for Sliding Puzzle Instructions */
+.puzzle-banner {
+  position: absolute;
+  top: 16px;
+  left: 372px;
+  right: 16px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 140;
+  font-size: 11px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* 🟢 3D Plinko Overlay Styles */
+.plinko-overlay-panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 340px;
+  max-height: calc(100% - 32px);
+  background: rgba(10, 20, 15, 0.94);
+  border: 1.5px solid rgba(16, 185, 129, 0.45);
+  border-radius: 12px;
+  box-shadow: 0 0 35px rgba(0, 0, 0, 0.85), 0 0 15px rgba(16, 185, 129, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  z-index: 150;
+  padding: 12px 14px;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16, 185, 129, 0.4) transparent;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+}
+
+.plinko-overlay-panel::-webkit-scrollbar {
+  width: 4px;
+}
+.plinko-overlay-panel::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.35);
+  border-radius: 4px;
+}
+
+.plinko-overlay-panel.mobile-minimized {
+  transform: translateX(-115%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.plinko-header {
+  border-bottom: 1.5px solid rgba(16, 185, 129, 0.3);
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.plinko-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.plinko-header-btn {
+  background: transparent;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #94a3b8;
+  border-radius: 4px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.plinko-header-btn:hover {
+  border-color: #10b981;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.plinko-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: #10b981;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+  margin-bottom: 1px;
+}
+
+.plinko-subtitle {
+  font-size: 9px;
+  color: #a7f3d0;
+  opacity: 0.8;
+}
+
+.plinko-stat-box {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.plinko-stat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  background: rgba(16, 185, 129, 0.05);
+  border-radius: 6px;
+  border: 1px solid rgba(16, 185, 129, 0.1);
+}
+
+.plinko-stat-label {
+  font-size: 8.5px;
+  color: #6ee7b7;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 1px;
+}
+
+.plinko-stat-value {
+  font-size: 14px;
+  font-weight: bold;
+  color: #ffffff;
+}
+
+.plinko-stat-value.green {
+  color: #34d399;
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
+}
+
+.plinko-stat-value.gold {
+  color: #fbbf24;
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
+}
+
+.plinko-control-group {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.plinko-group-label {
+  font-size: 9.5px;
+  font-weight: bold;
+  color: #94a3b8;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.plinko-grid-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.plinko-size-btn, .plinko-type-btn, .plinko-effect-btn, .plinko-trail-btn {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: #94a3b8;
+  padding: 5px;
+  font-size: 10.5px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: bold;
+}
+
+.plinko-size-btn:hover, .plinko-type-btn:hover, .plinko-effect-btn:hover, .plinko-trail-btn:hover {
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #e2e8f0;
+}
+
+.plinko-size-btn.active, .plinko-type-btn.active, .plinko-effect-btn.active, .plinko-trail-btn.active {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #34d399;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+
+.plinko-primary-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border: none;
+  color: #ffffff;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: bold;
+  border-radius: 7px;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.3);
+  transition: all 0.2s ease;
+}
+
+.plinko-primary-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(16, 185, 129, 0.4);
+  filter: brightness(1.1);
+}
+
+.plinko-secondary-btn {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  padding: 6px;
+  font-size: 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.plinko-secondary-btn:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.8);
+}
+
+/* 🟢 Floating Top Banner for Plinko Instructions */
+.plinko-banner {
+  position: absolute;
+  top: 16px;
+  left: 372px;
+  right: 16px;
+  background: rgba(10, 20, 15, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 8px;
+  padding: 8px 14px;
+  color: #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 140;
+  font-size: 11px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* 🟢 Floating Mobile FAB (Re-Open Plinko Controls) */
+.plinko-mobile-fab {
+  position: absolute;
+  bottom: 18px;
+  left: 14px;
+  background: rgba(10, 20, 15, 0.92);
+  border: 1.5px solid #10b981;
+  border-radius: 24px;
+  padding: 8px 16px;
+  color: #34d399;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.75), 0 0 12px rgba(16, 185, 129, 0.35);
+  cursor: pointer;
+  z-index: 155;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.plinko-mobile-fab:active {
+  transform: scale(0.95);
+}
+
+/* 📱 Responsive Mobile Full-Screen Dialog Overlay */
+@media (max-width: 768px) {
+  .plinko-overlay-panel {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100vw;
+    height: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+    border: none;
+    padding: 16px 14px 44px 14px;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.95);
+    background: rgba(10, 20, 15, 0.97);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    animation: fadeIn 0.25s ease-out;
+    box-sizing: border-box;
+    z-index: 170;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+  }
+
+  .plinko-overlay-panel.mobile-minimized {
+    transform: translateY(100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .plinko-header {
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+
+  .plinko-title {
+    font-size: 15px;
+    letter-spacing: 0.05em;
+  }
+
+  .plinko-subtitle {
+    font-size: 9px;
+  }
+
+  .plinko-header-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+    font-weight: bold;
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.5);
+    color: #34d399;
+  }
+
+  .plinko-stat-box {
+    padding: 8px 10px;
+    gap: 8px;
+    margin-bottom: 12px;
+    border-radius: 8px;
+  }
+
+  .plinko-stat-cell {
+    padding: 4px 6px;
+    border-radius: 6px;
+  }
+
+  .plinko-stat-label {
+    font-size: 9px;
+    margin-bottom: 2px;
+  }
+
+  .plinko-stat-value {
+    font-size: 15px;
+  }
+
+  .plinko-control-group {
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+  }
+
+  .plinko-group-label {
+    font-size: 10px;
+    margin-bottom: 5px;
+  }
+
+  .plinko-grid-selector {
+    gap: 6px;
+  }
+
+  .plinko-size-btn, .plinko-type-btn, .plinko-effect-btn, .plinko-trail-btn {
+    padding: 8px 10px;
+    font-size: 11px;
+    min-height: 36px;
+  }
+
+  .plinko-primary-btn {
+    padding: 12px 14px;
+    font-size: 14px;
+    border-radius: 8px;
+    min-height: 44px;
+    letter-spacing: 0.05em;
+  }
+
+  .plinko-secondary-btn {
+    padding: 10px 12px;
+    font-size: 11px;
+    border-radius: 6px;
+    min-height: 40px;
+  }
+
+  .plinko-banner {
+    left: 8px;
+    right: 8px;
+    top: 8px;
+    padding: 6px 10px;
+    font-size: 9.5px;
+    border-radius: 6px;
+  }
+
+  .plinko-mobile-fab {
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    white-space: nowrap;
+    padding: 10px 22px;
+    font-size: 12px;
+    border-radius: 28px;
+    box-shadow: 0 4px 25px rgba(0, 0, 0, 0.9), 0 0 20px rgba(16, 185, 129, 0.5);
+  }
+
+  .plinko-mobile-fab:active {
+    transform: translateX(-50%) scale(0.95);
+  }
+}
+
+
 
 
 

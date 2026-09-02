@@ -82,3 +82,19 @@ To compile custom `.mat` files into `.filamat` binaries for the Filament runtime
 # Compile material definition into multi-platform binary
 matc -p all -a all -o custom_pbr.filamat examples/03_filament_custom_material.mat
 ```
+
+---
+
+## 5. Multiplatform UI with RmlUi (Native HTML/CSS Engine)
+
+To render popups and interactive UI (such as the 3D Plinko controls) in native non-web builds (Linux, macOS, Windows, Android, iOS, consoles):
+- **Template Location**: `assets/ui/plinko.rml` (Markup) and `assets/ui/plinko.rcss` (Styles).
+- **Architecture Interface**: `include/engine/IPlinkoUI.hpp`.
+- **Pipeline**: RmlUi generates 2D textured vertex and index buffers that feed directly into the engine's existing VAO/VBO draw pipeline.
+- **CMake Dependency**:
+  ```cmake
+  # In CMakeLists.txt for native builds
+  find_package(RmlUi REQUIRED)
+  target_link_libraries(NativeEngine PRIVATE RmlUi::Core)
+  ```
+

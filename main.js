@@ -1136,10 +1136,149 @@ namespace CasinoDemo {
 }
 
 int main() {
-    std::cout << "FILAMENT C++ DEMO 09: 3D CASINO SLOT MACHINE & PARTICLES\\n";
+    std::cout << "FILAMENT C++ DEMO 09: 3D CASINO SLOT MACHINE & PARTICLES\n";
     CasinoDemo::SlotMachine game;
     game.Spin(20);
     game.Update(0.1f);
+    return 0;
+}
+`,
+
+  '10_sliding_puzzle.cpp': `// examples/10_sliding_puzzle.cpp
+// Filament / Native C++ Demo 10: Dynamic 3D Sliding Puzzle Showcase
+// Demonstrates dynamic grid splitting, custom PBR material textures, 
+// solvable state mechanics, and real-time tile slide interpolation.
+
+#include <iostream>
+#include <vector>
+#include <random>
+#include <cmath>
+#include <memory>
+#include <algorithm>
+
+namespace PuzzleDemo {
+
+    struct Tile {
+        int id;             // Original index/id of the tile
+        int row;            // Current row on the board
+        int col;            // Current column on the board
+        float animT = 1.0f; // Interpolation progress: 1.0 = static
+        float startX = 0.0f, startY = 0.0f;
+    };
+
+    class SlidingPuzzle {
+    public:
+        int gridSize = 3;   // Dynamic size: 3x3, 4x4, 5x5
+        std::vector<std::vector<int>> grid; // Stores tile IDs (-1 represents empty space)
+        int moves = 0;
+        bool shuffled = false;
+        bool solved = false;
+        std::mt19939 rng;
+
+        SlidingPuzzle(int size) : gridSize(size) {
+            rng.seed(42);
+            ResetBoard();
+        }
+
+        void ResetBoard() {
+            grid.assign(gridSize, std::vector<int>(gridSize, 0));
+            int id = 0;
+            for (int r = 0; r < gridSize; ++r) {
+                for (int c = 0; c < gridSize; ++c) {
+                    if (r == gridSize - 1 && c == gridSize - 1) {
+                        grid[r][c] = -1; // Empty space
+                    } else {
+                        grid[r][c] = id++;
+                    }
+                }
+            }
+            moves = 0;
+            shuffled = false;
+            solved = true;
+        }
+
+        bool Shuffle(int iterations = 150) {
+            ResetBoard();
+            
+            for (int i = 0; i < iterations; ++i) {
+                int emptyR = -1, emptyC = -1;
+                FindEmptySlot(emptyR, emptyC);
+
+                std::vector<std::pair<int, int>> validMoves;
+                if (emptyR > 0) validMoves.push_back({emptyR - 1, emptyC});
+                if (emptyR < gridSize - 1) validMoves.push_back({emptyR + 1, emptyC});
+                if (emptyC > 0) validMoves.push_back({emptyR, emptyC - 1});
+                if (emptyC < gridSize - 1) validMoves.push_back({emptyR, emptyC + 1});
+
+                if (!validMoves.empty()) {
+                    auto chosen = validMoves[rng() % validMoves.size()];
+                    std::swap(grid[emptyR][emptyC], grid[chosen.first][chosen.second]);
+                }
+            }
+
+            moves = 0;
+            shuffled = true;
+            solved = CheckSolved();
+            return true;
+        }
+
+        bool ClickTile(int r, int c) {
+            if (solved && !shuffled) return false;
+
+            if (r < 0 || r >= gridSize || c < 0 || c >= gridSize) return false;
+            if (grid[r][c] == -1) return false;
+
+            int emptyR = -1, emptyC = -1;
+            FindEmptySlot(emptyR, emptyC);
+
+            int diffR = std::abs(r - emptyR);
+            int diffC = std::abs(c - emptyC);
+
+            if ((diffR == 1 && diffC == 0) || (diffR == 0 && diffC == 1)) {
+                std::swap(grid[r][c], grid[emptyR][emptyC]);
+                moves++;
+                solved = CheckSolved();
+                return true;
+            }
+
+            return false;
+        }
+
+    private:
+        void FindEmptySlot(int& outR, int& outC) {
+            for (int r = 0; r < gridSize; ++r) {
+                for (int c = 0; c < gridSize; ++c) {
+                    if (grid[r][c] == -1) {
+                        outR = r;
+                        outC = c;
+                        return;
+                    }
+                }
+            }
+        }
+
+        bool CheckSolved() {
+            int expectedId = 0;
+            for (int r = 0; r < gridSize; ++r) {
+                for (int c = 0; c < gridSize; ++c) {
+                    if (r == gridSize - 1 && c == gridSize - 1) {
+                        if (grid[r][c] != -1) return false;
+                    } else {
+                        if (grid[r][c] != expectedId++) return false;
+                    }
+                }
+            }
+            return true;
+        }
+    };
+}
+
+int main() {
+    std::cout << "========================================================\n";
+    std::cout << "  GOOGLE FILAMENT DEMO 10: NATIVE 3D SLIDING PUZZLE     \n";
+    std::cout << "========================================================\n";
+    std::cout << "Dynamic WebGL Image UV Slicing Engine is Active.\n";
+    std::cout << "Interact with individual pieces in real-time.\n";
     return 0;
 }
 `,
@@ -1244,6 +1383,8 @@ uniform float u_clearCoat;    // clearcoat reflection layer
 uniform float u_anisotropy;   // anisotropic specular highlight
 uniform float u_bumpStrength; // procedural bump normal intensity
 uniform int u_useTexMaps;     // 1 to sample 2D texture samplers
+uniform vec2 u_uvScale;       // Custom UV scaling for puzzle tiles
+uniform vec2 u_uvOffset;      // Custom UV offset for puzzle tiles
 
 uniform vec3 u_lightDir;
 uniform vec3 u_lightColor;
@@ -1640,15 +1781,20 @@ void main() {
 
     // Blend optional 2D Texture Maps if active
     if (u_useTexMaps > 0) {
-        vec2 texUv = v_uv * (u_noiseScale > 0.1 ? u_noiseScale * 0.05 : 1.0);
+        vec2 texUv = v_uv;
+        if (u_uvScale.x > 0.001 && u_uvScale.y > 0.001) {
+            texUv = v_uv * u_uvScale + u_uvOffset;
+        } else {
+            texUv = v_uv * (u_noiseScale > 0.1 ? u_noiseScale * 0.05 : 1.0);
+        }
         if (length(v_uv) < 0.001) {
             texUv = (abs(N.y) > 0.6) ? p.xz * 0.3 : ((abs(N.x) > 0.6) ? p.yz * 0.3 : p.xy * 0.3);
         }
         vec4 texAlb = texture(u_albedoMap, texUv);
         vec4 texPbr = texture(u_pbrMap, texUv);
-        albedo = mix(albedo, texAlb.rgb, 0.85);
-        roughness = mix(roughness, texPbr.r, 0.5);
-        metallic = mix(metallic, texPbr.g, 0.5);
+        albedo = texAlb.rgb;
+        roughness = mix(roughness, texPbr.r, 0.1);
+        metallic = mix(metallic, texPbr.g, 0.1);
     }
 
     // -------------------------------------------------------------
@@ -2625,6 +2771,7 @@ EMSCRIPTEN_BINDINGS(EngineModule) {
 
   'examples/06_glb_character_collision_player.cpp': SOURCE_FILES['06_glb_character_collision_player.cpp'],
   'examples/09_slot_machine.cpp': SOURCE_FILES['09_slot_machine.cpp'],
+  'examples/10_sliding_puzzle.cpp': SOURCE_FILES['10_sliding_puzzle.cpp'],
   'include/engine/Engine.hpp': SOURCE_FILES['Engine.hpp'],
   'include/engine/Camera.hpp': SOURCE_FILES['Camera.hpp'],
   'include/engine/GLBLoader.hpp': SOURCE_FILES['GLBLoader.hpp'],
@@ -2924,6 +3071,60 @@ function createSphere(radius = 1.0, latBands = 24, longBands = 24) {
     }
   }
   return { name: "Sphere", positions, normals, uvs, barys, indices };
+}
+
+function createRing(innerR = 0.82, outerR = 1.0, segments = 64) {
+  const positions = [], normals = [], uvs = [], barys = [], indices = [];
+  for (let i = 0; i <= segments; i++) {
+    const theta = (i / segments) * Math.PI * 2;
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+
+    // Outer vertex
+    positions.push(cosT * outerR, sinT * outerR, 0.0);
+    normals.push(0.0, 0.0, 1.0);
+    uvs.push(cosT * 0.5 + 0.5, sinT * 0.5 + 0.5);
+    barys.push(1, 0, 0);
+
+    // Inner vertex
+    positions.push(cosT * innerR, sinT * innerR, 0.0);
+    normals.push(0.0, 0.0, 1.0);
+    uvs.push(cosT * 0.5 * (innerR / outerR) + 0.5, sinT * 0.5 * (innerR / outerR) + 0.5);
+    barys.push(0, 1, 0);
+  }
+
+  for (let i = 0; i < segments; i++) {
+    const o1 = i * 2;
+    const i1 = i * 2 + 1;
+    const o2 = (i + 1) * 2;
+    const i2 = (i + 1) * 2 + 1;
+    indices.push(o1, i1, o2);
+    indices.push(i1, i2, o2);
+  }
+  return { name: "Ring", positions, normals, uvs, barys, indices };
+}
+
+function createDisk(radius = 1.0, segments = 48) {
+  const positions = [0.0, 0.0, 0.0];
+  const normals = [0.0, 0.0, 1.0];
+  const uvs = [0.5, 0.5];
+  const barys = [1, 0, 0];
+  const indices = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const theta = (i / segments) * Math.PI * 2;
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+    positions.push(cosT * radius, sinT * radius, 0.0);
+    normals.push(0.0, 0.0, 1.0);
+    uvs.push(cosT * 0.5 + 0.5, sinT * 0.5 + 0.5);
+    barys.push(0, 1, 0);
+  }
+
+  for (let i = 1; i <= segments; i++) {
+    indices.push(0, i, i + 1);
+  }
+  return { name: "Disk", positions, normals, uvs, barys, indices };
 }
 
 // Retro Web Audio Synthesizer (Instant procedural audio feedback for FPS gameplay)
@@ -3473,6 +3674,7 @@ class NativeApp {
     this.bindEvents();
     this.initBackendInterconnection();
     this.initMobileJoystick();
+    this.preventBrowserZoom();
     this.initLiveCodeEditor();
     this.initGeneratedJSViewer();
     this.initProjectWorkspace();
@@ -3534,7 +3736,10 @@ class NativeApp {
       xrp: '/assets/textures/xrp.webp',
       star1: '/assets/textures/star1.png',
       starFantazy: '/assets/textures/star-fantazy.png',
-      pushBtn: '/assets/textures/pushBtn.webp'
+      pushBtn: '/assets/textures/pushBtn.webp',
+      darkRock: '/assets/textures/dark-rock.webp',
+      floor1: '/assets/textures/floor1.webp',
+      gold2: '/assets/textures/gold-2.webp'
     };
 
     Object.keys(texturesToLoad).forEach(key => {
@@ -3590,6 +3795,8 @@ class NativeApp {
       uAnisotropy: gl.getUniformLocation(prog, "u_anisotropy"),
       uBumpStrength: gl.getUniformLocation(prog, "u_bumpStrength"),
       uUseTexMaps: gl.getUniformLocation(prog, "u_useTexMaps"),
+      uUvScale: gl.getUniformLocation(prog, "u_uvScale"),
+      uUvOffset: gl.getUniformLocation(prog, "u_uvOffset"),
       uAlbedoMap: gl.getUniformLocation(prog, "u_albedoMap"),
       uPbrMap: gl.getUniformLocation(prog, "u_pbrMap"),
       uLightDir: gl.getUniformLocation(prog, "u_lightDir"),
@@ -3757,7 +3964,9 @@ class NativeApp {
       createIcosahedron(1.4),
       createTrefoilKnot(120, 20, 0.28),
       createTorus(0.45, 1.1, 48, 24),
-      createQuad(1.0)
+      createQuad(1.0),
+      createRing(0.82, 1.0, 48),
+      createDisk(1.0, 48)
     ];
 
     this.meshBuffers = this.rawMeshes.map(data => {
@@ -4030,7 +4239,9 @@ class NativeApp {
     const updateFPSOverlays = () => {
       const isShowroom = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
       const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
-      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine;
+      const isSlidingPuzzle = this.state.demoScene.includes('10_sliding_puzzle');
+      const isPlinko = this.state.demoScene.includes('11_plinko');
+      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko;
       const crosshairEl = document.getElementById('fps-crosshair-overlay');
       const bannerEl = document.getElementById('fps-pointerlock-banner');
       const weaponHudEl = document.getElementById('fps-weapon-hud');
@@ -4042,6 +4253,12 @@ class NativeApp {
       
       const slotOverlayEl = document.getElementById('slot-machine-overlay');
       const slotBannerEl = document.getElementById('slot-machine-banner');
+
+      const puzzleOverlayEl = document.getElementById('puzzle-overlay');
+      const puzzleBannerEl = document.getElementById('puzzle-banner');
+
+      const plinkoOverlayEl = document.getElementById('plinko-overlay');
+      const plinkoBannerEl = document.getElementById('plinko-banner');
 
       if (crosshairEl) crosshairEl.style.display = isFPS ? 'flex' : 'none';
       if (bannerEl) {
@@ -4057,7 +4274,7 @@ class NativeApp {
         }
       }
       if (weaponHudEl) weaponHudEl.style.display = isFPS ? 'flex' : 'none';
-      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine) ? 'block' : 'none';
+      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko) ? 'block' : 'none';
 
       if (showroomTopEl) showroomTopEl.style.display = isShowroom ? 'flex' : 'none';
       if (showroomCardEl) showroomCardEl.style.display = isShowroom ? 'block' : 'none';
@@ -4066,7 +4283,26 @@ class NativeApp {
       if (slotOverlayEl) slotOverlayEl.style.display = isSlotMachine ? 'flex' : 'none';
       if (slotBannerEl) slotBannerEl.style.display = isSlotMachine ? 'block' : 'none';
 
-      if (isSlotMachine) {
+      if (puzzleOverlayEl) puzzleOverlayEl.style.display = isSlidingPuzzle ? 'flex' : 'none';
+      if (puzzleBannerEl) puzzleBannerEl.style.display = isSlidingPuzzle ? 'block' : 'none';
+
+      const plinkoFabEl = document.getElementById('plinko-mobile-fab');
+      if (plinkoOverlayEl) {
+        plinkoOverlayEl.style.display = isPlinko ? 'flex' : 'none';
+        if (!isPlinko) {
+          plinkoOverlayEl.classList.remove('mobile-minimized');
+        }
+      }
+      if (plinkoBannerEl) plinkoBannerEl.style.display = isPlinko ? 'flex' : 'none';
+      if (plinkoFabEl && !isPlinko) {
+        plinkoFabEl.style.display = 'none';
+      }
+      if (!isPlinko && this.plinkoState && this.plinkoState.restoreTimeout) {
+        clearTimeout(this.plinkoState.restoreTimeout);
+        this.plinkoState.restoreTimeout = null;
+      }
+
+      if (isSlotMachine || isSlidingPuzzle || isPlinko) {
         const startupOverlay = document.getElementById('fps-startup-overlay');
         if (startupOverlay) startupOverlay.style.display = 'none';
       }
@@ -4097,7 +4333,7 @@ class NativeApp {
     canvasContainer.addEventListener('click', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
-      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner')) return;
+      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab')) return;
 
       if (this.state.cameraMode === 3) {
         if (document.pointerLockElement !== this.canvas && document.pointerLockElement !== canvasContainer) {
@@ -4106,6 +4342,103 @@ class NativeApp {
           } catch(err) {}
         }
         this.fireWeaponProjectile();
+      } else if (this.state.demoScene.includes('10_sliding_puzzle') && this.puzzleState) {
+        // Inverse view projection matrix raycasting
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const mouseX = e.clientX - canvasRect.left;
+        const mouseY = e.clientY - canvasRect.top;
+
+        // Normalized Device Coordinates
+        const ndcX = (mouseX / canvasRect.width) * 2 - 1;
+        const ndcY = 1 - (mouseY / canvasRect.height) * 2;
+
+        const nearPt = [ndcX, ndcY, -1.0, 1.0];
+        const farPt = [ndcX, ndcY, 1.0, 1.0];
+
+        // 4x4 matrix inversion
+        const invVP = new Float32Array(16);
+        const a = this.viewProjMatrix;
+        
+        let a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+        let a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+        let a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+        let a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+
+        let b00 = a00 * a11 - a01 * a10;
+        let b01 = a00 * a12 - a02 * a10;
+        let b02 = a00 * a13 - a03 * a10;
+        let b03 = a01 * a12 - a02 * a11;
+        let b04 = a01 * a13 - a03 * a11;
+        let b05 = a02 * a13 - a03 * a12;
+        let b06 = a20 * a31 - a21 * a30;
+        let b07 = a20 * a32 - a22 * a30;
+        let b08 = a20 * a33 - a23 * a30;
+        let b09 = a21 * a32 - a22 * a31;
+        let b10 = a21 * a33 - a23 * a31;
+        let b11 = a22 * a33 - a23 * a32;
+
+        let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+        if (Math.abs(det) > 0.0001) {
+          det = 1.0 / det;
+
+          invVP[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
+          invVP[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+          invVP[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
+          invVP[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+          invVP[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
+          invVP[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+          invVP[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
+          invVP[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+          invVP[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
+          invVP[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+          invVP[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
+          invVP[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+          invVP[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
+          invVP[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+          invVP[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
+          invVP[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+
+          // Unproject points
+          const unproject = (pt) => {
+            const x = pt[0], y = pt[1], z = pt[2], w = pt[3];
+            const ox = invVP[0]*x + invVP[4]*y + invVP[8]*z + invVP[12]*w;
+            const oy = invVP[1]*x + invVP[5]*y + invVP[9]*z + invVP[13]*w;
+            const oz = invVP[2]*x + invVP[6]*y + invVP[10]*z + invVP[14]*w;
+            const ow = invVP[3]*x + invVP[7]*y + invVP[11]*z + invVP[15]*w;
+            return [ox / ow, oy / ow, oz / ow];
+          };
+
+          const pNear = unproject(nearPt);
+          const pFar = unproject(farPt);
+
+          // Ray direct-vector
+          const dx = pFar[0] - pNear[0];
+          const dy = pFar[1] - pNear[1];
+          const dz = pFar[2] - pNear[2];
+
+          // Intersect with puzzle plane at Z = 0
+          if (Math.abs(dz) > 0.0001) {
+            const t = -pNear[2] / dz;
+            if (t >= 0.0) {
+              const ix = pNear[0] + t * dx;
+              const iy = pNear[1] + t * dy;
+
+              // Grid limits: [-0.5, 0.5] for X, [0.8, 1.8] for Y (centered at 1.3)
+              if (ix >= -0.5 && ix <= 0.5 && iy >= 0.8 && iy <= 1.8) {
+                const N = this.puzzleState.gridSize;
+                const tileW = 1.0 / N;
+
+                // Find cell row & col index
+                const clickC = Math.floor((ix + 0.5) / tileW);
+                const clickR = Math.floor((1.8 - iy) / tileW);
+
+                if (clickR >= 0 && clickR < N && clickC >= 0 && clickC < N) {
+                  this.handleSlidingPuzzleClick(clickR, clickC);
+                }
+              }
+            }
+          }
+        }
       }
     });
 
@@ -4113,7 +4446,7 @@ class NativeApp {
     canvasContainer.addEventListener('mousedown', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
-      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner')) return;
+      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, .plinko-overlay-panel, .plinko-mobile-fab, .slot-machine-overlay-panel, .puzzle-overlay-panel')) return;
 
       this.state.isDragging = true;
       this.state.mouseButton = e.button; // 0: Left, 1: Middle, 2: Right
@@ -4179,6 +4512,9 @@ class NativeApp {
     canvasContainer.addEventListener('wheel', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
+      if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .panel')) {
+        return; // Allow native mouse wheel scrolling in UI panels
+      }
       e.preventDefault();
       if (this.state.cameraMode === 0) {
         this.state.camRadius = Math.max(0.8, Math.min(30.0, this.state.camRadius + e.deltaY * 0.004));
@@ -4329,6 +4665,33 @@ class NativeApp {
           updateFPSOverlays();
           this.log("Loaded Demo 09: 3D Casino Slot Machine & Gold Coins Showcase", "cpp");
           this.initSlotMachineDemo();
+        } else if (this.state.demoScene.includes('10_sliding_puzzle')) {
+          this.state.cameraMode = 0;
+          const camSelect = document.getElementById('camera-mode-select');
+          if (camSelect) camSelect.value = "0";
+          this.state.camRadius = 4.2;
+          this.state.camPitch = 0.0;
+          this.state.camYaw = 0.0;
+          this.state.camTarget[0] = 0.0;
+          this.state.camTarget[1] = 1.3;
+          this.state.camTarget[2] = 0.0;
+          updateFPSOverlays();
+          this.log("Loaded Demo 10: Dynamic 3D Sliding Puzzle & UV Splitter", "cpp");
+          this.initSlidingPuzzleDemo();
+        } else if (this.state.demoScene.includes('11_plinko')) {
+          this.state.cameraMode = 0;
+          const camSelect = document.getElementById('camera-mode-select');
+          if (camSelect) camSelect.value = "0";
+          const isMobile = this.isMobileDevice();
+          this.state.camRadius = isMobile ? 5.2 : 4.6;
+          this.state.camPitch = isMobile ? 0.08 : 0.1;
+          this.state.camYaw = 0.0;
+          this.state.camTarget[0] = 0.0;
+          this.state.camTarget[1] = 1.35;
+          this.state.camTarget[2] = 0.0;
+          updateFPSOverlays();
+          this.log("Loaded Demo 11: 3D Plinko Cascade Showcase & Physics Engine", "cpp");
+          this.initPlinkoDemo();
         } else {
           this.log(`Loaded Demo: ${this.state.demoScene}`, "cpp");
         }
@@ -4985,6 +5348,44 @@ class NativeApp {
     this.log("Scene Manifest JSON config exported.", "success");
   }
 
+  preventBrowserZoom() {
+    // 1. Prevent Safari iOS gesture zoom events on window/document
+    const stopGesture = (e) => e.preventDefault();
+    document.addEventListener('gesturestart', stopGesture, { passive: false });
+    document.addEventListener('gesturechange', stopGesture, { passive: false });
+    document.addEventListener('gestureend', stopGesture, { passive: false });
+
+    // 2. Prevent Ctrl + Wheel browser zooming on desktop browsers and touchpads
+    window.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    // 3. Prevent Ctrl + '+' / '-' / '=' / '0' browser zoom keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+        e.preventDefault();
+      }
+    });
+
+    // 4. Prevent mobile double-tap zoom on quick taps across non-input UI elements
+    let lastTapTime = 0;
+    document.addEventListener('touchend', (e) => {
+      const now = Date.now();
+      if (now - lastTapTime <= 300) {
+        const tag = e.target ? e.target.tagName : '';
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+          if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, .tab-content, .panel, .modal-overlay')) {
+            return;
+          }
+          e.preventDefault();
+        }
+      }
+      lastTapTime = now;
+    }, { passive: false });
+  }
+
   initMobileJoystick() {
     this.joystickState = {
       active: false,
@@ -5127,26 +5528,106 @@ class NativeApp {
       });
     }
 
-    // Touch Look / Rotate on Viewport Canvas
+    // Touch Look / Rotate on Viewport Canvas & Classic Gesture Touch Zoom
     const canvasContainer = document.getElementById('canvas-container');
     if (canvasContainer) {
+      this.pinchZoomState = {
+        active: false,
+        startDist: 0,
+        lastDist: 0,
+        lastTapTime: 0
+      };
+
+      const getTouchDist = (t1, t2) => {
+        return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      };
+
       canvasContainer.addEventListener('touchstart', (e) => {
-        for (let i = 0; i < e.changedTouches.length; i++) {
-          const touch = e.changedTouches[i];
-          // If this touch is NOT the joystick touch, it is look/orbit rotation
+        // If touch occurred inside any overlay dialog, buttons, or scrollable panels, do NOT preventDefault or trigger camera orbit!
+        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea')) {
+          return;
+        }
+        e.preventDefault();
+
+        // ✌️ Classic Two-Finger Pinch-to-Zoom Gesture for 3D Scene / Plinko Table
+        if (e.touches.length >= 2) {
+          const t0 = e.touches[0];
+          const t1 = e.touches[1];
+          const dist = getTouchDist(t0, t1);
+          this.pinchZoomState.active = true;
+          this.pinchZoomState.startDist = dist;
+          this.pinchZoomState.lastDist = dist;
+          // Temporarily pause single-finger look to prevent jumpy camera yaw/pitch
+          this.touchLookState.active = false;
+          return;
+        }
+
+        // 👆 Single Finger Orbit Look or Double-Tap Zoom Reset
+        if (e.touches.length === 1) {
+          const touch = e.touches[0];
+          const now = Date.now();
+          if (now - this.pinchZoomState.lastTapTime < 320) {
+            // Quick double tap resets camera on 3D table / orbit mode
+            if (this.state.demoScene.includes('11_plinko') || this.state.cameraMode === 0) {
+              const isMobile = this.isMobileDevice();
+              this.state.camRadius = isMobile ? 5.2 : 4.6;
+              this.state.camPitch = isMobile ? 0.08 : 0.1;
+              this.state.camYaw = 0.0;
+              this.state.camTarget[0] = 0.0;
+              this.state.camTarget[1] = 1.35;
+              this.state.camTarget[2] = 0.0;
+              this.log("3D Plinko Camera View Reset to Default", "info");
+            }
+          }
+          this.pinchZoomState.lastTapTime = now;
+
           if (touch.identifier !== this.joystickState.touchId && !this.touchLookState.active) {
             this.touchLookState.active = true;
             this.touchLookState.touchId = touch.identifier;
             this.touchLookState.lastX = touch.clientX;
             this.touchLookState.lastY = touch.clientY;
             if (lookHint) lookHint.classList.add('faded');
-            break;
           }
         }
       }, { passive: false });
 
       canvasContainer.addEventListener('touchmove', (e) => {
-        if (!this.touchLookState.active) return;
+        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea')) {
+          return;
+        }
+        e.preventDefault();
+
+        // ✌️ Handle Two-Finger Pinch-To-Zoom Gesture
+        if (e.touches.length >= 2) {
+          const t0 = e.touches[0];
+          const t1 = e.touches[1];
+          const currentDist = getTouchDist(t0, t1);
+
+          if (!this.pinchZoomState.active) {
+            this.pinchZoomState.active = true;
+            this.pinchZoomState.startDist = currentDist;
+            this.pinchZoomState.lastDist = currentDist;
+          }
+
+          const deltaDist = currentDist - this.pinchZoomState.lastDist;
+          this.pinchZoomState.lastDist = currentDist;
+
+          if (Math.abs(deltaDist) > 0.05) {
+            // In 3D Plinko table / Orbit Camera mode:
+            // Fingers spread (deltaDist > 0) -> zoom in (lower radius)
+            // Fingers pinch together (deltaDist < 0) -> zoom out (higher radius)
+            if (this.state.cameraMode === 0 || this.state.demoScene.includes('11_plinko')) {
+              const zoomSens = 0.014 * Math.max(0.4, this.state.camRadius * 0.22);
+              this.state.camRadius = Math.max(1.0, Math.min(26.0, this.state.camRadius - deltaDist * zoomSens));
+            } else {
+              this.state.moveSpeed = Math.max(0.5, Math.min(30.0, this.state.moveSpeed + deltaDist * 0.02));
+            }
+          }
+          return;
+        }
+
+        // 👆 Single Finger Orbit / Swipe Look
+        if (!this.touchLookState.active || this.pinchZoomState.active) return;
         const invX = this.state.invertMouseX ? -1 : 1;
         const invY = this.state.invertMouseY ? -1 : 1;
 
@@ -5158,7 +5639,7 @@ class NativeApp {
             this.touchLookState.lastX = touch.clientX;
             this.touchLookState.lastY = touch.clientY;
 
-            if (this.state.cameraMode === 0) {
+            if (this.state.cameraMode === 0 || this.state.demoScene.includes('11_plinko')) {
               // Orbit mode swipe
               this.state.camYaw += dx * 0.008 * invX;
               this.state.camPitch = Math.max(-1.45, Math.min(1.45, this.state.camPitch + dy * 0.008 * invY));
@@ -5173,6 +5654,19 @@ class NativeApp {
       }, { passive: false });
 
       const endTouchLook = (e) => {
+        if (e.touches.length < 2) {
+          this.pinchZoomState.active = false;
+        }
+        if (e.touches.length === 1 && !this.touchLookState.active) {
+          // Seamless transition from pinch to single-touch orbit without camera jerk
+          const remainingTouch = e.touches[0];
+          if (remainingTouch.identifier !== this.joystickState.touchId) {
+            this.touchLookState.active = true;
+            this.touchLookState.touchId = remainingTouch.identifier;
+            this.touchLookState.lastX = remainingTouch.clientX;
+            this.touchLookState.lastY = remainingTouch.clientY;
+          }
+        }
         if (!this.touchLookState.active) return;
         for (let i = 0; i < e.changedTouches.length; i++) {
           if (e.changedTouches[i].identifier === this.touchLookState.touchId) {
@@ -5183,8 +5677,8 @@ class NativeApp {
         }
       };
 
-      canvasContainer.addEventListener('touchend', endTouchLook);
-      canvasContainer.addEventListener('touchcancel', endTouchLook);
+      canvasContainer.addEventListener('touchend', endTouchLook, { passive: false });
+      canvasContainer.addEventListener('touchcancel', endTouchLook, { passive: false });
     }
 
     // Mobile Action Pad Buttons
@@ -8478,6 +8972,1299 @@ else if (typeof define === 'function' && define['amd'])
     }
   }
 
+  // 🧩 3D Sliding Puzzle Implementation Methods
+  initSlidingPuzzleDemo() {
+    // Ensure high-quality PBR shader is selected so textures can be rendered
+    this.state.activeShader = 0;
+    this.state.fpsCheapMaterial = false;
+    const shaderSelect = document.getElementById('shader-select');
+    if (shaderSelect) shaderSelect.value = "0";
+
+    if (!this.puzzleState) {
+      this.puzzleState = {
+        gridSize: 3,
+        grid: [],
+        originalImage: 'assets/textures/tex01.webp',
+        uploadedImage: null,
+        activeTexturePath: 'assets/textures/tex01.webp',
+        texture: null,
+        moves: 0,
+        shuffled: false,
+        solved: true,
+        tilePositions: {}, // Smooth slide positions
+      };
+      
+      this.bindPuzzleUI();
+    }
+    
+    this.resetPuzzleBoard();
+  }
+
+  bindPuzzleUI() {
+    const sizeSelector = document.getElementById('puzzle-grid-size-selector');
+    if (sizeSelector) {
+      sizeSelector.addEventListener('click', (e) => {
+        const btn = e.target.closest('.puzzle-size-btn');
+        if (!btn) return;
+        
+        sizeSelector.querySelectorAll('.puzzle-size-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        
+        const size = parseInt(btn.dataset.size, 10);
+        this.puzzleState.gridSize = size;
+        this.resetPuzzleBoard();
+        this.log(`Puzzle dimension reconfigured to: ${size}x${size} Grid (C++ Solver Active)`, "cpp");
+      });
+    }
+
+    const btnShuffle = document.getElementById('btn-puzzle-shuffle');
+    if (btnShuffle) {
+      btnShuffle.addEventListener('click', () => {
+        this.shufflePuzzleBoard();
+      });
+    }
+
+    const btnReset = document.getElementById('btn-puzzle-reset');
+    if (btnReset) {
+      btnReset.addEventListener('click', () => {
+        this.resetPuzzleBoard();
+      });
+    }
+
+    const dropZone = document.getElementById('puzzle-drop-zone');
+    const fileInput = document.getElementById('puzzle-image-file');
+
+    if (dropZone && fileInput) {
+      dropZone.addEventListener('click', () => fileInput.click());
+
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+      });
+
+      dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+      });
+
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+          this.handlePuzzleImageFile(files[0]);
+        }
+      });
+
+      fileInput.addEventListener('change', (e) => {
+        const files = e.target.files;
+        if (files && files.length > 0) {
+          this.handlePuzzleImageFile(files[0]);
+        }
+      });
+    }
+
+    const presetGrid = document.getElementById('puzzle-preset-grid');
+    if (presetGrid) {
+      presetGrid.addEventListener('click', (e) => {
+        const card = e.target.closest('.puzzle-preset-card');
+        if (!card) return;
+
+        presetGrid.querySelectorAll('.puzzle-preset-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+
+        const texPath = card.dataset.texture;
+        this.puzzleState.activeTexturePath = texPath;
+        this.puzzleState.uploadedImage = null;
+        this.log(`Puzzle texture changed to preset: ${card.title || 'Preset Material'}`, "success");
+      });
+    }
+  }
+
+  handlePuzzleImageFile(file) {
+    if (!file.type.startsWith('image/')) {
+      this.log("Unsupported file type! Please upload an image.", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target.result;
+      this.puzzleState.uploadedImage = dataUrl;
+      this.createCustomPuzzleTexture(dataUrl);
+      
+      const presetGrid = document.getElementById('puzzle-preset-grid');
+      if (presetGrid) {
+        presetGrid.querySelectorAll('.puzzle-preset-card').forEach(c => c.classList.remove('active'));
+      }
+      this.log(`Successfully imported custom file: ${file.name} (${Math.round(file.size / 1024)} KB)`, "success");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  createCustomPuzzleTexture(imageSource) {
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([120, 120, 120, 255]));
+
+    const img = new Image();
+    img.onload = () => {
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.puzzleState.texture = tex;
+      this.log("Custom puzzle image successfully mapped to GPU WebGL sampler!", "success");
+    };
+    img.onerror = () => {
+      this.log("Failed to process custom puzzle image texture mapping.", "error");
+    };
+    img.src = imageSource;
+  }
+
+  getTextureForPath(path) {
+    if (this.puzzleState.uploadedImage && this.puzzleState.texture) {
+      return this.puzzleState.texture;
+    }
+    if (path.includes('tex01')) return this.textureCatalog['tex01'];
+    if (path.includes('matrix1')) return this.textureCatalog['matrix1'];
+    if (path.includes('dark-rock')) return this.textureCatalog['darkRock'] || this.textureCatalog['rust'];
+    if (path.includes('floor1')) return this.textureCatalog['floor1'] || this.textureCatalog['wood'];
+    if (path.includes('gold-2')) return this.textureCatalog['gold2'] || this.textureCatalog['whiteMetal2'];
+    if (path.includes('xrp')) return this.textureCatalog['xrp'];
+    return this.textureCatalog['tex01'];
+  }
+
+  resetPuzzleBoard() {
+    const size = this.puzzleState.gridSize;
+    this.puzzleState.grid = [];
+    this.puzzleState.moves = 0;
+    this.puzzleState.shuffled = false;
+    this.puzzleState.solved = true;
+    
+    let id = 0;
+    for (let r = 0; r < size; ++r) {
+      const rowArr = [];
+      for (let c = 0; c < size; ++c) {
+        if (r === size - 1 && c === size - 1) {
+          rowArr.push(-1); // Empty slot
+        } else {
+          rowArr.push(id++);
+        }
+      }
+      this.puzzleState.grid.push(rowArr);
+    }
+    
+    this.puzzleState.tilePositions = {};
+    this.updatePuzzleUI();
+  }
+
+  shufflePuzzleBoard() {
+    this.resetPuzzleBoard();
+    const size = this.puzzleState.gridSize;
+    
+    // Simulate valid moves to guarantee solvability
+    let emptyR = size - 1;
+    let emptyC = size - 1;
+    
+    const iterations = size === 3 ? 150 : (size === 4 ? 250 : 400);
+    for (let i = 0; i < iterations; ++i) {
+      const moves = [];
+      if (emptyR > 0) moves.push([-1, 0]);
+      if (emptyR < size - 1) moves.push([1, 0]);
+      if (emptyC > 0) moves.push([0, -1]);
+      if (emptyC < size - 1) moves.push([0, 1]);
+      
+      const chosen = moves[Math.floor(Math.random() * moves.length)];
+      const nextR = emptyR + chosen[0];
+      const nextC = emptyC + chosen[1];
+      
+      this.puzzleState.grid[emptyR][emptyC] = this.puzzleState.grid[nextR][nextC];
+      this.puzzleState.grid[nextR][nextC] = -1;
+      
+      emptyR = nextR;
+      emptyC = nextC;
+    }
+    
+    this.puzzleState.moves = 0;
+    this.puzzleState.shuffled = true;
+    this.puzzleState.solved = false;
+    this.updatePuzzleUI();
+    this.log("Puzzle grid successfully scrambled using C++ solvable constraints!", "success");
+    if (this.synth) this.synth.play('teleport');
+  }
+
+  checkPuzzleSolved() {
+    const size = this.puzzleState.gridSize;
+    let expectedId = 0;
+    for (let r = 0; r < size; ++r) {
+      for (let c = 0; c < size; ++c) {
+        if (r === size - 1 && c === size - 1) {
+          if (this.puzzleState.grid[r][c] !== -1) return false;
+        } else {
+          if (this.puzzleState.grid[r][c] !== expectedId++) return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  handleSlidingPuzzleClick(clickR, clickC) {
+    if (this.puzzleState.solved && !this.puzzleState.shuffled) return;
+
+    const size = this.puzzleState.gridSize;
+    if (clickR < 0 || clickR >= size || clickC < 0 || clickC >= size) return;
+    if (this.puzzleState.grid[clickR][clickC] === -1) return;
+
+    // Find empty slot
+    let emptyR = -1, emptyC = -1;
+    for (let r = 0; r < size; ++r) {
+      for (let c = 0; c < size; ++c) {
+        if (this.puzzleState.grid[r][c] === -1) {
+          emptyR = r;
+          emptyC = c;
+          break;
+        }
+      }
+      if (emptyR !== -1) break;
+    }
+
+    const dist = Math.abs(clickR - emptyR) + Math.abs(clickC - emptyC);
+    if (dist === 1) {
+      // Swap tiles in core grid!
+      this.puzzleState.grid[emptyR][emptyC] = this.puzzleState.grid[clickR][clickC];
+      this.puzzleState.grid[clickR][clickC] = -1;
+      this.puzzleState.moves++;
+      
+      const solved = this.checkPuzzleSolved();
+      this.puzzleState.solved = solved;
+      
+      if (solved) {
+        this.puzzleState.shuffled = false;
+        this.log(`🏆 CONGRATULATIONS! Puzzle Solved in ${this.puzzleState.moves} moves!`, "success");
+        if (this.synth) this.synth.play('kill_major');
+      } else {
+        if (this.synth) this.synth.play('shoot_rifle');
+      }
+      
+      this.updatePuzzleUI();
+    }
+  }
+
+  updatePuzzleUI() {
+    const movesVal = document.getElementById('puzzle-moves-val');
+    const statusVal = document.getElementById('puzzle-status-val');
+    const statsSummary = document.getElementById('puzzle-stats-summary');
+    
+    if (movesVal) movesVal.textContent = this.puzzleState.moves;
+    if (statusVal) {
+      if (this.puzzleState.solved) {
+        statusVal.textContent = "SOLVED";
+        statusVal.style.color = "#10b981";
+      } else {
+        statusVal.textContent = "PLAYING";
+        statusVal.style.color = "#38bdf8";
+      }
+    }
+    if (statsSummary) {
+      statsSummary.textContent = `Moves: ${this.puzzleState.moves} | Grid: ${this.puzzleState.gridSize}x${this.puzzleState.gridSize}`;
+    }
+  }
+
+  // 🟢 Demo 11: 3D Plinko Cascade Implementation Methods
+  initPlinkoDemo() {
+    this.state.activeShader = 0;
+    this.state.fpsCheapMaterial = false;
+    const shaderSelect = document.getElementById('shader-select');
+    if (shaderSelect) shaderSelect.value = "0";
+
+    if (!this.plinkoState) {
+      this.plinkoState = {
+        credits: 1000,
+        highScore: 1000,
+        totalDropped: 0,
+        lastPayout: 0,
+        rows: 8,
+        gravity: -4.0,
+        bounciness: 0.55,
+        balls: [],
+        particles: [],
+        recentPegHits: {},
+        autoDrop: false,
+        autoDropTimer: 0,
+        ballType: 'neon',
+        touchEffect: 'pulsering',
+        trailMode: 'pulse',
+        initializedUI: false,
+        pegs: [],
+        shockwaveRings: [],
+        autoHiddenOnMobile: false,
+        restoreTimeout: null
+      };
+      
+      // Pre-allocate shockwave rings for expanding radius circles
+      for (let i = 0; i < 60; i++) {
+        this.plinkoState.shockwaveRings.push({
+          pos: [0, 0, 0.015],
+          active: false,
+          startTime: 0,
+          duration: 0.48,
+          radius: 0.0,
+          maxRadius: 0.24,
+          color: [1, 1, 1],
+          type: 'pulsering',
+          phase: 0
+        });
+      }
+
+      // Pre-allocate spark particles
+      for (let i = 0; i < 60; i++) {
+        this.plinkoState.particles.push({
+          pos: [0, 0, 0],
+          vel: [0, 0, 0],
+          color: [1, 1, 1],
+          active: false,
+          scale: 0.05,
+          lifetime: 0,
+          maxLifetime: 1.0,
+          type: 'pulsering',
+          initialHue: 0.0
+        });
+      }
+    }
+
+    const ps = this.plinkoState;
+    this.recomputePlinkoPegs();
+
+    // Update UI
+    this.updatePlinkoUI();
+
+    if (!ps.initializedUI) {
+      ps.initializedUI = true;
+      this.setupPlinkoUI();
+    }
+  }
+
+  recomputePlinkoPegs() {
+    const ps = this.plinkoState;
+    if (!ps) return;
+    ps.pegs = [];
+    const R = ps.rows;
+    const topY = 2.15;
+    const bottomY = 0.7;
+    const yRange = topY - bottomY;
+    const pegSpacingX = 1.84 / (R + 2);
+
+    for (let r = 0; r < R; r++) {
+      const y = topY - (r / (R - 1)) * yRange;
+      const count = r + 3;
+      for (let i = 0; i < count; i++) {
+        const x = (i - (count - 1) / 2) * pegSpacingX;
+        ps.pegs.push({
+          row: r,
+          col: i,
+          x: x,
+          y: y,
+          id: `${r}_${i}`
+        });
+      }
+    }
+  }
+
+  isMobileDevice() {
+    return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (window.innerWidth <= 768 && ('ontouchstart' in window || navigator.maxTouchPoints > 0)) ||
+           window.innerWidth <= 640;
+  }
+
+  hidePlinkoMobileUI() {
+    const plinkoOverlayEl = document.getElementById('plinko-overlay');
+    const plinkoFabEl = document.getElementById('plinko-mobile-fab');
+    if (plinkoOverlayEl) {
+      plinkoOverlayEl.classList.add('mobile-minimized');
+    }
+    if (plinkoFabEl && this.state.demoScene.includes('11_plinko')) {
+      plinkoFabEl.style.display = 'flex';
+    }
+    if (this.plinkoState) {
+      this.plinkoState.autoHiddenOnMobile = true;
+    }
+  }
+
+  showPlinkoMobileUI() {
+    const plinkoOverlayEl = document.getElementById('plinko-overlay');
+    const plinkoFabEl = document.getElementById('plinko-mobile-fab');
+    if (plinkoOverlayEl) {
+      plinkoOverlayEl.classList.remove('mobile-minimized');
+    }
+    if (plinkoFabEl) {
+      plinkoFabEl.style.display = 'none';
+    }
+    if (this.plinkoState) {
+      this.plinkoState.autoHiddenOnMobile = false;
+      if (this.plinkoState.restoreTimeout) {
+        clearTimeout(this.plinkoState.restoreTimeout);
+        this.plinkoState.restoreTimeout = null;
+      }
+    }
+  }
+
+  setupPlinkoUI() {
+    const ps = this.plinkoState;
+    if (!ps) return;
+
+    const plinkoOverlay = document.getElementById('plinko-overlay');
+    if (plinkoOverlay && !plinkoOverlay._eventsIsolated) {
+      plinkoOverlay._eventsIsolated = true;
+      const stopProp = (e) => {
+        e.stopPropagation();
+      };
+      ['wheel', 'touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(evt => {
+        plinkoOverlay.addEventListener(evt, stopProp, { passive: true });
+      });
+      ['mousedown', 'mousemove', 'mouseup'].forEach(evt => {
+        plinkoOverlay.addEventListener(evt, stopProp);
+      });
+    }
+
+    const btnClose = document.getElementById('btn-plinko-close');
+    if (btnClose) {
+      btnClose.addEventListener('click', () => {
+        this.hidePlinkoMobileUI();
+      });
+    }
+
+    const btnFab = document.getElementById('plinko-mobile-fab');
+    if (btnFab) {
+      btnFab.addEventListener('click', () => {
+        this.showPlinkoMobileUI();
+      });
+    }
+
+    const btnDrop = document.getElementById('btn-plinko-drop');
+    if (btnDrop) {
+      btnDrop.addEventListener('click', () => {
+        this.dropPlinkoBall();
+      });
+    }
+
+    const btnAuto = document.getElementById('btn-plinko-autodrop');
+    if (btnAuto) {
+      btnAuto.addEventListener('click', () => {
+        ps.autoDrop = !ps.autoDrop;
+        btnAuto.textContent = ps.autoDrop ? '🔄 AUTO-DROP: ON' : '🔄 AUTO-DROP: OFF';
+        btnAuto.style.background = ps.autoDrop ? 'rgba(16, 185, 129, 0.25)' : 'rgba(15, 23, 42, 0.6)';
+        btnAuto.style.borderColor = ps.autoDrop ? '#10b981' : 'rgba(255, 255, 255, 0.1)';
+        btnAuto.style.color = ps.autoDrop ? '#34d399' : '#94a3b8';
+        if (ps.autoDrop && this.isMobileDevice()) {
+          this.hidePlinkoMobileUI();
+        } else if (!ps.autoDrop && ps.balls.length === 0 && this.isMobileDevice() && ps.autoHiddenOnMobile) {
+          if (ps.restoreTimeout) clearTimeout(ps.restoreTimeout);
+          ps.restoreTimeout = setTimeout(() => {
+            if (this.state.demoScene.includes('11_plinko') && ps.balls.length === 0 && !ps.autoDrop) {
+              this.showPlinkoMobileUI();
+            }
+          }, 3000);
+        }
+      });
+    }
+
+    const btnReset = document.getElementById('btn-plinko-reset');
+    if (btnReset) {
+      btnReset.addEventListener('click', () => {
+        ps.balls = [];
+        ps.lastPayout = 0;
+        ps.credits = 1000;
+        ps.totalDropped = 0;
+        this.updatePlinkoUI();
+        this.log("Plinko Board cleared and credits reset to 1000!", "success");
+        if (this.synth) this.synth.play('armor');
+      });
+    }
+
+    const rowButtons = document.querySelectorAll('#plinko-rows-selector button');
+    rowButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        rowButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        ps.rows = parseInt(btn.getAttribute('data-rows'), 10);
+        ps.balls = [];
+        this.recomputePlinkoPegs();
+        this.log(`Plinko board configured to ${ps.rows} rows of pegs!`, "info");
+        if (this.synth) this.synth.play('elevator');
+      });
+    });
+
+    const styleButtons = document.querySelectorAll('#plinko-style-selector button');
+    styleButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        styleButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        ps.ballType = btn.getAttribute('data-type');
+        this.log(`Plinko ball aesthetic updated: [${ps.ballType.toUpperCase()}]`, "info");
+        if (this.synth) this.synth.play('elevator');
+      });
+    });
+
+    const effectButtons = document.querySelectorAll('#plinko-effect-selector button');
+    effectButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        effectButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        ps.touchEffect = btn.getAttribute('data-effect');
+        this.log(`Plinko impact visual effect updated: [${ps.touchEffect.toUpperCase()}]`, "info");
+        if (this.synth) this.synth.play('hit');
+      });
+    });
+
+    const trailButtons = document.querySelectorAll('#plinko-trail-selector button');
+    trailButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        trailButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        ps.trailMode = btn.getAttribute('data-trail');
+        this.log(`Plinko ball trail effect updated: [${ps.trailMode.toUpperCase()}]`, "info");
+        if (this.synth) this.synth.play('laser');
+      });
+    });
+
+    const gravitySlider = document.getElementById('slider-plinko-gravity');
+    const gravityLbl = document.getElementById('plinko-gravity-lbl');
+    if (gravitySlider) {
+      gravitySlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        ps.gravity = val;
+        if (gravityLbl) gravityLbl.textContent = `${val.toFixed(1)} m/s²`;
+      });
+    }
+
+    const bouncinessSlider = document.getElementById('slider-plinko-bounciness');
+    const bouncinessLbl = document.getElementById('plinko-bounciness-lbl');
+    if (bouncinessSlider) {
+      bouncinessSlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        ps.bounciness = val;
+        if (bouncinessLbl) bouncinessLbl.textContent = `${Math.round(val * 100)}%`;
+      });
+    }
+  }
+
+  updatePlinkoUI() {
+    const ps = this.plinkoState;
+    if (!ps) return;
+
+    const creditsEl = document.getElementById('plinko-credits-val');
+    if (creditsEl) creditsEl.textContent = ps.credits;
+
+    const highScoreEl = document.getElementById('plinko-highscore-val');
+    if (highScoreEl) highScoreEl.textContent = ps.highScore;
+
+    const countEl = document.getElementById('plinko-dropped-val');
+    if (countEl) countEl.textContent = ps.totalDropped;
+
+    const payoutEl = document.getElementById('plinko-payout-val');
+    if (payoutEl) {
+      payoutEl.textContent = ps.lastPayout > 0 ? `+${ps.lastPayout}` : "0";
+    }
+
+    const summaryEl = document.getElementById('plinko-stats-summary');
+    if (summaryEl) {
+      summaryEl.textContent = `Cost: 10 | High Score: ${ps.highScore}`;
+    }
+  }
+
+  dropPlinkoBall() {
+    const ps = this.plinkoState;
+    if (!ps) return;
+
+    if (ps.credits < 10) {
+      this.log("Insufficient Credits! Please click RESET BOARD to get 1000 credits.", "warning");
+      if (this.synth) this.synth.play('elevator');
+      return;
+    }
+
+    ps.credits -= 10;
+    ps.totalDropped++;
+    this.updatePlinkoUI();
+
+    // On mobile devices, auto-hide UI popup when playing so board is unobstructed
+    if (this.isMobileDevice()) {
+      this.hidePlinkoMobileUI();
+      if (ps.restoreTimeout) {
+        clearTimeout(ps.restoreTimeout);
+        ps.restoreTimeout = null;
+      }
+    }
+
+    const startX = (Math.random() - 0.5) * 0.12;
+    const startY = 2.45;
+    const startZ = 0.0;
+
+    const startVx = (Math.random() - 0.5) * 0.4;
+    const startVy = -0.5;
+
+    let bColor = [1.0, 0.35, 0.0];
+    let bMetal = 0.0;
+    let bRough = 0.1;
+    let bMatType = 0;
+
+    if (ps.ballType === 'chrome') {
+      bColor = [0.95, 0.95, 0.95];
+      bMetal = 0.95;
+      bRough = 0.05;
+      bMatType = 0;
+    } else if (ps.ballType === 'ruby') {
+      bColor = [0.9, 0.05, 0.15];
+      bMetal = 0.1;
+      bRough = 0.08;
+      bMatType = 12;
+    }
+
+    ps.balls.push({
+      pos: [startX, startY, startZ],
+      vel: [startVx, startVy, 0.0],
+      color: bColor,
+      metal: bMetal,
+      rough: bRough,
+      matType: bMatType,
+      radius: 0.032,
+      lastPegHitId: "",
+      trail: []
+    });
+
+    if (this.synth) this.synth.play('laser');
+  }
+
+  spawnPlinkoShockwave(px, py, color, effectType = null, customMaxRadius = 0.24) {
+    const ps = this.plinkoState;
+    if (!ps || !ps.shockwaveRings) return;
+
+    const effect = effectType || ps.touchEffect || 'pulsering';
+    const now = performance.now();
+
+    // Spawn 1 or 2 concentric expanding radius circles (primary ring and echo ring)
+    const numRings = (effect === 'pulsering' || effect === 'chromatic') ? 2 : 1;
+
+    for (let r = 0; r < numRings; r++) {
+      for (let i = 0; i < ps.shockwaveRings.length; i++) {
+        const ring = ps.shockwaveRings[i];
+        if (!ring.active) {
+          ring.active = true;
+          ring.pos[0] = px;
+          ring.pos[1] = py;
+          ring.pos[2] = 0.015 + r * 0.002;
+          ring.startTime = now + r * 65; // slight delay for concentric echo ring
+          ring.duration = (effect === 'electro' ? 0.32 : (effect === 'halo' ? 0.52 : 0.46));
+          ring.radius = 0.02;
+          ring.maxRadius = customMaxRadius * (r === 1 ? 1.25 : 1.0);
+          ring.color = [color[0], color[1], color[2]];
+          ring.type = effect;
+          ring.phase = r;
+          break;
+        }
+      }
+    }
+  }
+
+  spawnPlinkoSparkles(px, py, color, count = 6) {
+    // Forward to expanding radius shockwave circles with additive glow
+    this.spawnPlinkoShockwave(px, py, color);
+  }
+
+  hslToRgb(h, s, l) {
+    let r, g, b;
+    if (s === 0) {
+      r = g = b = l; // achromatic
+    } else {
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1/3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1/3);
+    }
+    return [r, g, b];
+  }
+
+  updatePlinkoPhysics(dt) {
+    const ps = this.plinkoState;
+    if (!ps) return;
+
+    if (ps.autoDrop) {
+      ps.autoDropTimer += dt;
+      if (ps.autoDropTimer >= 0.35) {
+        ps.autoDropTimer = 0.0;
+        this.dropPlinkoBall();
+      }
+    }
+
+    const now = performance.now();
+
+    // Update expanding radius shockwave rings
+    if (ps.shockwaveRings) {
+      ps.shockwaveRings.forEach(ring => {
+        if (ring.active) {
+          if (now < ring.startTime) return;
+          const elapsed = (now - ring.startTime) / 1000.0;
+          if (elapsed >= ring.duration) {
+            ring.active = false;
+          } else {
+            const progress = elapsed / ring.duration;
+            const easeOut = 1.0 - Math.pow(1.0 - progress, 3.0);
+            ring.radius = 0.02 + (ring.maxRadius - 0.02) * easeOut;
+          }
+        }
+      });
+    }
+
+    const R = ps.rows;
+    const B = R + 2;
+    const binW = 1.84 / B;
+    const startBinX = -0.92;
+
+    for (let i = ps.balls.length - 1; i >= 0; i--) {
+      const b = ps.balls[i];
+
+      b.vel[1] += ps.gravity * dt;
+      b.vel[0] *= Math.exp(-0.15 * dt);
+      b.vel[1] *= Math.exp(-0.05 * dt);
+
+      b.pos[0] += b.vel[0] * dt;
+      b.pos[1] += b.vel[1] * dt;
+
+      // Update ball trail if enabled
+      if (ps.trailMode !== 'off') {
+        if (!b.trail) b.trail = [];
+        const lastP = b.trail[b.trail.length - 1];
+        if (!lastP || (now - lastP.time > 12)) {
+          b.trail.push({
+            x: b.pos[0],
+            y: b.pos[1],
+            z: b.pos[2],
+            time: now,
+            color: [b.color[0], b.color[1], b.color[2]]
+          });
+        }
+        while (b.trail.length > 0 && (now - b.trail[0].time > 360)) {
+          b.trail.shift();
+        }
+      }
+
+      const wallLimit = 0.94 - b.radius;
+      if (b.pos[0] < -wallLimit) {
+        b.pos[0] = -wallLimit;
+        b.vel[0] = -b.vel[0] * ps.bounciness;
+      } else if (b.pos[0] > wallLimit) {
+        b.pos[0] = wallLimit;
+        b.vel[0] = -b.vel[0] * ps.bounciness;
+      }
+
+      let closestPeg = null;
+      let minPegDist = 999.0;
+      
+      for (let j = 0; j < ps.pegs.length; j++) {
+        const peg = ps.pegs[j];
+        const dx = b.pos[0] - peg.x;
+        const dy = b.pos[1] - peg.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < minPegDist) {
+          minPegDist = d;
+          closestPeg = peg;
+        }
+      }
+
+      const pegRadius = 0.024;
+      const collisionRadius = b.radius + pegRadius;
+
+      if (closestPeg && minPegDist < collisionRadius) {
+        const dx = b.pos[0] - closestPeg.x;
+        const dy = b.pos[1] - closestPeg.y;
+        const nLen = minPegDist > 0.0001 ? minPegDist : 0.0001;
+        const nx = dx / nLen;
+        const ny = dy / nLen;
+
+        b.pos[0] = closestPeg.x + nx * collisionRadius;
+        b.pos[1] = closestPeg.y + ny * collisionRadius;
+
+        const dot = b.vel[0] * nx + b.vel[1] * ny;
+        if (dot < 0) {
+          b.vel[0] = b.vel[0] - (1.0 + ps.bounciness) * dot * nx;
+          b.vel[1] = b.vel[1] - (1.0 + ps.bounciness) * dot * ny;
+          b.vel[0] += (Math.random() - 0.5) * 0.18;
+        }
+
+        if (b.lastPegHitId !== closestPeg.id) {
+          b.lastPegHitId = closestPeg.id;
+          ps.recentPegHits[closestPeg.id] = performance.now();
+          this.spawnPlinkoShockwave(closestPeg.x, closestPeg.y, b.color, ps.touchEffect);
+          if (this.synth) this.synth.play('hit');
+        }
+      } else if (closestPeg && minPegDist > collisionRadius + 0.05) {
+        if (b.lastPegHitId === closestPeg.id) {
+          b.lastPegHitId = "";
+        }
+      }
+
+      if (b.pos[1] <= 0.41) {
+        const landingX = b.pos[0];
+        let binIdx = Math.floor((landingX - startBinX) / binW);
+        binIdx = Math.max(0, Math.min(B - 1, binIdx));
+
+        const halfBins = (B - 1) / 2;
+        const distFromCenter = Math.abs(binIdx - halfBins) / halfBins;
+        
+        let multiplier = 0.2;
+        if (distFromCenter < 0.2) {
+          multiplier = 0.2;
+        } else if (distFromCenter < 0.4) {
+          multiplier = 0.5;
+        } else if (distFromCenter < 0.6) {
+          multiplier = 1.5;
+        } else if (distFromCenter < 0.8) {
+          multiplier = 4.0;
+        } else {
+          multiplier = 12.0;
+        }
+
+        const winAmount = Math.round(10 * multiplier);
+        ps.credits += winAmount;
+        ps.lastPayout = winAmount;
+
+        if (ps.credits > ps.highScore) {
+          ps.highScore = ps.credits;
+        }
+
+        this.updatePlinkoUI();
+        this.log(`Ball landed in bin ${binIdx + 1} (Multiplier: ${multiplier}x). Payout: ${winAmount} credits!`, "success");
+        
+        let binHighlightColor = [0.1, 0.8, 1.0];
+        if (multiplier >= 12.0) binHighlightColor = [1.0, 0.85, 0.1];
+        else if (multiplier >= 4.0) binHighlightColor = [0.2, 1.0, 0.4];
+        this.spawnPlinkoShockwave(landingX, 0.44, binHighlightColor, ps.touchEffect, 0.38);
+
+        if (this.synth) {
+          if (multiplier >= 4.0) {
+            this.synth.play('health');
+          } else {
+            this.synth.play('elevator');
+          }
+        }
+
+        ps.balls.splice(i, 1);
+
+        // Mobile UX: If all active balls finished falling and UI was auto-hidden on mobile, wait 3 seconds and restore popup
+        if (ps.balls.length === 0 && this.isMobileDevice() && ps.autoHiddenOnMobile && !ps.autoDrop) {
+          if (ps.restoreTimeout) clearTimeout(ps.restoreTimeout);
+          ps.restoreTimeout = setTimeout(() => {
+            if (this.state.demoScene.includes('11_plinko') && ps.balls.length === 0 && !ps.autoDrop) {
+              this.showPlinkoMobileUI();
+            }
+          }, 3000);
+        }
+      }
+    }
+  }
+
+  render3DPlinko(progInfo, timestamp) {
+    const gl = this.gl;
+    const ps = this.plinkoState;
+    if (!ps) return;
+
+    const cubeMesh = this.meshBuffers[1];
+    const sphereMesh = this.meshBuffers[0];
+    const pegMesh = this.meshBuffers[2];
+    const quadMesh = this.meshBuffers[5];
+    const ringMesh = this.meshBuffers[6];
+    const diskMesh = this.meshBuffers[7];
+
+    if (!cubeMesh || !sphereMesh || !pegMesh || !quadMesh) return;
+
+    const drawCube = (px, py, pz, sx, sy, sz, color, rough = 0.25, metal = 0.85, matType = 0) => {
+      gl.bindVertexArray(cubeMesh.vao);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.1);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    const drawSphere = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0) => {
+      gl.bindVertexArray(sphereMesh.vao);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    const drawPeg = (px, py, pz, sx, sy, sz, color, rough = 0.1, metal = 0.9, matType = 0) => {
+      gl.bindVertexArray(pegMesh.vao);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      gl.drawElements(gl.TRIANGLES, pegMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    const drawRing = (px, py, pz, sx, sy, sz, color, rough = 0.01, metal = 0.0, matType = 12) => {
+      if (!ringMesh) return;
+      gl.bindVertexArray(ringMesh.vao);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    const drawDisk = (px, py, pz, sx, sy, sz, color, rough = 0.01, metal = 0.0, matType = 12) => {
+      if (!diskMesh) return;
+      gl.bindVertexArray(diskMesh.vao);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    if (progInfo.uUseTexMaps) gl.uniform1i(progInfo.uUseTexMaps, 0);
+
+    // Plinko Board Backing and Frame
+    drawCube(0.0, 1.35, -0.05, 2.0, 2.4, 0.04, [0.06, 0.08, 0.11], 0.35, 0.1, 0);
+    drawCube(-1.0, 1.35, 0.0, 0.04, 2.4, 0.08, [0.1, 0.8, 0.4], 0.2, 0.9, 0);
+    drawCube(1.0, 1.35, 0.0, 0.04, 2.4, 0.08, [0.1, 0.8, 0.4], 0.2, 0.9, 0);
+    drawCube(0.0, 2.55, 0.0, 2.0, 0.04, 0.08, [0.1, 0.8, 0.4], 0.2, 0.9, 0);
+
+    const now = performance.now();
+    ps.pegs.forEach(peg => {
+      const lastHitTime = ps.recentPegHits[peg.id] || 0;
+      const age = now - lastHitTime;
+      
+      let pColor = [0.8, 0.85, 0.9];
+      let pRough = 0.1;
+      let pMetal = 0.95;
+      let pScale = 0.026;
+
+      if (age < 150) {
+        const t = 1.0 - (age / 150);
+        pColor = [0.1 + t * 0.9, 0.9 + t * 0.1, 0.4 + t * 0.6];
+        pScale = 0.026 * (1.0 + t * 0.45);
+        pRough = 0.02;
+        pMetal = 0.99;
+      }
+
+      drawPeg(peg.x, peg.y, 0.0, pScale, pScale, pScale * 1.5, pColor, pRough, pMetal, 0);
+    });
+
+    const R = ps.rows;
+    const B = R + 2;
+    const binW = 1.84 / B;
+    const startBinX = -0.92;
+
+    for (let bIdx = 0; bIdx < B; bIdx++) {
+      const bCenterX = startBinX + (bIdx + 0.5) * binW;
+      const halfBins = (B - 1) / 2;
+      const distFromCenter = Math.abs(bIdx - halfBins) / halfBins;
+      let binColor = [0.4, 0.45, 0.5];
+
+      if (distFromCenter < 0.2) {
+        binColor = [0.8, 0.2, 0.2];
+      } else if (distFromCenter < 0.4) {
+        binColor = [0.8, 0.5, 0.2];
+      } else if (distFromCenter < 0.6) {
+        binColor = [0.2, 0.6, 0.8];
+      } else if (distFromCenter < 0.8) {
+        binColor = [0.2, 0.8, 0.4];
+      } else {
+        binColor = [1.0, 0.85, 0.0];
+      }
+
+      if (bIdx > 0) {
+        const dividerX = startBinX + bIdx * binW;
+        drawCube(dividerX, 0.48, 0.0, 0.016, 0.16, 0.06, [0.3, 0.35, 0.4], 0.25, 0.6, 0);
+      }
+
+      drawCube(bCenterX, 0.41, 0.0, binW * 0.94, 0.02, 0.04, binColor, 0.1, 0.7, 0);
+    }
+
+    // Draw active solid Plinko balls
+    ps.balls.forEach(b => {
+      drawSphere(b.pos[0], b.pos[1], b.pos[2], b.radius, b.radius, b.radius, b.color, b.rough, b.metal, b.matType);
+    });
+
+    // =============================================================
+    // ADDITIVE BLENDING PASS FOR RADIUS CIRCLES, SHOCKWAVE RINGS & TRAILS
+    // =============================================================
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.depthMask(false);
+
+    // 1. ADDITIVE BALL TRAILS (Pulsing luminous fluid light beam trailing each falling ball)
+    if (ps.trailMode !== 'off') {
+      ps.balls.forEach(b => {
+        if (!b.trail || b.trail.length < 2) return;
+        const trailLen = b.trail.length;
+        for (let tIdx = 0; tIdx < trailLen; tIdx++) {
+          const tp = b.trail[tIdx];
+          const ageProgress = (now - tp.time) / 360.0;
+          if (ageProgress < 0.0 || ageProgress > 1.0) continue;
+
+          const taper = 1.0 - ageProgress * 0.65;
+          const trailR = b.radius * taper * 0.85;
+
+          let trailCol;
+          if (ps.trailMode === 'rainbow') {
+            const hue = (now * 0.0012 + tIdx * 0.07) % 1.0;
+            const rgb = this.hslToRgb(hue, 1.0, 0.6);
+            const fade = (1.0 - ageProgress) * 0.75;
+            trailCol = [rgb[0] * fade, rgb[1] * fade, rgb[2] * fade];
+          } else {
+            // 'pulse'
+            const pulse = Math.sin(now * 0.012 - tIdx * 0.35) * 0.5 + 0.5;
+            const fade = (1.0 - ageProgress) * (0.45 + pulse * 0.45);
+            const cR = tp.color[0] * (1.0 - pulse) + 0.1 * pulse;
+            const cG = tp.color[1] * (1.0 - pulse) + 0.95 * pulse;
+            const cB = tp.color[2] * (1.0 - pulse) + 0.85 * pulse;
+            trailCol = [cR * fade, cG * fade, cB * fade];
+          }
+
+          drawDisk(tp.x, tp.y, tp.z - 0.005, trailR, trailR, 1.0, trailCol, 0.01, 0.0, 12);
+          drawSphere(tp.x, tp.y, tp.z, trailR * 0.6, trailR * 0.6, trailR * 0.6, trailCol, 0.01, 0.0, 12);
+        }
+      });
+    }
+
+    // 2. EXPANDING RADIUS SHOCKWAVE CIRCLES & PULSING COLOR RINGS
+    if (ps.shockwaveRings) {
+      ps.shockwaveRings.forEach(ring => {
+        if (!ring.active) return;
+        if (now < ring.startTime) return;
+        const elapsed = (now - ring.startTime) / 1000.0;
+        const progress = Math.min(1.0, elapsed / ring.duration);
+        if (progress >= 1.0) {
+          ring.active = false;
+          return;
+        }
+
+        const currentRadius = ring.radius;
+        const fade = Math.sin(progress * Math.PI) * (1.0 - progress * 0.3);
+
+        let ringCol;
+        if (ring.type === 'chromatic') {
+          // Rainbow chromatic wave pulsing continuously through the color spectrum
+          const hue = (progress * 2.2 + now * 0.0025 + ring.phase * 0.3) % 1.0;
+          const rgb = this.hslToRgb(hue, 1.0, 0.65);
+          const pulse = Math.sin(progress * 16.0) * 0.25 + 0.75;
+          const bright = fade * pulse * 1.1;
+          ringCol = [rgb[0] * bright, rgb[1] * bright, rgb[2] * bright];
+        } else if (ring.type === 'electro') {
+          // High-voltage electric shockwave: sharp cyan-white lightning flash
+          const flicker = 0.7 + 0.3 * Math.sin(now * 0.08 + progress * 20.0);
+          const bright = fade * flicker * 1.3;
+          if (progress < 0.25) {
+            ringCol = [0.95 * bright, 0.98 * bright, 1.0 * bright];
+          } else {
+            ringCol = [0.15 * bright, 0.85 * bright, 1.0 * bright];
+          }
+        } else if (ring.type === 'halo') {
+          // Radiant halo: soft expanding glowing disk + delicate ring with harmonic warmth
+          const pulse = Math.sin(progress * 8.0) * 0.2 + 0.8;
+          const bright = fade * pulse * 0.85;
+          const hR = ring.color[0] * (1.0 - progress * 0.3);
+          const hG = ring.color[1] * (0.8 + progress * 0.2);
+          const hB = ring.color[2] * (0.9 + progress * 0.1);
+          ringCol = [hR * bright, hG * bright, hB * bright];
+
+          drawDisk(ring.pos[0], ring.pos[1], ring.pos[2] - 0.003, currentRadius * 0.85, currentRadius * 0.85, 1.0, [ringCol[0] * 0.35, ringCol[1] * 0.35, ringCol[2] * 0.35], 0.01, 0.0, 12);
+        } else {
+          // 'pulsering': concentric shockwave radius circles pulsing with neon luminance
+          const pulse = Math.sin(progress * 18.0) * 0.35 + 0.65;
+          const bright = fade * pulse * 1.0;
+          const pR = (ring.color[0] * 0.7 + 0.2) * bright;
+          const pG = (ring.color[1] * 0.7 + 0.8) * bright;
+          const pB = (ring.color[2] * 0.7 + 0.4) * bright;
+          ringCol = [pR, pG, pB];
+        }
+
+        drawRing(ring.pos[0], ring.pos[1], ring.pos[2], currentRadius, currentRadius, 1.0, ringCol, 0.01, 0.0, 12);
+      });
+    }
+
+    // Restore standard opaque rendering state
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+
+  render3DSlidingPuzzle(progInfo, timestamp) {
+    const gl = this.gl;
+    const ps = this.puzzleState;
+    if (!ps) return;
+
+    const cubeMesh = this.meshBuffers[1];
+    const quadMesh = this.meshBuffers[5];
+    if (!cubeMesh || !quadMesh) return;
+
+    // Standard draw function helper (no inner allocation)
+    const drawCube = (px, py, pz, sx, sy, sz, color, rough = 0.25, metal = 0.85, matType = 0) => {
+      gl.bindVertexArray(cubeMesh.vao);
+      
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.1);
+      if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+      if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+      if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    const drawQuad = (px, py, pz, sx, sy, color, rough = 0.25, metal = 0.85, matType = 0) => {
+      gl.bindVertexArray(quadMesh.vao);
+      
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.1);
+      if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+      if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+      if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+
+      gl.drawElements(gl.TRIANGLES, quadMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    // 1. Draw elegant Backboard frame behind the sliding puzzle board
+    // Backboard is positioned at [0.0, 1.3, -0.05] with scale [1.03, 1.03, 0.02] (giving slightly wider margins)
+    drawCube(0.0, 1.3, -0.05, 1.03, 1.03, 0.02, [0.08, 0.1, 0.14], 0.35, 0.15, 0);
+
+    // 2. Render each active tile block
+    const N = ps.gridSize;
+    const tileW = 1.0 / N;
+    const halfSize = 0.5;
+    
+    // Scale for standard tile block, leaving 0% spacer gap (Unit size 1.0)
+    const tileScaleX = tileW;
+    const tileScaleY = tileW;
+
+    // Bind texture
+    const activeTex = this.getTextureForPath(ps.activeTexturePath);
+    if (activeTex && progInfo.uUseTexMaps) {
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, activeTex);
+      if (progInfo.uAlbedoMap) gl.uniform1i(progInfo.uAlbedoMap, 2);
+      if (progInfo.uPbrMap) gl.uniform1i(progInfo.uPbrMap, 2);
+      gl.uniform1i(progInfo.uUseTexMaps, 1);
+    } else if (progInfo.uUseTexMaps) {
+      gl.uniform1i(progInfo.uUseTexMaps, 0);
+    }
+
+    for (let r = 0; r < N; ++r) {
+      for (let c = 0; c < N; ++c) {
+        const id = ps.grid[r][c];
+        if (id === -1) continue; // Skip rendering for empty cell
+
+        // Original location to map slice uv
+        const origR = Math.floor(id / N);
+        const origC = id % N;
+
+        // Initialize smooth animation target coordinate
+        if (!ps.tilePositions[id]) {
+          ps.tilePositions[id] = { cx: c, cy: r };
+        }
+        const pos = ps.tilePositions[id];
+        
+        // Fast asymptotic lerping towards grid slots
+        pos.cx += (c - pos.cx) * 0.16;
+        pos.cy += (r - pos.cy) * 0.16;
+
+        // Map to world positions
+        const worldX = -halfSize + (pos.cx + 0.5) * tileW;
+        const worldY = 1.3 + (halfSize - (pos.cy + 0.5) * tileW);
+
+        // Bind custom scale and offset for texture slices
+        const uScale = [1.0 / N, 1.0 / N];
+        const uOffset = [origC / N, (N - 1 - origR) / N];
+        if (progInfo.uUvScale) gl.uniform2fv(progInfo.uUvScale, uScale);
+        if (progInfo.uUvOffset) gl.uniform2fv(progInfo.uUvOffset, uOffset);
+
+        // Render flat quad sliced tile block with pristine PBR finish
+        drawQuad(worldX, worldY, 0.0, tileScaleX, tileScaleY, [1.0, 1.0, 1.0], 0.15, 0.05, 0);
+      }
+    }
+
+    // Reset uniforms
+    if (progInfo.uUvScale) gl.uniform2f(progInfo.uUvScale, 0.0, 0.0);
+    if (progInfo.uUvOffset) gl.uniform2f(progInfo.uUvOffset, 0.0, 0.0);
+    if (progInfo.uUseTexMaps) gl.uniform1i(progInfo.uUseTexMaps, 0);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
   render3DSlotMachine(progInfo, timestamp) {
     const gl = this.gl;
     const sm = this.slotMachine;
@@ -11446,6 +13233,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // -------------------------------------------------------------
       this.updateSlotMachinePhysics(dt);
       this.render3DSlotMachine(progInfo, timestamp);
+    } else if (this.state.demoScene.includes('10_sliding_puzzle')) {
+      // -------------------------------------------------------------
+      // DEMO 10: DYNAMIC SLIDING 3D PUZZLE
+      // -------------------------------------------------------------
+      this.render3DSlidingPuzzle(progInfo, timestamp);
+    } else if (this.state.demoScene.includes('11_plinko')) {
+      // -------------------------------------------------------------
+      // DEMO 11: 3D PLINKO CASCADE SHOWCASE & PHYSICS
+      // -------------------------------------------------------------
+      this.updatePlinkoPhysics(dt);
+      this.render3DPlinko(progInfo, timestamp);
     } else {
       // DEMO 1 & DEMO 3: SINGLE OBJECT PBR / STUDIO
       const mesh = this.meshBuffers[this.state.activeMesh];

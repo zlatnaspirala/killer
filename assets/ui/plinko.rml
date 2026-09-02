@@ -1,0 +1,51 @@
+<rml>
+<head>
+  <title>3D Plinko Cascade Controls</title>
+  <link type="text/rcss" href="plinko.rcss"/>
+</head>
+<body id="plinko-body">
+  <!-- Plinko Overlay Panel (Equivalent to Web DOM #plinko-overlay) -->
+  <div id="plinko-panel" class="plinko-panel">
+    <div class="plinko-header">
+      <div class="plinko-header-row">
+        <span class="plinko-title">🟢 3D PLINKO CASCADE</span>
+        <button id="btn-close" class="plinko-btn-close">✕</button>
+      </div>
+      <div class="plinko-subtitle">REAL-TIME MULTIPLATFORM RMLUI</div>
+    </div>
+
+    <!-- Credit / Score Stat Box -->
+    <div class="plinko-stat-box">
+      <div class="plinko-stat-cell">
+        <span class="plinko-stat-label">CREDITS</span>
+        <span id="plinko-credits" class="plinko-stat-value">1000</span>
+      </div>
+      <div class="plinko-stat-cell">
+        <span class="plinko-stat-label">HIGH SCORE</span>
+        <span id="plinko-high-score" class="plinko-stat-value">1000</span>
+      </div>
+    </div>
+
+    <!-- Peg Rows Selector -->
+    <div class="plinko-control-group">
+      <span class="plinko-group-label">PYRAMID ROWS</span>
+      <div class="plinko-grid-selector">
+        <button id="btn-rows-8" class="plinko-btn-tab active">8</button>
+        <button id="btn-rows-10" class="plinko-btn-tab">10</button>
+        <button id="btn-rows-12" class="plinko-btn-tab">12</button>
+      </div>
+    </div>
+
+    <!-- Primary Action Controls -->
+    <div class="plinko-action-group">
+      <button id="btn-drop" class="plinko-btn-primary">🎲 DROP BALL (-10)</button>
+      <button id="btn-auto" class="plinko-btn-secondary">⚡ AUTO-DROP: OFF</button>
+    </div>
+  </div>
+
+  <!-- Floating Mobile FAB Button to Re-Open -->
+  <button id="plinko-mobile-fab" class="plinko-mobile-fab" style="display: none;">
+    ⚙️ PLINKO CONTROLS
+  </button>
+</body>
+</rml>
