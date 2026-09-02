@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "build": "mkdir -p dist && cp index.html main.js style.css vite.config.js server.js network.config.js README.md .env.example dist/ 2>/dev/null || true && cp -r assets shaders include src examples maps docs dist/ 2>/dev/null || true",
+    "build": "mkdir -p dist && cp index.html main.js physics-worker.js style.css vite.config.js server.js network.config.js README.md .env.example dist/ 2>/dev/null || true && cp -r assets shaders include src examples maps docs dist/ 2>/dev/null || true",
     "lint": "echo 'No TS/React linting needed for pure C/C++ & Native JS project'"
   },
   "dependencies": {

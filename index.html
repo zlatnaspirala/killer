@@ -318,9 +318,23 @@
                 </div>
               </div>
 
+              <!-- Physics Engine Solver Selector -->
+              <div class="plinko-control-group">
+                <span class="plinko-group-label">2. Physics Engine Solver (Worker-Threaded)</span>
+                <div style="position: relative; width: 100%;">
+                  <select id="select-plinko-engine" style="width: 100%; height: 32px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 0 10px; color: #e2e8f0; font-size: 11px; cursor: pointer; outline: none; transition: all 0.2s; appearance: none; -webkit-appearance: none;">
+                    <option value="classic2d" selected>⚡ High-Speed 2D Solver (Web Worker)</option>
+                    <option value="cannon">📦 Cannon.js 3D Rigid Solver (Web Worker)</option>
+                    <option value="jolt">🎮 Jolt 3D Constraint Solver (Web Worker)</option>
+                    <option value="ammo">🚀 Ammo Continuous CCD Solver (Web Worker)</option>
+                  </select>
+                  <div style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #10b981; font-size: 8px;">▼</div>
+                </div>
+              </div>
+
               <!-- Ball Style Selector -->
               <div class="plinko-control-group">
-                <span class="plinko-group-label">2. Ball Material / Aesthetics</span>
+                <span class="plinko-group-label">3. Ball Material / Aesthetics</span>
                 <div class="plinko-grid-selector" id="plinko-style-selector">
                   <button class="plinko-type-btn active" data-type="neon">🟢 Neon</button>
                   <button class="plinko-type-btn" data-type="chrome">💿 Chrome</button>
@@ -330,7 +344,7 @@
 
               <!-- Peg Impact Visual Effect Selector -->
               <div class="plinko-control-group">
-                <span class="plinko-group-label">3. Peg Impact Visual Effect (Radius Circles)</span>
+                <span class="plinko-group-label">4. Peg Impact Visual Effect (Radius Circles)</span>
                 <div class="plinko-grid-selector" id="plinko-effect-selector" style="grid-template-columns: 1fr 1fr; gap: 6px;">
                   <button class="plinko-effect-btn active" data-effect="pulsering">⭕ Pulse Ring</button>
                   <button class="plinko-effect-btn" data-effect="chromatic">🌈 Chromatic</button>
@@ -341,7 +355,7 @@
 
               <!-- Additive Trail Effect Selector -->
               <div class="plinko-control-group">
-                <span class="plinko-group-label">4. Ball Trail (Blend Add &amp; Pulse)</span>
+                <span class="plinko-group-label">5. Ball Trail (Blend Add &amp; Pulse)</span>
                 <div class="plinko-grid-selector" id="plinko-trail-selector">
                   <button class="plinko-trail-btn active" data-trail="pulse">✨ Pulse Glow</button>
                   <button class="plinko-trail-btn" data-trail="rainbow">🌈 Rainbow</button>
@@ -351,7 +365,7 @@
 
               <!-- Real-time Physics Sliders -->
               <div class="plinko-control-group">
-                <span class="plinko-group-label">5. Environmental Gravity &amp; Friction</span>
+                <span class="plinko-group-label">6. Environmental Gravity &amp; Friction</span>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
                   <div>
                     <div style="display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; margin-bottom: 2px;">
@@ -372,7 +386,7 @@
 
               <!-- Primary Game Controls -->
               <div class="plinko-control-group" style="border: none; margin-bottom: 0; padding-bottom: 0;">
-                <span class="plinko-group-label">6. Launch Mechanics</span>
+                <span class="plinko-group-label">7. Launch Mechanics</span>
                 <button id="btn-plinko-drop" class="plinko-primary-btn">🔮 DROP BALL (-10 Credits)</button>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px;">
                   <button id="btn-plinko-autodrop" class="plinko-secondary-btn">🔄 AUTO-DROP: OFF</button>
@@ -390,6 +404,124 @@
             <!-- 🟢 Floating Mobile Button to Reopen Plinko Controls -->
             <button id="plinko-mobile-fab" class="plinko-mobile-fab" style="display: none;">
               <span>⚙️ PLINKO CONTROLS</span>
+            </button>
+
+            <!-- 🎰 3D Real-Physics Roulette Panel (Demo 12) -->
+            <div id="roulette-overlay" class="plinko-overlay-panel" style="display: none; background: rgba(9, 21, 16, 0.9); border: 1px solid rgba(16, 185, 129, 0.3); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);">
+              <div class="plinko-header" style="border-bottom: 1px solid rgba(16, 185, 129, 0.25);">
+                <div class="plinko-header-row">
+                  <div class="plinko-title" style="color: #10b981;">🎰 3D PHYSICS ROULETTE</div>
+                  <button id="btn-roulette-close" class="plinko-header-btn" title="Minimize Panel" aria-label="Minimize Panel">✕</button>
+                </div>
+                <div class="plinko-subtitle" style="color: #6ee7b7;">REAL-TIME WORKER-THREADED ROTATION SOLVER</div>
+              </div>
+
+              <!-- Stats Box -->
+              <div class="plinko-stat-box" style="background: rgba(16, 37, 28, 0.5); border-color: rgba(16, 185, 129, 0.15);">
+                <div class="plinko-stat-cell">
+                  <span class="plinko-stat-label">💰 Credits</span>
+                  <span class="plinko-stat-value gold" id="roulette-credits-val">1000</span>
+                </div>
+                <div class="plinko-stat-cell">
+                  <span class="plinko-stat-label">🔥 Last Win</span>
+                  <span class="plinko-stat-value green" id="roulette-payout-val">0</span>
+                </div>
+                <div class="plinko-stat-cell" style="margin-top: 6px;">
+                  <span class="plinko-stat-label">🎯 Hit Pocket</span>
+                  <span class="plinko-stat-value" id="roulette-hit-val" style="color: #38bdf8;">--</span>
+                </div>
+                <div class="plinko-stat-cell" style="margin-top: 6px;">
+                  <span class="plinko-stat-label">🏆 High Score</span>
+                  <span class="plinko-stat-value gold" id="roulette-highscore-val">1000</span>
+                </div>
+              </div>
+
+              <!-- Bet Configuration -->
+              <div class="plinko-control-group" style="border-color: rgba(16, 185, 129, 0.15);">
+                <span class="plinko-group-label" style="color: #6ee7b7;">1. Set Bet Amount (Credits)</span>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                  <button class="plinko-size-btn roulette-bet-amt-btn active" data-amt="10">10</button>
+                  <button class="plinko-size-btn roulette-bet-amt-btn" data-amt="50">50</button>
+                  <button class="plinko-size-btn roulette-bet-amt-btn" data-amt="100">100</button>
+                  <button class="plinko-size-btn roulette-bet-amt-btn" data-amt="500">500</button>
+                </div>
+              </div>
+
+              <!-- Bet Selection Category -->
+              <div class="plinko-control-group" style="border-color: rgba(16, 185, 129, 0.15);">
+                <span class="plinko-group-label" style="color: #6ee7b7;">2. Choose Bet Placement</span>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px;">
+                  <button class="plinko-effect-btn roulette-bet-choice active" data-bet="red" style="background: rgba(239, 68, 68, 0.25); border-color: #ef4444; color: #fca5a5;">🔴 RED (2x)</button>
+                  <button class="plinko-effect-btn roulette-bet-choice" data-bet="black" style="background: rgba(30, 41, 59, 0.8); border-color: #64748b; color: #cbd5e1;">⚫ BLACK (2x)</button>
+                  <button class="plinko-effect-btn roulette-bet-choice" data-bet="even" style="grid-column: span 1;">EVEN (2x)</button>
+                  <button class="plinko-effect-btn roulette-bet-choice" data-bet="odd" style="grid-column: span 1;">ODD (2x)</button>
+                  <button class="plinko-effect-btn roulette-bet-choice" data-bet="zero" style="grid-column: span 2; background: rgba(16, 185, 129, 0.25); border-color: #10b981; color: #a7f3d0;">🟢 GREEN 0 (35x)</button>
+                </div>
+              </div>
+
+              <!-- Specific Number Bet -->
+              <div class="plinko-control-group" style="border-color: rgba(16, 185, 129, 0.15);">
+                <span class="plinko-group-label" style="color: #6ee7b7;">3. Or Bet on Specific Number (35:1)</span>
+                <div style="display: flex; gap: 8px; margin-top: 6px; align-items: center;">
+                  <select id="roulette-specific-number" style="flex: 1; height: 32px; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 0 10px; color: #e2e8f0; font-size: 12px; cursor: pointer; outline: none;">
+                    <option value="none" selected>-- No Single Number Bet --</option>
+                    <option value="0">0 (Green)</option>
+                    <option value="1">1 (Red)</option>
+                    <option value="2">2 (Black)</option>
+                    <option value="3">3 (Red)</option>
+                    <option value="4">4 (Black)</option>
+                    <option value="5">5 (Red)</option>
+                    <option value="6">6 (Black)</option>
+                    <option value="7">7 (Red)</option>
+                    <option value="8">8 (Black)</option>
+                    <option value="9">9 (Red)</option>
+                    <option value="10">10 (Black)</option>
+                    <option value="11">11 (Black)</option>
+                    <option value="12">12 (Red)</option>
+                    <option value="13">13 (Black)</option>
+                    <option value="14">14 (Red)</option>
+                    <option value="15">15 (Black)</option>
+                    <option value="16">16 (Red)</option>
+                    <option value="17">17 (Black)</option>
+                    <option value="18">18 (Red)</option>
+                    <option value="19">19 (Red)</option>
+                    <option value="20">20 (Black)</option>
+                    <option value="21">21 (Red)</option>
+                    <option value="22">22 (Black)</option>
+                    <option value="23">23 (Red)</option>
+                    <option value="24">24 (Black)</option>
+                    <option value="25">25 (Red)</option>
+                    <option value="26">26 (Black)</option>
+                    <option value="27">27 (Red)</option>
+                    <option value="28">28 (Black)</option>
+                    <option value="29">29 (Black)</option>
+                    <option value="30">30 (Red)</option>
+                    <option value="31">31 (Black)</option>
+                    <option value="32">32 (Red)</option>
+                    <option value="33">33 (Black)</option>
+                    <option value="34">34 (Red)</option>
+                    <option value="35">35 (Black)</option>
+                    <option value="36">36 (Red)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Run Controls -->
+              <div class="plinko-control-group" style="border: none; margin-bottom: 0; padding-bottom: 0;">
+                <span class="plinko-group-label" style="color: #6ee7b7;">4. Launch Roulette Ball</span>
+                <button id="btn-roulette-spin" class="plinko-primary-btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-color: #34d399; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">🎰 SPIN WHEEL &amp; BALL</button>
+              </div>
+            </div>
+
+            <!-- 🎰 Roulette Banner Info -->
+            <div id="roulette-banner" class="plinko-banner" style="display: none; background: rgba(6, 78, 59, 0.85); border-top: 1px solid #10b981;">
+              <span>🎰 <b>Demo 12 Active: 3D Real-Physics Roulette</b> &bull; Real 3D physical rolling solver &bull; Select a bet and SPIN!</span>
+              <span id="roulette-stats-summary" style="color: #fca5a5; font-weight: bold;">Bet: Red | Potential Payout: 2x</span>
+            </div>
+
+            <!-- 🎰 Floating Mobile Button to Reopen Roulette Controls -->
+            <button id="roulette-mobile-fab" class="plinko-mobile-fab" style="display: none; background: #059669; border: 1px solid #34d399; box-shadow: 0 4px 16px rgba(5, 150, 105, 0.4);">
+              <span>⚙️ ROULETTE BETS</span>
             </button>
 
             <!-- FPS Startup Menu & Multiplayer Lobby Overlay (Demo 07) -->
@@ -916,6 +1048,7 @@
                       <option value="09_slot_machine.cpp">Demo 09: 3D Casino Slot Machine &amp; Particles (09_slot_machine.cpp)</option>
                       <option value="10_sliding_puzzle.cpp">Demo 10: Dynamic Sliding 3D Puzzle (10_sliding_puzzle.cpp)</option>
                       <option value="11_plinko.cpp">Demo 11: 3D Plinko Cascade Showcase (11_plinko.cpp)</option>
+                      <option value="12_roulette.cpp">Demo 12: 3D Physics-Engine Roulette Wheel (12_roulette.cpp)</option>
                     </select>
                   </div>
                 </div>

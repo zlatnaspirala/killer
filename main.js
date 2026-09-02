@@ -4237,11 +4237,12 @@ class NativeApp {
     };
 
     const updateFPSOverlays = () => {
-      const isShowroom = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
+       const isShowroom = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
       const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
       const isSlidingPuzzle = this.state.demoScene.includes('10_sliding_puzzle');
       const isPlinko = this.state.demoScene.includes('11_plinko');
-      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko;
+      const isRoulette = this.state.demoScene.includes('12_roulette');
+      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette;
       const crosshairEl = document.getElementById('fps-crosshair-overlay');
       const bannerEl = document.getElementById('fps-pointerlock-banner');
       const weaponHudEl = document.getElementById('fps-weapon-hud');
@@ -4260,6 +4261,9 @@ class NativeApp {
       const plinkoOverlayEl = document.getElementById('plinko-overlay');
       const plinkoBannerEl = document.getElementById('plinko-banner');
 
+      const rouletteOverlayEl = document.getElementById('roulette-overlay');
+      const rouletteBannerEl = document.getElementById('roulette-banner');
+
       if (crosshairEl) crosshairEl.style.display = isFPS ? 'flex' : 'none';
       if (bannerEl) {
         if (isFPS) {
@@ -4274,7 +4278,7 @@ class NativeApp {
         }
       }
       if (weaponHudEl) weaponHudEl.style.display = isFPS ? 'flex' : 'none';
-      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko) ? 'block' : 'none';
+      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette) ? 'block' : 'none';
 
       if (showroomTopEl) showroomTopEl.style.display = isShowroom ? 'flex' : 'none';
       if (showroomCardEl) showroomCardEl.style.display = isShowroom ? 'block' : 'none';
@@ -4302,7 +4306,12 @@ class NativeApp {
         this.plinkoState.restoreTimeout = null;
       }
 
-      if (isSlotMachine || isSlidingPuzzle || isPlinko) {
+      const rouletteFabEl = document.getElementById('roulette-mobile-fab');
+      if (rouletteOverlayEl) rouletteOverlayEl.style.display = isRoulette ? 'flex' : 'none';
+      if (rouletteBannerEl) rouletteBannerEl.style.display = isRoulette ? 'flex' : 'none';
+      if (rouletteFabEl && !isRoulette) rouletteFabEl.style.display = 'none';
+
+      if (isSlotMachine || isSlidingPuzzle || isPlinko || isRoulette) {
         const startupOverlay = document.getElementById('fps-startup-overlay');
         if (startupOverlay) startupOverlay.style.display = 'none';
       }
@@ -4692,6 +4701,20 @@ class NativeApp {
           updateFPSOverlays();
           this.log("Loaded Demo 11: 3D Plinko Cascade Showcase & Physics Engine", "cpp");
           this.initPlinkoDemo();
+        } else if (this.state.demoScene.includes('12_roulette')) {
+          this.state.cameraMode = 0;
+          const camSelect = document.getElementById('camera-mode-select');
+          if (camSelect) camSelect.value = "0";
+          const isMobile = this.isMobileDevice();
+          this.state.camRadius = isMobile ? 4.2 : 3.6;
+          this.state.camPitch = 0.78; // beautiful tilted bird's-eye view
+          this.state.camYaw = 0.0;
+          this.state.camTarget[0] = 0.0;
+          this.state.camTarget[1] = 0.0;
+          this.state.camTarget[2] = 0.05;
+          updateFPSOverlays();
+          this.log("Loaded Demo 12: 3D Physics-Engine Roulette Wheel Showcase", "cpp");
+          this.initRouletteDemo();
         } else {
           this.log(`Loaded Demo: ${this.state.demoScene}`, "cpp");
         }
@@ -9290,6 +9313,7 @@ else if (typeof define === 'function' && define['amd'])
         rows: 8,
         gravity: -4.0,
         bounciness: 0.55,
+        physicsEngine: 'classic2d',
         balls: [],
         particles: [],
         recentPegHits: {},
@@ -9339,6 +9363,30 @@ else if (typeof define === 'function' && define['amd'])
     const ps = this.plinkoState;
     this.recomputePlinkoPegs();
 
+    // Dynamically initialize the background Web Worker for Plinko physics
+    if (!this.physicsWorker) {
+      this.physicsWorker = new Worker('./physics-worker.js');
+      this.physicsWorker.onmessage = (e) => {
+        const data = e.data;
+        if (data && data.type === 'tickResult') {
+          this.handlePhysicsWorkerTickResult(data);
+        }
+      };
+    }
+
+    // Seed/update configurations in the worker
+    this.physicsWorker.postMessage({
+      type: 'init',
+      pegs: ps.pegs,
+      rows: ps.rows,
+      gravity: ps.gravity,
+      bounciness: ps.bounciness
+    });
+    this.physicsWorker.postMessage({
+      type: 'setEngine',
+      engine: ps.physicsEngine || 'classic2d'
+    });
+
     // Update UI
     this.updatePlinkoUI();
 
@@ -9372,6 +9420,16 @@ else if (typeof define === 'function' && define['amd'])
         });
       }
     }
+
+    if (this.physicsWorker) {
+      this.physicsWorker.postMessage({
+        type: 'init',
+        pegs: ps.pegs,
+        rows: ps.rows,
+        gravity: ps.gravity,
+        bounciness: ps.bounciness
+      });
+    }
   }
 
   isMobileDevice() {
@@ -9391,6 +9449,28 @@ else if (typeof define === 'function' && define['amd'])
     }
     if (this.plinkoState) {
       this.plinkoState.autoHiddenOnMobile = true;
+    }
+  }
+
+  hideRouletteMobileUI() {
+    const rOverlayEl = document.getElementById('roulette-overlay');
+    const rFabEl = document.getElementById('roulette-mobile-fab');
+    if (rOverlayEl) {
+      rOverlayEl.classList.add('mobile-minimized');
+    }
+    if (rFabEl && this.state.demoScene.includes('12_roulette')) {
+      rFabEl.style.display = 'flex';
+    }
+  }
+
+  showRouletteMobileUI() {
+    const rOverlayEl = document.getElementById('roulette-overlay');
+    const rFabEl = document.getElementById('roulette-mobile-fab');
+    if (rOverlayEl) {
+      rOverlayEl.classList.remove('mobile-minimized');
+    }
+    if (rFabEl) {
+      rFabEl.style.display = 'none';
     }
   }
 
@@ -9538,6 +9618,12 @@ else if (typeof define === 'function' && define['amd'])
         const val = parseFloat(e.target.value);
         ps.gravity = val;
         if (gravityLbl) gravityLbl.textContent = `${val.toFixed(1)} m/s²`;
+        if (this.physicsWorker) {
+          this.physicsWorker.postMessage({
+            type: 'updateSettings',
+            gravity: val
+          });
+        }
       });
     }
 
@@ -9548,6 +9634,29 @@ else if (typeof define === 'function' && define['amd'])
         const val = parseFloat(e.target.value);
         ps.bounciness = val;
         if (bouncinessLbl) bouncinessLbl.textContent = `${Math.round(val * 100)}%`;
+        if (this.physicsWorker) {
+          this.physicsWorker.postMessage({
+            type: 'updateSettings',
+            bounciness: val
+          });
+        }
+      });
+    }
+
+    const engineSelect = document.getElementById('select-plinko-engine');
+    if (engineSelect) {
+      engineSelect.value = ps.physicsEngine || 'classic2d';
+      engineSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        ps.physicsEngine = val;
+        ps.balls = []; // Clear local active balls
+        this.log(`Plinko physics engine updated to: [${val.toUpperCase()} (Web Worker)]`, "info");
+        
+        if (this.physicsWorker) {
+          this.physicsWorker.postMessage({ type: 'reset' });
+          this.physicsWorker.postMessage({ type: 'setEngine', engine: val });
+        }
+        if (this.synth) this.synth.play('armor');
       });
     }
   }
@@ -9623,7 +9732,9 @@ else if (typeof define === 'function' && define['amd'])
       bMatType = 12;
     }
 
-    ps.balls.push({
+    const ballId = Math.random().toString(36).substring(2, 9);
+    const ballObj = {
+      id: ballId,
       pos: [startX, startY, startZ],
       vel: [startVx, startVy, 0.0],
       color: bColor,
@@ -9632,8 +9743,22 @@ else if (typeof define === 'function' && define['amd'])
       matType: bMatType,
       radius: 0.032,
       lastPegHitId: "",
-      trail: []
-    });
+      trail: [],
+      payoutHandled: false
+    };
+
+    ps.balls.push(ballObj);
+
+    if (this.physicsWorker) {
+      this.physicsWorker.postMessage({
+        type: 'dropBall',
+        id: ballId,
+        pos: ballObj.pos,
+        vel: ballObj.vel,
+        radius: ballObj.radius,
+        color: bColor
+      });
+    }
 
     if (this.synth) this.synth.play('laser');
   }
@@ -9727,150 +9852,720 @@ else if (typeof define === 'function' && define['amd'])
       });
     }
 
+    // Tick the background Web Worker for Plinko physics
+    if (this.physicsWorker && !this._physicsWorkerTickPending) {
+      this._physicsWorkerTickPending = true;
+      this.physicsWorker.postMessage({ type: 'tick', dt: dt });
+    }
+  }
+
+  handlePhysicsWorkerTickResult(data) {
+    this._physicsWorkerTickPending = false;
+
+    // 1. If currently in 3D Roulette Scene, process Roulette updates
+    if (this.state.demoScene && this.state.demoScene.includes('12_roulette') && this.rouletteState) {
+      const rs = this.rouletteState;
+      if (data.roulette) {
+        rs.wheelAngle = data.roulette.wheelAngle;
+        if (data.roulette.ball) {
+          rs.ball = data.roulette.ball;
+          if (data.roulette.winPocket !== null && !rs.payoutHandled) {
+            rs.payoutHandled = true;
+            rs.spinning = false;
+            rs.lastOutcomePocket = data.roulette.winPocket;
+            this.computeRoulettePayout(data.roulette.winPocket);
+          }
+        } else {
+          rs.ball = null;
+        }
+
+        // Play authentic clatter and pocket drop synthesizers
+        if (data.roulette.hitSound && this.synth) {
+          if (data.roulette.hitSound === 'pocket') {
+            this.synth.play('health');
+          } else if (data.roulette.hitSound === 'rim') {
+            this.synth.play('ammo');
+          } else {
+            this.synth.play('pickup');
+          }
+        }
+      }
+      return;
+    }
+
+    const ps = this.plinkoState;
+    if (!ps) return;
+
+    // 1. Process peg impacts
+    if (data.hits) {
+      data.hits.forEach(hit => {
+        // Trigger visual ripple / flash on peg
+        this.spawnPlinkoShockwave(hit.x, hit.y, hit.color, ps.touchEffect);
+        ps.recentPegHits[hit.pegId] = performance.now();
+        if (this.synth) this.synth.play('hit');
+      });
+    }
+
+    // 2. Synchronize ball lists
+    const ballsMap = new Map();
+    data.balls.forEach(wb => {
+      ballsMap.set(wb.id, wb);
+    });
+
+    const activeBalls = [];
+    ps.balls.forEach(b => {
+      const wb = ballsMap.get(b.id);
+      if (wb) {
+        b.pos[0] = wb.pos[0];
+        b.pos[1] = wb.pos[1];
+        b.pos[2] = wb.pos[2];
+        b.vel[0] = wb.vel[0];
+        b.vel[1] = wb.vel[1];
+        b.vel[2] = wb.vel[2];
+        if (wb.rot) b.rot = wb.rot;
+        if (wb.angVel) b.angVel = wb.angVel;
+
+        // Add trail positions
+        if (ps.trailMode !== 'off') {
+          const now = performance.now();
+          if (!b.trail) b.trail = [];
+          const lastP = b.trail[b.trail.length - 1];
+          if (!lastP || (now - lastP.time > 12)) {
+            b.trail.push({
+              x: b.pos[0],
+              y: b.pos[1],
+              z: b.pos[2],
+              time: now,
+              color: [b.color[0], b.color[1], b.color[2]]
+            });
+          }
+          while (b.trail.length > 0 && (now - b.trail[0].time > 360)) {
+            b.trail.shift();
+          }
+        }
+
+        // Payout detection
+        if (b.pos[1] <= 0.41 && !b.payoutHandled) {
+          b.payoutHandled = true;
+          this.handleBallLanding(b);
+        }
+
+        activeBalls.push(b);
+      }
+    });
+
+    ps.balls = activeBalls;
+  }
+
+  handleBallLanding(b) {
+    const ps = this.plinkoState;
+    if (!ps) return;
+
     const R = ps.rows;
     const B = R + 2;
     const binW = 1.84 / B;
     const startBinX = -0.92;
 
-    for (let i = ps.balls.length - 1; i >= 0; i--) {
-      const b = ps.balls[i];
+    const landingX = b.pos[0];
+    let binIdx = Math.floor((landingX - startBinX) / binW);
+    binIdx = Math.max(0, Math.min(B - 1, binIdx));
 
-      b.vel[1] += ps.gravity * dt;
-      b.vel[0] *= Math.exp(-0.15 * dt);
-      b.vel[1] *= Math.exp(-0.05 * dt);
+    const halfBins = (B - 1) / 2;
+    const distFromCenter = Math.abs(binIdx - halfBins) / halfBins;
+    
+    let multiplier = 0.2;
+    if (distFromCenter < 0.2) {
+      multiplier = 0.2;
+    } else if (distFromCenter < 0.4) {
+      multiplier = 0.5;
+    } else if (distFromCenter < 0.6) {
+      multiplier = 1.5;
+    } else if (distFromCenter < 0.8) {
+      multiplier = 4.0;
+    } else {
+      multiplier = 12.0;
+    }
 
-      b.pos[0] += b.vel[0] * dt;
-      b.pos[1] += b.vel[1] * dt;
+    const winAmount = Math.round(10 * multiplier);
+    ps.credits += winAmount;
+    ps.lastPayout = winAmount;
 
-      // Update ball trail if enabled
-      if (ps.trailMode !== 'off') {
-        if (!b.trail) b.trail = [];
-        const lastP = b.trail[b.trail.length - 1];
-        if (!lastP || (now - lastP.time > 12)) {
-          b.trail.push({
-            x: b.pos[0],
-            y: b.pos[1],
-            z: b.pos[2],
-            time: now,
-            color: [b.color[0], b.color[1], b.color[2]]
-          });
-        }
-        while (b.trail.length > 0 && (now - b.trail[0].time > 360)) {
-          b.trail.shift();
-        }
+    if (ps.credits > ps.highScore) {
+      ps.highScore = ps.credits;
+    }
+
+    this.updatePlinkoUI();
+    this.log(`Ball landed in bin ${binIdx + 1} (Multiplier: ${multiplier}x). Payout: ${winAmount} credits!`, "success");
+    
+    let binHighlightColor = [0.1, 0.8, 1.0];
+    if (multiplier >= 12.0) binHighlightColor = [1.0, 0.85, 0.1];
+    else if (multiplier >= 4.0) binHighlightColor = [0.2, 1.0, 0.4];
+    this.spawnPlinkoShockwave(landingX, 0.44, binHighlightColor, ps.touchEffect, 0.38);
+
+    if (this.synth) {
+      if (multiplier >= 4.0) {
+        this.synth.play('health');
+      } else {
+        this.synth.play('elevator');
       }
+    }
 
-      const wallLimit = 0.94 - b.radius;
-      if (b.pos[0] < -wallLimit) {
-        b.pos[0] = -wallLimit;
-        b.vel[0] = -b.vel[0] * ps.bounciness;
-      } else if (b.pos[0] > wallLimit) {
-        b.pos[0] = wallLimit;
-        b.vel[0] = -b.vel[0] * ps.bounciness;
-      }
-
-      let closestPeg = null;
-      let minPegDist = 999.0;
-      
-      for (let j = 0; j < ps.pegs.length; j++) {
-        const peg = ps.pegs[j];
-        const dx = b.pos[0] - peg.x;
-        const dy = b.pos[1] - peg.y;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        if (d < minPegDist) {
-          minPegDist = d;
-          closestPeg = peg;
+    // Restore popup on mobile if all balls are cleared and autoDrop is off
+    if (ps.balls.length <= 1 && this.isMobileDevice() && ps.autoHiddenOnMobile && !ps.autoDrop) {
+      if (ps.restoreTimeout) clearTimeout(ps.restoreTimeout);
+      ps.restoreTimeout = setTimeout(() => {
+        if (this.state.demoScene.includes('11_plinko') && ps.balls.length === 0 && !ps.autoDrop) {
+          this.showPlinkoMobileUI();
         }
-      }
+      }, 3000);
+    }
+  }
 
-      const pegRadius = 0.024;
-      const collisionRadius = b.radius + pegRadius;
+  // 🎰 Demo 12: 3D Real-Physics Roulette Wheel Implementation Methods
+  initRouletteDemo() {
+    this.state.activeShader = 0;
+    this.state.fpsCheapMaterial = false;
+    const shaderSelect = document.getElementById('shader-select');
+    if (shaderSelect) shaderSelect.value = "0";
 
-      if (closestPeg && minPegDist < collisionRadius) {
-        const dx = b.pos[0] - closestPeg.x;
-        const dy = b.pos[1] - closestPeg.y;
-        const nLen = minPegDist > 0.0001 ? minPegDist : 0.0001;
-        const nx = dx / nLen;
-        const ny = dy / nLen;
+    if (!this.rouletteState) {
+      this.rouletteState = {
+        credits: 1000,
+        highScore: 1000,
+        betAmount: 10,
+        betType: 'red',
+        specificNumber: 'none',
+        lastPayout: 0,
+        lastOutcomePocket: null,
+        ball: null,
+        wheelAngle: 0.0,
+        wheelSpeed: -2.8,
+        active: true,
+        spinning: false,
+        payoutHandled: false,
+        trail: []
+      };
+    } else {
+      this.rouletteState.active = true;
+    }
 
-        b.pos[0] = closestPeg.x + nx * collisionRadius;
-        b.pos[1] = closestPeg.y + ny * collisionRadius;
+    // Hide Plinko and show Roulette panels
+    const plinkoOverlay = document.getElementById('plinko-overlay');
+    if (plinkoOverlay) plinkoOverlay.style.display = 'none';
+    const plinkoBanner = document.getElementById('plinko-banner');
+    if (plinkoBanner) plinkoBanner.style.display = 'none';
 
-        const dot = b.vel[0] * nx + b.vel[1] * ny;
-        if (dot < 0) {
-          b.vel[0] = b.vel[0] - (1.0 + ps.bounciness) * dot * nx;
-          b.vel[1] = b.vel[1] - (1.0 + ps.bounciness) * dot * ny;
-          b.vel[0] += (Math.random() - 0.5) * 0.18;
+    const rOverlay = document.getElementById('roulette-overlay');
+    if (rOverlay) rOverlay.style.display = 'block';
+    const rBanner = document.getElementById('roulette-banner');
+    if (rBanner) rBanner.style.display = 'flex';
+
+    this.setupRouletteUI();
+    this.updateRouletteUI();
+
+    // Spawn/seed Web Worker
+    if (!this.physicsWorker) {
+      this.physicsWorker = new Worker('./physics-worker.js');
+      this.physicsWorker.onmessage = (e) => {
+        const data = e.data;
+        if (data && data.type === 'tickResult') {
+          this.handlePhysicsWorkerTickResult(data);
         }
+      };
+    }
 
-        if (b.lastPegHitId !== closestPeg.id) {
-          b.lastPegHitId = closestPeg.id;
-          ps.recentPegHits[closestPeg.id] = performance.now();
-          this.spawnPlinkoShockwave(closestPeg.x, closestPeg.y, b.color, ps.touchEffect);
-          if (this.synth) this.synth.play('hit');
-        }
-      } else if (closestPeg && minPegDist > collisionRadius + 0.05) {
-        if (b.lastPegHitId === closestPeg.id) {
-          b.lastPegHitId = "";
-        }
-      }
+    const isMobile = this.isMobileDevice();
+    this.state.camRadius = isMobile ? 3.8 : 3.2;
+    this.state.camPitch = 0.82; // angled view (~47 deg above horizon)
+    this.state.camYaw = 0.0;
+    this.state.camTarget[0] = 0.0;
+    this.state.camTarget[1] = 0.0;
+    this.state.camTarget[2] = 0.08;
 
-      if (b.pos[1] <= 0.41) {
-        const landingX = b.pos[0];
-        let binIdx = Math.floor((landingX - startBinX) / binW);
-        binIdx = Math.max(0, Math.min(B - 1, binIdx));
+    this.physicsWorker.postMessage({
+      type: 'initRoulette',
+      wheelAngle: this.rouletteState.wheelAngle
+    });
 
-        const halfBins = (B - 1) / 2;
-        const distFromCenter = Math.abs(binIdx - halfBins) / halfBins;
-        
-        let multiplier = 0.2;
-        if (distFromCenter < 0.2) {
-          multiplier = 0.2;
-        } else if (distFromCenter < 0.4) {
-          multiplier = 0.5;
-        } else if (distFromCenter < 0.6) {
-          multiplier = 1.5;
-        } else if (distFromCenter < 0.8) {
-          multiplier = 4.0;
+    this.log("Roulette Demo Loaded! Place your bets on the felt and spin.", "success");
+  }
+
+  setupRouletteUI() {
+    const rs = this.rouletteState;
+    if (!rs) return;
+
+    const rOverlay = document.getElementById('roulette-overlay');
+    if (rOverlay && !rOverlay._eventsIsolated) {
+      rOverlay._eventsIsolated = true;
+      const stopProp = (e) => {
+        e.stopPropagation();
+      };
+      ['wheel', 'touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(evt => {
+        rOverlay.addEventListener(evt, stopProp, { passive: true });
+      });
+      ['mousedown', 'mousemove', 'mouseup'].forEach(evt => {
+        rOverlay.addEventListener(evt, stopProp);
+      });
+    }
+
+    // Bet amount selection
+    const amtBtns = document.querySelectorAll('.roulette-bet-amt-btn');
+    amtBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        amtBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        rs.betAmount = parseInt(btn.getAttribute('data-amt')) || 10;
+        this.updateRouletteUI();
+        if (this.synth) this.synth.play('pickup');
+      });
+    });
+
+    // Bet category choices
+    const choiceBtns = document.querySelectorAll('.roulette-bet-choice');
+    choiceBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        choiceBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        rs.betType = btn.getAttribute('data-bet') || 'red';
+        rs.specificNumber = 'none';
+
+        const numSelect = document.getElementById('roulette-specific-number');
+        if (numSelect) numSelect.value = 'none';
+
+        this.updateRouletteUI();
+        if (this.synth) this.synth.play('pickup');
+      });
+    });
+
+    // Specific single-number bet dropdown
+    const numSelect = document.getElementById('roulette-specific-number');
+    if (numSelect) {
+      numSelect.addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (val !== 'none') {
+          choiceBtns.forEach(b => b.classList.remove('active'));
+          rs.betType = 'number';
+          rs.specificNumber = val;
         } else {
-          multiplier = 12.0;
+          rs.betType = 'red';
+          const redBtn = document.querySelector('.roulette-bet-choice[data-bet="red"]');
+          if (redBtn) redBtn.classList.add('active');
+        }
+        this.updateRouletteUI();
+        if (this.synth) this.synth.play('pickup');
+      });
+    }
+
+    // Interactive spin trigger button
+    const spinBtn = document.getElementById('btn-roulette-spin');
+    if (spinBtn) {
+      const newSpinBtn = spinBtn.cloneNode(true);
+      spinBtn.parentNode.replaceChild(newSpinBtn, spinBtn);
+
+      newSpinBtn.addEventListener('click', () => {
+        if (rs.spinning) return;
+
+        if (rs.credits < rs.betAmount) {
+          this.log("Insufficient Credits! Reset board or lower bet.", "error");
+          if (this.synth) this.synth.play('damage');
+          return;
         }
 
-        const winAmount = Math.round(10 * multiplier);
-        ps.credits += winAmount;
-        ps.lastPayout = winAmount;
+        // Deduct bet and trigger spin
+        rs.credits -= rs.betAmount;
+        rs.spinning = true;
+        rs.payoutHandled = false;
+        rs.lastOutcomePocket = null;
+        rs.trail = [];
+        this.updateRouletteUI();
 
-        if (ps.credits > ps.highScore) {
-          ps.highScore = ps.credits;
+        if (this.synth) this.synth.play('teleport');
+
+        let betLabel = rs.betType === 'number' ? `NUMBER ${rs.specificNumber}` : rs.betType.toUpperCase();
+        this.log(`Roulette wheel and ball spun! Bet: ${rs.betAmount} on [${betLabel}].`, "info");
+
+        if (this.physicsWorker) {
+          this.physicsWorker.postMessage({ type: 'spinRoulette' });
         }
+      });
+    }
 
-        this.updatePlinkoUI();
-        this.log(`Ball landed in bin ${binIdx + 1} (Multiplier: ${multiplier}x). Payout: ${winAmount} credits!`, "success");
-        
-        let binHighlightColor = [0.1, 0.8, 1.0];
-        if (multiplier >= 12.0) binHighlightColor = [1.0, 0.85, 0.1];
-        else if (multiplier >= 4.0) binHighlightColor = [0.2, 1.0, 0.4];
-        this.spawnPlinkoShockwave(landingX, 0.44, binHighlightColor, ps.touchEffect, 0.38);
+    // Panel minimize/close button
+    const closeBtn = document.getElementById('btn-roulette-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        if (this.isMobileDevice()) {
+          this.hideRouletteMobileUI();
+        } else {
+          rs.active = false;
+          const rOverlay = document.getElementById('roulette-overlay');
+          if (rOverlay) rOverlay.style.display = 'none';
+          const rBanner = document.getElementById('roulette-banner');
+          if (rBanner) rBanner.style.display = 'none';
 
-        if (this.synth) {
-          if (multiplier >= 4.0) {
-            this.synth.play('health');
-          } else {
-            this.synth.play('elevator');
-          }
+          this.state.demoScene = '07_fps_shooter_damage_system.cpp';
+          const demoSelect = document.getElementById('demo-scene-select');
+          if (demoSelect) demoSelect.value = "07_fps_shooter_damage_system.cpp";
+          this.log("Roulette demo closed. Switched back to FPS arena.", "info");
         }
+      });
+    }
 
-        ps.balls.splice(i, 1);
+    // FAB floating mobile reopen trigger
+    const rFab = document.getElementById('roulette-mobile-fab');
+    if (rFab) {
+      rFab.addEventListener('click', () => {
+        this.showRouletteMobileUI();
+      });
+    }
+  }
 
-        // Mobile UX: If all active balls finished falling and UI was auto-hidden on mobile, wait 3 seconds and restore popup
-        if (ps.balls.length === 0 && this.isMobileDevice() && ps.autoHiddenOnMobile && !ps.autoDrop) {
-          if (ps.restoreTimeout) clearTimeout(ps.restoreTimeout);
-          ps.restoreTimeout = setTimeout(() => {
-            if (this.state.demoScene.includes('11_plinko') && ps.balls.length === 0 && !ps.autoDrop) {
-              this.showPlinkoMobileUI();
-            }
-          }, 3000);
+  updateRouletteUI() {
+    const rs = this.rouletteState;
+    if (!rs) return;
+
+    const credsVal = document.getElementById('roulette-credits-val');
+    const payoutVal = document.getElementById('roulette-payout-val');
+    const hitVal = document.getElementById('roulette-hit-val');
+    const highVal = document.getElementById('roulette-highscore-val');
+    const summary = document.getElementById('roulette-stats-summary');
+
+    if (credsVal) credsVal.textContent = rs.credits;
+    if (payoutVal) payoutVal.textContent = rs.lastPayout > 0 ? `+${rs.lastPayout}` : "0";
+    if (highVal) highVal.textContent = rs.highScore;
+
+    if (hitVal) {
+      if (rs.lastOutcomePocket !== null) {
+        const ROULETTE_NUMBERS = [
+          0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 
+          24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
+        ];
+        const num = ROULETTE_NUMBERS[rs.lastOutcomePocket];
+        let color = '#a7f3d0'; // Green 0
+        if (num !== 0) {
+          const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+          color = reds.includes(num) ? '#f87171' : '#94a3b8';
         }
+        hitVal.style.color = color;
+        hitVal.textContent = `${num}`;
+      } else {
+        hitVal.style.color = '#38bdf8';
+        hitVal.textContent = rs.spinning ? 'ROLLING...' : '--';
+      }
+    }
+
+    if (summary) {
+      let label = rs.betType === 'number' ? `Number ${rs.specificNumber}` : rs.betType.toUpperCase();
+      let multiplier = "2x";
+      if (rs.betType === 'zero' || rs.betType === 'number') multiplier = "35x";
+      summary.textContent = `Bet Placement: ${label} (${rs.betAmount} Credits) | Potential Payout: ${multiplier}`;
+    }
+  }
+
+  computeRoulettePayout(pocketIdx) {
+    const rs = this.rouletteState;
+    if (!rs) return;
+
+    const ROULETTE_NUMBERS = [
+      0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 
+      24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
+    ];
+    const winningNum = ROULETTE_NUMBERS[pocketIdx];
+
+    let color = 'black';
+    if (winningNum === 0) color = 'green';
+    else {
+      const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+      if (reds.includes(winningNum)) color = 'red';
+    }
+
+    let won = false;
+    let multiplier = 0;
+
+    if (rs.betType === 'red' && color === 'red') {
+      won = true;
+      multiplier = 2;
+    } else if (rs.betType === 'black' && color === 'black') {
+      won = true;
+      multiplier = 2;
+    } else if (rs.betType === 'even' && winningNum !== 0 && winningNum % 2 === 0) {
+      won = true;
+      multiplier = 2;
+    } else if (rs.betType === 'odd' && winningNum !== 0 && winningNum % 2 !== 0) {
+      won = true;
+      multiplier = 2;
+    } else if (rs.betType === 'zero' && winningNum === 0) {
+      won = true;
+      multiplier = 35;
+    } else if (rs.betType === 'number' && rs.specificNumber !== 'none' && parseInt(rs.specificNumber) === winningNum) {
+      won = true;
+      multiplier = 36;
+    }
+
+    let payout = 0;
+    if (won) {
+      payout = rs.betAmount * multiplier;
+      rs.credits += payout;
+      rs.lastPayout = payout;
+      if (this.synth) this.synth.play('health');
+      this.log(`🎉 WINNER! Ball landed in slot ${winningNum} (${color.toUpperCase()}). Awarded ${payout} credits!`, "success");
+    } else {
+      rs.lastPayout = 0;
+      if (this.synth) this.synth.play('damage');
+      this.log(`Lost! Ball landed in slot ${winningNum} (${color.toUpperCase()}). Good luck next round!`, "info");
+    }
+
+    if (rs.credits > rs.highScore) {
+      rs.highScore = rs.credits;
+    }
+
+    this.updateRouletteUI();
+  }
+
+  updateRoulettePhysics(dt) {
+    if (this.physicsWorker && !this._physicsWorkerTickPending) {
+      this._physicsWorkerTickPending = true;
+      this.physicsWorker.postMessage({ type: 'tick', dt: dt });
+    }
+  }
+
+  render3DRoulette(progInfo, timestamp) {
+    const gl = this.gl;
+    const rs = this.rouletteState;
+    if (!rs) return;
+
+    const sphereMesh = this.meshBuffers[0];
+    const cubeMesh = this.meshBuffers[1];
+    const torusMesh = this.meshBuffers[4];
+    const quadMesh = this.meshBuffers[5];
+    const ringMesh = this.meshBuffers[6];
+    const diskMesh = this.meshBuffers[7];
+
+    if (!sphereMesh || !cubeMesh || !torusMesh) return;
+
+    // Helper: draw rotated cube with yaw angle rotZ (rigid rotation with scale)
+    const drawRotatedCube = (px, py, pz, sx, sy, sz, rotZ, color, rough = 0.25, metal = 0.85, matType = 0) => {
+      gl.bindVertexArray(cubeMesh.vao);
+      const c = Math.cos(rotZ), s = Math.sin(rotZ);
+      // Column 0: X axis rotated and scaled by sx
+      this.modelMatrix[0] = c * sx;
+      this.modelMatrix[1] = s * sx;
+      this.modelMatrix[2] = 0;
+      this.modelMatrix[3] = 0;
+      // Column 1: Y axis rotated and scaled by sy
+      this.modelMatrix[4] = -s * sy;
+      this.modelMatrix[5] = c * sy;
+      this.modelMatrix[6] = 0;
+      this.modelMatrix[7] = 0;
+      // Column 2: Z axis scaled by sz
+      this.modelMatrix[8] = 0;
+      this.modelMatrix[9] = 0;
+      this.modelMatrix[10] = sz;
+      this.modelMatrix[11] = 0;
+      // Column 3: Translation (px, py, pz)
+      this.modelMatrix[12] = px;
+      this.modelMatrix[13] = py;
+      this.modelMatrix[14] = pz;
+      this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    const drawCube = (px, py, pz, sx, sy, sz, color, rough = 0.25, metal = 0.85, matType = 0) => {
+      drawRotatedCube(px, py, pz, sx, sy, sz, 0, color, rough, metal, matType);
+    };
+
+    const drawSphere = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0, rot = [0, 0, 0]) => {
+      gl.bindVertexArray(sphereMesh.vao);
+      const cx = Math.cos(rot[0]), sx_ = Math.sin(rot[0]);
+      const cy = Math.cos(rot[1]), sy_ = Math.sin(rot[1]);
+      const cz = Math.cos(rot[2]), sz_ = Math.sin(rot[2]);
+
+      const r00 = cy * cz + sy_ * sx_ * sz_;
+      const r01 = cz * sy_ * sx_ - cy * sz_;
+      const r02 = cx * sy_;
+      const r10 = cx * sz_;
+      const r11 = cx * cz;
+      const r12 = -sx_;
+      const r20 = cy * sy_ * sx_ - cz * sy_;
+      const r21 = cy * cz * sx_ + sy_ * sz_;
+      const r22 = cy * cx;
+
+      this.modelMatrix[0] = r00 * sx;  this.modelMatrix[1] = r01 * sy;  this.modelMatrix[2] = r02 * sz;  this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = r10 * sx;  this.modelMatrix[5] = r11 * sy;  this.modelMatrix[6] = r12 * sz;  this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = r20 * sx;  this.modelMatrix[9] = r21 * sy;  this.modelMatrix[10] = r22 * sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px;        this.modelMatrix[13] = py;        this.modelMatrix[14] = pz;        this.modelMatrix[15] = 1;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    // Helper: draw horizontal torus laying flat in X-Y plane (normal pointing up Z)
+    // Mesh X-Z is the circle ring, mesh Y is the tube thickness.
+    const drawHorizontalTorus = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0) => {
+      gl.bindVertexArray(torusMesh.vao);
+      this.modelMatrix[0] = sx;  this.modelMatrix[1] = 0;    this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0;   this.modelMatrix[5] = 0;    this.modelMatrix[6] = sz;  this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0;   this.modelMatrix[9] = -sy;  this.modelMatrix[10] = 0;  this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py;  this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      gl.drawElements(gl.TRIANGLES, torusMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    const drawDisk = (px, py, pz, sx, sy, sz, color, rough = 0.2, metal = 0.0, matType = 0) => {
+      if (!diskMesh) return;
+      gl.bindVertexArray(diskMesh.vao);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    if (progInfo.uUseTexMaps) gl.uniform1i(progInfo.uUseTexMaps, 0);
+
+    // 1. Draw luxurious green felt casino table cloth
+    if (quadMesh) {
+      gl.bindVertexArray(quadMesh.vao);
+      this.modelMatrix[0] = 5.0; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = 5.0; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = 0; this.modelMatrix[13] = 0; this.modelMatrix[14] = -0.01; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, [0.08, 0.32, 0.16]); // felt green
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85); // ultra rough felt texture
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
+      gl.drawElements(gl.TRIANGLES, quadMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // 2. Draw outer mahogany housing panel (solid wood bowl structure)
+    drawDisk(0, 0, 0.002, 1.45, 1.45, 1.0, [0.26, 0.08, 0.03], 0.25, 0.05);
+
+    // 3. Draw BIG Torus for rolling ball in circle (the lower concave ball track)
+    // Major radius = 1.1 * 1.05 = 1.155, height around z = 0.10
+    drawHorizontalTorus(0, 0, 0.10, 1.05, 1.05, 0.35, [0.85, 0.72, 0.35], 0.12, 0.96);
+
+    // 4. Draw Safety Ring (Torus) on top of BIG Torus to prevent ball getting out
+    // Sits right on top at z = 0.22, forming the upper polished brass safety lip
+    drawHorizontalTorus(0, 0, 0.22, 1.06, 1.06, 0.14, [0.92, 0.78, 0.38], 0.08, 0.98);
+
+    // 5. Draw inner concave bowl slope (mahogany transition towards wheel)
+    drawDisk(0, 0, 0.012, 1.14, 1.14, 1.0, [0.22, 0.07, 0.03], 0.25, 0.05);
+
+    // 6. Draw 8 Brass Diamond Deflectors (canoes) on the bowl slope
+    for (let k = 0; k < 8; k++) {
+      const dAngle = k * (Math.PI / 4);
+      drawRotatedCube(0.92 * Math.cos(dAngle), 0.92 * Math.sin(dAngle), 0.10, 0.028, 0.028, 0.018, dAngle + 0.785, [0.90, 0.78, 0.35], 0.08, 0.98);
+    }
+
+    // 7. Draw the central spinning wheel disk
+    const wheelAngle = rs.wheelAngle;
+    gl.bindVertexArray(diskMesh.vao);
+    const cW = Math.cos(wheelAngle), sW = Math.sin(wheelAngle);
+    this.modelMatrix[0] = 0.78 * cW;  this.modelMatrix[1] = 0.78 * sW;  this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
+    this.modelMatrix[4] = -0.78 * sW; this.modelMatrix[5] = 0.78 * cW;  this.modelMatrix[6] = 0;   this.modelMatrix[7] = 0;
+    this.modelMatrix[8] = 0;          this.modelMatrix[9] = 0;          this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
+    this.modelMatrix[12] = 0;         this.modelMatrix[13] = 0;         this.modelMatrix[14] = 0.016; this.modelMatrix[15] = 1;
+    Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+    gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+    if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+    if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, [0.14, 0.14, 0.16]); // gunmetal wheel face
+    if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.18);
+    if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.92);
+    gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+    // 8. Draw 37 ball holders / compote objects (SUM=37 from 0 to 36) arranged in orbit
+    const ROULETTE_NUMBERS = [
+      0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 
+      24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
+    ];
+
+    for (let i = 0; i < 37; i++) {
+      const angle = wheelAngle + i * (2 * Math.PI / 37);
+
+      // Radial divider fret (golden thin separator cube pointing radially towards center)
+      drawRotatedCube(0.68 * Math.cos(angle), 0.68 * Math.sin(angle), 0.026, 0.09, 0.007, 0.024, angle, [0.88, 0.76, 0.38], 0.1, 0.95);
+
+      // Pocket cup floor & color indicator (shifted to sit squarely in between separators)
+      const midAngle = angle + (Math.PI / 37);
+      const px = 0.68 * Math.cos(midAngle);
+      const py = 0.68 * Math.sin(midAngle);
+
+      const num = ROULETTE_NUMBERS[i];
+      let col = [0.03, 0.03, 0.03]; // Black pocket default
+      if (num === 0) {
+        col = [0.06, 0.75, 0.18]; // Green 0
+      } else {
+        const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+        if (reds.includes(num)) {
+          col = [0.85, 0.08, 0.08]; // Red
+        }
+      }
+
+      // Pocket floor base box (the holder cup oriented directly towards center)
+      drawRotatedCube(px, py, 0.016, 0.08, 0.046, 0.008, midAngle, col, 0.25, 0.3);
+
+      // Shiny colored pocket indicator sphere
+      drawSphere(px, py, 0.024, 0.016, 0.016, 0.016, col, 0.06, 0.15);
+    }
+
+    // 9. Central Turret & 4-Arm Spinner Cross
+    // Spindle cone
+    drawSphere(0, 0, 0.035, 0.20, 0.20, 0.06, [0.85, 0.72, 0.35], 0.08, 0.98);
+    // Spindle column
+    drawSphere(0, 0, 0.075, 0.065, 0.065, 0.09, [0.90, 0.80, 0.40], 0.06, 0.99);
+    // Center turret finial sphere
+    drawSphere(0, 0, 0.13, 0.035, 0.035, 0.035, [0.95, 0.85, 0.45], 0.05, 0.99);
+
+    // 4 cross arms spinning with wheelAngle
+    for (let a = 0; a < 4; a++) {
+      const armAng = wheelAngle + a * (Math.PI / 2);
+      drawRotatedCube(0.06 * Math.cos(armAng), 0.06 * Math.sin(armAng), 0.11, 0.10, 0.014, 0.014, armAng, [0.92, 0.82, 0.42], 0.08, 0.98);
+      drawSphere(0.11 * Math.cos(armAng), 0.11 * Math.sin(armAng), 0.11, 0.018, 0.018, 0.018, [0.95, 0.85, 0.45], 0.05, 0.99);
+    }
+
+    // 10. Physical rolling ivory ball
+    const b = rs.ball;
+    if (b) {
+      drawSphere(b.pos[0], b.pos[1], b.pos[2], 0.035, 0.035, 0.035, [0.97, 0.97, 0.95], 0.06, 0.12, 0, b.rot || [0, 0, 0]);
+
+      // Visual speed trails while in active motion
+      if (!b.trapped) {
+        rs.trail.push({ x: b.pos[0], y: b.pos[1], z: b.pos[2] });
+        if (rs.trail.length > 14) rs.trail.shift();
+
+        rs.trail.forEach((t, index) => {
+          const ratio = index / rs.trail.length;
+          const rSize = 0.035 * ratio * 0.7;
+          drawSphere(t.x, t.y, t.z, rSize, rSize, rSize, [1.0, 1.0, 1.0], 0.01, 0.0, 12);
+        });
       }
     }
   }
@@ -9906,12 +10601,29 @@ else if (typeof define === 'function' && define['amd'])
       gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     };
 
-    const drawSphere = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0) => {
+    const drawSphere = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0, rot = [0, 0, 0]) => {
       gl.bindVertexArray(sphereMesh.vao);
-      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
-      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
-      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
-      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+
+      // Compute rotation matrix from Euler angles (Y * X * Z order)
+      const cx = Math.cos(rot[0]), sx_ = Math.sin(rot[0]);
+      const cy = Math.cos(rot[1]), sy_ = Math.sin(rot[1]);
+      const cz = Math.cos(rot[2]), sz_ = Math.sin(rot[2]);
+
+      const r00 = cy * cz + sy_ * sx_ * sz_;
+      const r01 = cz * sy_ * sx_ - cy * sz_;
+      const r02 = cx * sy_;
+      const r10 = cx * sz_;
+      const r11 = cx * cz;
+      const r12 = -sx_;
+      const r20 = cy * sy_ * sx_ - cz * sy_;
+      const r21 = cy * cz * sx_ + sy_ * sz_;
+      const r22 = cy * cx;
+
+      this.modelMatrix[0] = r00 * sx;  this.modelMatrix[1] = r01 * sy;  this.modelMatrix[2] = r02 * sz;  this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = r10 * sx;  this.modelMatrix[5] = r11 * sy;  this.modelMatrix[6] = r12 * sz;  this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = r20 * sx;  this.modelMatrix[9] = r21 * sy;  this.modelMatrix[10] = r22 * sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px;        this.modelMatrix[13] = py;        this.modelMatrix[14] = pz;        this.modelMatrix[15] = 1;
+
       Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
       gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
       if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
@@ -10034,7 +10746,7 @@ else if (typeof define === 'function' && define['amd'])
 
     // Draw active solid Plinko balls
     ps.balls.forEach(b => {
-      drawSphere(b.pos[0], b.pos[1], b.pos[2], b.radius, b.radius, b.radius, b.color, b.rough, b.metal, b.matType);
+      drawSphere(b.pos[0], b.pos[1], b.pos[2], b.radius, b.radius, b.radius, b.color, b.rough, b.metal, b.matType, b.rot || [0, 0, 0]);
     });
 
     // =============================================================
@@ -13244,6 +13956,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // -------------------------------------------------------------
       this.updatePlinkoPhysics(dt);
       this.render3DPlinko(progInfo, timestamp);
+    } else if (this.state.demoScene.includes('12_roulette')) {
+      // -------------------------------------------------------------
+      // DEMO 12: 3D PHYSICS-ENGINE ROULETTE WHEEL
+      // -------------------------------------------------------------
+      this.updateRoulettePhysics(dt);
+      this.render3DRoulette(progInfo, timestamp);
     } else {
       // DEMO 1 & DEMO 3: SINGLE OBJECT PBR / STUDIO
       const mesh = this.meshBuffers[this.state.activeMesh];
