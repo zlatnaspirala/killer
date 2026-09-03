@@ -1283,6 +1283,287 @@ int main() {
 }
 `,
 
+  '11_plinko.cpp': `// examples/11_plinko.cpp
+// Filament / Native C++ Demo 11: 3D Plinko Cascade Simulation Engine
+// High-performance real-time physics solver, elastic peg collisions,
+// gravity vectors, and dynamic particle-trail integration.
+
+#include <iostream>
+#include <vector>
+#include <random>
+#include <cmath>
+#include <memory>
+#include <algorithm>
+
+namespace PlinkoPhysics {
+
+    struct Vec2 {
+        float x = 0.0f;
+        float y = 0.0f;
+
+        Vec2() = default;
+        Vec2(float x, float y) : x(x), y(y) {}
+
+        Vec2 operator+(const Vec2& o) const { return {x + o.x, y + o.y}; }
+        Vec2 operator-(const Vec2& o) const { return {x - o.x, y - o.y}; }
+        Vec2 operator*(float f) const { return {x * f, y * f}; }
+        float Length() const { return std::sqrt(x * x + y * y); }
+        Vec2 Normalized() const {
+            float len = Length();
+            if (len < 1e-5f) return {0, 0};
+            return {x / len, y / len};
+        }
+        float Dot(const Vec2& o) const { return x * o.x + y * o.y; }
+    };
+
+    struct Peg {
+        Vec2 pos;
+        float radius = 0.015f;
+        int row;
+        int col;
+    };
+
+    struct Ball {
+        int id;
+        Vec2 pos;
+        Vec2 vel;
+        float radius = 0.03f;
+        float bounciness = 0.55f;
+        bool active = true;
+        std::vector<Vec2> trail;
+    };
+
+    class PlinkoBoard {
+    public:
+        std::vector<Peg> pegs;
+        std::vector<Ball> balls;
+        int maxRows = 8;
+        float gravity = -9.81f;
+        float timeStep = 0.016f; // 60 FPS tick
+        int credits = 1000;
+        int score = 0;
+        std::mt19939 rng;
+
+        PlinkoBoard() {
+            rng.seed(1337);
+            GeneratePegs();
+        }
+
+        void GeneratePegs() {
+            pegs.clear();
+            float startY = 2.0f;
+            float rowSpacing = 0.22f;
+            float colSpacing = 0.24f;
+
+            for (int r = 0; r < maxRows; ++r) {
+                int cols = 3 + r; // Pyramid structure
+                float startX = -((cols - 1) * colSpacing) * 0.5f;
+                for (int c = 0; c < cols; ++c) {
+                    Peg p;
+                    p.pos = Vec2(startX + c * colSpacing, startY - r * rowSpacing);
+                    p.row = r;
+                    p.col = c;
+                    pegs.push_back(p);
+                }
+            }
+        }
+
+        void DropBall() {
+            if (credits <= 0) return;
+            credits -= 10;
+
+            std::uniform_real_distribution<float> dist(-0.05f, 0.05f);
+            Ball b;
+            b.id = balls.size() + 1;
+            b.pos = Vec2(dist(rng), 2.3f);
+            b.vel = Vec2(0.0f, -1.0f);
+            b.bounciness = 0.58f;
+            b.active = true;
+            balls.push_back(b);
+        }
+
+        void Update(float dt) {
+            for (auto& ball : balls) {
+                if (!ball.active) continue;
+
+                // Apply gravity
+                ball.vel.y += gravity * dt;
+                ball.pos = ball.pos + ball.vel * dt;
+
+                // Push position to trail
+                ball.trail.push_back(ball.pos);
+                if (ball.trail.size() > 20) {
+                    ball.trail.erase(ball.trail.begin());
+                }
+
+                // Check side wall deflections
+                const float wallLimit = 1.15f;
+                if (ball.pos.x - ball.radius < -wallLimit) {
+                    ball.pos.x = -wallLimit + ball.radius;
+                    ball.vel.x = -ball.vel.x * ball.bounciness;
+                } else if (ball.pos.x + ball.radius > wallLimit) {
+                    ball.pos.x = wallLimit - ball.radius;
+                    ball.vel.x = -ball.vel.x * ball.bounciness;
+                }
+
+                // Resolve Collisions with static pegs
+                for (const auto& peg : pegs) {
+                    Vec2 toBall = ball.pos - peg.pos;
+                    float dist = toBall.Length();
+                    float minDist = ball.radius + peg.radius;
+
+                    if (dist < minDist) {
+                        // Push out of overlap (Static resolution)
+                        Vec2 normal = toBall.Normalized();
+                        ball.pos = peg.pos + normal * minDist;
+
+                        // Elastic reflection
+                        float velAlongNormal = ball.vel.Dot(normal);
+                        if (velAlongNormal < 0) {
+                            float impulse = -(1.0f + ball.bounciness) * velAlongNormal;
+                            ball.vel = ball.vel + normal * impulse;
+                            // Add slight lateral perturbation to break deterministic traps
+                            std::uniform_real_distribution<float> pert(-0.1f, 0.1f);
+                            ball.vel.x += pert(rng);
+                        }
+                    }
+                }
+
+                // Check if ball landed in bins (Y < 0.2f)
+                if (ball.pos.y < 0.2f) {
+                    ball.active = false;
+                    
+                    // Determine payout based on bin offset
+                    float x = ball.pos.x;
+                    int binIndex = std::min(8, std::max(0, (int)((x + 1.1f) / 0.244f)));
+                    float multipliers[] = {10.0f, 3.0f, 1.5f, 0.5f, 0.2f, 0.5f, 1.5f, 3.0f, 10.0f};
+                    float mult = multipliers[binIndex];
+                    int win = (int)(10 * mult);
+
+                    credits += win;
+                    score += win;
+                }
+            }
+        }
+    };
+}
+`,
+
+  '12_roulette.cpp': `// examples/12_roulette.cpp
+// Filament / Native C++ Demo 12: 3D Physics-Engine Roulette Wheel
+// Implements angular friction, ball-spindle mechanics, gravity slope descent,
+// and pocket landing collision resolution.
+
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <random>
+#include <algorithm>
+
+namespace RoulettePhysics {
+
+    const int ROULETTE_NUMBERS[37] = {
+        0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 
+        24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
+    };
+
+    struct BallState {
+        float angle = 0.0f;
+        float angularVelocity = 15.0f; // rad/s
+        float radius = 1.05f;           // Current orbital distance from center
+        float z = 0.10f;
+        float radialVelocity = 0.0f;
+        bool isSettled = false;
+        int settledPocketIndex = -1;
+    };
+
+    class RouletteWheelSimulation {
+    public:
+        float wheelAngle = 0.0f;
+        float wheelVelocity = -3.5f; // Rad/s (counter-rotating)
+        float wheelFriction = 0.015f;
+        float ballFriction = 0.04f;
+        BallState ball;
+        bool isSpinning = false;
+        std::mt19939 rng;
+
+        RouletteWheelSimulation() {
+            rng.seed(999);
+            Reset();
+        }
+
+        void Reset() {
+            wheelAngle = 0.0f;
+            wheelVelocity = -4.0f;
+            ball.angle = 0.0f;
+            ball.angularVelocity = 12.0f + (float)(rng() % 500) / 100.0f;
+            ball.radius = 1.05f;
+            ball.z = 0.10f;
+            ball.radialVelocity = 0.0f;
+            ball.isSettled = false;
+            ball.settledPocketIndex = -1;
+            isSpinning = true;
+        }
+
+        void Update(float dt) {
+            if (!isSpinning) return;
+
+            // 1. Update spinning wheel (decelerate slowly due to mechanical friction)
+            wheelVelocity *= (1.0f - wheelFriction * dt);
+            if (std::abs(wheelVelocity) < 0.05f) {
+                wheelVelocity = 0.0f;
+            }
+            wheelAngle += wheelVelocity * dt;
+            // Keep wheel angle normalized
+            wheelAngle = std::fmod(wheelAngle, 2.0f * M_PI);
+
+            // 2. Update ball orbital physics
+            if (!ball.isSettled) {
+                // Ball decelerates due to rolling friction
+                ball.angularVelocity *= (1.0f - ballFriction * dt);
+                ball.angle += ball.angularVelocity * dt;
+                ball.angle = std::fmod(ball.angle, 2.0f * M_PI);
+
+                // Centrifugal vs gravity balance determines when the ball starts sliding down
+                float centrifugalForce = ball.radius * ball.angularVelocity * ball.angularVelocity;
+                float gravityPull = 9.81f * 0.12f; // Downward gravity component along the dish slope
+
+                if (centrifugalForce < gravityPull) {
+                    // Ball begins descending towards the center wheel
+                    ball.radialVelocity -= 0.8f * dt;
+                    ball.radius += ball.radialVelocity * dt;
+
+                    // Clamp to the inner pocket radius limit (~0.68m)
+                    if (ball.radius <= 0.68f) {
+                        ball.radius = 0.68f;
+                        ball.radialVelocity = 0.0f;
+                        ball.isSettled = true;
+                        
+                        // Look up pocket index relative to current wheel angle
+                        float relativeAngle = ball.angle - wheelAngle;
+                        if (relativeAngle < 0.0f) relativeAngle += 2.0f * M_PI;
+                        
+                        int pocket = (int)(relativeAngle * 37.0f / (2.0f * M_PI)) % 37;
+                        ball.settledPocketIndex = pocket;
+                    }
+                }
+            } else {
+                // Ball rotates in complete sync with the wheel when settled
+                ball.angle = wheelAngle + ball.settledPocketIndex * (2.0f * M_PI / 37.0f);
+                ball.angle = std::fmod(ball.angle, 2.0f * M_PI);
+                ball.radius = 0.68f;
+                ball.z = 0.024f; // Sits inside the pocket cup
+            }
+        }
+
+        int GetWinningNumber() const {
+            if (!ball.isSettled || ball.settledPocketIndex < 0) return -1;
+            return ROULETTE_NUMBERS[ball.settledPocketIndex];
+        }
+    };
+}
+`,
+
   'CMakeLists.txt': `cmake_minimum_required(VERSION 3.15)
 project(NativeCppEngine CXX)
 
@@ -2772,6 +3053,8 @@ EMSCRIPTEN_BINDINGS(EngineModule) {
   'examples/06_glb_character_collision_player.cpp': SOURCE_FILES['06_glb_character_collision_player.cpp'],
   'examples/09_slot_machine.cpp': SOURCE_FILES['09_slot_machine.cpp'],
   'examples/10_sliding_puzzle.cpp': SOURCE_FILES['10_sliding_puzzle.cpp'],
+  'examples/11_plinko.cpp': SOURCE_FILES['11_plinko.cpp'],
+  'examples/12_roulette.cpp': SOURCE_FILES['12_roulette.cpp'],
   'include/engine/Engine.hpp': SOURCE_FILES['Engine.hpp'],
   'include/engine/Camera.hpp': SOURCE_FILES['Camera.hpp'],
   'include/engine/GLBLoader.hpp': SOURCE_FILES['GLBLoader.hpp'],
@@ -4719,6 +5002,7 @@ class NativeApp {
           this.log(`Loaded Demo: ${this.state.demoScene}`, "cpp");
         }
         this.updateHUDStats();
+        this.updateSceneEntitiesForActiveDemo();
       });
     }
 
@@ -5791,9 +6075,93 @@ class NativeApp {
     }
   }
 
+  populateUnifiedSelects() {
+    const UNIFIED_DEMO_FILES_CONFIG = [
+      // Examples / Demos
+      { value: "01_pbr_material_preview.cpp", path: "examples/01_pbr_material_preview.cpp", name: "Demo 01: PBR Material Preview", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "02_metallic_roughness_matrix.cpp", path: "examples/02_metallic_roughness_matrix.cpp", name: "Demo 02: Metallic Roughness Matrix", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "03_trefoil_studio.cpp", path: "examples/03_trefoil_studio.cpp", name: "Demo 03: Trefoil Studio Lighting", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "04_wasm_webgl_wrapper.cpp", path: "examples/04_wasm_webgl_wrapper.cpp", name: "Demo 04: WASM WebGL Wrapper", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "05_desktop_standalone_app.cpp", path: "examples/05_desktop_standalone_app.cpp", name: "Demo 05: Desktop Standalone SDL2 App", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "06_glb_character_collision_player.cpp", path: "examples/06_glb_character_collision_player.cpp", name: "Demo 06: GLB Character, Collision & Player Controller", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "07_fps_shooter_damage_system.cpp", path: "examples/07_fps_shooter_damage_system.cpp", name: "Demo 07: First-Person Shooter & Damage System", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "08_all_materials_presentation.cpp", path: "examples/08_all_materials_presentation.cpp", name: "Demo 08: All Materials Presentation Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "09_slot_machine.cpp", path: "examples/09_slot_machine.cpp", name: "Demo 09: 3D Casino Slot Machine & Particles", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "10_sliding_puzzle.cpp", path: "examples/10_sliding_puzzle.cpp", name: "Demo 10: Dynamic Sliding 3D Puzzle", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "11_plinko.cpp", path: "examples/11_plinko.cpp", name: "Demo 11: 3D Plinko Cascade Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "12_roulette.cpp", path: "examples/12_roulette.cpp", name: "Demo 12: 3D Physics-Engine Roulette Wheel", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+
+      // Engine Internals
+      { value: "src/core/Engine.cpp", path: "src/core/Engine.cpp", name: "Engine Core C++", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "src/core/Renderer.cpp", path: "src/core/Renderer.cpp", name: "Filament GLES3 Pipeline C++", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "src/core/Bindings.cpp", path: "src/core/Bindings.cpp", name: "Emscripten Embind Bindings C++", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "include/engine/Engine.hpp", path: "include/engine/Engine.hpp", name: "Engine Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "include/engine/Camera.hpp", path: "include/engine/Camera.hpp", name: "Camera Math Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "include/engine/Collision.hpp", path: "include/engine/Collision.hpp", name: "Collision System Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "include/engine/PlayerController.hpp", path: "include/engine/PlayerController.hpp", name: "Player Controller Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "include/engine/DamageSystem.hpp", path: "include/engine/DamageSystem.hpp", name: "Damage System & Events Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "include/engine/Projectile.hpp", path: "include/engine/Projectile.hpp", name: "FPS Projectile System Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "include/engine/GLBLoader.hpp", path: "include/engine/GLBLoader.hpp", name: "GLB & Animation Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "include/engine/Renderer.hpp", path: "include/engine/Renderer.hpp", name: "Renderer Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "include/engine/Input.hpp", path: "include/engine/Input.hpp", name: "Input Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "shaders/pbr.frag.glsl", path: "shaders/pbr.frag.glsl", name: "Cook-Torrance PBR Shader", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "shaders/pbr.vert.glsl", path: "shaders/pbr.vert.glsl", name: "Vertex Pipeline Shader", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "CMakeLists.txt", path: "CMakeLists.txt", name: "Native Build Configuration", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+    ];
+
+    this.unifiedDemoConfig = UNIFIED_DEMO_FILES_CONFIG;
+
+    // 1. Populate demo-scene-select
+    const demoSelect = document.getElementById('demo-scene-select');
+    if (demoSelect) {
+      demoSelect.innerHTML = '';
+      UNIFIED_DEMO_FILES_CONFIG.filter(item => item.isDemoScene).forEach(item => {
+        const option = document.createElement('option');
+        option.value = item.value;
+        option.textContent = `${item.name} (${item.value})`;
+        if (item.value === this.state.demoScene) {
+          option.selected = true;
+        }
+        demoSelect.appendChild(option);
+      });
+    }
+
+    // 2. Populate live-editor-file-select
+    const liveSelect = document.getElementById('live-editor-file-select');
+    if (liveSelect) {
+      liveSelect.innerHTML = '';
+      UNIFIED_DEMO_FILES_CONFIG.filter(item => item.isLiveFile).forEach(item => {
+        const option = document.createElement('option');
+        option.value = item.path;
+        option.textContent = `${item.path} (${item.name})`;
+        if (item.path === this.currentLiveFile) {
+          option.selected = true;
+        }
+        liveSelect.appendChild(option);
+      });
+    }
+
+    // 3. Populate filament-examples-select
+    const exSelect = document.getElementById('filament-examples-select');
+    if (exSelect) {
+      exSelect.innerHTML = '';
+      UNIFIED_DEMO_FILES_CONFIG.filter(item => item.isExampleTab).forEach(item => {
+        const option = document.createElement('option');
+        option.value = item.value;
+        option.textContent = `${item.path} (${item.name})`;
+        if (item.value === '08_all_materials_presentation.cpp') {
+          option.selected = true;
+        }
+        exSelect.appendChild(option);
+      });
+    }
+  }
+
   initLiveCodeEditor() {
-    this.liveCppSources = JSON.parse(JSON.stringify(LIVE_CPP_SOURCES));
     this.currentLiveFile = 'examples/01_pbr_material_preview.cpp';
+    this.populateUnifiedSelects();
+
+    this.liveCppSources = JSON.parse(JSON.stringify(LIVE_CPP_SOURCES));
 
     const select = document.getElementById('live-editor-file-select');
     const textarea = document.getElementById('live-code-textarea');
@@ -5966,6 +6334,8 @@ class NativeApp {
             this.syncControlsWithState();
           }
 
+          this.updateSceneEntitiesForActiveDemo();
+
           if (statusBox && statusText) {
             statusBox.className = 'live-status-badge success';
             statusBox.querySelector('.status-indicator').textContent = '✔';
@@ -6054,6 +6424,7 @@ class NativeApp {
     if (demoSelect) demoSelect.value = this.state.demoScene;
 
     this.updateHUDStats();
+    this.updateSceneEntitiesForActiveDemo();
   }
 
   initGeneratedJSViewer() {
@@ -10206,6 +10577,7 @@ else if (typeof define === 'function' && define['amd'])
           this.state.demoScene = '07_fps_shooter_damage_system.cpp';
           const demoSelect = document.getElementById('demo-scene-select');
           if (demoSelect) demoSelect.value = "07_fps_shooter_damage_system.cpp";
+          this.updateSceneEntitiesForActiveDemo();
           this.log("Roulette demo closed. Switched back to FPS arena.", "info");
         }
       });
@@ -10334,6 +10706,13 @@ else if (typeof define === 'function' && define['amd'])
     const rs = this.rouletteState;
     if (!rs) return;
 
+    // 1. Force completely opaque rendering pass: disable alpha blending, enable depth writing, and disable back-face culling to prevent see-through artifacts due to winding mismatch.
+    gl.disable(gl.BLEND);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.depthFunc(gl.LEQUAL);
+    gl.disable(gl.CULL_FACE);
+
     const sphereMesh = this.meshBuffers[0];
     const cubeMesh = this.meshBuffers[1];
     const torusMesh = this.meshBuffers[4];
@@ -10447,6 +10826,23 @@ else if (typeof define === 'function' && define['amd'])
       gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     };
 
+    const drawRing = (px, py, pz, sx, sy, sz, color, rough = 0.2, metal = 0.0, matType = 0) => {
+      if (!ringMesh) return;
+      gl.bindVertexArray(ringMesh.vao);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
     if (progInfo.uUseTexMaps) gl.uniform1i(progInfo.uUseTexMaps, 0);
 
     // 1. Draw luxurious green felt casino table cloth
@@ -10465,21 +10861,40 @@ else if (typeof define === 'function' && define['amd'])
       gl.drawElements(gl.TRIANGLES, quadMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     }
 
-    // 2. Draw outer mahogany housing panel (solid wood bowl structure)
-    drawDisk(0, 0, 0.002, 1.45, 1.45, 1.0, [0.26, 0.08, 0.03], 0.25, 0.05);
+    // Retrieve dynamic entities from the Scene Graph
+    const spindleEnt = this.sceneEntities ? this.sceneEntities.find(e => e.id === 0) : null;
+    const wheelEnt = this.sceneEntities ? this.sceneEntities.find(e => e.id === 1) : null;
+    const rimEnt = this.sceneEntities ? this.sceneEntities.find(e => e.id === 2) : null;
 
-    // 3. Draw BIG Torus for rolling ball in circle (the lower concave ball track)
-    // Major radius = 1.1 * 1.05 = 1.155, height around z = 0.10
-    drawHorizontalTorus(0, 0, 0.10, 1.05, 1.05, 0.35, [0.85, 0.72, 0.35], 0.12, 0.96);
+    // Resolve materials: Base Color, Roughness, Metallic
+    const spindleColor = spindleEnt ? spindleEnt.color : [0.95, 0.64, 0.08];
+    const spindleRough = spindleEnt ? spindleEnt.roughness : 0.08;
+    const spindleMetal = spindleEnt ? spindleEnt.metallic : 0.98;
+
+    const wheelColor = wheelEnt ? wheelEnt.color : [0.14, 0.14, 0.16];
+    const wheelRough = wheelEnt ? wheelEnt.roughness : 0.18;
+    const wheelMetal = wheelEnt ? wheelEnt.metallic : 0.92;
+
+    const rimColor = rimEnt ? rimEnt.color : [0.26, 0.08, 0.03];
+    const rimRough = rimEnt ? rimEnt.roughness : 0.25;
+    const rimMetal = rimEnt ? rimEnt.metallic : 0.05;
+
+    // 2. Draw outer mahogany housing cabinet base (solid wood bowl structure)
+    drawDisk(0, 0, 0.002, 1.45, 1.45, 1.0, rimColor, rimRough, rimMetal);
+
+    // 3. Draw BIG Torus for rolling ball in circle (sleek wood ball track)
+    // Thickness (Z-scale) scaled down to 0.08 so we see the mahogany wooden body and pins beautifully.
+    // MatType is set to 0 (Standard Opaque PBR) to keep it smooth, crisp, and 100% solid.
+    drawHorizontalTorus(0, 0, 0.10, 1.05, 1.05, 0.08, rimColor, rimRough, rimMetal, 0);
 
     // 4. Draw Safety Ring (Torus) on top of BIG Torus to prevent ball getting out
-    // Sits right on top at z = 0.22, forming the upper polished brass safety lip
-    drawHorizontalTorus(0, 0, 0.22, 1.06, 1.06, 0.14, [0.92, 0.78, 0.38], 0.08, 0.98);
+    // Styled as a sleek polished brass safety lip using standard opaque PBR (matType = 0)
+    drawHorizontalTorus(0, 0, 0.16, 1.06, 1.06, 0.05, [0.92, 0.78, 0.38], 0.08, 0.98, 0);
 
-    // 5. Draw inner concave bowl slope (mahogany transition towards wheel)
-    drawDisk(0, 0, 0.012, 1.14, 1.14, 1.0, [0.22, 0.07, 0.03], 0.25, 0.05);
+    // 5. Draw inner concave wood bowl slope (extends from r=0 to r=1.04) using standard opaque PBR (matType = 0)
+    drawDisk(0, 0, 0.012, 1.04, 1.04, 1.0, rimColor, rimRough, rimMetal, 0);
 
-    // 6. Draw 8 Brass Diamond Deflectors (canoes) on the bowl slope
+    // 6. Draw 8 Brass Diamond Deflectors (canoes / metal pins) on the bowl slope
     for (let k = 0; k < 8; k++) {
       const dAngle = k * (Math.PI / 4);
       drawRotatedCube(0.92 * Math.cos(dAngle), 0.92 * Math.sin(dAngle), 0.10, 0.028, 0.028, 0.018, dAngle + 0.785, [0.90, 0.78, 0.35], 0.08, 0.98);
@@ -10496,9 +10911,9 @@ else if (typeof define === 'function' && define['amd'])
     Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
     gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
     if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-    if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, [0.14, 0.14, 0.16]); // gunmetal wheel face
-    if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.18);
-    if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.92);
+    if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, wheelColor); // gunmetal / obsidian wheel face from graph scene
+    if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, wheelRough);
+    if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, wheelMetal);
     gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
     // 8. Draw 37 ball holders / compote objects (SUM=37 from 0 to 36) arranged in orbit
@@ -10538,17 +10953,17 @@ else if (typeof define === 'function' && define['amd'])
 
     // 9. Central Turret & 4-Arm Spinner Cross
     // Spindle cone
-    drawSphere(0, 0, 0.035, 0.20, 0.20, 0.06, [0.85, 0.72, 0.35], 0.08, 0.98);
+    drawSphere(0, 0, 0.035, 0.20, 0.20, 0.06, spindleColor, spindleRough, spindleMetal);
     // Spindle column
-    drawSphere(0, 0, 0.075, 0.065, 0.065, 0.09, [0.90, 0.80, 0.40], 0.06, 0.99);
+    drawSphere(0, 0, 0.075, 0.065, 0.065, 0.09, spindleColor, spindleRough, spindleMetal);
     // Center turret finial sphere
-    drawSphere(0, 0, 0.13, 0.035, 0.035, 0.035, [0.95, 0.85, 0.45], 0.05, 0.99);
+    drawSphere(0, 0, 0.13, 0.035, 0.035, 0.035, spindleColor, spindleRough, spindleMetal);
 
     // 4 cross arms spinning with wheelAngle
     for (let a = 0; a < 4; a++) {
       const armAng = wheelAngle + a * (Math.PI / 2);
-      drawRotatedCube(0.06 * Math.cos(armAng), 0.06 * Math.sin(armAng), 0.11, 0.10, 0.014, 0.014, armAng, [0.92, 0.82, 0.42], 0.08, 0.98);
-      drawSphere(0.11 * Math.cos(armAng), 0.11 * Math.sin(armAng), 0.11, 0.018, 0.018, 0.018, [0.95, 0.85, 0.45], 0.05, 0.99);
+      drawRotatedCube(0.06 * Math.cos(armAng), 0.06 * Math.sin(armAng), 0.11, 0.10, 0.014, 0.014, armAng, spindleColor, spindleRough, spindleMetal);
+      drawSphere(0.11 * Math.cos(armAng), 0.11 * Math.sin(armAng), 0.11, 0.018, 0.018, 0.018, spindleColor, spindleRough, spindleMetal);
     }
 
     // 10. Physical rolling ivory ball
@@ -10564,9 +10979,14 @@ else if (typeof define === 'function' && define['amd'])
         rs.trail.forEach((t, index) => {
           const ratio = index / rs.trail.length;
           const rSize = 0.035 * ratio * 0.7;
-          drawSphere(t.x, t.y, t.z, rSize, rSize, rSize, [1.0, 1.0, 1.0], 0.01, 0.0, 12);
+          drawSphere(t.x, t.y, t.z, rSize, rSize, rSize, [1.0, 1.0, 1.0], 0.05, 0.1, 0);
         });
       }
+    }
+
+    // Restore back-face culling if active globally
+    if (this.state.cullFace) {
+      gl.enable(gl.CULL_FACE);
     }
   }
 
@@ -11836,9 +12256,234 @@ else if (typeof define === 'function' && define['amd'])
     }
   }
 
+  updateSceneEntitiesForActiveDemo() {
+    const ds = this.state.demoScene || '';
+    
+    // For character (Demo 06) and FPS (Demo 07) scenes, we let loadQuakeMap handle entities.
+    if (ds.includes('06_glb') || ds === 'character' || ds.includes('07_fps')) {
+      this.loadQuakeMap(this.currentMapId || 'dm6', false);
+      return;
+    }
+
+    let entities = [];
+
+    if (ds.includes('01_pbr') || ds === 'single') {
+      const activeMeshName = ["Sphere (GGX UV)", "Cube (Box UV)", "C++ Peg Pillar", "Trefoil Knot Model", "High-Poly Torus", "Procedural Quad Canvas", "Sleek Ring", "Convex Disk"][this.state.activeMesh || 0] || "Active Mesh";
+      entities = [
+        { id: 0, name: activeMeshName, type: "Inspectable PBR Mesh", materialKey: this.activeTunedMaterial || 'wood', pos: [0, 0, 0], scale: [1, 1, 1], roughness: this.state.roughness, metallic: this.state.metallic, color: this.state.baseColor || [0.9, 0.9, 0.95], collider: "Visual Mesh Bounds", layer: "PBR Inspect Target", badge: "GGX PBR", trigger: false },
+        { id: 1, name: "Studio_Sun_Light", type: "Directional Light", materialKey: "neon", pos: [4.0, 5.0, 4.0], scale: [1, 1, 1], roughness: 0.0, metallic: 0.0, color: [1.0, 0.95, 0.9], collider: "None", layer: "Layer_Light", badge: "Sun Light", trigger: false }
+      ];
+    } else if (ds.includes('02_metallic') || ds === 'matrix') {
+      entities = [
+        { id: 100, name: "Matrix_Floor_Pad", type: "Static Environment", materialKey: "obsidian", pos: [0, -1.2, 0], scale: [8.0, 0.2, 8.0], roughness: 0.8, metallic: 0.1, color: [0.15, 0.16, 0.18], collider: "AABB Box", layer: "Layer_Ground", badge: "Ground", trigger: false }
+      ];
+      const rows = 5, cols = 5;
+      const spacing = 1.35;
+      const offsetX = (cols - 1) * spacing * 0.5;
+      const offsetY = (rows - 1) * spacing * 0.5;
+      for (let r = 0; r < rows; r++) {
+        const roughness = 0.05 + (r / (rows - 1)) * 0.95;
+        for (let c = 0; c < cols; c++) {
+          const metallic = c / (cols - 1);
+          entities.push({
+            id: 200 + r * 5 + c,
+            name: `PBR_Sphere_R${r}_C${c} (Rough=${roughness.toFixed(2)}, Metal=${metallic.toFixed(2)})`,
+            type: "PBR Specular Model",
+            materialKey: "gold",
+            pos: [c * spacing - offsetX, (rows - 1 - r) * spacing - offsetY, 0],
+            scale: [0.65, 0.65, 0.65],
+            roughness: roughness,
+            metallic: metallic,
+            color: Array.isArray(this.gridColor) ? this.gridColor : (this.gridColor ? Array.from(this.gridColor) : [0.85, 0.12, 0.12]),
+            collider: "Bounding Box",
+            layer: "Layer_PBR_Matrix",
+            badge: `R:${roughness.toFixed(1)} M:${metallic.toFixed(1)}`,
+            trigger: false
+          });
+        }
+      }
+    } else if (ds.includes('03_trefoil') || ds === 'studio') {
+      entities = [
+        { id: 0, name: "Trefoil_Knot_Mesh", type: "Studio PBR Mesh", materialKey: this.activeTunedMaterial || 'chrome', pos: [0, 0, 0], scale: [1, 1, 1], roughness: this.state.roughness || 0.15, metallic: this.state.metallic || 0.95, color: this.state.baseColor || [0.9, 0.9, 0.95], collider: "Mesh Face Bounds", layer: "PBR Inspect Target", badge: "Studio Model", trigger: false },
+        { id: 1, name: "Key_Studio_Light", type: "Directional Light", materialKey: "neon", pos: [3.0, 3.5, 3.0], scale: [1, 1, 1], roughness: 0.0, metallic: 0.0, color: [1.0, 0.92, 0.85], collider: "None", layer: "Layer_Light", badge: "Key Light", trigger: false },
+        { id: 2, name: "Fill_Studio_Light", type: "Directional Light", materialKey: "neon", pos: [-3.0, 2.0, 2.0], scale: [1, 1, 1], roughness: 0.0, metallic: 0.0, color: [0.85, 0.9, 1.0], collider: "None", layer: "Layer_Light", badge: "Fill Light", trigger: false },
+        { id: 3, name: "Rim_Studio_Light", type: "Directional Light", materialKey: "neon", pos: [0.0, 2.0, -4.0], scale: [1, 1, 1], roughness: 0.0, metallic: 0.0, color: [0.95, 0.95, 1.0], collider: "None", layer: "Layer_Light", badge: "Rim Light", trigger: false }
+      ];
+    } else if (ds.includes('04_wasm_webgl')) {
+      entities = [
+        { id: 0, name: "Spinning_WASM_Mesh", type: "WebGL Encapsulated Object", materialKey: "cyber_grid", pos: [0, 0, 0], scale: [1, 1, 1], roughness: 0.3, metallic: 0.8, color: [0.2, 0.8, 0.4], collider: "Dynamic Matrix Bounds", layer: "Layer_Wasm", badge: "WASM WebGL", trigger: false },
+        { id: 1, name: "Sun_Directional_Light", type: "Directional Light", materialKey: "neon", pos: [3, 4, 3], scale: [1, 1, 1], roughness: 0, metallic: 0, color: [1, 1, 1], collider: "None", layer: "Layer_Light", badge: "Light", trigger: false }
+      ];
+    } else if (ds.includes('05_desktop_standalone')) {
+      entities = [
+        { id: 0, name: "Desktop_Simulated_Window", type: "OS Frame Buffer Canvas", materialKey: "obsidian", pos: [0, 0, 0], scale: [2, 1.5, 1], roughness: 0.9, metallic: 0.0, color: [0.1, 0.12, 0.15], collider: "Static Plane Bounds", layer: "Layer_Desktop", badge: "SDL2 Desktop", trigger: false }
+      ];
+    } else if (ds.includes('08_all_materials') || ds.includes('materials_presentation')) {
+      entities = [
+        { id: 1, name: "Showroom_Obsidian_Floor", type: "Static Ground Base", materialKey: "obsidian", pos: [0.0, -0.4, 0.0], scale: [36.0, 0.4, 36.0], roughness: 0.20, metallic: 0.85, color: [0.08, 0.09, 0.12], collider: "AABB Static", layer: "Layer_Ground", badge: "Basalt Obsidian", trigger: false }
+      ];
+      const matKeys = Object.keys(FILAMENT_MATERIALS_CATALOG);
+      const totalMats = matKeys.length;
+      for (let i = 0; i < totalMats; i++) {
+        const key = matKeys[i];
+        const mat = FILAMENT_MATERIALS_CATALOG[key];
+        const pos = this.getShowroomPedestalPos(i, totalMats, this.state.showroomLayout);
+        const activeMeshName = ["Sphere (GGX UV)", "Cube (Box UV)", "C++ Peg Pillar", "Trefoil Knot Model", "High-Poly Torus", "Procedural Quad Canvas", "Sleek Ring", "Convex Disk"][this.state.showroomMesh || 0] || "Mesh";
+        
+        entities.push({
+          id: 300 + i * 2,
+          name: `Pedestal_SL_${i}_${key.toUpperCase()}`,
+          type: "Slate Alloy Pedestal Mount",
+          materialKey: "metal",
+          pos: [pos[0], 0.35, pos[2]],
+          scale: [0.95, 0.70, 0.95],
+          roughness: 0.35,
+          metallic: 0.90,
+          color: [0.14, 0.16, 0.20],
+          collider: "AABB Pedestal",
+          layer: "Layer_Static",
+          badge: "Pedestal",
+          trigger: false
+        });
+
+        entities.push({
+          id: 300 + i * 2 + 1,
+          name: `PBR_Showcase_${key.toUpperCase()} (${activeMeshName})`,
+          type: `PBR Shader [${mat.name || key}]`,
+          materialKey: key,
+          pos: [pos[0], 1.45, pos[2]],
+          scale: [0.62, 0.62, 0.62],
+          roughness: mat.roughness,
+          metallic: mat.metallic,
+          color: mat.color || [0.5, 0.5, 0.5],
+          collider: "Visual Specular Sphere",
+          layer: "Layer_Material_Showcase",
+          badge: key.toUpperCase(),
+          trigger: false
+        });
+      }
+    } else if (ds.includes('09_slot_machine')) {
+      entities = [
+        { id: 0, name: "Slot_Machine_Cabinet_Chassis", type: "Heavy Metal Housing", materialKey: "obsidian", pos: [0, 0.2, -1.0], scale: [4.4, 3.2, 0.6], roughness: 0.18, metallic: 0.9, color: [0.08, 0.1, 0.14], collider: "Chassis Bounding Box", layer: "Layer_Interactive", badge: "Cabinet Chassis", trigger: false },
+        { id: 1, name: "Gold_Glowing_Marquee_Header", type: "Luminescent Accent Frame", materialKey: "neon", pos: [0, 1.8, -0.7], scale: [4.4, 0.12, 0.3], roughness: 0.05, metallic: 0.98, color: [0.95, 0.64, 0.08], collider: "None", layer: "Layer_Interactive", badge: "Marquee Header", trigger: false },
+        { id: 2, name: "Pedestal_Bottom_Base", type: "Slate Alloy Mount", materialKey: "rock", pos: [0, -1.15, -0.5], scale: [4.4, 0.3, 1.4], roughness: 0.35, metallic: 0.9, color: [0.14, 0.16, 0.2], collider: "Pedestal Base Bounding Box", layer: "Layer_Ground", badge: "Base Pedestal", trigger: false },
+        { id: 3, name: "Slot_Lever_Crank_Handle", type: "Physical Leverage Actuator", materialKey: "chrome", pos: [2.35, 0.35, -0.2], scale: [0.1, 0.8, 0.1], roughness: 0.1, metallic: 0.95, color: [0.85, 0.85, 0.88], collider: "Lever Crank Capsule", layer: "Layer_Interactive", badge: "Lever Actuator", trigger: false },
+        { id: 4, name: "Reel_Column_01_Left", type: "Sleek Rotational Cylindrical Spool", materialKey: "white_metal", pos: [-1.2, 0.45, -0.4], scale: [0.85, 0.85, 0.72], roughness: 0.2, metallic: 0.9, color: [1, 1, 1], collider: "Cylinder Collision Bounds", layer: "Layer_Interactive", badge: "Reel Column 1", trigger: false },
+        { id: 5, name: "Reel_Column_02_Center", type: "Sleek Rotational Cylindrical Spool", materialKey: "white_metal", pos: [0, 0.45, -0.4], scale: [0.85, 0.85, 0.72], roughness: 0.2, metallic: 0.9, color: [1, 1, 1], collider: "Cylinder Collision Bounds", layer: "Layer_Interactive", badge: "Reel Column 2", trigger: false },
+        { id: 6, name: "Reel_Column_03_Right", type: "Sleek Rotational Cylindrical Spool", materialKey: "white_metal", pos: [1.2, 0.45, -0.4], scale: [0.85, 0.85, 0.72], roughness: 0.2, metallic: 0.9, color: [1, 1, 1], collider: "Cylinder Collision Bounds", layer: "Layer_Interactive", badge: "Reel Column 3", trigger: false }
+      ];
+    } else if (ds.includes('10_sliding_puzzle')) {
+      entities = [
+        { id: 10, name: "Sliding_Puzzle_Backboard", type: "Polished Rosewood Backing", materialKey: "wood", pos: [0, 1.3, -0.1], scale: [2.65, 2.65, 0.12], roughness: 0.25, metallic: 0.05, color: [0.18, 0.08, 0.05], collider: "AABB board", layer: "Layer_Interactive", badge: "Wood Board", trigger: false }
+      ];
+      if (this.slidingPuzzle && this.slidingPuzzle.tiles) {
+        this.slidingPuzzle.tiles.forEach((tile, idx) => {
+          if (tile.isEmpty) return;
+          entities.push({
+            id: 400 + idx,
+            name: `Sliding_Tile_${tile.val} (GridPos:[${tile.currentCol},${tile.currentRow}])`,
+            type: "Movable PBR Tile Block",
+            materialKey: "gold",
+            pos: [tile.pos[0], tile.pos[1], tile.pos[2]],
+            scale: [0.72, 0.72, 0.1],
+            roughness: 0.12,
+            metallic: 0.9,
+            color: tile.color || [0.95, 0.64, 0.08],
+            collider: "AABB Tile",
+            layer: "Layer_Interactive",
+            badge: `Tile ${tile.val}`,
+            trigger: false
+          });
+        });
+      }
+    } else if (ds.includes('11_plinko')) {
+      entities = [
+        { id: 0, name: "Plinko_Backing_Wall", type: "Textured Carbon Obsidian Support", materialKey: "carbon_fiber", pos: [0, 1.4, -0.05], scale: [2.5, 1.7, 0.05], roughness: 0.55, metallic: 0.45, color: [0.08, 0.09, 0.12], collider: "Support Wall AABB", layer: "Layer_Static", badge: "Backboard", trigger: false },
+        { id: 1, name: "Left_Deflector_Wall", type: "Channeled Steel Guide Block", materialKey: "metal", pos: [-1.15, 1.4, 0.05], scale: [0.06, 1.5, 0.18], roughness: 0.2, metallic: 0.85, color: [0.24, 0.28, 0.35], collider: "AABB Guardrail", layer: "Layer_Static", badge: "Deflector Wall", trigger: false },
+        { id: 2, name: "Right_Deflector_Wall", type: "Channeled Steel Guide Block", materialKey: "metal", pos: [1.15, 1.4, 0.05], scale: [0.06, 1.5, 0.18], roughness: 0.2, metallic: 0.85, color: [0.24, 0.28, 0.35], collider: "AABB Guardrail", layer: "Layer_Static", badge: "Deflector Wall", trigger: false }
+      ];
+      const ps = this.plinkoState;
+      if (ps && ps.pegs) {
+        ps.pegs.forEach((peg, idx) => {
+          entities.push({
+            id: 500 + idx,
+            name: `Plinko_Peg_Row${peg.row}_Col${peg.col}`,
+            type: "Static Collision Pin",
+            materialKey: "gold",
+            pos: [peg.x, peg.y, 0.05],
+            scale: [0.024, 0.024, 0.08],
+            roughness: 0.15,
+            metallic: 0.95,
+            color: [0.95, 0.64, 0.08],
+            collider: "Cylinder Pin",
+            layer: "Layer_Plinko_Peg",
+            badge: "Peg",
+            trigger: false
+          });
+        });
+      }
+      if (ps && ps.balls) {
+        ps.balls.forEach((ball, idx) => {
+          if (!ball.active) return;
+          entities.push({
+            id: 600 + idx,
+            name: `Dropped_Ball_${idx + 1}`,
+            type: "Dynamic Gravity Sphere",
+            materialKey: "cyber_grid",
+            pos: [ball.pos[0], ball.pos[1], ball.pos[2]],
+            scale: [0.06, 0.06, 0.06],
+            roughness: 0.08,
+            metallic: 0.95,
+            color: ball.color || [0.06, 0.85, 0.95],
+            collider: "Dynamic Sphere Collision",
+            layer: "Layer_Plinko_Ball",
+            badge: "Ball",
+            trigger: false
+          });
+        });
+      }
+    } else if (ds.includes('12_roulette')) {
+      entities = [
+        { id: 0, name: "Roulette_Central_Cone_Cap", type: "Faceted Gold Hub Spindle", materialKey: "gold", pos: [0, 0, 0.09], scale: [0.15, 0.15, 0.18], roughness: 0.08, metallic: 0.98, color: [0.95, 0.64, 0.08], collider: "Faceted Hub Cylinder", layer: "Layer_Interactive", badge: "Central Spindle", trigger: false },
+        { id: 1, name: "Main_Roulette_Turntable_Wheel", type: "Segmented Outer Ring Cylinder", materialKey: "obsidian", pos: [0, 0, 0], scale: [1.1, 1.1, 0.08], roughness: 0.25, metallic: 0.85, color: [0.15, 0.16, 0.18], collider: "Rotating Cylinder Wheel", layer: "Layer_Interactive", badge: "Spindle Wheel", trigger: false },
+        { id: 2, name: "Obsidian_Base_Rim", type: "Outer Static Guide Ring", materialKey: "metal", pos: [0, 0, -0.04], scale: [1.3, 1.3, 0.08], roughness: 0.15, metallic: 0.9, color: [0.08, 0.09, 0.12], collider: "Static Outer Ring Rim", layer: "Layer_Static", badge: "Outer Rim", trigger: false }
+      ];
+      if (this.rouletteState && this.rouletteState.ball) {
+        const ball = this.rouletteState.ball;
+        entities.push({
+          id: 700,
+          name: "Roulette_Ball",
+          type: "Frictionless Rolling Ivory Sphere",
+          materialKey: "white_metal",
+          pos: [ball.pos[0], ball.pos[1], ball.pos[2]],
+          scale: [0.038, 0.038, 0.038],
+          roughness: 0.05,
+          metallic: 0.05,
+          color: [0.98, 0.98, 0.95],
+          collider: "Dynamic Ball Contact",
+          layer: "Layer_Interactive",
+          badge: "Ivory Ball",
+          trigger: false
+        });
+      }
+    }
+
+    if (entities.length > 0) {
+      this.sceneEntities = entities;
+      this.selectedEntityIndex = 0;
+      this.renderHierarchyTree();
+      this.populateInspector(this.sceneEntities[0]);
+    }
+  }
+
   renderHierarchyTree() {
     const treeList = document.getElementById('hierarchy-tree-list');
     if (!treeList) return;
+
+    const countEl = document.getElementById('scene-obj-count');
+    if (countEl) {
+      countEl.textContent = this.sceneEntities.length;
+    }
 
     treeList.innerHTML = '';
     this.sceneEntities.forEach((entity, idx) => {
@@ -12262,6 +12907,14 @@ else if (typeof define === 'function' && define['amd'])
         const text = document.getElementById('cpp-bridge-code')?.textContent || '';
         navigator.clipboard.writeText(text);
         this.log("C++ Bridge code copied to clipboard.", "success");
+      });
+    }
+
+    const btnRefreshHierarchy = document.getElementById('btn-refresh-hierarchy');
+    if (btnRefreshHierarchy) {
+      btnRefreshHierarchy.addEventListener('click', () => {
+        this.updateSceneEntitiesForActiveDemo();
+        this.log("Manually refreshed active Scene Graph from live simulation context.", "success");
       });
     }
   }
@@ -12769,6 +13422,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // Render 3D Scene to Post-Processing Scene Framebuffer
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
     gl.viewport(0, 0, width, height);
+
+    // Force depth writing and disable blending BEFORE clearing to guarantee correct depth buffer clearance
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
 
     // Clear Scene
     gl.clearColor(0.005, 0.007, 0.012, 1.0);
