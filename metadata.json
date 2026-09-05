@@ -1,5 +1,5 @@
 {
-  "name": "C++ Filament 3D Engine Studio",
+  "name": "KIller",
   "description": "High-performance C++ & WebAssembly 3D engine sandbox with custom physics, first-person shooter arena, dynamic sliding puzzle, 3D Plinko, and 3D real-physics Roulette wheel.",
   "requestFramePermissions": [
     "camera",

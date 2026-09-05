@@ -2065,17 +2065,16 @@ void main() {
         vec2 texUv = v_uv;
         if (u_uvScale.x > 0.001 && u_uvScale.y > 0.001) {
             texUv = v_uv * u_uvScale + u_uvOffset;
+        } else if (length(v_uv) < 0.001) {
+            texUv = (abs(N.y) > 0.6) ? p.xz * 0.3 : ((abs(N.x) > 0.6) ? p.yz * 0.3 : p.xy * 0.3);
         } else {
             texUv = v_uv * (u_noiseScale > 0.1 ? u_noiseScale * 0.05 : 1.0);
         }
-        if (length(v_uv) < 0.001) {
-            texUv = (abs(N.y) > 0.6) ? p.xz * 0.3 : ((abs(N.x) > 0.6) ? p.yz * 0.3 : p.xy * 0.3);
-        }
         vec4 texAlb = texture(u_albedoMap, texUv);
         vec4 texPbr = texture(u_pbrMap, texUv);
-        albedo = texAlb.rgb;
-        roughness = mix(roughness, texPbr.r, 0.1);
-        metallic = mix(metallic, texPbr.g, 0.1);
+        albedo = (u_baseColor.r < 0.999 || u_baseColor.g < 0.999 || u_baseColor.b < 0.999) ? (albedo * texAlb.rgb) : texAlb.rgb;
+        roughness = mix(roughness, texPbr.r, 0.2);
+        metallic = mix(metallic, texPbr.g, 0.2);
     }
 
     // -------------------------------------------------------------
@@ -3160,6 +3159,47 @@ const Mat4 = {
     out[7] = (-a21 * a00 + a01 * a20) * det;
     out[8] = (a11 * a00 - a01 * a10) * det;
     return out;
+  },
+  invert(out, a) {
+    const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+    const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+    const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+    const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+
+    const b00 = a00 * a11 - a01 * a10;
+    const b01 = a00 * a12 - a02 * a10;
+    const b02 = a00 * a13 - a03 * a10;
+    const b03 = a01 * a12 - a02 * a11;
+    const b04 = a01 * a13 - a03 * a11;
+    const b05 = a02 * a13 - a03 * a12;
+    const b06 = a20 * a31 - a21 * a30;
+    const b07 = a20 * a32 - a22 * a30;
+    const b08 = a20 * a33 - a23 * a30;
+    const b09 = a21 * a32 - a22 * a31;
+    const b10 = a21 * a33 - a23 * a31;
+    const b11 = a22 * a33 - a23 * a32;
+
+    let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+    if (!det) return null;
+    det = 1.0 / det;
+
+    out[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
+    out[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+    out[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
+    out[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+    out[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
+    out[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+    out[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
+    out[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+    out[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
+    out[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+    out[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
+    out[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+    out[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
+    out[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+    out[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
+    out[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+    return out;
   }
 };
 
@@ -3659,17 +3699,17 @@ class NativeApp {
     }
 
     this.state = {
-      demoScene: '07_fps_shooter_damage_system.cpp', // Default to Demo 07 First-Person Shooter & Damage System
+      demoScene: '12_roulette.cpp', // Default to Demo 12 3D Physics-Engine Roulette Wheel
       activeMesh: 0,
-      activeShader: 4, // Default to Ultra-Fast Cheap Mobile Material
-      fpsCheapMaterial: true, // Cheap material flag for 60-120 FPS mobile performance
-      roughness: 0.35,
-      metallic: 0.80,
+      activeShader: 0, // Default to Full PBR Filament Shader
+      fpsCheapMaterial: false,
+      roughness: 0.25,
+      metallic: 0.15,
       speed: 0.8,
       autoRotate: false,
       depthTest: true,
       cullFace: true,
-      baseColor: [0.15, 0.40, 0.95],
+      baseColor: [0.28, 0.12, 0.06],
       
       // Showroom state
       showroomLayout: 'circular', // 'circular', 'linear', 'grid'
@@ -3679,14 +3719,14 @@ class NativeApp {
       showroomFocusedMatKey: 'wood',
 
       // Camera & Input state
-      cameraMode: 3, // 0: Orbit, 1: FP Drag Look, 2: Free-Fly, 3: FPS Shooter
+      cameraMode: 0, // 0: Orbit, 1: FP Drag Look, 2: Free-Fly, 3: FPS Shooter
       invertMouseX: true,
       invertMouseY: false,
       camYaw: 0.0,
-      camPitch: 0.0,
-      camRadius: 14.5,
-      camPos: new Float32Array([0.0, 1.7, 5.0]),
-      camTarget: new Float32Array([0.0, 1.7, 4.0]),
+      camPitch: 0.76,
+      camRadius: 5.4,
+      camPos: new Float32Array([0.0, -3.8, 4.0]),
+      camTarget: new Float32Array([0.0, 0.0, 0.05]),
       camFront: new Float32Array([0.0, 0.0, -1.0]),
       camRight: new Float32Array([1.0, 0.0, 0.0]),
       moveSpeed: 6.5,
@@ -3829,7 +3869,7 @@ class NativeApp {
     this.synth = new RetroSoundSynth();
 
     // Map & Items Systems State
-    this.currentMapId = 'dm6';
+    this.currentMapId = 'q3dm17';
     this.activeCategoryFilter = 'all';
 
     // Player Status & Inventory State
@@ -3963,9 +4003,13 @@ class NativeApp {
     this.initProjectWorkspace();
     this.initShowroomUI();
     this.initNetworkSystem();
-    this.initFpsStartupMenu();
-    this.sync3DBotsFromLobby();
-    this.showFpsStartupMenu();
+    if (this.state.demoScene && this.state.demoScene.includes('12_roulette')) {
+      this.initRouletteDemo();
+    } else {
+      this.initFpsStartupMenu();
+      this.sync3DBotsFromLobby();
+      this.showFpsStartupMenu();
+    }
     
     this.log("Filament Architecture & WebGPU/GLES3 pipeline initialized.", "cpp");
     this.log("First-Person & Orbit Camera bitmask input listeners ACTIVE.", "success");
@@ -4048,6 +4092,25 @@ class NativeApp {
       img.src = url;
       this.textureCatalog[key] = tex;
     });
+
+    // 1x1 Neutral Dummy Textures for materials without explicit texture inputs
+    const make1x1 = (rgba) => {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(rgba));
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+      return tex;
+    };
+
+    this.dummyTextures = {
+      white: make1x1([255, 255, 255, 255]),    // Neutral white (albedo multiplier leaves baseColor pure)
+      normal: make1x1([128, 128, 255, 255]),   // Flat tangent space normal (0, 0, 1)
+      pbr: make1x1([255, 0, 255, 255]),        // R: Roughness=1.0, G: Metallic=0.0, B: AO=1.0
+      black: make1x1([0, 0, 0, 255])           // Black emissive (0 light output)
+    };
   }
 
   createProgram(vsSrc, fsSrc) {
@@ -4077,11 +4140,13 @@ class NativeApp {
       uClearCoat: gl.getUniformLocation(prog, "u_clearCoat"),
       uAnisotropy: gl.getUniformLocation(prog, "u_anisotropy"),
       uBumpStrength: gl.getUniformLocation(prog, "u_bumpStrength"),
-      uUseTexMaps: gl.getUniformLocation(prog, "u_useTexMaps"),
-      uUvScale: gl.getUniformLocation(prog, "u_uvScale"),
-      uUvOffset: gl.getUniformLocation(prog, "u_uvOffset"),
-      uAlbedoMap: gl.getUniformLocation(prog, "u_albedoMap"),
-      uPbrMap: gl.getUniformLocation(prog, "u_pbrMap"),
+      uUseTexMaps: gl.getUniformLocation(prog, "u_useTexMaps") || gl.getUniformLocation(prog, "uUseTexMaps"),
+      uUvScale: gl.getUniformLocation(prog, "u_uvScale") || gl.getUniformLocation(prog, "uUvScale"),
+      uUvOffset: gl.getUniformLocation(prog, "u_uvOffset") || gl.getUniformLocation(prog, "uUvOffset"),
+      uAlbedoMap: gl.getUniformLocation(prog, "u_albedoMap") || gl.getUniformLocation(prog, "uAlbedoMap"),
+      uNormalMap: gl.getUniformLocation(prog, "u_normalMap") || gl.getUniformLocation(prog, "uNormalMap"),
+      uPbrMap: gl.getUniformLocation(prog, "u_pbrMap") || gl.getUniformLocation(prog, "uPbrMap"),
+      uEmissiveMap: gl.getUniformLocation(prog, "u_emissiveMap") || gl.getUniformLocation(prog, "uEmissiveMap"),
       uLightDir: gl.getUniformLocation(prog, "u_lightDir"),
       uLightColor: gl.getUniformLocation(prog, "u_lightColor"),
       uFillLightDir: gl.getUniformLocation(prog, "u_fillLightDir"),
@@ -4103,6 +4168,36 @@ class NativeApp {
         outerCutoff: gl.getUniformLocation(prog, `u_spotLights[${i}].outerCutoff`)
       }))
     };
+  }
+
+  // Ensures texture samplers in materials are ALWAYS bound with valid textures or neutral dummy fallbacks
+  bindMaterialTextures(progInfo, texObj = null, normalObj = null, pbrObj = null, emissiveObj = null) {
+    const gl = this.gl;
+    if (!gl || !this.dummyTextures) return;
+
+    // Unit 2: Albedo Map
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, texObj || this.dummyTextures.white);
+    if (progInfo.uAlbedoMap) gl.uniform1i(progInfo.uAlbedoMap, 2);
+
+    // Unit 3: Normal Map
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, normalObj || this.dummyTextures.normal);
+    if (progInfo.uNormalMap) gl.uniform1i(progInfo.uNormalMap, 3);
+
+    // Unit 4: PBR Map (R: Roughness, G: Metallic, B: AO)
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, pbrObj || this.dummyTextures.pbr);
+    if (progInfo.uPbrMap) gl.uniform1i(progInfo.uPbrMap, 4);
+
+    // Unit 5: Emissive Map
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, emissiveObj || this.dummyTextures.black);
+    if (progInfo.uEmissiveMap) gl.uniform1i(progInfo.uEmissiveMap, 5);
+
+    if (progInfo.uUseTexMaps) {
+      gl.uniform1i(progInfo.uUseTexMaps, texObj ? 1 : 0);
+    }
   }
 
   initPipeline() {
@@ -4127,6 +4222,90 @@ class NativeApp {
       uModel: gl.getUniformLocation(progB, "u_model"),
       uViewProj: gl.getUniformLocation(progB, "u_viewProj"),
       uTextTexture: gl.getUniformLocation(progB, "u_textTexture")
+    };
+
+    // Compile transparent solid-color roulette actor program for 3D betting hit areas
+    const vsActSrc = `#version 300 es
+layout(location = 0) in vec3 a_position;
+layout(location = 2) in vec2 a_uv;
+uniform mat4 u_model;
+uniform mat4 u_viewProj;
+out vec2 v_uv;
+void main() {
+  v_uv = a_uv;
+  gl_Position = u_viewProj * u_model * vec4(a_position, 1.0);
+}
+`;
+    const fsActSrc = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform vec3 u_color;
+uniform float u_alpha;
+uniform float u_borderWidth;
+uniform vec3 u_borderColor;
+out vec4 fragColor;
+void main() {
+  float d = min(min(v_uv.x, 1.0 - v_uv.x), min(v_uv.y, 1.0 - v_uv.y));
+  if (u_borderWidth > 0.0001 && d < u_borderWidth) {
+    fragColor = vec4(u_borderColor, min(1.0, u_alpha * 2.2 + 0.35));
+  } else {
+    fragColor = vec4(u_color, u_alpha);
+  }
+}
+`;
+    const vsAct = this.compileShader(gl.VERTEX_SHADER, vsActSrc);
+    const fsAct = this.compileShader(gl.FRAGMENT_SHADER, fsActSrc);
+    const progAct = gl.createProgram();
+    gl.attachShader(progAct, vsAct);
+    gl.attachShader(progAct, fsAct);
+    gl.linkProgram(progAct);
+    this.rouletteActorProg = {
+      prog: progAct,
+      uModel: gl.getUniformLocation(progAct, "u_model"),
+      uViewProj: gl.getUniformLocation(progAct, "u_viewProj"),
+      uColor: gl.getUniformLocation(progAct, "u_color"),
+      uAlpha: gl.getUniformLocation(progAct, "u_alpha"),
+      uBorderWidth: gl.getUniformLocation(progAct, "u_borderWidth"),
+      uBorderColor: gl.getUniformLocation(progAct, "u_borderColor")
+    };
+
+    // Compile dedicated pristine textured roulette felt program (guaranteed 100% vibrant, never black)
+    const vsFeltSrc = `#version 300 es
+layout(location = 0) in vec3 a_position;
+layout(location = 2) in vec2 a_uv;
+uniform mat4 u_model;
+uniform mat4 u_viewProj;
+out vec2 v_uv;
+void main() {
+  v_uv = a_uv;
+  gl_Position = u_viewProj * u_model * vec4(a_position, 1.0);
+}
+`;
+    const fsFeltSrc = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_feltTexture;
+uniform float u_brightness;
+out vec4 fragColor;
+void main() {
+  vec4 tex = texture(u_feltTexture, v_uv);
+  vec2 cUv = v_uv - vec2(0.5, 0.5);
+  float vignette = 1.0 - dot(cUv, cUv) * 0.12;
+  fragColor = vec4(tex.rgb * vignette * u_brightness, 1.0);
+}
+`;
+    const vsFelt = this.compileShader(gl.VERTEX_SHADER, vsFeltSrc);
+    const fsFelt = this.compileShader(gl.FRAGMENT_SHADER, fsFeltSrc);
+    const progFelt = gl.createProgram();
+    gl.attachShader(progFelt, vsFelt);
+    gl.attachShader(progFelt, fsFelt);
+    gl.linkProgram(progFelt);
+    this.rouletteFeltProg = {
+      prog: progFelt,
+      uModel: gl.getUniformLocation(progFelt, "u_model"),
+      uViewProj: gl.getUniformLocation(progFelt, "u_viewProj"),
+      uFeltTexture: gl.getUniformLocation(progFelt, "u_feltTexture"),
+      uBrightness: gl.getUniformLocation(progFelt, "u_brightness")
     };
 
     this.initPostProcessing();
@@ -4627,6 +4806,11 @@ class NativeApp {
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
       if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab')) return;
 
+      if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
+        this.handleRouletteClick(e.clientX, e.clientY);
+        return;
+      }
+
       if (this.state.cameraMode === 3) {
         if (document.pointerLockElement !== this.canvas && document.pointerLockElement !== canvasContainer) {
           try {
@@ -4731,6 +4915,8 @@ class NativeApp {
             }
           }
         }
+      } else if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
+        this.handleRouletteClick(e.clientX, e.clientY);
       }
     });
 
@@ -4768,7 +4954,12 @@ class NativeApp {
         return;
       }
 
-      if (!this.state.isDragging) return;
+      if (!this.state.isDragging) {
+        if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
+          this.updateRouletteHover(e.clientX, e.clientY);
+        }
+        return;
+      }
       const dx = e.clientX - this.state.lastMouseX;
       const dy = e.clientY - this.state.lastMouseY;
       this.state.lastMouseX = e.clientX;
@@ -4877,8 +5068,22 @@ class NativeApp {
 
     // Demo Scene Switcher
     const demoSelect = document.getElementById('demo-scene-select');
+    const viewportDemoSelect = document.getElementById('viewport-demo-scene-select');
+    
+    if (viewportDemoSelect && demoSelect) {
+      viewportDemoSelect.addEventListener('change', (e) => {
+        if (demoSelect.value !== e.target.value) {
+          demoSelect.value = e.target.value;
+          demoSelect.dispatchEvent(new Event('change'));
+        }
+      });
+    }
+
     if (demoSelect) {
       demoSelect.addEventListener('change', (e) => {
+        if (viewportDemoSelect && viewportDemoSelect.value !== e.target.value) {
+          viewportDemoSelect.value = e.target.value;
+        }
         this.state.demoScene = e.target.value;
         if (this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation')) {
           this.state.cameraMode = 0;
@@ -4989,10 +5194,10 @@ class NativeApp {
           const camSelect = document.getElementById('camera-mode-select');
           if (camSelect) camSelect.value = "0";
           const isMobile = this.isMobileDevice();
-          this.state.camRadius = isMobile ? 4.2 : 3.6;
-          this.state.camPitch = 0.78; // beautiful tilted bird's-eye view
+          this.state.camRadius = isMobile ? 6.4 : 5.4;
+          this.state.camPitch = 0.76; // angled bird's-eye view fitting wheel and expanded table
           this.state.camYaw = 0.0;
-          this.state.camTarget[0] = 0.0;
+          this.state.camTarget[0] = 0.15;
           this.state.camTarget[1] = 0.0;
           this.state.camTarget[2] = 0.05;
           updateFPSOverlays();
@@ -5014,6 +5219,7 @@ class NativeApp {
         const modeName = e.target.options[e.target.selectedIndex].text;
         this.log(`Camera Controller switched to: [${modeName}]`, "cpp");
         updateFPSOverlays();
+        this.updateMobileActionButtonsVisibility();
       });
     }
 
@@ -5710,7 +5916,10 @@ class NativeApp {
       active: false,
       touchId: null,
       lastX: 0,
-      lastY: 0
+      lastY: 0,
+      startX: 0,
+      startY: 0,
+      startTime: 0
     };
 
     const overlay = document.getElementById('mobile-touch-overlay');
@@ -5735,6 +5944,7 @@ class NativeApp {
         overlay.classList.remove('hidden');
         if (btnToggleJoy) btnToggleJoy.textContent = '🎮 Joystick: AUTO';
       }
+      this.updateMobileActionButtonsVisibility();
     };
 
     if (btnToggleJoy) {
@@ -5893,6 +6103,9 @@ class NativeApp {
             this.touchLookState.touchId = touch.identifier;
             this.touchLookState.lastX = touch.clientX;
             this.touchLookState.lastY = touch.clientY;
+            this.touchLookState.startX = touch.clientX;
+            this.touchLookState.startY = touch.clientY;
+            this.touchLookState.startTime = Date.now();
             if (lookHint) lookHint.classList.add('faded');
           }
         }
@@ -5964,6 +6177,32 @@ class NativeApp {
         if (e.touches.length < 2) {
           this.pinchZoomState.active = false;
         }
+
+        if (this.touchLookState.active) {
+          let touchEnded = null;
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === this.touchLookState.touchId) {
+              touchEnded = e.changedTouches[i];
+              break;
+            }
+          }
+          if (touchEnded) {
+            const dx = touchEnded.clientX - (this.touchLookState.startX || 0);
+            const dy = touchEnded.clientY - (this.touchLookState.startY || 0);
+            const dist = Math.hypot(dx, dy);
+            const duration = Date.now() - (this.touchLookState.startTime || 0);
+
+            if (duration < 350 && dist < 15) {
+              const ds = this.state.demoScene || '';
+              if (ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
+                this.handleRouletteClick(touchEnded.clientX, touchEnded.clientY);
+              } else if (ds.includes('10_sliding_puzzle') && this.puzzleState) {
+                this.handleSlidingPuzzleTouch(touchEnded.clientX, touchEnded.clientY);
+              }
+            }
+          }
+        }
+
         if (e.touches.length === 1 && !this.touchLookState.active) {
           // Seamless transition from pinch to single-touch orbit without camera jerk
           const remainingTouch = e.touches[0];
@@ -5972,6 +6211,9 @@ class NativeApp {
             this.touchLookState.touchId = remainingTouch.identifier;
             this.touchLookState.lastX = remainingTouch.clientX;
             this.touchLookState.lastY = remainingTouch.clientY;
+            this.touchLookState.startX = remainingTouch.clientX;
+            this.touchLookState.startY = remainingTouch.clientY;
+            this.touchLookState.startTime = Date.now();
           }
         }
         if (!this.touchLookState.active) return;
@@ -6073,6 +6315,7 @@ class NativeApp {
         this.log("Mobile camera pose reset.", "info");
       });
     }
+    this.updateMobileActionButtonsVisibility();
   }
 
   populateUnifiedSelects() {
@@ -6113,8 +6356,10 @@ class NativeApp {
 
     // 1. Populate demo-scene-select
     const demoSelect = document.getElementById('demo-scene-select');
+    const viewportDemoSelect = document.getElementById('viewport-demo-scene-select');
     if (demoSelect) {
       demoSelect.innerHTML = '';
+      if (viewportDemoSelect) viewportDemoSelect.innerHTML = '';
       UNIFIED_DEMO_FILES_CONFIG.filter(item => item.isDemoScene).forEach(item => {
         const option = document.createElement('option');
         option.value = item.value;
@@ -6123,6 +6368,16 @@ class NativeApp {
           option.selected = true;
         }
         demoSelect.appendChild(option);
+
+        if (viewportDemoSelect) {
+          const vpOption = document.createElement('option');
+          vpOption.value = item.value;
+          vpOption.textContent = item.name;
+          if (item.value === this.state.demoScene) {
+            vpOption.selected = true;
+          }
+          viewportDemoSelect.appendChild(vpOption);
+        }
       });
     }
 
@@ -6422,6 +6677,8 @@ class NativeApp {
 
     const demoSelect = document.getElementById('demo-scene-select');
     if (demoSelect) demoSelect.value = this.state.demoScene;
+    const viewportDemoSelect = document.getElementById('viewport-demo-scene-select');
+    if (viewportDemoSelect) viewportDemoSelect.value = this.state.demoScene;
 
     this.updateHUDStats();
     this.updateSceneEntitiesForActiveDemo();
@@ -6607,7 +6864,7 @@ else if (typeof define === 'function' && define['amd'])
     this.initItemsWorkspace();
     this.initMaterialsWorkspace();
     this.initHzbWorkspace();
-    this.loadQuakeMap('dm6', false);
+    this.loadQuakeMap('q3dm17', false);
   }
 
   initMapSettingsWorkspace() {
@@ -6615,14 +6872,14 @@ else if (typeof define === 'function' && define['amd'])
     document.querySelectorAll('.btn-load-map').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const mapId = e.currentTarget.dataset.mapId || 'dm6';
+        const mapId = e.currentTarget.dataset.mapId || 'q3dm17';
         this.loadQuakeMap(mapId, true);
       });
     });
 
     document.querySelectorAll('.quake-map-card').forEach(card => {
       card.addEventListener('click', (e) => {
-        const mapId = e.currentTarget.dataset.mapId || 'dm6';
+        const mapId = e.currentTarget.dataset.mapId || 'q3dm17';
         if (mapId !== this.currentMapId) {
           this.loadQuakeMap(mapId, true);
         }
@@ -10410,7 +10667,7 @@ else if (typeof define === 'function' && define['amd'])
         lastOutcomePocket: null,
         ball: null,
         wheelAngle: 0.0,
-        wheelSpeed: -2.8,
+        wheelSpeed: -0.6,
         active: true,
         spinning: false,
         payoutHandled: false,
@@ -10445,20 +10702,1082 @@ else if (typeof define === 'function' && define['amd'])
       };
     }
 
+    this.rouletteTableTexture = this.createRouletteTableTexture();
+    this.rouletteWheelTexture = this.createRouletteWheelTexture();
+    this.casinoFloorTexture = this.createCasinoFloorTexture();
+    this.initRouletteTableActors();
+    this.updateSceneEntitiesForActiveDemo();
+    if (!this.rouletteChips) {
+      this.rouletteChips = [];
+    }
+
     const isMobile = this.isMobileDevice();
-    this.state.camRadius = isMobile ? 3.8 : 3.2;
-    this.state.camPitch = 0.82; // angled view (~47 deg above horizon)
+    this.state.cameraMode = 0; // Ensure Orbit/Inspect camera mode for interactive felt betting
+    this.state.camRadius = isMobile ? 6.4 : 5.4;
+    this.state.camPitch = 0.76; // spacious angled vantage point (~43.5 deg above horizon)
     this.state.camYaw = 0.0;
-    this.state.camTarget[0] = 0.0;
+    this.state.camTarget[0] = 0.15;
     this.state.camTarget[1] = 0.0;
-    this.state.camTarget[2] = 0.08;
+    this.state.camTarget[2] = 0.05;
 
     this.physicsWorker.postMessage({
       type: 'initRoulette',
       wheelAngle: this.rouletteState.wheelAngle
     });
 
-    this.log("Roulette Demo Loaded! Place your bets on the felt and spin.", "success");
+    this.log("Roulette Demo Loaded! Click directly on the 3D felt or use DOM controls to drop chips.", "success");
+  }
+
+  createRouletteTableTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2048;
+    canvas.height = 864;
+    const ctx = canvas.getContext('2d');
+
+    // 1. Table felt background with rich authentic Monaco casino emerald green gradient
+    const feltGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    feltGrad.addColorStop(0, '#0d6b3e');
+    feltGrad.addColorStop(0.5, '#0a5732');
+    feltGrad.addColorStop(1, '#063f24');
+    ctx.fillStyle = feltGrad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Subtle luxury felt fabric texture pattern
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.018)';
+    for (let py = 0; py < canvas.height; py += 4) {
+      ctx.fillRect(0, py, canvas.width, 1.5);
+    }
+
+    // Grid coordinate measurements
+    const padX = 20;
+    const padY = 20;
+    const zeroW = 124;
+    const gridX = padX + zeroW + 8; // 152
+    const gridW = 1680;
+    const colW = gridW / 12; // 140.0px
+    const rightX = gridX + gridW + 8; // 1840
+    const rightW = canvas.width - padX - rightX; // 188px
+
+    const row0Y = padY; // 20
+    const rowH = 150; // 3 rows of numbers = 450px (20 to 470)
+    const dozenY = row0Y + rowH * 3 + 14; // 484
+    const dozenH = 150; // (484 to 634)
+    const outsideY = dozenY + dozenH + 14; // 648
+    const outsideH = 186; // (648 to 834)
+
+    // Outer double felt gold trim
+    ctx.strokeStyle = '#eab308';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(padX - 8, row0Y - 8, canvas.width - (padX * 2) + 16, outsideY + outsideH - row0Y + 16);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(padX - 4, row0Y - 4, canvas.width - (padX * 2) + 8, outsideY + outsideH - row0Y + 8);
+
+    // 2. Draw Zero box (spanning rows 0, 1, 2)
+    const zeroGrad = ctx.createLinearGradient(padX, row0Y, padX + zeroW, row0Y + rowH * 3);
+    zeroGrad.addColorStop(0, '#16a34a');
+    zeroGrad.addColorStop(1, '#15803d');
+    ctx.fillStyle = zeroGrad;
+    ctx.fillRect(padX, row0Y, zeroW, rowH * 3);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3.5;
+    ctx.strokeRect(padX, row0Y, zeroW, rowH * 3);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 84px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowBlur = 6;
+    ctx.fillText('0', padX + zeroW * 0.5, row0Y + rowH * 1.5);
+    ctx.shadowBlur = 0;
+
+    // Number rows definition:
+    // Row 0 (top): 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36
+    // Row 1 (mid): 2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35
+    // Row 2 (bot): 1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34
+    const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+
+    for (let c = 0; c < 12; c++) {
+      const cx = gridX + c * colW;
+      for (let r = 0; r < 3; r++) {
+        const cy = row0Y + r * rowH;
+        const num = (c * 3) + (3 - r);
+        const isRed = reds.includes(num);
+
+        // Number cell background
+        const cellGrad = ctx.createLinearGradient(cx, cy, cx + colW, cy + rowH);
+        if (isRed) {
+          cellGrad.addColorStop(0, '#dc2626');
+          cellGrad.addColorStop(1, '#991b1b');
+        } else {
+          cellGrad.addColorStop(0, '#27272a');
+          cellGrad.addColorStop(1, '#09090b');
+        }
+        ctx.fillStyle = cellGrad;
+        ctx.fillRect(cx, cy, colW, rowH);
+
+        // White border
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(cx, cy, colW, rowH);
+
+        // Subtle center target plate highlighting single number zone
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+        ctx.fillRect(cx + 18, cy + 18, colW - 36, rowH - 36);
+
+        // Bold Crisp Number text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 72px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+        ctx.shadowBlur = 5;
+        ctx.fillText(String(num), cx + colW * 0.5, cy + rowH * 0.5);
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // 3. 2to1 column boxes on right (one per row)
+    for (let r = 0; r < 3; r++) {
+      const cy = row0Y + r * rowH;
+      const colGrad = ctx.createLinearGradient(rightX, cy, rightX + rightW, cy + rowH);
+      colGrad.addColorStop(0, '#0a5c36');
+      colGrad.addColorStop(1, '#043e23');
+      ctx.fillStyle = colGrad;
+      ctx.fillRect(rightX, cy, rightW, rowH);
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(rightX, cy, rightW, rowH);
+
+      ctx.fillStyle = '#fef08a';
+      ctx.font = 'bold 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('2 to 1', rightX + rightW * 0.5, cy + rowH * 0.5);
+    }
+
+    // 4. Dozens row ("1st 12", "2nd 12", "3rd 12")
+    const dozLabels = ['1st 12', '2nd 12', '3rd 12'];
+    const dozW = gridW / 3;
+    for (let d = 0; d < 3; d++) {
+      const dx = gridX + d * dozW;
+      const dozGrad = ctx.createLinearGradient(dx, dozenY, dx + dozW, dozenY + dozenH);
+      dozGrad.addColorStop(0, '#0a5c36');
+      dozGrad.addColorStop(1, '#043e23');
+      ctx.fillStyle = dozGrad;
+      ctx.fillRect(dx, dozenY, dozW, dozenH);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(dx, dozenY, dozW, dozenH);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 50px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(dozLabels[d], dx + dozW * 0.5, dozenY + dozenH * 0.5);
+    }
+
+    // 5. Outside Bets row (Halves & Even/Odd/Colors)
+    const outW = gridW / 6;
+    const outItems = [
+      { label: '1 - 18\n(LOW)', isColor: false, sub: 'HALF' },
+      { label: 'EVEN', isColor: false, sub: 'HALF' },
+      { label: 'RED', isColor: true, color: '#dc2626', sub: 'COLOR' },
+      { label: 'BLACK', isColor: true, color: '#18181b', sub: 'COLOR' },
+      { label: 'ODD', isColor: false, sub: 'HALF' },
+      { label: '19 - 36\n(HIGH)', isColor: false, sub: 'HALF' }
+    ];
+
+    for (let o = 0; o < 6; o++) {
+      const ox = gridX + o * outW;
+      const item = outItems[o];
+      if (item.isColor) {
+        const cGrad = ctx.createLinearGradient(ox, outsideY, ox + outW, outsideY + outsideH);
+        cGrad.addColorStop(0, item.color);
+        cGrad.addColorStop(1, item.color === '#dc2626' ? '#991b1b' : '#09090b');
+        ctx.fillStyle = cGrad;
+      } else {
+        const outGrad = ctx.createLinearGradient(ox, outsideY, ox + outW, outsideY + outsideH);
+        outGrad.addColorStop(0, '#0a5c36');
+        outGrad.addColorStop(1, '#043e23');
+        ctx.fillStyle = outGrad;
+      }
+      ctx.fillRect(ox, outsideY, outW, outsideH);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(ox, outsideY, outW, outsideH);
+
+      // Distinct decorative diamond badge for RED and BLACK
+      if (item.isColor) {
+        ctx.save();
+        ctx.translate(ox + outW * 0.5, outsideY + outsideH * 0.5 - 12);
+        ctx.rotate(Math.PI / 4);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3.5;
+        ctx.fillStyle = item.color;
+        ctx.beginPath();
+        ctx.rect(-34, -34, 68, 68);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(item.label, ox + outW * 0.5, outsideY + outsideH - 30);
+      } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const lines = item.label.split('\n');
+        if (lines.length > 1) {
+          ctx.fillText(lines[0], ox + outW * 0.5, outsideY + outsideH * 0.40);
+          ctx.font = 'bold 30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          ctx.fillStyle = '#6ee7b7';
+          ctx.fillText(lines[1], ox + outW * 0.5, outsideY + outsideH * 0.72);
+        } else {
+          ctx.fillText(item.label, ox + outW * 0.5, outsideY + outsideH * 0.50);
+        }
+      }
+    }
+
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    return tex;
+  }
+
+  createRouletteWheelTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 1024;
+    const ctx = canvas.getContext('2d');
+    const cx = 512, cy = 512;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Outer Polished Mahogany Wood Cabinet Rim ring (radius 430 to 510)
+    const rimGrad = ctx.createRadialGradient(cx, cy, 430, cx, cy, 510);
+    rimGrad.addColorStop(0.0, '#381408');
+    rimGrad.addColorStop(0.35, '#4d1c0b');
+    rimGrad.addColorStop(0.75, '#240a03');
+    rimGrad.addColorStop(1.0, '#140502');
+    ctx.beginPath();
+    ctx.arc(cx, cy, 510, 0, Math.PI * 2);
+    ctx.fillStyle = rimGrad;
+    ctx.fill();
+
+    // Wood Grain concentric rings
+    ctx.lineWidth = 1.5;
+    for (let r = 434; r < 506; r += 3) {
+      ctx.strokeStyle = (r % 6 === 0) ? 'rgba(77, 28, 11, 0.35)' : 'rgba(18, 5, 2, 0.4)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Outer Beveled Polished Gold Metal Lip (radius 426 to 434)
+    const goldLipGrad = ctx.createRadialGradient(cx, cy, 426, cx, cy, 434);
+    goldLipGrad.addColorStop(0.0, '#a16207');
+    goldLipGrad.addColorStop(0.35, '#fef08a');
+    goldLipGrad.addColorStop(0.7, '#eab308');
+    goldLipGrad.addColorStop(1.0, '#713f12');
+    ctx.beginPath();
+    ctx.arc(cx, cy, 434, 0, Math.PI * 2);
+    ctx.fillStyle = goldLipGrad;
+    ctx.fill();
+
+    // 2. Number Track Ring (radius 328 to 426)
+    // 37 pockets in authentic European sequence
+    const ROULETTE_NUMBERS = [
+      0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5,
+      24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
+    ];
+    const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+    const numPockets = 37;
+    const step = (Math.PI * 2) / numPockets;
+
+    for (let i = 0; i < numPockets; i++) {
+      const startAngle = i * step - Math.PI * 0.5 - step * 0.5;
+      const endAngle = startAngle + step;
+      const num = ROULETTE_NUMBERS[i];
+
+      // Pocket sector background
+      ctx.beginPath();
+      ctx.arc(cx, cy, 426, startAngle, endAngle);
+      ctx.arc(cx, cy, 328, endAngle, startAngle, true);
+      ctx.closePath();
+
+      if (num === 0) {
+        const gGrad = ctx.createRadialGradient(cx, cy, 328, cx, cy, 426);
+        gGrad.addColorStop(0.0, '#15803d');
+        gGrad.addColorStop(0.6, '#16a34a');
+        gGrad.addColorStop(1.0, '#0f532b');
+        ctx.fillStyle = gGrad;
+      } else if (reds.includes(num)) {
+        const rGrad = ctx.createRadialGradient(cx, cy, 328, cx, cy, 426);
+        rGrad.addColorStop(0.0, '#991b1b');
+        rGrad.addColorStop(0.55, '#dc2626');
+        rGrad.addColorStop(1.0, '#7f1d1d');
+        ctx.fillStyle = rGrad;
+      } else {
+        const bGrad = ctx.createRadialGradient(cx, cy, 328, cx, cy, 426);
+        bGrad.addColorStop(0.0, '#111114');
+        bGrad.addColorStop(0.6, '#27272a');
+        bGrad.addColorStop(1.0, '#09090b');
+        ctx.fillStyle = bGrad;
+      }
+      ctx.fill();
+
+      // Radial Gold Fret Separator
+      ctx.strokeStyle = '#eab308';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(startAngle) * 328, cy + Math.sin(startAngle) * 328);
+      ctx.lineTo(cx + Math.cos(startAngle) * 426, cy + Math.sin(startAngle) * 426);
+      ctx.stroke();
+
+      // Pocket Number Text (Facing outwards radially)
+      const midAngle = startAngle + step * 0.5;
+      const textRadius = 376;
+      const tx = cx + Math.cos(midAngle) * textRadius;
+      const ty = cy + Math.sin(midAngle) * textRadius;
+
+      ctx.save();
+      ctx.translate(tx, ty);
+      // Rotate text so that it stands radially (oriented facing outwards)
+      ctx.rotate(midAngle + Math.PI * 0.5);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 26px "Arial Black", -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+      ctx.shadowBlur = 4;
+      ctx.fillText(String(num), 0, 0);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+
+    // 3. Inner Gold Divider Ring between numbers and pocket cups (radius 322 to 328)
+    const midGoldRing = ctx.createRadialGradient(cx, cy, 322, cx, cy, 328);
+    midGoldRing.addColorStop(0.0, '#854d0e');
+    midGoldRing.addColorStop(0.5, '#fef08a');
+    midGoldRing.addColorStop(1.0, '#a16207');
+    ctx.beginPath();
+    ctx.arc(cx, cy, 328, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 322, 0, Math.PI * 2, true);
+    ctx.fillStyle = midGoldRing;
+    ctx.fill();
+
+    // 4. Ball Pocket Wells / Cups track (radius 245 to 322)
+    for (let i = 0; i < numPockets; i++) {
+      const startAngle = i * step - Math.PI * 0.5 - step * 0.5;
+      const endAngle = startAngle + step;
+      const midAngle = startAngle + step * 0.5;
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 322, startAngle, endAngle);
+      ctx.arc(cx, cy, 245, endAngle, startAngle, true);
+      ctx.closePath();
+
+      // Metallic cup depth gradient
+      const cupGrad = ctx.createRadialGradient(cx + Math.cos(midAngle) * 285, cy + Math.sin(midAngle) * 285, 2, cx, cy, 322);
+      cupGrad.addColorStop(0.0, '#1c1c20');
+      cupGrad.addColorStop(0.7, '#0d0d10');
+      cupGrad.addColorStop(1.0, '#050507');
+      ctx.fillStyle = cupGrad;
+      ctx.fill();
+
+      // Pocket Divider Pins (Silver/Brass)
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(startAngle) * 245, cy + Math.sin(startAngle) * 245);
+      ctx.lineTo(cx + Math.cos(startAngle) * 322, cy + Math.sin(startAngle) * 322);
+      ctx.stroke();
+    }
+
+    // 5. Inner Inlay Mahogany Cone & Center Rosewood Disc (radius 0 to 245)
+    const centerWood = ctx.createRadialGradient(cx, cy, 0, cx, cy, 245);
+    centerWood.addColorStop(0.0, '#4a190b');
+    centerWood.addColorStop(0.35, '#351107');
+    centerWood.addColorStop(0.85, '#1e0803');
+    centerWood.addColorStop(1.0, '#120401');
+    ctx.beginPath();
+    ctx.arc(cx, cy, 245, 0, Math.PI * 2);
+    ctx.fillStyle = centerWood;
+    ctx.fill();
+
+    // Concentric Inlay Gold Filigree Rings
+    const inlayRings = [90, 140, 190, 242];
+    for (const ir of inlayRings) {
+      ctx.strokeStyle = '#eab308';
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      ctx.arc(cx, cy, ir, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Central 8-Point Brass Star Filigree
+    ctx.fillStyle = '#facc15';
+    ctx.strokeStyle = '#a16207';
+    ctx.lineWidth = 1.5;
+    for (let s = 0; s < 8; s++) {
+      const a = s * (Math.PI / 4);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a - 0.15) * 60, cy + Math.sin(a - 0.15) * 60);
+      ctx.lineTo(cx + Math.cos(a) * 110, cy + Math.sin(a) * 110);
+      ctx.lineTo(cx + Math.cos(a + 0.15) * 60, cy + Math.sin(a + 0.15) * 60);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Center Gold Core Disc
+    const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 65);
+    coreGrad.addColorStop(0.0, '#fef9c3');
+    coreGrad.addColorStop(0.3, '#facc15');
+    coreGrad.addColorStop(0.8, '#ca8a04');
+    coreGrad.addColorStop(1.0, '#713f12');
+    ctx.beginPath();
+    ctx.arc(cx, cy, 65, 0, Math.PI * 2);
+    ctx.fillStyle = coreGrad;
+    ctx.fill();
+
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return tex;
+  }
+
+  createCasinoFloorTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    // Deep luxury casino carpet green
+    ctx.fillStyle = '#07331d';
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Fine wool/velvet carpet fibers
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+    for (let y = 0; y < 512; y += 4) {
+      ctx.fillRect(0, y, 512, 1.5);
+    }
+    for (let x = 0; x < 512; x += 4) {
+      ctx.fillRect(x, 0, 1.5, 512);
+    }
+
+    // Luxury repeating diamond & rosette casino pattern
+    const tileSize = 64;
+    for (let y = 0; y < 512; y += tileSize) {
+      for (let x = 0; x < 512; x += tileSize) {
+        const mx = x + tileSize * 0.5;
+        const my = y + tileSize * 0.5;
+
+        // Diamond border
+        ctx.strokeStyle = 'rgba(234, 179, 8, 0.12)';
+        ctx.lineWidth = 2.0;
+        ctx.beginPath();
+        ctx.moveTo(mx, y + 4);
+        ctx.lineTo(x + tileSize - 4, my);
+        ctx.lineTo(mx, y + tileSize - 4);
+        ctx.lineTo(x + 4, my);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Inner rosette star
+        ctx.fillStyle = 'rgba(234, 179, 8, 0.16)';
+        ctx.beginPath();
+        ctx.arc(mx, my, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Corner accents
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.15)';
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 0.5);
+        ctx.stroke();
+      }
+    }
+
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    return tex;
+  }
+
+  initRouletteTableActors() {
+    const tableX = 1.95;
+    const tableY = 0.0;
+    const tableW = 3.30;
+    const tableH = 1.38;
+
+    const canvasW = 2048.0;
+    const canvasH = 864.0;
+
+    const padX = 20;
+    const padY = 20;
+    const zeroW = 124;
+    const gridX = padX + zeroW + 8; // 152
+    const gridW = 1680;
+    const colW = gridW / 12; // 140.0px
+    const rightX = gridX + gridW + 8; // 1840
+    const rightW = canvasW - padX - rightX; // 188px
+
+    const row0Y = padY; // 20
+    const rowH = 150; // 3 rows of numbers = 450px (20 to 470)
+    const dozenY = row0Y + rowH * 3 + 14; // 484
+    const dozenH = 150; // (484 to 634)
+    const outsideY = dozenY + dozenH + 14; // 648
+    const outsideH = 186; // (648 to 834)
+
+    const minWorldX = tableX - tableW * 0.5;
+    const minWorldY = tableY - tableH * 0.5;
+
+    const toBox = (px0, py0, px1, py1) => {
+      const minX = minWorldX + (px0 / canvasW) * tableW;
+      const maxX = minWorldX + (px1 / canvasW) * tableW;
+      const minY = minWorldY + (1.0 - py1 / canvasH) * tableH;
+      const maxY = minWorldY + (1.0 - py0 / canvasH) * tableH;
+      return {
+        minX, maxX, minY, maxY,
+        chipPos: [(minX + maxX) * 0.5, (minY + maxY) * 0.5, 0.008]
+      };
+    };
+
+    // Margins around single number cells to make straight-number actors smaller
+    // and dedicate boundaries to Splits, Corners, Streets, and Trios!
+    const mx = 24;
+    const my = 24;
+
+    const actors = [];
+    const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+    const blacks = [2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35];
+
+    // 1. Zero Actor (Straight 35:1) - sized nicely within zero box
+    actors.push({
+      id: 'num_0',
+      name: 'Number 0',
+      type: 'straight',
+      payout: 35,
+      numbers: [0],
+      box: toBox(padX + mx, row0Y + my, padX + zeroW - mx, row0Y + rowH * 3 - my),
+      fullBox: toBox(padX, row0Y, padX + zeroW, row0Y + rowH * 3)
+    });
+
+    // 2. Straight Numbers 1-36 (Single number actors made smaller than whole field)
+    for (let c = 0; c < 12; c++) {
+      const cx = gridX + c * colW;
+      for (let r = 0; r < 3; r++) {
+        const cy = row0Y + r * rowH;
+        const num = (c * 3) + (3 - r);
+        actors.push({
+          id: `num_${num}`,
+          name: `Number ${num}`,
+          type: 'straight',
+          payout: 35,
+          numbers: [num],
+          box: toBox(cx + mx, cy + my, cx + colW - mx, cy + rowH - my),
+          fullBox: toBox(cx, cy, cx + colW, cy + rowH)
+        });
+      }
+    }
+
+    // 3. 2to1 Columns (Payout 2:1)
+    for (let r = 0; r < 3; r++) {
+      const cy = row0Y + r * rowH;
+      const colNums = [];
+      for (let c = 0; c < 12; c++) {
+        colNums.push((c * 3) + (3 - r));
+      }
+      actors.push({
+        id: `col_${3 - r}`,
+        name: `Column ${3 - r} (2 to 1)`,
+        type: 'column',
+        payout: 2,
+        numbers: colNums,
+        box: toBox(rightX + mx, cy + my, rightX + rightW - mx, cy + rowH - my)
+      });
+    }
+
+    // 4. Dozens (Payout 2:1)
+    const dozLabels = ['1st 12', '2nd 12', '3rd 12'];
+    const dozW = gridW / 3;
+    for (let d = 0; d < 3; d++) {
+      const dx = gridX + d * dozW;
+      const dNums = [];
+      for (let n = d * 12 + 1; n <= (d + 1) * 12; n++) dNums.push(n);
+      actors.push({
+        id: `dozen_${d + 1}`,
+        name: `Dozen ${dozLabels[d]}`,
+        type: 'dozen',
+        payout: 2,
+        numbers: dNums,
+        box: toBox(dx + mx, dozenY + my, dx + dozW - mx, dozenY + dozenH - my)
+      });
+    }
+
+    // 5. Outside Bets / Halves (Payout 1:1)
+    const outW = gridW / 6;
+    const outsideDefs = [
+      { id: 'outside_low', name: 'Low (1-18) Half', numbers: Array.from({length: 18}, (_, i) => i + 1) },
+      { id: 'outside_even', name: 'Even Half', numbers: Array.from({length: 18}, (_, i) => (i + 1) * 2) },
+      { id: 'outside_red', name: 'Red Color', numbers: reds },
+      { id: 'outside_black', name: 'Black Color', numbers: blacks },
+      { id: 'outside_odd', name: 'Odd Half', numbers: Array.from({length: 18}, (_, i) => i * 2 + 1) },
+      { id: 'outside_high', name: 'High (19-36) Half', numbers: Array.from({length: 18}, (_, i) => i + 19) }
+    ];
+
+    for (let o = 0; o < 6; o++) {
+      const ox = gridX + o * outW;
+      actors.push({
+        id: outsideDefs[o].id,
+        name: outsideDefs[o].name,
+        type: 'outside',
+        payout: 1,
+        numbers: outsideDefs[o].numbers,
+        box: toBox(ox + mx, outsideY + my, ox + outW - mx, outsideY + outsideH - my)
+      });
+    }
+
+    // 6. Horizontal Splits (between col c and col c+1 in same row, Payout 17:1)
+    for (let c = 0; c < 11; c++) {
+      const bx = gridX + (c + 1) * colW;
+      for (let r = 0; r < 3; r++) {
+        const cy = row0Y + r * rowH;
+        const nA = (c * 3) + (3 - r);
+        const nB = ((c + 1) * 3) + (3 - r);
+        actors.push({
+          id: `split_${nA}_${nB}`,
+          name: `Split ${nA}-${nB}`,
+          type: 'split',
+          payout: 17,
+          numbers: [nA, nB],
+          box: toBox(bx - mx, cy + my, bx + mx, cy + rowH - my)
+        });
+      }
+    }
+
+    // 7. Vertical Splits (between row r and row r+1 in same col, Payout 17:1)
+    for (let c = 0; c < 12; c++) {
+      const cx = gridX + c * colW;
+      for (let r = 0; r < 2; r++) {
+        const by = row0Y + (r + 1) * rowH;
+        const nA = (c * 3) + (3 - r);
+        const nB = (c * 3) + (3 - (r + 1));
+        actors.push({
+          id: `split_${nA}_${nB}`,
+          name: `Split ${nA}-${nB}`,
+          type: 'split',
+          payout: 17,
+          numbers: [nA, nB],
+          box: toBox(cx + mx, by - my, cx + colW - mx, by + my)
+        });
+      }
+    }
+
+    // 8. Splits with 0 (0-1, 0-2, 0-3, Payout 17:1)
+    actors.push({
+      id: 'split_0_3',
+      name: 'Split 0-3',
+      type: 'split',
+      payout: 17,
+      numbers: [0, 3],
+      box: toBox(gridX - mx, row0Y + my, gridX + mx, row0Y + rowH - my)
+    });
+    actors.push({
+      id: 'split_0_2',
+      name: 'Split 0-2',
+      type: 'split',
+      payout: 17,
+      numbers: [0, 2],
+      box: toBox(gridX - mx, row0Y + rowH + my, gridX + mx, row0Y + rowH * 2 - my)
+    });
+    actors.push({
+      id: 'split_0_1',
+      name: 'Split 0-1',
+      type: 'split',
+      payout: 17,
+      numbers: [0, 1],
+      box: toBox(gridX - mx, row0Y + rowH * 2 + my, gridX + mx, row0Y + rowH * 3 - my)
+    });
+
+    // 9. Corner Bets (Quads at 4-number crosses, Payout 8:1)
+    for (let c = 0; c < 11; c++) {
+      const bx = gridX + (c + 1) * colW;
+      for (let r = 0; r < 2; r++) {
+        const by = row0Y + (r + 1) * rowH;
+        const nA = (c * 3) + (3 - r);
+        const nB = ((c + 1) * 3) + (3 - r);
+        const nC = (c * 3) + (3 - (r + 1));
+        const nD = ((c + 1) * 3) + (3 - (r + 1));
+        const cNums = [nA, nB, nC, nD];
+        actors.push({
+          id: `corner_${cNums.join('_')}`,
+          name: `Corner ${cNums.join('-')}`,
+          type: 'corner',
+          payout: 8,
+          numbers: cNums,
+          box: toBox(bx - mx, by - my, bx + mx, by + my)
+        });
+      }
+    }
+
+    // 10. Street Bets (Rows of 3, clicked along top line of numbers, Payout 11:1)
+    for (let c = 0; c < 12; c++) {
+      const cx = gridX + c * colW;
+      const by = row0Y;
+      const stNums = [c * 3 + 1, c * 3 + 2, c * 3 + 3];
+      actors.push({
+        id: `street_${c + 1}`,
+        name: `Street ${stNums[0]}-${stNums[2]}`,
+        type: 'street',
+        payout: 11,
+        numbers: stNums,
+        box: toBox(cx + mx, by - my, cx + colW - mx, by + my)
+      });
+    }
+
+    // 11. Six-Line / Double Street Bets (6 numbers across two adjacent columns, Payout 5:1)
+    for (let c = 0; c < 11; c++) {
+      const bx = gridX + (c + 1) * colW;
+      const by = row0Y;
+      const sixNums = [c * 3 + 1, c * 3 + 2, c * 3 + 3, (c + 1) * 3 + 1, (c + 1) * 3 + 2, (c + 1) * 3 + 3];
+      actors.push({
+        id: `sixline_${c + 1}`,
+        name: `Six-Line ${sixNums[0]}-${sixNums[5]}`,
+        type: 'sixline',
+        payout: 5,
+        numbers: sixNums,
+        box: toBox(bx - mx, by - my, bx + mx, by + my)
+      });
+    }
+
+    this.rouletteActors = actors;
+    this.rouletteActorsMap = new Map();
+    actors.forEach(a => this.rouletteActorsMap.set(a.id, a));
+  }
+
+  getRouletteRay(clientX, clientY) {
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const mouseX = clientX - canvasRect.left;
+    const mouseY = clientY - canvasRect.top;
+
+    if (mouseX < 0 || mouseX > canvasRect.width || mouseY < 0 || mouseY > canvasRect.height) {
+      return null;
+    }
+
+    const ndcX = (mouseX / canvasRect.width) * 2 - 1;
+    const ndcY = 1 - (mouseY / canvasRect.height) * 2;
+
+    const invVP = new Float32Array(16);
+    if (!Mat4.invert(invVP, this.viewProjMatrix)) return null;
+
+    const unproject = (x, y, z) => {
+      const ox = invVP[0]*x + invVP[4]*y + invVP[8]*z + invVP[12];
+      const oy = invVP[1]*x + invVP[5]*y + invVP[9]*z + invVP[13];
+      const oz = invVP[2]*x + invVP[6]*y + invVP[10]*z + invVP[14];
+      const ow = invVP[3]*x + invVP[7]*y + invVP[11]*z + invVP[15];
+      if (Math.abs(ow) < 1e-6) return null;
+      return [ox / ow, oy / ow, oz / ow];
+    };
+
+    const pNear = unproject(ndcX, ndcY, -1.0);
+    const pFar = unproject(ndcX, ndcY, 1.0);
+    if (!pNear || !pFar) return null;
+
+    return {
+      origin: pNear,
+      dir: [pFar[0] - pNear[0], pFar[1] - pNear[1], pFar[2] - pNear[2]]
+    };
+  }
+
+  intersectTablePlane(ray) {
+    if (!ray || Math.abs(ray.dir[2]) < 1e-5) return null;
+    const t = (0.005 - ray.origin[2]) / ray.dir[2];
+    if (t < 0) return null;
+    return [
+      ray.origin[0] + ray.dir[0] * t,
+      ray.origin[1] + ray.dir[1] * t
+    ];
+  }
+
+  getRouletteActorAt(hitX, hitY) {
+    if (!this.rouletteActors) return null;
+
+    // 1. Highest specificity: Corners (at intersections)
+    for (const a of this.rouletteActors) {
+      if (a.type === 'corner' && hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
+        return a;
+      }
+    }
+    // 2. Splits (between 2 numbers)
+    for (const a of this.rouletteActors) {
+      if (a.type === 'split' && hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
+        return a;
+      }
+    }
+    // 3. Six-line / Double street
+    for (const a of this.rouletteActors) {
+      if (a.type === 'sixline' && hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
+        return a;
+      }
+    }
+    // 4. Streets (lines of 3)
+    for (const a of this.rouletteActors) {
+      if (a.type === 'street' && hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
+        return a;
+      }
+    }
+    // 5. Straight Numbers (smaller than full field to leave room for splits)
+    for (const a of this.rouletteActors) {
+      if (a.type === 'straight' && hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
+        return a;
+      }
+    }
+    // 6. Columns, Dozens, and Outside Bets (Halves)
+    for (const a of this.rouletteActors) {
+      if (hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
+        return a;
+      }
+    }
+
+    // 7. Full-cell fallback for Straight Numbers and Zero (covers lines and borders between cells)
+    for (const a of this.rouletteActors) {
+      if (a.fullBox && hitX >= a.fullBox.minX && hitX <= a.fullBox.maxX && hitY >= a.fullBox.minY && hitY <= a.fullBox.maxY) {
+        return a;
+      }
+    }
+
+    // 8. Geometric proximity fallback for any hit within the active betting felt area
+    const minTableX = 1.95 - 3.30 * 0.5 - 0.08;
+    const maxTableX = 1.95 + 3.30 * 0.5 + 0.08;
+    const minTableY = 0.0 - 1.38 * 0.5 - 0.08;
+    const maxTableY = 0.0 + 1.38 * 0.5 + 0.08;
+    if (hitX >= minTableX && hitX <= maxTableX && hitY >= minTableY && hitY <= maxTableY) {
+      let closest = null;
+      let minDist = Infinity;
+      for (const a of this.rouletteActors) {
+        if (!a.box || !a.box.chipPos) continue;
+        const d = Math.hypot(hitX - a.box.chipPos[0], hitY - a.box.chipPos[1]);
+        if (d < minDist) {
+          minDist = d;
+          closest = a;
+        }
+      }
+      if (closest && minDist < 0.30) {
+        return closest;
+      }
+    }
+
+    return null;
+  }
+
+  updateRouletteHover(clientX, clientY) {
+    if (!this.rouletteState || !this.rouletteState.active) return;
+    const ray = this.getRouletteRay(clientX, clientY);
+    const hit = this.intersectTablePlane(ray);
+    if (hit) {
+      const actor = this.getRouletteActorAt(hit[0], hit[1]);
+      if (this._hoveredRouletteActor !== actor) {
+        this._hoveredRouletteActor = actor;
+        this.canvas.style.cursor = actor ? 'pointer' : 'default';
+
+        const summaryEl = document.getElementById('roulette-stats-summary');
+        if (summaryEl) {
+          if (actor) {
+            summaryEl.textContent = `🎯 ${actor.name} (${actor.payout}:1) — Click to Drop $${this.rouletteState.betAmount || 10} Chip`;
+            summaryEl.style.color = '#38bdf8';
+          } else {
+            const betType = this.rouletteState.betType || 'red';
+            summaryEl.textContent = `Active Bet: ${betType.toUpperCase()} | Click on any number, split, or half to bet!`;
+            summaryEl.style.color = '#fca5a5';
+          }
+        }
+      }
+    } else if (this._hoveredRouletteActor) {
+      this._hoveredRouletteActor = null;
+      this.canvas.style.cursor = 'default';
+    }
+  }
+
+  handleRouletteClick(clientX, clientY) {
+    if (!this.rouletteState || !this.rouletteState.active || this.rouletteState.spinning) return;
+    const ray = this.getRouletteRay(clientX, clientY);
+    const hit = this.intersectTablePlane(ray);
+    if (hit) {
+      const actor = this.getRouletteActorAt(hit[0], hit[1]);
+      if (actor) {
+        this.placeRouletteBetOnActor(actor);
+      }
+    }
+  }
+
+  getChipColor(val) {
+    if (val >= 500) return [0.55, 0.15, 0.78]; // Purple 500
+    if (val >= 100) return [0.10, 0.10, 0.14]; // Obsidian Black 100
+    if (val >= 50)  return [0.85, 0.15, 0.18]; // Crimson Red 50
+    return [0.12, 0.45, 0.88];                 // Royal Blue 10
+  }
+
+  placeRouletteBetOnActor(actor) {
+    const rs = this.rouletteState;
+    if (!rs) return;
+
+    const betAmt = rs.betAmount || 10;
+    if (rs.credits < betAmt) {
+      this.log(`Insufficient credits ($${rs.credits}) for $${betAmt} bet.`, "error");
+      if (this.synth) this.synth.play('damage');
+      return;
+    }
+
+    // Deduct credits and track bet on actor
+    rs.credits -= betAmt;
+    actor.betTotal = (actor.betTotal || 0) + betAmt;
+
+    // Sync with rouletteState and DOM UI
+    if (actor.type === 'straight') {
+      rs.betType = 'number';
+      rs.specificNumber = String(actor.numbers[0]);
+      const numSel = document.getElementById('roulette-specific-number');
+      if (numSel) numSel.value = String(actor.numbers[0]);
+    } else if (actor.id === 'outside_red') {
+      rs.betType = 'red';
+      rs.specificNumber = 'none';
+    } else if (actor.id === 'outside_black') {
+      rs.betType = 'black';
+      rs.specificNumber = 'none';
+    } else if (actor.id === 'outside_even') {
+      rs.betType = 'even';
+      rs.specificNumber = 'none';
+    } else if (actor.id === 'outside_odd') {
+      rs.betType = 'odd';
+      rs.specificNumber = 'none';
+    } else {
+      rs.betType = actor.id;
+      rs.specificNumber = 'none';
+    }
+
+    // Spawn 3D chip with physical gravity and bounce animation!
+    if (!this.rouletteChips) this.rouletteChips = [];
+    const existingChips = this.rouletteChips.filter(c => c.actorId === actor.id);
+    const stackZ = 0.012 + existingChips.length * 0.008;
+
+    const chipColor = this.getChipColor(betAmt);
+    const targetX = actor.box.chipPos[0] + (Math.random() - 0.5) * 0.010;
+    const targetY = actor.box.chipPos[1] + (Math.random() - 0.5) * 0.010;
+
+    const chip = {
+      actorId: actor.id,
+      actorName: actor.name,
+      value: betAmt,
+      pos: [targetX, targetY, 0.40 + Math.random() * 0.08],
+      vel: [(Math.random() - 0.5) * 0.10, (Math.random() - 0.5) * 0.10, -0.22 - Math.random() * 0.14],
+      rot: [Math.random() * 0.2, Math.random() * 0.2, Math.random() * Math.PI * 2],
+      rotVel: [(Math.random() - 0.5) * 5.0, (Math.random() - 0.5) * 5.0, (Math.random() - 0.5) * 8.0],
+      targetZ: stackZ,
+      bounces: 0,
+      settled: false,
+      color: chipColor
+    };
+    this.rouletteChips.push(chip);
+
+    if (this.synth) this.synth.play('pickup');
+    this.log(`Placed $${betAmt} chip on [${actor.name}] (Payout ${actor.payout}:1). Total on spot: $${actor.betTotal}.`, "info");
+    this.updateRouletteUI();
+  }
+
+  clearRouletteChips() {
+    const rs = this.rouletteState;
+    if (!rs || rs.spinning) return;
+
+    if (this.rouletteChips && this.rouletteChips.length > 0) {
+      let refund = 0;
+      this.rouletteChips.forEach(c => { refund += c.value; });
+      rs.credits += refund;
+      this.rouletteChips = [];
+      if (this.rouletteActors) {
+        this.rouletteActors.forEach(a => { a.betTotal = 0; });
+      }
+      if (this.synth) this.synth.play('teleport');
+      this.log(`Cleared all chips from table. Refunded $${refund} to credits.`, "info");
+      this.updateRouletteUI();
+    }
+  }
+
+  updateRouletteChipsPhysics(dt) {
+    if (!this.rouletteChips || this.rouletteChips.length === 0) return;
+
+    for (const chip of this.rouletteChips) {
+      if (chip.settled) continue;
+
+      // Gravity: -9.8 m/s²
+      chip.vel[2] -= 9.8 * dt;
+
+      // Position update
+      chip.pos[0] += chip.vel[0] * dt;
+      chip.pos[1] += chip.vel[1] * dt;
+      chip.pos[2] += chip.vel[2] * dt;
+
+      // Air drag
+      chip.vel[0] *= Math.exp(-2.2 * dt);
+      chip.vel[1] *= Math.exp(-2.2 * dt);
+
+      // Rotation update & damping
+      chip.rot[0] += chip.rotVel[0] * dt;
+      chip.rot[1] += chip.rotVel[1] * dt;
+      chip.rot[2] += chip.rotVel[2] * dt;
+      chip.rotVel[0] *= Math.exp(-4.5 * dt);
+      chip.rotVel[1] *= Math.exp(-4.5 * dt);
+      chip.rotVel[2] *= Math.exp(-3.5 * dt);
+
+      // Impact on felt or lower stacked chip
+      if (chip.pos[2] <= chip.targetZ) {
+        chip.pos[2] = chip.targetZ;
+        chip.bounces++;
+
+        if (chip.bounces < 3 && Math.abs(chip.vel[2]) > 0.15) {
+          chip.vel[2] = -chip.vel[2] * 0.32; // restitution bounce
+          chip.vel[0] *= 0.5;
+          chip.vel[1] *= 0.5;
+          if (this.synth) this.synth.play('footstep');
+        } else {
+          chip.vel = [0, 0, 0];
+          chip.rot[0] = 0;
+          chip.rot[1] = 0;
+          chip.settled = true;
+          if (this.synth) this.synth.play('pickup');
+        }
+      }
+    }
   }
 
   setupRouletteUI() {
@@ -10505,6 +11824,18 @@ else if (typeof define === 'function' && define['amd'])
 
         this.updateRouletteUI();
         if (this.synth) this.synth.play('pickup');
+
+        // Drop chip on corresponding 3D actor
+        let actorId = null;
+        if (rs.betType === 'red') actorId = 'outside_red';
+        else if (rs.betType === 'black') actorId = 'outside_black';
+        else if (rs.betType === 'even') actorId = 'outside_even';
+        else if (rs.betType === 'odd') actorId = 'outside_odd';
+        else if (rs.betType === 'zero') actorId = 'num_0';
+        if (actorId && this.rouletteActorsMap) {
+          const actor = this.rouletteActorsMap.get(actorId);
+          if (actor) this.placeRouletteBetOnActor(actor);
+        }
       });
     });
 
@@ -10517,6 +11848,11 @@ else if (typeof define === 'function' && define['amd'])
           choiceBtns.forEach(b => b.classList.remove('active'));
           rs.betType = 'number';
           rs.specificNumber = val;
+          const actorId = `num_${val}`;
+          if (this.rouletteActorsMap) {
+            const actor = this.rouletteActorsMap.get(actorId);
+            if (actor) this.placeRouletteBetOnActor(actor);
+          }
         } else {
           rs.betType = 'red';
           const redBtn = document.querySelector('.roulette-bet-choice[data-bet="red"]');
@@ -10524,6 +11860,14 @@ else if (typeof define === 'function' && define['amd'])
         }
         this.updateRouletteUI();
         if (this.synth) this.synth.play('pickup');
+      });
+    }
+
+    // Clear chips button
+    const clearChipsBtn = document.getElementById('btn-roulette-clear-chips');
+    if (clearChipsBtn) {
+      clearChipsBtn.addEventListener('click', () => {
+        this.clearRouletteChips();
       });
     }
 
@@ -10568,17 +11912,11 @@ else if (typeof define === 'function' && define['amd'])
         if (this.isMobileDevice()) {
           this.hideRouletteMobileUI();
         } else {
-          rs.active = false;
           const rOverlay = document.getElementById('roulette-overlay');
           if (rOverlay) rOverlay.style.display = 'none';
           const rBanner = document.getElementById('roulette-banner');
           if (rBanner) rBanner.style.display = 'none';
-
-          this.state.demoScene = '07_fps_shooter_damage_system.cpp';
-          const demoSelect = document.getElementById('demo-scene-select');
-          if (demoSelect) demoSelect.value = "07_fps_shooter_damage_system.cpp";
-          this.updateSceneEntitiesForActiveDemo();
-          this.log("Roulette demo closed. Switched back to FPS arena.", "info");
+          this.log("Roulette control panel closed. (Reselect Roulette demo to reopen controls)", "info");
         }
       });
     }
@@ -10651,40 +11989,68 @@ else if (typeof define === 'function' && define['amd'])
       if (reds.includes(winningNum)) color = 'red';
     }
 
-    let won = false;
-    let multiplier = 0;
+    let totalWon = 0;
+    let winningChipsCount = 0;
 
-    if (rs.betType === 'red' && color === 'red') {
-      won = true;
-      multiplier = 2;
-    } else if (rs.betType === 'black' && color === 'black') {
-      won = true;
-      multiplier = 2;
-    } else if (rs.betType === 'even' && winningNum !== 0 && winningNum % 2 === 0) {
-      won = true;
-      multiplier = 2;
-    } else if (rs.betType === 'odd' && winningNum !== 0 && winningNum % 2 !== 0) {
-      won = true;
-      multiplier = 2;
-    } else if (rs.betType === 'zero' && winningNum === 0) {
-      won = true;
-      multiplier = 35;
-    } else if (rs.betType === 'number' && rs.specificNumber !== 'none' && parseInt(rs.specificNumber) === winningNum) {
-      won = true;
-      multiplier = 36;
-    }
+    // 1. Evaluate chips placed on 3D table actors
+    if (this.rouletteChips && this.rouletteChips.length > 0) {
+      for (const chip of this.rouletteChips) {
+        const actor = this.rouletteActorsMap ? this.rouletteActorsMap.get(chip.actorId) : null;
+        if (actor && actor.numbers && actor.numbers.includes(winningNum)) {
+          const winAmt = chip.value * (actor.payout + 1);
+          totalWon += winAmt;
+          winningChipsCount++;
+          chip.isWinner = true;
+        }
+      }
 
-    let payout = 0;
-    if (won) {
-      payout = rs.betAmount * multiplier;
-      rs.credits += payout;
-      rs.lastPayout = payout;
-      if (this.synth) this.synth.play('health');
-      this.log(`🎉 WINNER! Ball landed in slot ${winningNum} (${color.toUpperCase()}). Awarded ${payout} credits!`, "success");
+      if (totalWon > 0) {
+        rs.credits += totalWon;
+        rs.lastPayout = totalWon;
+        if (this.synth) this.synth.play('health');
+        this.log(`🎉 WINNER! Ball landed in slot ${winningNum} (${color.toUpperCase()})! ${winningChipsCount} winning chip(s) awarded $${totalWon} credits!`, "success");
+      } else {
+        rs.lastPayout = 0;
+        if (this.synth) this.synth.play('damage');
+        this.log(`Round ended. Ball landed in slot ${winningNum} (${color.toUpperCase()}). No chips won. Better luck next spin!`, "info");
+      }
     } else {
-      rs.lastPayout = 0;
-      if (this.synth) this.synth.play('damage');
-      this.log(`Lost! Ball landed in slot ${winningNum} (${color.toUpperCase()}). Good luck next round!`, "info");
+      // 2. Legacy DOM UI evaluation
+      let won = false;
+      let multiplier = 0;
+
+      if (rs.betType === 'red' && color === 'red') {
+        won = true;
+        multiplier = 2;
+      } else if (rs.betType === 'black' && color === 'black') {
+        won = true;
+        multiplier = 2;
+      } else if (rs.betType === 'even' && winningNum !== 0 && winningNum % 2 === 0) {
+        won = true;
+        multiplier = 2;
+      } else if (rs.betType === 'odd' && winningNum !== 0 && winningNum % 2 !== 0) {
+        won = true;
+        multiplier = 2;
+      } else if (rs.betType === 'zero' && winningNum === 0) {
+        won = true;
+        multiplier = 35;
+      } else if (rs.betType === 'number' && rs.specificNumber !== 'none' && parseInt(rs.specificNumber) === winningNum) {
+        won = true;
+        multiplier = 36;
+      }
+
+      let payout = 0;
+      if (won) {
+        payout = rs.betAmount * multiplier;
+        rs.credits += payout;
+        rs.lastPayout = payout;
+        if (this.synth) this.synth.play('health');
+        this.log(`🎉 WINNER! Ball landed in slot ${winningNum} (${color.toUpperCase()}). Awarded ${payout} credits!`, "success");
+      } else {
+        rs.lastPayout = 0;
+        if (this.synth) this.synth.play('damage');
+        this.log(`Lost! Ball landed in slot ${winningNum} (${color.toUpperCase()}). Good luck next round!`, "info");
+      }
     }
 
     if (rs.credits > rs.highScore) {
@@ -10699,6 +12065,7 @@ else if (typeof define === 'function' && define['amd'])
       this._physicsWorkerTickPending = true;
       this.physicsWorker.postMessage({ type: 'tick', dt: dt });
     }
+    this.updateRouletteChipsPhysics(dt);
   }
 
   render3DRoulette(progInfo, timestamp) {
@@ -10721,6 +12088,13 @@ else if (typeof define === 'function' && define['amd'])
     const diskMesh = this.meshBuffers[7];
 
     if (!sphereMesh || !cubeMesh || !torusMesh) return;
+
+    const wheelX = -1.65;
+    const wheelY = 0.0;
+    const tableX = 1.95;
+    const tableY = 0.0;
+    const tableW = 3.30;
+    const tableH = 1.38;
 
     // Helper: draw rotated cube with yaw angle rotZ (rigid rotation with scale)
     const drawRotatedCube = (px, py, pz, sx, sy, sz, rotZ, color, rough = 0.25, metal = 0.85, matType = 0) => {
@@ -10792,7 +12166,6 @@ else if (typeof define === 'function' && define['amd'])
     };
 
     // Helper: draw horizontal torus laying flat in X-Y plane (normal pointing up Z)
-    // Mesh X-Z is the circle ring, mesh Y is the tube thickness.
     const drawHorizontalTorus = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0) => {
       gl.bindVertexArray(torusMesh.vao);
       this.modelMatrix[0] = sx;  this.modelMatrix[1] = 0;    this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
@@ -10844,20 +12217,47 @@ else if (typeof define === 'function' && define['amd'])
     };
 
     if (progInfo.uUseTexMaps) gl.uniform1i(progInfo.uUseTexMaps, 0);
+    if (progInfo.uLightDir) gl.uniform3fv(progInfo.uLightDir, [0.4, 0.6, 1.8]);
+    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [3.2, 3.0, 2.7]);
+    if (progInfo.uFillLightDir) gl.uniform3fv(progInfo.uFillLightDir, [-0.4, -0.6, 1.2]);
+    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [1.0, 0.95, 0.90]);
 
-    // 1. Draw luxurious green felt casino table cloth
-    if (quadMesh) {
-      gl.bindVertexArray(quadMesh.vao);
-      this.modelMatrix[0] = 5.0; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
-      this.modelMatrix[4] = 0; this.modelMatrix[5] = 5.0; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+    // 1. Draw luxury casino carpet floor
+    if (quadMesh && this.casinoFloorTexture && this.rouletteFeltProg) {
+      gl.useProgram(this.rouletteFeltProg.prog);
+      gl.uniformMatrix4fv(this.rouletteFeltProg.uViewProj, false, this.viewProjMatrix);
+      this.modelMatrix[0] = 16.0; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = 10.0; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
       this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
-      this.modelMatrix[12] = 0; this.modelMatrix[13] = 0; this.modelMatrix[14] = -0.01; this.modelMatrix[15] = 1;
+      this.modelMatrix[12] = 0; this.modelMatrix[13] = 0; this.modelMatrix[14] = -0.025; this.modelMatrix[15] = 1;
+      gl.uniformMatrix4fv(this.rouletteFeltProg.uModel, false, this.modelMatrix);
+      gl.uniform1f(this.rouletteFeltProg.uBrightness, 0.85);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.casinoFloorTexture);
+      gl.uniform1i(this.rouletteFeltProg.uFeltTexture, 0);
+
+      gl.bindVertexArray(quadMesh.vao);
+      gl.drawElements(gl.TRIANGLES, quadMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+
+      gl.useProgram(progInfo.prog);
+      this.bindMaterialTextures(progInfo);
+    } else if (quadMesh) {
+      gl.bindVertexArray(quadMesh.vao);
+      this.modelMatrix[0] = 16.0; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = 10.0; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = 0; this.modelMatrix[13] = 0; this.modelMatrix[14] = -0.025; this.modelMatrix[15] = 1;
       Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
       gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
       if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, [0.08, 0.32, 0.16]); // felt green
-      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85); // ultra rough felt texture
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, [0.05, 0.22, 0.12]);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
       if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 10);
       gl.drawElements(gl.TRIANGLES, quadMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     }
 
@@ -10866,57 +12266,130 @@ else if (typeof define === 'function' && define['amd'])
     const wheelEnt = this.sceneEntities ? this.sceneEntities.find(e => e.id === 1) : null;
     const rimEnt = this.sceneEntities ? this.sceneEntities.find(e => e.id === 2) : null;
 
-    // Resolve materials: Base Color, Roughness, Metallic
-    const spindleColor = spindleEnt ? spindleEnt.color : [0.95, 0.64, 0.08];
+    // Resolve materials
+    const spindleColor = spindleEnt ? spindleEnt.color : [0.96, 0.78, 0.30];
     const spindleRough = spindleEnt ? spindleEnt.roughness : 0.08;
     const spindleMetal = spindleEnt ? spindleEnt.metallic : 0.98;
 
-    const wheelColor = wheelEnt ? wheelEnt.color : [0.14, 0.14, 0.16];
-    const wheelRough = wheelEnt ? wheelEnt.roughness : 0.18;
-    const wheelMetal = wheelEnt ? wheelEnt.metallic : 0.92;
+    const wheelColor = wheelEnt ? wheelEnt.color : [0.32, 0.12, 0.06];
+    const wheelRough = wheelEnt ? wheelEnt.roughness : 0.22;
+    const wheelMetal = wheelEnt ? wheelEnt.metallic : 0.12;
 
-    const rimColor = rimEnt ? rimEnt.color : [0.26, 0.08, 0.03];
+    const rimColor = rimEnt ? rimEnt.color : [0.28, 0.10, 0.05];
     const rimRough = rimEnt ? rimEnt.roughness : 0.25;
-    const rimMetal = rimEnt ? rimEnt.metallic : 0.05;
+    const rimMetal = rimEnt ? rimEnt.metallic : 0.08;
 
-    // 2. Draw outer mahogany housing cabinet base (solid wood bowl structure)
-    drawDisk(0, 0, 0.002, 1.45, 1.45, 1.0, rimColor, rimRough, rimMetal);
+    // ==========================================
+    // 2. BETTING TABLE SURFACE (SIDE-BY-SIDE)
+    // ==========================================
+    // 2a. Mahogany table wooden understructure / foundation beneath the felt
+    drawRotatedCube(tableX, tableY, -0.012, tableW + 0.32, tableH + 0.32, 0.020, 0, rimColor, rimRough, rimMetal, 1);
 
-    // 3. Draw BIG Torus for rolling ball in circle (sleek wood ball track)
-    // Thickness (Z-scale) scaled down to 0.08 so we see the mahogany wooden body and pins beautifully.
-    // MatType is set to 0 (Standard Opaque PBR) to keep it smooth, crisp, and 100% solid.
-    drawHorizontalTorus(0, 0, 0.10, 1.05, 1.05, 0.08, rimColor, rimRough, rimMetal, 0);
+    // 2b. Elevated padded mahogany leather armrest bumper rails around felt perimeter
+    const bw = 0.12;
+    drawRotatedCube(tableX, tableY + tableH * 0.5 + bw * 0.5, 0.014, tableW + bw * 2, bw, 0.024, 0, rimColor, 0.32, 0.05, 1);
+    drawRotatedCube(tableX, tableY - tableH * 0.5 - bw * 0.5, 0.014, tableW + bw * 2, bw, 0.024, 0, rimColor, 0.32, 0.05, 1);
+    drawRotatedCube(tableX - tableW * 0.5 - bw * 0.5, tableY, 0.014, bw, tableH, 0.024, 0, rimColor, 0.32, 0.05, 1);
+    drawRotatedCube(tableX + tableW * 0.5 + bw * 0.5, tableY, 0.014, bw, tableH, 0.024, 0, rimColor, 0.32, 0.05, 1);
 
-    // 4. Draw Safety Ring (Torus) on top of BIG Torus to prevent ball getting out
-    // Styled as a sleek polished brass safety lip using standard opaque PBR (matType = 0)
-    drawHorizontalTorus(0, 0, 0.16, 1.06, 1.06, 0.05, [0.92, 0.78, 0.38], 0.08, 0.98, 0);
+    // 2c. Inner gleaming 24k gold lip rails framing the playing field
+    const lw = 0.016;
+    drawRotatedCube(tableX, tableY + tableH * 0.5 + lw * 0.5, 0.008, tableW + lw * 2, lw, 0.012, 0, [0.96, 0.82, 0.35], 0.10, 0.96, 0);
+    drawRotatedCube(tableX, tableY - tableH * 0.5 - lw * 0.5, 0.008, tableW + lw * 2, lw, 0.012, 0, [0.96, 0.82, 0.35], 0.10, 0.96, 0);
+    drawRotatedCube(tableX - tableW * 0.5 - lw * 0.5, tableY, 0.008, lw, tableH, 0.012, 0, [0.96, 0.82, 0.35], 0.10, 0.96, 0);
+    drawRotatedCube(tableX + tableW * 0.5 + lw * 0.5, tableY, 0.008, lw, tableH, 0.012, 0, [0.96, 0.82, 0.35], 0.10, 0.96, 0);
 
-    // 5. Draw inner concave wood bowl slope (extends from r=0 to r=1.04) using standard opaque PBR (matType = 0)
-    drawDisk(0, 0, 0.012, 1.04, 1.04, 1.0, rimColor, rimRough, rimMetal, 0);
+    // 2d. Textured betting felt plane (using dedicated pristine vibrant felt shader)
+    if (quadMesh && this.rouletteTableTexture && this.rouletteFeltProg) {
+      gl.useProgram(this.rouletteFeltProg.prog);
+      gl.uniformMatrix4fv(this.rouletteFeltProg.uViewProj, false, this.viewProjMatrix);
 
-    // 6. Draw 8 Brass Diamond Deflectors (canoes / metal pins) on the bowl slope
-    for (let k = 0; k < 8; k++) {
-      const dAngle = k * (Math.PI / 4);
-      drawRotatedCube(0.92 * Math.cos(dAngle), 0.92 * Math.sin(dAngle), 0.10, 0.028, 0.028, 0.018, dAngle + 0.785, [0.90, 0.78, 0.35], 0.08, 0.98);
+      this.modelMatrix[0] = tableW; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = tableH; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = tableX; this.modelMatrix[13] = tableY; this.modelMatrix[14] = 0.004; this.modelMatrix[15] = 1;
+      gl.uniformMatrix4fv(this.rouletteFeltProg.uModel, false, this.modelMatrix);
+      gl.uniform1f(this.rouletteFeltProg.uBrightness, 1.25);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.rouletteTableTexture);
+      gl.uniform1i(this.rouletteFeltProg.uFeltTexture, 0);
+
+      gl.bindVertexArray(quadMesh.vao);
+      gl.drawElements(gl.TRIANGLES, quadMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+
+      // Return back to main PBR program for rest of scene
+      gl.useProgram(progInfo.prog);
+      this.bindMaterialTextures(progInfo);
     }
 
-    // 7. Draw the central spinning wheel disk
-    const wheelAngle = rs.wheelAngle;
-    gl.bindVertexArray(diskMesh.vao);
-    const cW = Math.cos(wheelAngle), sW = Math.sin(wheelAngle);
-    this.modelMatrix[0] = 0.78 * cW;  this.modelMatrix[1] = 0.78 * sW;  this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
-    this.modelMatrix[4] = -0.78 * sW; this.modelMatrix[5] = 0.78 * cW;  this.modelMatrix[6] = 0;   this.modelMatrix[7] = 0;
-    this.modelMatrix[8] = 0;          this.modelMatrix[9] = 0;          this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
-    this.modelMatrix[12] = 0;         this.modelMatrix[13] = 0;         this.modelMatrix[14] = 0.016; this.modelMatrix[15] = 1;
-    Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
-    gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
-    if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-    if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, wheelColor); // gunmetal / obsidian wheel face from graph scene
-    if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, wheelRough);
-    if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, wheelMetal);
-    gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    // ==========================================
+    // 3. ROULETTE WHEEL ASSEMBLY (SIDE-BY-SIDE)
+    // ==========================================
+    // Outer mahogany housing cabinet base
+    drawDisk(wheelX, wheelY, 0.002, 1.48, 1.48, 1.0, rimColor, rimRough, rimMetal, 1);
 
-    // 8. Draw 37 ball holders / compote objects (SUM=37 from 0 to 36) arranged in orbit
+    // Ball track Torus
+    drawHorizontalTorus(wheelX, wheelY, 0.040, 1.08, 1.08, 0.09, rimColor, rimRough, rimMetal, 1);
+
+    // Safety Ring Torus in 24k Gold
+    drawHorizontalTorus(wheelX, wheelY, 0.076, 1.05, 1.05, 0.04, [0.96, 0.82, 0.36], 0.08, 0.98, 0);
+
+    // Inner concave wood bowl slope
+    drawDisk(wheelX, wheelY, 0.012, 1.04, 1.04, 1.0, rimColor, rimRough, rimMetal, 1);
+
+    // 8 Brass Diamond Deflectors
+    for (let k = 0; k < 8; k++) {
+      const dAngle = k * (Math.PI / 4);
+      drawRotatedCube(wheelX + 0.92 * Math.cos(dAngle), wheelY + 0.92 * Math.sin(dAngle), 0.054, 0.028, 0.028, 0.016, dAngle + 0.785, [0.96, 0.84, 0.36], 0.08, 0.98, 0);
+    }
+
+    // Central spinning wheel turntable disk
+    const wheelAngle = rs.wheelAngle;
+    if (diskMesh && this.rouletteWheelTexture && this.rouletteFeltProg) {
+      gl.useProgram(this.rouletteFeltProg.prog);
+      gl.uniformMatrix4fv(this.rouletteFeltProg.uViewProj, false, this.viewProjMatrix);
+
+      const cW = Math.cos(wheelAngle), sW = Math.sin(wheelAngle);
+      this.modelMatrix[0] = 0.78 * cW;  this.modelMatrix[1] = 0.78 * sW;  this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = -0.78 * sW; this.modelMatrix[5] = 0.78 * cW;  this.modelMatrix[6] = 0;   this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0;          this.modelMatrix[9] = 0;          this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = wheelX;    this.modelMatrix[13] = wheelY;    this.modelMatrix[14] = 0.024; this.modelMatrix[15] = 1;
+      gl.uniformMatrix4fv(this.rouletteFeltProg.uModel, false, this.modelMatrix);
+      gl.uniform1f(this.rouletteFeltProg.uBrightness, 1.25);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.rouletteWheelTexture);
+      gl.uniform1i(this.rouletteFeltProg.uFeltTexture, 0);
+
+      gl.bindVertexArray(diskMesh.vao);
+      gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+
+      gl.useProgram(progInfo.prog);
+      this.bindMaterialTextures(progInfo);
+    } else if (diskMesh) {
+      gl.bindVertexArray(diskMesh.vao);
+      const cW = Math.cos(wheelAngle), sW = Math.sin(wheelAngle);
+      this.modelMatrix[0] = 0.78 * cW;  this.modelMatrix[1] = 0.78 * sW;  this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = -0.78 * sW; this.modelMatrix[5] = 0.78 * cW;  this.modelMatrix[6] = 0;   this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0;          this.modelMatrix[9] = 0;          this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = wheelX;    this.modelMatrix[13] = wheelY;    this.modelMatrix[14] = 0.024; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, wheelColor);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, wheelRough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, wheelMetal);
+      gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // 37 ball holders / pockets arranged in orbit
     const ROULETTE_NUMBERS = [
       0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 
       24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
@@ -10925,53 +12398,45 @@ else if (typeof define === 'function' && define['amd'])
     for (let i = 0; i < 37; i++) {
       const angle = wheelAngle + i * (2 * Math.PI / 37);
 
-      // Radial divider fret (golden thin separator cube pointing radially towards center)
-      drawRotatedCube(0.68 * Math.cos(angle), 0.68 * Math.sin(angle), 0.026, 0.09, 0.007, 0.024, angle, [0.88, 0.76, 0.38], 0.1, 0.95);
+      // Radial divider fret in 24k polished gold
+      drawRotatedCube(wheelX + 0.68 * Math.cos(angle), wheelY + 0.68 * Math.sin(angle), 0.028, 0.09, 0.007, 0.024, angle, [0.96, 0.82, 0.36], 0.08, 0.98, 0);
 
-      // Pocket cup floor & color indicator (shifted to sit squarely in between separators)
       const midAngle = angle + (Math.PI / 37);
       const px = 0.68 * Math.cos(midAngle);
       const py = 0.68 * Math.sin(midAngle);
 
       const num = ROULETTE_NUMBERS[i];
-      let col = [0.03, 0.03, 0.03]; // Black pocket default
+      let col = [0.03, 0.03, 0.03];
       if (num === 0) {
-        col = [0.06, 0.75, 0.18]; // Green 0
+        col = [0.06, 0.75, 0.18];
       } else {
         const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
-        if (reds.includes(num)) {
-          col = [0.85, 0.08, 0.08]; // Red
-        }
+        if (reds.includes(num)) col = [0.85, 0.08, 0.08];
       }
 
-      // Pocket floor base box (the holder cup oriented directly towards center)
-      drawRotatedCube(px, py, 0.016, 0.08, 0.046, 0.008, midAngle, col, 0.25, 0.3);
+      // Pocket cup floor
+      drawRotatedCube(wheelX + px, wheelY + py, 0.024, 0.08, 0.046, 0.008, midAngle, col, 0.25, 0.3, 0);
 
       // Shiny colored pocket indicator sphere
-      drawSphere(px, py, 0.024, 0.016, 0.016, 0.016, col, 0.06, 0.15);
+      drawSphere(wheelX + px, wheelY + py, 0.028, 0.016, 0.016, 0.016, col, 0.06, 0.15);
     }
 
-    // 9. Central Turret & 4-Arm Spinner Cross
-    // Spindle cone
-    drawSphere(0, 0, 0.035, 0.20, 0.20, 0.06, spindleColor, spindleRough, spindleMetal);
-    // Spindle column
-    drawSphere(0, 0, 0.075, 0.065, 0.065, 0.09, spindleColor, spindleRough, spindleMetal);
-    // Center turret finial sphere
-    drawSphere(0, 0, 0.13, 0.035, 0.035, 0.035, spindleColor, spindleRough, spindleMetal);
+    // Central Turret & 4-Arm Spinner Cross
+    drawSphere(wheelX, wheelY, 0.035, 0.20, 0.20, 0.06, spindleColor, spindleRough, spindleMetal);
+    drawSphere(wheelX, wheelY, 0.075, 0.065, 0.065, 0.09, spindleColor, spindleRough, spindleMetal);
+    drawSphere(wheelX, wheelY, 0.13, 0.035, 0.035, 0.035, spindleColor, spindleRough, spindleMetal);
 
-    // 4 cross arms spinning with wheelAngle
     for (let a = 0; a < 4; a++) {
       const armAng = wheelAngle + a * (Math.PI / 2);
-      drawRotatedCube(0.06 * Math.cos(armAng), 0.06 * Math.sin(armAng), 0.11, 0.10, 0.014, 0.014, armAng, spindleColor, spindleRough, spindleMetal);
-      drawSphere(0.11 * Math.cos(armAng), 0.11 * Math.sin(armAng), 0.11, 0.018, 0.018, 0.018, spindleColor, spindleRough, spindleMetal);
+      drawRotatedCube(wheelX + 0.06 * Math.cos(armAng), wheelY + 0.06 * Math.sin(armAng), 0.11, 0.10, 0.014, 0.014, armAng, spindleColor, spindleRough, spindleMetal);
+      drawSphere(wheelX + 0.11 * Math.cos(armAng), wheelY + 0.11 * Math.sin(armAng), 0.11, 0.018, 0.018, 0.018, spindleColor, spindleRough, spindleMetal);
     }
 
-    // 10. Physical rolling ivory ball
+    // Physical rolling ivory ball
     const b = rs.ball;
     if (b) {
-      drawSphere(b.pos[0], b.pos[1], b.pos[2], 0.035, 0.035, 0.035, [0.97, 0.97, 0.95], 0.06, 0.12, 0, b.rot || [0, 0, 0]);
+      drawSphere(wheelX + b.pos[0], wheelY + b.pos[1], b.pos[2], 0.035, 0.035, 0.035, [0.97, 0.97, 0.95], 0.06, 0.12, 0, b.rot || [0, 0, 0]);
 
-      // Visual speed trails while in active motion
       if (!b.trapped) {
         rs.trail.push({ x: b.pos[0], y: b.pos[1], z: b.pos[2] });
         if (rs.trail.length > 14) rs.trail.shift();
@@ -10979,9 +12444,117 @@ else if (typeof define === 'function' && define['amd'])
         rs.trail.forEach((t, index) => {
           const ratio = index / rs.trail.length;
           const rSize = 0.035 * ratio * 0.7;
-          drawSphere(t.x, t.y, t.z, rSize, rSize, rSize, [1.0, 1.0, 1.0], 0.05, 0.1, 0);
+          drawSphere(wheelX + t.x, wheelY + t.y, t.z, rSize, rSize, rSize, [1.0, 1.0, 1.0], 0.05, 0.1, 0);
         });
       }
+    }
+
+    // ==========================================
+    // 4. 3D CHIPS PASS (WITH STACKING & BOUNCES)
+    // ==========================================
+    if (this.rouletteChips && this.rouletteChips.length > 0) {
+      for (const chip of this.rouletteChips) {
+        const px = chip.pos[0];
+        const py = chip.pos[1];
+        const pz = chip.pos[2];
+
+        // Soft ambient contact shadow under chip on felt
+        drawDisk(px, py, 0.0048, 0.046, 0.046, 1.0, [0.02, 0.06, 0.03], 0.98, 0.0);
+
+        if (chip.isWinner) {
+          // Golden halo highlight under winning chip
+          drawDisk(px, py, pz - 0.001, 0.052, 0.052, 1.0, [1.0, 0.90, 0.20], 0.1, 0.9);
+        }
+
+        // Chip main top & bottom disks
+        drawDisk(px, py, pz + 0.0038, 0.038, 0.038, 1.0, chip.color, 0.22, 0.05);
+        drawDisk(px, py, pz - 0.0038, 0.038, 0.038, 1.0, chip.color, 0.22, 0.05);
+
+        // Chip outer thick rim with metallic sheen
+        drawHorizontalTorus(px, py, pz, 0.035, 0.035, 0.0075, [0.94, 0.94, 0.96], 0.16, 0.75, 0);
+
+        // Chip central stamped gold crest seal
+        drawDisk(px, py, pz + 0.0042, 0.022, 0.022, 1.0, [0.95, 0.82, 0.35], 0.12, 0.92);
+      }
+    }
+
+    // ==========================================
+    // 5. TRANSPARENT BETTING ACTORS OVERLAY PASS
+    // ==========================================
+    if (this.rouletteActorProg && this.rouletteActors && quadMesh) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+
+      const actP = this.rouletteActorProg;
+      gl.useProgram(actP.prog);
+      gl.uniformMatrix4fv(actP.uViewProj, false, this.viewProjMatrix);
+      gl.bindVertexArray(quadMesh.vao);
+
+      const hoveredActor = this._hoveredRouletteActor;
+
+      for (const actor of this.rouletteActors) {
+        const isHovered = hoveredActor && hoveredActor.id === actor.id;
+        const hasBets = (actor.betTotal || 0) > 0;
+
+        // ONLY render visual overlay for actors currently hovered or with placed bets
+        // Non-hovered actors are NEVER drawn, allowing the high-resolution felt texture to show with pure clarity
+        if (!isHovered && !hasBets) {
+          continue;
+        }
+
+        let color = [1.0, 0.90, 0.30];
+        let alpha = 0.36;
+        let borderWidth = 0.055;
+        let borderColor = [1.0, 1.0, 0.70];
+
+        if (isHovered) {
+          if (actor.type === 'split') {
+            color = [0.20, 0.92, 0.45]; // vibrant emerald green for split bets
+            borderColor = [0.95, 1.0, 0.95];
+          } else if (actor.type === 'corner' || actor.type === 'sixline') {
+            color = [0.98, 0.72, 0.15]; // gold amber
+            borderColor = [1.0, 0.96, 0.75];
+          } else if (actor.type === 'street') {
+            color = [0.25, 0.82, 1.0]; // celestial blue
+            borderColor = [1.0, 1.0, 1.0];
+          } else if (actor.type === 'outside') {
+            color = [0.20, 0.88, 0.60]; // bright casino mint
+            borderColor = [1.0, 1.0, 0.80];
+          } else {
+            color = [1.0, 0.88, 0.25]; // radiant gold highlight for single numbers / zero
+            borderColor = [1.0, 1.0, 0.85];
+          }
+          alpha = 0.45;
+          borderWidth = 0.065;
+        } else if (hasBets) {
+          color = [1.0, 0.82, 0.20]; // warm gold rim on bet actors
+          alpha = 0.22;
+          borderWidth = 0.045;
+          borderColor = [1.0, 0.92, 0.40];
+        }
+
+        const w = actor.box.maxX - actor.box.minX;
+        const h = actor.box.maxY - actor.box.minY;
+        const cx = (actor.box.minX + actor.box.maxX) * 0.5;
+        const cy = (actor.box.minY + actor.box.maxY) * 0.5;
+
+        this.modelMatrix[0] = w; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+        this.modelMatrix[4] = 0; this.modelMatrix[5] = h; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+        this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
+        this.modelMatrix[12] = cx; this.modelMatrix[13] = cy; this.modelMatrix[14] = 0.005; this.modelMatrix[15] = 1;
+
+        gl.uniformMatrix4fv(actP.uModel, false, this.modelMatrix);
+        gl.uniform3fv(actP.uColor, color);
+        gl.uniform1f(actP.uAlpha, alpha);
+        gl.uniform1f(actP.uBorderWidth, borderWidth);
+        gl.uniform3fv(actP.uBorderColor, borderColor);
+        gl.drawElements(gl.TRIANGLES, quadMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
+
+      gl.disable(gl.BLEND);
+      gl.depthMask(true);
+      gl.useProgram(progInfo.prog);
     }
 
     // Restore back-face culling if active globally
@@ -12257,11 +13830,12 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   updateSceneEntitiesForActiveDemo() {
+    this.updateMobileActionButtonsVisibility();
     const ds = this.state.demoScene || '';
     
     // For character (Demo 06) and FPS (Demo 07) scenes, we let loadQuakeMap handle entities.
     if (ds.includes('06_glb') || ds === 'character' || ds.includes('07_fps')) {
-      this.loadQuakeMap(this.currentMapId || 'dm6', false);
+      this.loadQuakeMap(this.currentMapId || 'q3dm17', false);
       return;
     }
 
@@ -12444,9 +14018,12 @@ else if (typeof define === 'function' && define['amd'])
       }
     } else if (ds.includes('12_roulette')) {
       entities = [
-        { id: 0, name: "Roulette_Central_Cone_Cap", type: "Faceted Gold Hub Spindle", materialKey: "gold", pos: [0, 0, 0.09], scale: [0.15, 0.15, 0.18], roughness: 0.08, metallic: 0.98, color: [0.95, 0.64, 0.08], collider: "Faceted Hub Cylinder", layer: "Layer_Interactive", badge: "Central Spindle", trigger: false },
-        { id: 1, name: "Main_Roulette_Turntable_Wheel", type: "Segmented Outer Ring Cylinder", materialKey: "obsidian", pos: [0, 0, 0], scale: [1.1, 1.1, 0.08], roughness: 0.25, metallic: 0.85, color: [0.15, 0.16, 0.18], collider: "Rotating Cylinder Wheel", layer: "Layer_Interactive", badge: "Spindle Wheel", trigger: false },
-        { id: 2, name: "Obsidian_Base_Rim", type: "Outer Static Guide Ring", materialKey: "metal", pos: [0, 0, -0.04], scale: [1.3, 1.3, 0.08], roughness: 0.15, metallic: 0.9, color: [0.08, 0.09, 0.12], collider: "Static Outer Ring Rim", layer: "Layer_Static", badge: "Outer Rim", trigger: false }
+        { id: 0, name: "Roulette_Central_Gold_Spindle", type: "Faceted Gold Hub Spindle", materialKey: "gold", pos: [0, 0, 0.09], scale: [0.15, 0.15, 0.18], roughness: 0.08, metallic: 0.98, color: [0.96, 0.78, 0.30], collider: "Faceted Hub Cylinder", layer: "Layer_Interactive", badge: "Central Spindle", trigger: false },
+        { id: 1, name: "Mahogany_Turntable_Wheel", type: "Segmented Number Turntable Wheel", materialKey: "wood", pos: [0, 0, 0], scale: [1.1, 1.1, 0.08], roughness: 0.22, metallic: 0.12, color: [0.32, 0.12, 0.06], collider: "Rotating Cylinder Wheel", layer: "Layer_Interactive", badge: "Spindle Wheel", trigger: false },
+        { id: 2, name: "Polished_Mahogany_Rim", type: "Outer Static Mahogany Guide Rim", materialKey: "wood", pos: [0, 0, -0.04], scale: [1.3, 1.3, 0.08], roughness: 0.25, metallic: 0.08, color: [0.28, 0.10, 0.05], collider: "Static Outer Ring Rim", layer: "Layer_Static", badge: "Outer Rim", trigger: false },
+        { id: 101, name: "Wheel_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [-1.65, 0.0, 3.2], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.94, 0.82], intensity: 28.0, spotCutoff: 0.88, outerCutoff: 0.65, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
+        { id: 102, name: "Table_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [1.95, 0.0, 3.2], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.96, 0.88], intensity: 28.0, spotCutoff: 0.88, outerCutoff: 0.65, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
+        { id: 103, name: "Casino_Hall_Ambient_Fill", type: "Warm Ambient Chandelier Fill", isLight: true, lightType: "point", pos: [0.0, -2.0, 2.5], scale: [1.0, 1.0, 1.0], color: [1.0, 0.88, 0.70], intensity: 16.0, radius: 14.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Ambient Fill", contact: false }
       ];
       if (this.rouletteState && this.rouletteState.ball) {
         const ball = this.rouletteState.ball;
@@ -12916,6 +14493,124 @@ else if (typeof define === 'function' && define['amd'])
         this.updateSceneEntitiesForActiveDemo();
         this.log("Manually refreshed active Scene Graph from live simulation context.", "success");
       });
+    }
+  }
+
+  updateMobileActionButtonsVisibility() {
+    const ds = this.state.demoScene || '';
+    const isFPS = ds.includes('07_fps') || this.state.cameraMode === 3;
+
+    const btnUp = document.getElementById('btn-touch-up');
+    const btnDown = document.getElementById('btn-touch-down');
+    const btnSprint = document.getElementById('btn-touch-sprint');
+    const btnCam = document.getElementById('btn-touch-cam');
+    const btnReset = document.getElementById('btn-touch-reset');
+    const pad = document.getElementById('mobile-action-pad');
+
+    if (isFPS) {
+      if (btnUp) btnUp.style.display = 'block';
+      if (btnSprint) btnSprint.style.display = 'block';
+      if (btnDown) btnDown.style.display = 'none';
+      if (btnCam) btnCam.style.display = 'none';
+      if (btnReset) btnReset.style.display = 'none';
+      if (pad) pad.style.display = 'flex';
+    } else {
+      if (btnUp) btnUp.style.display = 'none';
+      if (btnSprint) btnSprint.style.display = 'none';
+      if (btnDown) btnDown.style.display = 'none';
+      if (btnCam) btnCam.style.display = 'none';
+      if (btnReset) btnReset.style.display = 'none';
+      if (pad) pad.style.display = 'none';
+    }
+  }
+
+  handleSlidingPuzzleTouch(clientX, clientY) {
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const mouseX = clientX - canvasRect.left;
+    const mouseY = clientY - canvasRect.top;
+
+    const ndcX = (mouseX / canvasRect.width) * 2 - 1;
+    const ndcY = 1 - (mouseY / canvasRect.height) * 2;
+
+    const nearPt = [ndcX, ndcY, -1.0, 1.0];
+    const farPt = [ndcX, ndcY, 1.0, 1.0];
+
+    const invVP = new Float32Array(16);
+    const a = this.viewProjMatrix;
+    
+    let a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+    let a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+    let a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+    let a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+
+    let b00 = a00 * a11 - a01 * a10;
+    let b01 = a00 * a12 - a02 * a10;
+    let b02 = a00 * a13 - a03 * a10;
+    let b03 = a01 * a12 - a02 * a11;
+    let b04 = a01 * a13 - a03 * a11;
+    let b05 = a02 * a13 - a03 * a12;
+    let b06 = a20 * a31 - a21 * a30;
+    let b07 = a20 * a32 - a22 * a30;
+    let b08 = a20 * a33 - a23 * a30;
+    let b09 = a21 * a32 - a22 * a31;
+    let b10 = a21 * a33 - a23 * a31;
+    let b11 = a22 * a33 - a23 * a32;
+
+    let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+    if (Math.abs(det) > 0.0001) {
+      det = 1.0 / det;
+
+      invVP[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
+      invVP[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+      invVP[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
+      invVP[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+      invVP[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
+      invVP[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+      invVP[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
+      invVP[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+      invVP[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
+      invVP[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+      invVP[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
+      invVP[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+      invVP[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
+      invVP[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+      invVP[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
+      invVP[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+
+      const unproject = (pt) => {
+        const x = pt[0], y = pt[1], z = pt[2], w = pt[3];
+        const ox = invVP[0]*x + invVP[4]*y + invVP[8]*z + invVP[12]*w;
+        const oy = invVP[1]*x + invVP[5]*y + invVP[9]*z + invVP[13]*w;
+        const oz = invVP[2]*x + invVP[6]*y + invVP[10]*z + invVP[14]*w;
+        const ow = invVP[3]*x + invVP[7]*y + invVP[11]*z + invVP[15]*w;
+        return [ox / ow, oy / ow, oz / ow];
+      };
+
+      const pNear = unproject(nearPt);
+      const pFar = unproject(farPt);
+
+      const dx = pFar[0] - pNear[0];
+      const dy = pFar[1] - pNear[1];
+      const dz = pFar[2] - pNear[2];
+
+      if (Math.abs(dz) > 0.0001) {
+        const t = -pNear[2] / dz;
+        if (t >= 0.0) {
+          const ix = pNear[0] + t * dx;
+          const iy = pNear[1] + t * dy;
+
+          if (ix >= -0.5 && ix <= 0.5 && iy >= 0.8 && iy <= 1.8) {
+            const N = this.puzzleState.gridSize;
+            const tileW = 1.0 / N;
+            const clickC = Math.floor((ix + 0.5) / tileW);
+            const clickR = Math.floor((1.8 - iy) / tileW);
+
+            if (clickR >= 0 && clickR < N && clickC >= 0 && clickC < N) {
+              this.handleSlidingPuzzleClick(clickR, clickC);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -13883,15 +15578,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
         const texKey = (mat && mat.textureKey) ? mat.textureKey : null;
         const texObj = (texKey && this.textureCatalog) ? this.textureCatalog[texKey] : null;
-        if (texObj && progInfo.uUseTexMaps) {
-          gl.activeTexture(gl.TEXTURE2);
-          gl.bindTexture(gl.TEXTURE_2D, texObj);
-          if (progInfo.uAlbedoMap) gl.uniform1i(progInfo.uAlbedoMap, 2);
-          if (progInfo.uPbrMap) gl.uniform1i(progInfo.uPbrMap, 2);
-          gl.uniform1i(progInfo.uUseTexMaps, 1);
-        } else if (progInfo.uUseTexMaps) {
-          gl.uniform1i(progInfo.uUseTexMaps, 0);
-        }
+        this.bindMaterialTextures(progInfo, texObj);
 
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
@@ -14459,15 +16146,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
 
         const texObj = (texKey && this.textureCatalog) ? this.textureCatalog[texKey] : null;
-        if (texObj && progInfo.uUseTexMaps) {
-          gl.activeTexture(gl.TEXTURE2);
-          gl.bindTexture(gl.TEXTURE_2D, texObj);
-          if (progInfo.uAlbedoMap) gl.uniform1i(progInfo.uAlbedoMap, 2);
-          if (progInfo.uPbrMap) gl.uniform1i(progInfo.uPbrMap, 2);
-          gl.uniform1i(progInfo.uUseTexMaps, 1);
-        } else if (progInfo.uUseTexMaps) {
-          gl.uniform1i(progInfo.uUseTexMaps, 0);
-        }
+        this.bindMaterialTextures(progInfo, texObj);
 
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);

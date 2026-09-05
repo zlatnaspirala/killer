@@ -12,7 +12,7 @@ let world = {
   roulette: {
     active: false,
     wheelAngle: 0.0,
-    wheelSpeed: -2.8,
+    wheelSpeed: -0.6,
     ball: null,
     pockets: 37,
     bounciness: 0.58
@@ -67,7 +67,7 @@ self.onmessage = function(e) {
       world.roulette = {
         active: true,
         wheelAngle: data.wheelAngle !== undefined ? data.wheelAngle : 0.0,
-        wheelSpeed: -1.2,
+        wheelSpeed: -0.6,
         ball: {
           r: 0.68,
           theta: 0.0,
@@ -91,15 +91,16 @@ self.onmessage = function(e) {
 
     case 'spinRoulette':
       const startAngle = Math.random() * 2 * Math.PI;
-      // High initial tangential launch speed along the upper rim
+      // Tangential launch speed along the upper rim
       const initialTangentialSpeed = 5.2 + Math.random() * 1.0;
       if (world.roulette) {
         world.roulette.active = true;
-        world.roulette.wheelSpeed = -2.8 - Math.random() * 0.8;
+        // Wheel spin speed during ball rim phase
+        world.roulette.wheelSpeed = -1.15 - Math.random() * 0.25;
         world.roulette.ball = {
           r: 1.10, // Outer rim track
           theta: startAngle,
-          z: 0.20,
+          z: 0.078, // Aligned with lowered torus rim height
           vr: 0.0,
           vTheta: initialTangentialSpeed,
           vz: 0.0,
@@ -109,7 +110,7 @@ self.onmessage = function(e) {
           trapped: false,
           circlesCompleted: 0,
           clatterTimer: 0,
-          pos: [1.10 * Math.cos(startAngle), 1.10 * Math.sin(startAngle), 0.20],
+          pos: [1.10 * Math.cos(startAngle), 1.10 * Math.sin(startAngle), 0.078],
           vel: [-initialTangentialSpeed * Math.sin(startAngle), initialTangentialSpeed * Math.cos(startAngle), 0.0]
         };
       }
@@ -617,14 +618,46 @@ function stepRoulettePhysics(dt) {
   const r = world.roulette;
   if (!r || !r.active) return null;
 
-  // 1. Slow down the wheel speed gradually over time
-  r.wheelSpeed *= Math.exp(-0.025 * dt);
-  if (Math.abs(r.wheelSpeed) < 0.6) {
-    r.wheelSpeed = -0.6; // gentle continuous idle
+  // 1. Decelerate wheel speed based on ball phase
+  // Critical user requirement: When ball drops, roulette wheel spinning speed must be noticeably less!
+  const b = r.ball;
+  if (b) {
+    if (b.phase === 'slope') {
+      // Ball dropped down the slope: wheel spin speed is drastically reduced!
+      r.wheelSpeed *= Math.exp(-0.65 * dt);
+      if (Math.abs(r.wheelSpeed) > 0.38) {
+        r.wheelSpeed = -0.38;
+      }
+      if (Math.abs(r.wheelSpeed) < 0.22) {
+        r.wheelSpeed = -0.22;
+      }
+    } else if (b.phase === 'pocket') {
+      // Clattering in pockets: further gentle deceleration
+      r.wheelSpeed *= Math.exp(-0.45 * dt);
+      if (Math.abs(r.wheelSpeed) < 0.18) {
+        r.wheelSpeed = -0.18;
+      }
+    } else if (b.phase === 'trapped') {
+      // Ball settled in winning pocket: tranquil legible rotation
+      r.wheelSpeed *= Math.exp(-0.35 * dt);
+      if (Math.abs(r.wheelSpeed) < 0.14) {
+        r.wheelSpeed = -0.14;
+      }
+    } else {
+      // Ball rolling along upper rim
+      r.wheelSpeed *= Math.exp(-0.02 * dt);
+      if (Math.abs(r.wheelSpeed) < 0.85) {
+        r.wheelSpeed = -0.85;
+      }
+    }
+  } else {
+    r.wheelSpeed *= Math.exp(-0.03 * dt);
+    if (Math.abs(r.wheelSpeed) < 0.30) {
+      r.wheelSpeed = -0.30; // gentle continuous idle
+    }
   }
   r.wheelAngle = (r.wheelAngle + r.wheelSpeed * dt) % (2 * Math.PI);
 
-  const b = r.ball;
   if (!b) return { wheelAngle: r.wheelAngle, ball: null, hitSound: null, winPocket: null };
 
   let hitSound = null;
@@ -661,13 +694,15 @@ function stepRoulettePhysics(dt) {
     // gravity overcomes centrifugal force, pulling ball down the slope!
     if (b.vTheta < 2.4 || b.circlesCompleted > 4.5) {
       b.phase = 'slope';
-      b.vr = -0.3; // initial inward radial velocity
+      b.vr = -0.35; // initial inward radial velocity
       hitSound = 'rim';
+      // When ball drops, immediately cut wheel speed so it is visibly and noticeably less
+      r.wheelSpeed = -0.38;
     }
 
     b.pos[0] = b.r * Math.cos(b.theta);
     b.pos[1] = b.r * Math.sin(b.theta);
-    b.pos[2] = 0.20;
+    b.pos[2] = 0.078;
 
     // Ball rolling rotation
     b.rot[0] += b.vTheta * dt * 7.0;
@@ -688,8 +723,8 @@ function stepRoulettePhysics(dt) {
     const omega = b.vTheta / (b.r || 0.1);
     b.theta += omega * dt;
 
-    // Height follows the bowl curve down (r = 1.10 -> z = 0.20, r = 0.74 -> z = 0.035)
-    b.z = 0.035 + Math.max(0, b.r - 0.74) * 0.46;
+    // Height follows the bowl curve down (r = 1.10 -> z = 0.078, r = 0.74 -> z = 0.035)
+    b.z = 0.035 + Math.max(0, b.r - 0.74) * 0.12;
 
     // DEFLECTORS (DIAMONDS): 8 brass deflectors positioned at r = 0.92
     if (b.r >= 0.88 && b.r <= 0.96) {

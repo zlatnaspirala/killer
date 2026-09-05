@@ -1431,8 +1431,24 @@ body.app-body {
   .header-title-group,
   .header-title,
   .header-sub,
-  .header-left {
+  .header-left,
+  .header-demo-selector-container {
     display: none !important;
+  }
+
+  /* Ensure Active Live Demo Panel in Controls & Demos is in first place and highly visible on mobile */
+  #active-live-demo-panel {
+    border: 2px solid #ef4444 !important;
+    background: linear-gradient(135deg, rgba(160, 20, 32, 0.4), rgba(18, 22, 34, 0.95)) !important;
+    box-shadow: 0 4px 20px rgba(239, 68, 68, 0.35) !important;
+    padding: 14px 14px !important;
+    margin-bottom: 4px;
+  }
+
+  .active-demo-select-highlight {
+    min-height: 44px;
+    font-size: 13px !important;
+    padding: 10px 12px !important;
   }
 
   .app-header {
@@ -4989,6 +5005,135 @@ body.app-body {
     transform: translateX(-50%) scale(0.95);
   }
 }
+
+/* High-Visibility Header Embedded Active Demo Selector with Crimson/Red accents */
+.header-demo-selector-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(135deg, rgba(140, 15, 25, 0.95), rgba(15, 18, 26, 0.95));
+  border: 1.5px solid #ef4444;
+  border-radius: 6px;
+  padding: 5px 12px;
+  min-width: 280px;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+  margin-left: 20px;
+}
+
+.header-demo-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  color: #fca5a5;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.header-demo-select {
+  background-color: rgba(15, 10, 12, 0.95);
+  color: #fecaca;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.header-demo-select:hover {
+  border-color: #ef4444;
+  background-color: rgba(30, 10, 15, 0.95);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+}
+
+.header-demo-select:focus {
+  border-color: #f87171;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+}
+
+/* Active Live Demo Primary Panel in Controls & Demos (Styled with crimson/red components for high visibility) */
+.active-demo-panel-primary {
+  background: linear-gradient(135deg, rgba(120, 15, 25, 0.35), rgba(18, 22, 34, 0.9)) !important;
+  border: 1.5px solid rgba(239, 68, 68, 0.5) !important;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.18), 0 0 8px rgba(0, 0, 0, 0.5);
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.active-demo-panel-primary:hover {
+  border-color: #ef4444 !important;
+  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.3);
+}
+
+.active-demo-select-highlight {
+  background-color: rgba(18, 10, 14, 0.95) !important;
+  color: #fecaca !important;
+  border: 1px solid rgba(239, 68, 68, 0.5) !important;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 8px 10px;
+  transition: all 0.2s ease;
+}
+
+.active-demo-select-highlight:focus,
+.active-demo-select-highlight:hover {
+  border-color: #ef4444 !important;
+  background-color: rgba(30, 12, 18, 0.95) !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+}
+
+/* Independent Scroll Configuration for API Docs Tab */
+#tab-api-docs {
+  height: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  display: none;
+}
+
+#tab-api-docs.active {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.full-page-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+#tab-api-docs .controls-scroll-area {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: calc(100% - 44px) !important;
+  padding: 24px;
+}
+
+/* Responsive visibility for Live Demo dropdowns */
+@media (max-width: 900px) {
+  .header-demo-selector-container {
+    display: none !important;
+  }
+  #active-live-demo-panel {
+    display: block !important;
+  }
+}
+
+@media (min-width: 901px) {
+  .header-demo-selector-container {
+    display: flex !important;
+  }
+  #active-live-demo-panel {
+    display: none !important;
+  }
+}
+
 
 
 

@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>C++ Filament 3D Engine Studio</title>
-    <meta name="description" content="High-performance C++ & WebAssembly 3D engine sandbox with custom physics, first-person shooter shooter, dynamic sliding puzzle, and 3D Plinko cascade engine." />
+    <title>KIller</title>
+    <meta name="description" content="High-performance C++ & WebAssembly 3D engine sandbox with custom physics, first-person shooter arena, dynamic sliding puzzle, 3D Plinko, and 3D real-physics Roulette wheel." />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,13 +15,28 @@
       <!-- Top Navigation / Header -->
       <header class="app-header">
         <div class="header-left">
-          <div class="logo-badge">
-            <span class="logo-symbol">FILAMENT / C++</span>
+          <div class="logo-badge" style="background: linear-gradient(135deg, #ef4444, #b91c1c); border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); color: #ffffff;">
+            <span class="logo-symbol">KIller</span>
           </div>
-          <div class="header-title-group">
-            <h1 class="header-title">Native C/C++ Engine</h1>
-            <p class="header-sub">Filament PBR Pipeline &amp; Graphics Architecture</p>
-          </div>
+        </div>
+        
+        <!-- High-Visibility Live Demo Header Dropdown with Crimson/Red Theme -->
+        <div class="header-demo-selector-container">
+          <span class="header-demo-label">⚡ POPUP ACTIVE LIVE DEMO</span>
+          <select id="viewport-demo-scene-select" class="header-demo-select">
+            <option value="01_pbr_material_preview.cpp">Demo 01: PBR Material Preview</option>
+            <option value="02_metallic_roughness_matrix.cpp">Demo 02: Metallic Roughness Matrix</option>
+            <option value="03_trefoil_studio.cpp">Demo 03: Trefoil Studio Lighting</option>
+            <option value="04_wasm_webgl_wrapper.cpp">Demo 04: WASM WebGL Wrapper</option>
+            <option value="05_desktop_standalone_app.cpp">Demo 05: Desktop Standalone SDL2 App</option>
+            <option value="06_glb_character_collision_player.cpp">Demo 06: Player Controller &amp; Character</option>
+            <option value="07_fps_shooter_damage_system.cpp">Demo 07: First-Person Shooter Arena</option>
+            <option value="08_all_materials_presentation.cpp">Demo 08: Material Showroom Gallery</option>
+            <option value="09_slot_machine.cpp">Demo 09: 3D Casino Slot Machine</option>
+            <option value="10_sliding_puzzle.cpp">Demo 10: Dynamic 3D Sliding Puzzle</option>
+            <option value="11_plinko.cpp">Demo 11: 3D Plinko Cascade Board</option>
+            <option value="12_roulette.cpp" selected>Demo 12: 3D Physics Roulette Wheel</option>
+          </select>
         </div>
         <div class="header-right">
           <div class="status-pill" id="engine-status-pill">
@@ -554,22 +569,6 @@
                           </div>
                         </div>
 
-                        <div class="fps-map-card" data-map="dm6">
-                          <div class="map-card-thumb map-dm6"></div>
-                          <div class="map-card-info">
-                            <span class="map-name">The Dark Majesty (dm6)</span>
-                            <span class="map-desc">Gothic pillars, teleporters, quad damage powerup chamber &amp; lifts.</span>
-                          </div>
-                        </div>
-
-                        <div class="fps-map-card" data-map="dm4">
-                          <div class="map-card-thumb map-dm4"></div>
-                          <div class="map-card-info">
-                            <span class="map-name">The Bad Place (dm4)</span>
-                            <span class="map-desc">Tight corridors, lava pools, rocket arena &amp; health powerups.</span>
-                          </div>
-                        </div>
-
                         <div class="fps-map-card" data-map="ztn">
                           <div class="map-card-thumb map-ztn"></div>
                           <div class="map-card-info">
@@ -973,6 +972,34 @@
             <div class="controls-grid">
               <!-- Column 1: Demo & Camera -->
               <div class="controls-col">
+                <!-- Active Live Demo Scene (In FIRST PLACE for mobile & desktop) -->
+                <div class="panel-section active-demo-panel-primary" id="active-live-demo-panel">
+                  <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <h3 class="section-title" style="margin: 0; color: #f87171; display: flex; align-items: center; gap: 6px;">
+                      <span>⚡</span>
+                      <span>Active Live Demo Dropdown</span>
+                    </h3>
+                    <span class="active-demo-pill-badge" style="background: rgba(239, 68, 68, 0.25); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; font-family: monospace;">HOT SWAP</span>
+                  </div>
+                  <div class="select-group">
+                    <label for="demo-scene-select" class="hud-label" style="color: #fca5a5; font-weight: 600;">Active Live Demo Dropdown:</label>
+                    <select id="demo-scene-select" class="input-select active-demo-select-highlight">
+                      <option value="01_pbr_material_preview.cpp">Demo 01: PBR Material Preview (01_pbr_material_preview.cpp)</option>
+                      <option value="02_metallic_roughness_matrix.cpp">Demo 02: Metallic Roughness Matrix (02_metallic_roughness_matrix.cpp)</option>
+                      <option value="03_trefoil_studio.cpp">Demo 03: Trefoil Studio Lighting (03_trefoil_studio.cpp)</option>
+                      <option value="04_wasm_webgl_wrapper.cpp">Demo 04: WASM WebGL Wrapper (04_wasm_webgl_wrapper.cpp)</option>
+                      <option value="05_desktop_standalone_app.cpp">Demo 05: Desktop Standalone SDL2 App (05_desktop_standalone_app.cpp)</option>
+                      <option value="06_glb_character_collision_player.cpp">Demo 06: GLB Character, Collision &amp; Player Controller (06_glb_character_collision_player.cpp)</option>
+                      <option value="07_fps_shooter_damage_system.cpp">Demo 07: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
+                      <option value="08_all_materials_presentation.cpp">Demo 08: All Materials Presentation Showcase (08_all_materials_presentation.cpp)</option>
+                      <option value="09_slot_machine.cpp">Demo 09: 3D Casino Slot Machine &amp; Particles (09_slot_machine.cpp)</option>
+                      <option value="10_sliding_puzzle.cpp">Demo 10: Dynamic Sliding 3D Puzzle (10_sliding_puzzle.cpp)</option>
+                      <option value="11_plinko.cpp">Demo 11: 3D Plinko Cascade Showcase (11_plinko.cpp)</option>
+                      <option value="12_roulette.cpp" selected>Demo 12: 3D Physics-Engine Roulette Wheel (12_roulette.cpp)</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div class="panel-section" id="network-config-panel">
                   <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <h3 class="section-title" style="margin: 0;">🌐 Network Transport &amp; Media Server</h3>
@@ -1029,27 +1056,6 @@
                       <span style="color: #94a3b8;">Main Config File:</span>
                       <span style="color: #f59e0b;">/network.config.js</span>
                     </div>
-                  </div>
-                </div>
-
-                <div class="panel-section">
-                  <h3 class="section-title">Active Live Demo Scene</h3>
-                  <div class="select-group">
-                    <label for="demo-scene-select" class="hud-label">Select Demo:</label>
-                    <select id="demo-scene-select" class="input-select">
-                      <option value="01_pbr_material_preview.cpp">Demo 01: PBR Material Preview (01_pbr_material_preview.cpp)</option>
-                      <option value="02_metallic_roughness_matrix.cpp">Demo 02: Metallic Roughness Matrix (02_metallic_roughness_matrix.cpp)</option>
-                      <option value="03_trefoil_studio.cpp">Demo 03: Trefoil Studio Lighting (03_trefoil_studio.cpp)</option>
-                      <option value="04_wasm_webgl_wrapper.cpp">Demo 04: WASM WebGL Wrapper (04_wasm_webgl_wrapper.cpp)</option>
-                      <option value="05_desktop_standalone_app.cpp">Demo 05: Desktop Standalone SDL2 App (05_desktop_standalone_app.cpp)</option>
-                      <option value="06_glb_character_collision_player.cpp">Demo 06: GLB Character, Collision &amp; Player Controller (06_glb_character_collision_player.cpp)</option>
-                      <option value="07_fps_shooter_damage_system.cpp" selected>Demo 07: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
-                      <option value="08_all_materials_presentation.cpp">Demo 08: All Materials Presentation Showcase (08_all_materials_presentation.cpp)</option>
-                      <option value="09_slot_machine.cpp">Demo 09: 3D Casino Slot Machine &amp; Particles (09_slot_machine.cpp)</option>
-                      <option value="10_sliding_puzzle.cpp">Demo 10: Dynamic Sliding 3D Puzzle (10_sliding_puzzle.cpp)</option>
-                      <option value="11_plinko.cpp">Demo 11: 3D Plinko Cascade Showcase (11_plinko.cpp)</option>
-                      <option value="12_roulette.cpp">Demo 12: 3D Physics-Engine Roulette Wheel (12_roulette.cpp)</option>
-                    </select>
                   </div>
                 </div>
 
@@ -1203,17 +1209,6 @@
                 <div class="panel-section">
                   <h3 class="section-title">Google Filament Engine Architecture</h3>
                   
-                  <div class="arch-card">
-                    <span class="arch-badge">PHYSICS ENGINE</span>
-                    <h4 class="arch-header">Does Google Filament have physics?</h4>
-                    <p class="arch-text">
-                      <strong>No.</strong> Filament is strictly a real-time physically based rendering (PBR) engine designed for Android, iOS, Windows, Linux, macOS, and WebAssembly. It deliberately excludes physics to remain hyper-lean and embeddable.
-                    </p>
-                    <p class="arch-text">
-                      To add physics to a Filament-based engine, games pair it with <strong>Bullet Physics</strong>, <strong>Jolt Physics</strong>, <strong>PhysX</strong>, or <strong>Rapier (Wasm)</strong>.
-                    </p>
-                  </div>
-
                   <div class="arch-card">
                     <span class="arch-badge">NETWORKING</span>
                     <h4 class="arch-header">Does Google Filament have networking?</h4>
@@ -1534,35 +1529,16 @@
                 <div class="panel-section">
                   <div class="section-header-row">
                     <div>
-                      <h3 class="section-title">Quake Arena Maps (4 Classic Layouts)</h3>
+                      <h3 class="section-title">Quake Arena Maps (Classic Layouts)</h3>
                       <p class="section-desc">Select an arena layout to dynamically rebuild geometry, physics colliders, player spawn points, and elemental item pedestals.</p>
                     </div>
-                    <span class="status-pill"><span class="status-dot"></span><span id="active-map-badge">Active: The Dark Zone (DM6)</span></span>
+                    <span class="status-pill"><span class="status-dot"></span><span id="active-map-badge">Active: The Longest Yard (Q3DM17)</span></span>
                   </div>
 
-                  <!-- 4 Quake Map Cards Grid -->
+                  <!-- Quake Map Cards Grid -->
                   <div class="quake-maps-grid">
-                    <!-- Map 1: The Dark Zone -->
-                    <div class="quake-map-card active" data-map-id="dm6" id="map-card-dm6">
-                      <div class="map-card-banner banner-dm6">
-                        <span class="map-tag">DM6 ARENA</span>
-                        <span class="map-spawns-count">4 Spawns &bull; 6 Items</span>
-                      </div>
-                      <div class="map-card-content">
-                        <h4 class="map-title">The Dark Zone (DM6 / Arena Spire)</h4>
-                        <p class="map-desc">Gothic arena featuring multi-tiered stone pillars, high perimeter catwalks, sunken center quad pedestal, and vertical jump pads.</p>
-                        <div class="map-features-list">
-                          <span class="feat-pill">MegaHealth (+100 HP)</span>
-                          <span class="feat-pill">Red Battle Armor</span>
-                          <span class="feat-pill">Quad Damage (4x)</span>
-                          <span class="feat-pill">Jump Pads</span>
-                        </div>
-                        <button class="btn-action btn-load-map" data-map-id="dm6">⚔️ Load DM6 Arena</button>
-                      </div>
-                    </div>
-
-                    <!-- Map 2: The Longest Yard -->
-                    <div class="quake-map-card" data-map-id="q3dm17" id="map-card-q3dm17">
+                    <!-- Map 1: The Longest Yard -->
+                    <div class="quake-map-card active" data-map-id="q3dm17" id="map-card-q3dm17">
                       <div class="map-card-banner banner-q3dm17">
                         <span class="map-tag">Q3DM17 VOID</span>
                         <span class="map-spawns-count">4 Spawns &bull; 6 Items</span>
@@ -1580,26 +1556,7 @@
                       </div>
                     </div>
 
-                    <!-- Map 3: The Bad Place -->
-                    <div class="quake-map-card" data-map-id="dm4" id="map-card-dm4">
-                      <div class="map-card-banner banner-dm4">
-                        <span class="map-tag">DM4 LAVA</span>
-                        <span class="map-spawns-count">4 Spawns &bull; 6 Items</span>
-                      </div>
-                      <div class="map-card-content">
-                        <h4 class="map-title">The Bad Place (DM4 / Lava Spire)</h4>
-                        <p class="map-desc">Claustrophobic multi-level vertical arena with bubbling lava well, stone crypt arches, upper spiral bridges, and rapid combat corridors.</p>
-                        <div class="map-features-list">
-                          <span class="feat-pill">MegaHealth Bridge</span>
-                          <span class="feat-pill">Lava Pit Center</span>
-                          <span class="feat-pill">Haste Speed Rune</span>
-                          <span class="feat-pill">Rocket Shells</span>
-                        </div>
-                        <button class="btn-action btn-load-map" data-map-id="dm4">⚔️ Load DM4 Arena</button>
-                      </div>
-                    </div>
-
-                    <!-- Map 4: Blood Run -->
+                    <!-- Map 2: Blood Run -->
                     <div class="quake-map-card" data-map-id="ztn" id="map-card-ztn">
                       <div class="map-card-banner banner-ztn">
                         <span class="map-tag">ZTN TECH</span>
