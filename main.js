@@ -6066,7 +6066,7 @@ void main() {
         }
         e.preventDefault();
 
-        // ✌️ Classic Two-Finger Pinch-to-Zoom Gesture for 3D Scene / Plinko Table
+        // ✌️ Classic Two-Finger Pinch-to-Zoom Gesture / 2-Finger Camera Translation
         if (e.touches.length >= 2) {
           const t0 = e.touches[0];
           const t1 = e.touches[1];
@@ -6074,6 +6074,8 @@ void main() {
           this.pinchZoomState.active = true;
           this.pinchZoomState.startDist = dist;
           this.pinchZoomState.lastDist = dist;
+          this.pinchZoomState.lastCenterX = (t0.clientX + t1.clientX) / 2;
+          this.pinchZoomState.lastCenterY = (t0.clientY + t1.clientY) / 2;
           // Temporarily pause single-finger look to prevent jumpy camera yaw/pitch
           this.touchLookState.active = false;
           return;
@@ -6084,8 +6086,10 @@ void main() {
           const touch = e.touches[0];
           const now = Date.now();
           if (now - this.pinchZoomState.lastTapTime < 320) {
-            // Quick double tap resets camera on 3D table / orbit mode
-            if (this.state.demoScene.includes('11_plinko') || this.state.cameraMode === 0) {
+            // Quick double tap resets camera on 3D table / orbit mode (excluding roulette)
+            const ds = this.state.demoScene || '';
+            const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
+            if (!isRoulette && (this.state.demoScene.includes('11_plinko') || this.state.cameraMode === 0)) {
               const isMobile = this.isMobileDevice();
               this.state.camRadius = isMobile ? 5.2 : 4.6;
               this.state.camPitch = isMobile ? 0.08 : 0.1;
@@ -6117,20 +6121,42 @@ void main() {
         }
         e.preventDefault();
 
-        // ✌️ Handle Two-Finger Pinch-To-Zoom Gesture
+        // ✌️ Handle Two-Finger Pinch-To-Zoom / 2-Finger Translation Gestures
         if (e.touches.length >= 2) {
           const t0 = e.touches[0];
           const t1 = e.touches[1];
           const currentDist = getTouchDist(t0, t1);
+          const currentCenterX = (t0.clientX + t1.clientX) / 2;
+          const currentCenterY = (t0.clientY + t1.clientY) / 2;
 
           if (!this.pinchZoomState.active) {
             this.pinchZoomState.active = true;
             this.pinchZoomState.startDist = currentDist;
             this.pinchZoomState.lastDist = currentDist;
+            this.pinchZoomState.lastCenterX = currentCenterX;
+            this.pinchZoomState.lastCenterY = currentCenterY;
           }
 
           const deltaDist = currentDist - this.pinchZoomState.lastDist;
           this.pinchZoomState.lastDist = currentDist;
+
+          // Two-Finger swipe translation (left-right panning) for Roulette
+          const ds = this.state.demoScene || '';
+          const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
+
+          if (isRoulette) {
+            if (this.pinchZoomState.lastCenterX !== undefined && this.pinchZoomState.lastCenterY !== undefined) {
+              const dx = currentCenterX - this.pinchZoomState.lastCenterX;
+              const dy = currentCenterY - this.pinchZoomState.lastCenterY;
+
+              const panSens = 0.003 * this.state.camRadius;
+              this.state.camTarget[0] -= dx * panSens;
+              this.state.camTarget[2] -= dy * panSens;
+            }
+          }
+
+          this.pinchZoomState.lastCenterX = currentCenterX;
+          this.pinchZoomState.lastCenterY = currentCenterY;
 
           if (Math.abs(deltaDist) > 0.05) {
             // In 3D Plinko table / Orbit Camera mode:
@@ -10113,6 +10139,7 @@ else if (typeof define === 'function' && define['amd'])
     }
     if (this.plinkoState) {
       this.plinkoState.autoHiddenOnMobile = false;
+      this.plinkoState.userOpenedOnMobile = true;
       if (this.plinkoState.restoreTimeout) {
         clearTimeout(this.plinkoState.restoreTimeout);
         this.plinkoState.restoreTimeout = null;
@@ -10141,6 +10168,7 @@ else if (typeof define === 'function' && define['amd'])
     const btnClose = document.getElementById('btn-plinko-close');
     if (btnClose) {
       btnClose.addEventListener('click', () => {
+        if (ps) ps.userOpenedOnMobile = false;
         this.hidePlinkoMobileUI();
       });
     }
@@ -10155,6 +10183,7 @@ else if (typeof define === 'function' && define['amd'])
     const btnDrop = document.getElementById('btn-plinko-drop');
     if (btnDrop) {
       btnDrop.addEventListener('click', () => {
+        if (ps) ps.userOpenedOnMobile = false;
         this.dropPlinkoBall();
       });
     }
@@ -10168,6 +10197,7 @@ else if (typeof define === 'function' && define['amd'])
         btnAuto.style.borderColor = ps.autoDrop ? '#10b981' : 'rgba(255, 255, 255, 0.1)';
         btnAuto.style.color = ps.autoDrop ? '#34d399' : '#94a3b8';
         if (ps.autoDrop && this.isMobileDevice()) {
+          ps.userOpenedOnMobile = false;
           this.hidePlinkoMobileUI();
         } else if (!ps.autoDrop && ps.balls.length === 0 && this.isMobileDevice() && ps.autoHiddenOnMobile) {
           if (ps.restoreTimeout) clearTimeout(ps.restoreTimeout);
@@ -10327,8 +10357,8 @@ else if (typeof define === 'function' && define['amd'])
     ps.totalDropped++;
     this.updatePlinkoUI();
 
-    // On mobile devices, auto-hide UI popup when playing so board is unobstructed
-    if (this.isMobileDevice()) {
+    // On mobile devices, auto-hide UI popup when playing so board is unobstructed (unless user explicitly opened it)
+    if (this.isMobileDevice() && !ps.userOpenedOnMobile) {
       this.hidePlinkoMobileUI();
       if (ps.restoreTimeout) {
         clearTimeout(ps.restoreTimeout);
