@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>KIller</title>
-    <meta name="description" content="High-performance C++ & WebAssembly 3D engine sandbox with custom physics, first-person shooter arena, dynamic sliding puzzle, 3D Plinko, and 3D real-physics Roulette wheel." />
+    <meta name="description" content="High-performance C++ & WebAssembly 3D engine sandbox with custom physics, FPS arena, dynamic sliding puzzle, 3D Plinko, Roulette wheel, and 3D real-physics Bingo with diamond drum." />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -35,7 +35,8 @@
             <option value="09_slot_machine.cpp">Demo 09: 3D Casino Slot Machine</option>
             <option value="10_sliding_puzzle.cpp">Demo 10: Dynamic 3D Sliding Puzzle</option>
             <option value="11_plinko.cpp">Demo 11: 3D Plinko Cascade Board</option>
-            <option value="12_roulette.cpp" selected>Demo 12: 3D Physics Roulette Wheel</option>
+            <option value="12_roulette.cpp">Demo 12: 3D Physics Roulette Wheel</option>
+            <option value="13_bingo_physics.cpp" selected>Demo 13: 3D Physics Bingo &amp; Diamond Drum</option>
           </select>
         </div>
         <div class="header-right">
@@ -474,69 +475,209 @@
                 </div>
               </div>
 
-              <!-- Specific Number Bet -->
+              <!-- Specific Number / Street / Double Street Bet -->
               <div class="plinko-control-group" style="border-color: rgba(16, 185, 129, 0.15);">
-                <span class="plinko-group-label" style="color: #6ee7b7;">3. Or Bet on Specific Number (35:1)</span>
+                <span class="plinko-group-label" style="color: #6ee7b7;">3. Or Bet on Single Number, Street, or Double Street</span>
                 <div style="display: flex; gap: 8px; margin-top: 6px; align-items: center;">
                   <select id="roulette-specific-number" style="flex: 1; height: 32px; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 0 10px; color: #e2e8f0; font-size: 12px; cursor: pointer; outline: none;">
-                    <option value="none" selected>-- No Single Number Bet --</option>
-                    <option value="0">0 (Green)</option>
-                    <option value="1">1 (Red)</option>
-                    <option value="2">2 (Black)</option>
-                    <option value="3">3 (Red)</option>
-                    <option value="4">4 (Black)</option>
-                    <option value="5">5 (Red)</option>
-                    <option value="6">6 (Black)</option>
-                    <option value="7">7 (Red)</option>
-                    <option value="8">8 (Black)</option>
-                    <option value="9">9 (Red)</option>
-                    <option value="10">10 (Black)</option>
-                    <option value="11">11 (Black)</option>
-                    <option value="12">12 (Red)</option>
-                    <option value="13">13 (Black)</option>
-                    <option value="14">14 (Red)</option>
-                    <option value="15">15 (Black)</option>
-                    <option value="16">16 (Red)</option>
-                    <option value="17">17 (Black)</option>
-                    <option value="18">18 (Red)</option>
-                    <option value="19">19 (Red)</option>
-                    <option value="20">20 (Black)</option>
-                    <option value="21">21 (Red)</option>
-                    <option value="22">22 (Black)</option>
-                    <option value="23">23 (Red)</option>
-                    <option value="24">24 (Black)</option>
-                    <option value="25">25 (Red)</option>
-                    <option value="26">26 (Black)</option>
-                    <option value="27">27 (Red)</option>
-                    <option value="28">28 (Black)</option>
-                    <option value="29">29 (Black)</option>
-                    <option value="30">30 (Red)</option>
-                    <option value="31">31 (Black)</option>
-                    <option value="32">32 (Red)</option>
-                    <option value="33">33 (Black)</option>
-                    <option value="34">34 (Red)</option>
-                    <option value="35">35 (Black)</option>
-                    <option value="36">36 (Red)</option>
+                    <option value="none" selected>-- No Selected Bet Option --</option>
+                    <optgroup label="Single Numbers (35:1 Payout)">
+                      <option value="0">0 (Green)</option>
+                      <option value="1">1 (Red)</option>
+                      <option value="2">2 (Black)</option>
+                      <option value="3">3 (Red)</option>
+                      <option value="4">4 (Black)</option>
+                      <option value="5">5 (Red)</option>
+                      <option value="6">6 (Black)</option>
+                      <option value="7">7 (Red)</option>
+                      <option value="8">8 (Black)</option>
+                      <option value="9">9 (Red)</option>
+                      <option value="10">10 (Black)</option>
+                      <option value="11">11 (Black)</option>
+                      <option value="12">12 (Red)</option>
+                      <option value="13">13 (Black)</option>
+                      <option value="14">14 (Red)</option>
+                      <option value="15">15 (Black)</option>
+                      <option value="16">16 (Red)</option>
+                      <option value="17">17 (Black)</option>
+                      <option value="18">18 (Red)</option>
+                      <option value="19">19 (Red)</option>
+                      <option value="20">20 (Black)</option>
+                      <option value="21">21 (Red)</option>
+                      <option value="22">22 (Black)</option>
+                      <option value="23">23 (Red)</option>
+                      <option value="24">24 (Black)</option>
+                      <option value="25">25 (Red)</option>
+                      <option value="26">26 (Black)</option>
+                      <option value="27">27 (Red)</option>
+                      <option value="28">28 (Black)</option>
+                      <option value="29">29 (Black)</option>
+                      <option value="30">30 (Red)</option>
+                      <option value="31">31 (Black)</option>
+                      <option value="32">32 (Red)</option>
+                      <option value="33">33 (Black)</option>
+                      <option value="34">34 (Red)</option>
+                      <option value="35">35 (Black)</option>
+                      <option value="36">36 (Red)</option>
+                    </optgroup>
+                    <optgroup label="Streets (11:1 Payout)">
+                      <option value="street_1">Street 1-2-3</option>
+                      <option value="street_2">Street 4-5-6</option>
+                      <option value="street_3">Street 7-8-9</option>
+                      <option value="street_4">Street 10-11-12</option>
+                      <option value="street_5">Street 13-14-15</option>
+                      <option value="street_6">Street 16-17-18</option>
+                      <option value="street_7">Street 19-20-21</option>
+                      <option value="street_8">Street 22-23-24</option>
+                      <option value="street_9">Street 25-26-27</option>
+                      <option value="street_10">Street 28-29-30</option>
+                      <option value="street_11">Street 31-32-33</option>
+                      <option value="street_12">Street 34-35-36</option>
+                    </optgroup>
+                    <optgroup label="Double Streets / Six-Lines (5:1 Payout)">
+                      <option value="sixline_1">Six-Line 1-6</option>
+                      <option value="sixline_2">Six-Line 4-9</option>
+                      <option value="sixline_3">Six-Line 7-12</option>
+                      <option value="sixline_4">Six-Line 10-15</option>
+                      <option value="sixline_5">Six-Line 13-18</option>
+                      <option value="sixline_6">Six-Line 16-21</option>
+                      <option value="sixline_7">Six-Line 19-24</option>
+                      <option value="sixline_8">Six-Line 22-27</option>
+                      <option value="sixline_9">Six-Line 25-30</option>
+                      <option value="sixline_10">Six-Line 28-33</option>
+                      <option value="sixline_11">Six-Line 31-36</option>
+                    </optgroup>
                   </select>
                 </div>
               </div>
 
               <!-- Run Controls -->
               <div class="plinko-control-group" style="border: none; margin-bottom: 0; padding-bottom: 0;">
-                <span class="plinko-group-label" style="color: #6ee7b7;">4. Launch Roulette Ball</span>
-                <button id="btn-roulette-spin" class="plinko-primary-btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-color: #34d399; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">🎰 SPIN WHEEL &amp; BALL</button>
+                <span class="plinko-group-label" style="color: #6ee7b7;">4. Table Bet Actions &amp; Launch Ball</span>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+                  <button id="btn-roulette-clear-all" class="plinko-effect-btn" style="background: rgba(127, 29, 29, 0.4); border-color: #ef4444; color: #fca5a5; font-size: 11px; padding: 6px 2px; font-weight: 600;">✕ Clear All</button>
+                  <button id="btn-roulette-repeat" class="plinko-effect-btn" style="background: rgba(6, 95, 70, 0.4); border-color: #10b981; color: #6ee7b7; font-size: 11px; padding: 6px 2px; font-weight: 600;">⟳ Repeat</button>
+                  <button id="btn-roulette-clear-last" class="plinko-effect-btn" style="background: rgba(133, 77, 14, 0.4); border-color: #f59e0b; color: #fde68a; font-size: 11px; padding: 6px 2px; font-weight: 600;">↩ Clear Last</button>
+                </div>
+                <button id="btn-roulette-spin" class="plinko-primary-btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-color: #34d399; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">🎰 SPIN &amp; DROP BALL</button>
               </div>
             </div>
 
-            <!-- 🎰 Roulette Banner Info -->
-            <div id="roulette-banner" class="plinko-banner" style="display: none; background: rgba(6, 78, 59, 0.85); border-top: 1px solid #10b981;">
-              <span>🎰 <b>Demo 12 Active: 3D Real-Physics Roulette</b> &bull; Real 3D physical rolling solver &bull; Select a bet and SPIN!</span>
-              <span id="roulette-stats-summary" style="color: #fca5a5; font-weight: bold;">Bet: Red | Potential Payout: 2x</span>
+            <!-- 🎰 Roulette Top Gameplay HUD (Last 10 Results & Last Dropped Ball Number) -->
+            <div id="roulette-banner" class="roulette-banner-hud" style="display: none;">
+              <!-- 1. Last Dropped Ball Number -->
+              <div class="roulette-hud-item roulette-last-drop-box">
+                <span class="roulette-hud-label">LAST DROP</span>
+                <div id="roulette-last-drop-badge" class="roulette-ball-badge large none">--</div>
+              </div>
+
+              <!-- Sleek Separator -->
+              <div class="roulette-hud-sep"></div>
+
+              <!-- 2. Last 10 Results Strip -->
+              <div class="roulette-hud-item roulette-history-box">
+                <span class="roulette-hud-label">LAST 10</span>
+                <div id="roulette-last-10-strip" class="roulette-history-strip">
+                  <!-- Populated dynamically via updateRouletteUI() -->
+                </div>
+              </div>
+
+              <!-- Top Bar Bet Toggle Button -->
+              <button id="roulette-banner-toggle-bets-btn" class="roulette-banner-bets-btn" title="Toggle Roulette Bet UI" aria-label="Toggle Roulette Bet UI">
+                <span>⚙️ BETS</span>
+              </button>
             </div>
+
+            <!-- 🎰 Desktop Button to Show Roulette Bet UI -->
+            <button id="roulette-desktop-show-btn" class="roulette-desktop-fab" style="display: none;">
+              <span>🎰 SHOW BET UI</span>
+            </button>
 
             <!-- 🎰 Floating Mobile Button to Reopen Roulette Controls -->
             <button id="roulette-mobile-fab" class="plinko-mobile-fab" style="display: none; background: #059669; border: 1px solid #34d399; box-shadow: 0 4px 16px rgba(5, 150, 105, 0.4);">
               <span>⚙️ ROULETTE BETS</span>
+            </button>
+
+            <!-- 🎱 3D Real-Physics Bingo Panel (Demo 13) -->
+            <div id="bingo-overlay" class="bingo-overlay-panel" style="display: none;">
+              <div class="bingo-header">
+                <div class="bingo-header-row">
+                  <div class="bingo-title">🎱 3D DIAMOND DRUM BINGO</div>
+                  <button id="btn-bingo-close" class="plinko-header-btn" title="Minimize Panel" aria-label="Minimize Panel">✕</button>
+                </div>
+                <div class="bingo-subtitle">CONTINUOUS RIGID-BODY KINEMATICS &amp; CLASSIC 75-BALL RULES</div>
+              </div>
+
+              <!-- Live Drawn Ball Callout Row -->
+              <div class="bingo-callout-row">
+                <div id="bingo-drawn-ball" class="bingo-big-ball ball-cat-none">
+                  <span class="ball-letter" id="bingo-drawn-letter">--</span>
+                  <span class="ball-num" id="bingo-drawn-number">--</span>
+                </div>
+                <div class="bingo-callout-info">
+                  <div class="bingo-callout-label">CURRENT CALLED BALL</div>
+                  <div class="bingo-callout-text" id="bingo-drawn-text">Press Spin Drum to Draw!</div>
+                  <div class="bingo-history-strip" id="bingo-history-strip">
+                    <!-- Recent 5 drawn balls -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- Interactive 5x5 Player Bingo Card -->
+              <div class="bingo-card-container">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <span style="font-size: 11px; font-weight: bold; color: #38bdf8;">YOUR BINGO CARD</span>
+                  <span id="bingo-win-badge" class="bingo-win-badge">🎉 BINGO!</span>
+                </div>
+                <div class="bingo-card" id="bingo-card-grid">
+                  <!-- Generated dynamically in JS -->
+                </div>
+              </div>
+
+              <!-- Gameplay Controls & Buttons -->
+              <div class="plinko-control-group" style="padding: 10px 14px 14px; border-top: 1px solid rgba(56, 189, 248, 0.2);">
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                  <button id="btn-bingo-spin" class="plinko-primary-btn" style="flex: 1.4; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border-color: #38bdf8; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);">
+                    🎱 SPIN &amp; DRAW
+                  </button>
+                  <button id="btn-bingo-autodraw" class="plinko-secondary-btn" style="flex: 1;">
+                    ⚡ AUTO DRAW
+                  </button>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button id="btn-bingo-newcard" class="plinko-secondary-btn" style="flex: 1;">
+                    🃏 NEW CARD
+                  </button>
+                  <button id="btn-bingo-reset" class="plinko-secondary-btn" style="flex: 1;">
+                    🔄 NEW ROUND
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 🎱 Floating Viewport HUD (Top Center) -->
+            <div id="bingo-banner" class="bingo-banner-hud" style="display: none;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <div id="bingo-banner-ball" class="bingo-mini-ball ball-cat-none" style="width: 32px; height: 32px; font-size: 13px;">--</div>
+                <div style="display: flex; flex-direction: column;">
+                  <span style="font-size: 9px; color: #94a3b8; font-family: monospace;">LAST CALLED</span>
+                  <span id="bingo-banner-text" style="font-size: 13px; font-weight: bold; color: #ffffff;">Ready</span>
+                </div>
+              </div>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <span id="bingo-banner-win" class="bingo-win-badge">BINGO!</span>
+                <button id="bingo-banner-toggle-card-btn" class="roulette-banner-bets-btn" style="border-color: rgba(56, 189, 248, 0.4); color: #38bdf8;">
+                  <span>🃏 CARD</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 🎱 Desktop / Mobile Trigger Button -->
+            <button id="bingo-mobile-fab" class="plinko-mobile-fab" style="display: none; background: #0284c7; border: 1px solid #38bdf8; box-shadow: 0 4px 16px rgba(2, 132, 199, 0.4);">
+              <span>🃏 BINGO CARD</span>
+            </button>
+            <button id="bingo-desktop-show-btn" class="roulette-desktop-fab" style="display: none; border-color: rgba(56, 189, 248, 0.4); background: rgba(10, 18, 30, 0.85); color: #38bdf8;">
+              <span>🎱 SHOW BINGO</span>
             </button>
 
             <!-- FPS Startup Menu & Multiplayer Lobby Overlay (Demo 07) -->
@@ -995,8 +1136,70 @@
                       <option value="09_slot_machine.cpp">Demo 09: 3D Casino Slot Machine &amp; Particles (09_slot_machine.cpp)</option>
                       <option value="10_sliding_puzzle.cpp">Demo 10: Dynamic Sliding 3D Puzzle (10_sliding_puzzle.cpp)</option>
                       <option value="11_plinko.cpp">Demo 11: 3D Plinko Cascade Showcase (11_plinko.cpp)</option>
-                      <option value="12_roulette.cpp" selected>Demo 12: 3D Physics-Engine Roulette Wheel (12_roulette.cpp)</option>
+                      <option value="12_roulette.cpp">Demo 12: 3D Physics-Engine Roulette Wheel (12_roulette.cpp)</option>
+                      <option value="13_bingo_physics.cpp" selected>Demo 13: 3D Real-Physics Bingo &amp; Diamond Drum (13_bingo_physics.cpp)</option>
                     </select>
+                  </div>
+                </div>
+
+                <!-- 🎱 Demo 13: Dedicated Controls & Demos Tab Section -->
+                <div class="panel-section" id="bingo-controls-panel" style="display: none; border: 1px solid rgba(56, 189, 248, 0.3); background: rgba(10, 18, 30, 0.65);">
+                  <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 class="section-title" style="margin: 0; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+                      <span>🎱</span>
+                      <span>Demo 13: 3D Real-Physics Bingo Game</span>
+                    </h3>
+                    <span style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; font-family: monospace;">DIAMOND DRUM</span>
+                  </div>
+
+                  <!-- Quick Action Buttons -->
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                    <button id="tab-btn-bingo-spin" class="btn-sm font-mono" style="background: #0284c7; border: 1px solid #38bdf8; color: #fff; font-weight: bold; padding: 8px 10px; border-radius: 6px; cursor: pointer;">
+                      🎱 Spin Drum &amp; Draw Ball
+                    </button>
+                    <button id="tab-btn-bingo-autodraw" class="btn-sm font-mono" style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.4); color: #e2e8f0; padding: 8px 10px; border-radius: 6px; cursor: pointer;">
+                      ⚡ Auto Draw: OFF
+                    </button>
+                  </div>
+
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px;">
+                    <button id="tab-btn-bingo-newcard" class="btn-sm font-mono" style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255, 255, 255, 0.15); color: #e2e8f0; padding: 7px 10px; border-radius: 6px; cursor: pointer;">
+                      🃏 Generate New Card
+                    </button>
+                    <button id="tab-btn-bingo-reset" class="btn-sm font-mono" style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255, 255, 255, 0.15); color: #e2e8f0; padding: 7px 10px; border-radius: 6px; cursor: pointer;">
+                      🔄 Reset Round
+                    </button>
+                  </div>
+
+                  <!-- Tuning Sliders -->
+                  <div class="slider-group" style="margin-bottom: 10px;">
+                    <div class="slider-header" style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                      <span class="hud-label" style="color: #94a3b8;">Diamond Drum Spin Velocity:</span>
+                      <span id="tab-bingo-speed-val" class="hud-value" style="color: #38bdf8; font-family: monospace;">2.8 rad/s</span>
+                    </div>
+                    <input type="range" id="tab-bingo-speed-slider" min="0.5" max="6.0" step="0.1" value="2.8" style="width: 100%; accent-color: #0284c7;" />
+                  </div>
+
+                  <div class="checkbox-group" style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px;">
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: #cbd5e1;">
+                      <input type="checkbox" id="tab-chk-bingo-autodaub" checked />
+                      <span>Auto-Daub Player Card when ball is drawn</span>
+                    </label>
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: #cbd5e1;">
+                      <input type="checkbox" id="tab-chk-bingo-audio" checked />
+                      <span>Satisfying Drum Clatter &amp; Ball Sound Synthesis</span>
+                    </label>
+                  </div>
+
+                  <!-- Master Board 75 Numbers View -->
+                  <div style="margin-top: 10px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 8px; padding: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                      <span style="font-size: 11px; font-weight: bold; color: #38bdf8;">MASTER BOARD (75 NUMBERS)</span>
+                      <span id="tab-bingo-drawn-count" style="font-size: 11px; font-family: monospace; color: #94a3b8;">Drawn: 0 / 75</span>
+                    </div>
+                    <div id="tab-bingo-master-board">
+                      <!-- Rendered dynamically (B, I, N, G, O rows) -->
+                    </div>
                   </div>
                 </div>
 
@@ -1246,6 +1449,10 @@
                   <option value="examples/07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
                   <option value="examples/08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 08: All Materials Presentation Showcase)</option>
                   <option value="examples/09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 09: 3D Casino Slot Machine &amp; Particles)</option>
+                  <option value="examples/10_sliding_puzzle.cpp">examples/10_sliding_puzzle.cpp (Demo 10: Dynamic Sliding 3D Puzzle)</option>
+                  <option value="examples/11_plinko.cpp">examples/11_plinko.cpp (Demo 11: 3D Plinko Cascade Showcase)</option>
+                  <option value="examples/12_roulette.cpp">examples/12_roulette.cpp (Demo 12: 3D Physics-Engine Roulette Wheel)</option>
+                  <option value="examples/13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 13: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
                   <option value="src/core/Engine.cpp">src/core/Engine.cpp (Engine Core C++)</option>
                   <option value="src/core/Renderer.cpp">src/core/Renderer.cpp (Filament GLES3 Pipeline C++)</option>
                   <option value="src/core/Bindings.cpp">src/core/Bindings.cpp (Emscripten Embind Bindings C++)</option>
@@ -1310,6 +1517,10 @@
                 <option value="07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
                 <option value="08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 08: All Materials Presentation Showcase)</option>
                 <option value="09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 09: 3D Casino Slot Machine &amp; Particles)</option>
+                <option value="10_sliding_puzzle.cpp">examples/10_sliding_puzzle.cpp (Demo 10: Dynamic Sliding 3D Puzzle)</option>
+                <option value="11_plinko.cpp">examples/11_plinko.cpp (Demo 11: 3D Plinko Cascade Showcase)</option>
+                <option value="12_roulette.cpp">examples/12_roulette.cpp (Demo 12: 3D Physics-Engine Roulette Wheel)</option>
+                <option value="13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 13: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
               </select>
               <button id="btn-copy-example" class="btn-xs">Copy Example</button>
             </div>

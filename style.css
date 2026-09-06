@@ -4865,6 +4865,186 @@ body.app-body {
   transform: scale(0.95);
 }
 
+/* 🎰 Top Gameplay HUD for Roulette (Last 10 Results & Last Dropped Ball Number) */
+.roulette-banner-hud {
+  position: absolute;
+  top: 16px;
+  left: 372px;
+  right: 16px;
+  background: rgba(8, 20, 15, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 8px;
+  padding: 6px 14px;
+  color: #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  z-index: 140;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.65), 0 0 12px rgba(16, 185, 129, 0.15);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  transition: left 0.25s ease;
+}
+
+.roulette-banner-hud.panel-closed {
+  left: 196px;
+}
+
+.roulette-hud-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.roulette-hud-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #6ee7b7;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.roulette-ball-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  transition: all 0.25s ease;
+}
+
+.roulette-ball-badge.large {
+  min-width: 38px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 15px;
+  border-radius: 6px;
+}
+
+.roulette-ball-badge.small {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.roulette-ball-badge.red {
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  color: #ffffff;
+  border: 1px solid #f87171;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+}
+
+.roulette-ball-badge.black {
+  background: linear-gradient(135deg, #334155 0%, #0f172a 100%);
+  color: #f1f5f9;
+  border: 1px solid #64748b;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.roulette-ball-badge.green {
+  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+  color: #ffffff;
+  border: 1px solid #34d399;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+}
+
+.roulette-ball-badge.none {
+  background: rgba(255, 255, 255, 0.06);
+  color: #64748b;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+.roulette-hud-sep {
+  width: 1px;
+  height: 24px;
+  background: rgba(16, 185, 129, 0.25);
+  flex-shrink: 0;
+}
+
+.roulette-history-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.roulette-history-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.roulette-banner-bets-btn {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  font-weight: bold;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.roulette-banner-bets-btn:hover {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: #10b981;
+  color: #a7f3d0;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+}
+
+/* 🎰 Desktop Show Bet UI Button */
+.roulette-desktop-fab {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(8, 20, 15, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1.5px solid #10b981;
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: #34d399;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.75), 0 0 15px rgba(16, 185, 129, 0.3);
+  cursor: pointer;
+  z-index: 155;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.roulette-desktop-fab:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #34d399;
+  color: #a7f3d0;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.8), 0 0 20px rgba(16, 185, 129, 0.5);
+  transform: translateY(-2px);
+}
+
+.roulette-desktop-fab:active {
+  transform: translateY(0);
+}
+
 /* 📱 Responsive Mobile Full-Screen Dialog Overlay */
 @media (max-width: 768px) {
   .plinko-overlay-panel {
@@ -5004,6 +5184,47 @@ body.app-body {
   .plinko-mobile-fab:active {
     transform: translateX(-50%) scale(0.95);
   }
+
+  .roulette-banner-hud {
+    left: 8px !important;
+    right: 8px !important;
+    top: 8px !important;
+    padding: 6px 8px;
+    gap: 6px;
+    border-radius: 6px;
+    justify-content: space-between;
+  }
+
+  .roulette-ball-badge.large {
+    min-width: 32px;
+    height: 26px;
+    font-size: 13px;
+    padding: 0 4px;
+  }
+
+  .roulette-ball-badge.small {
+    width: 22px;
+    height: 22px;
+    font-size: 10px;
+  }
+
+  .roulette-hud-label {
+    font-size: 8px;
+  }
+
+  .roulette-history-strip {
+    gap: 3px;
+    max-width: 175px;
+  }
+
+  .roulette-banner-bets-btn {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+
+  .roulette-desktop-fab {
+    display: none !important;
+  }
 }
 
 /* High-Visibility Header Embedded Active Demo Selector with Crimson/Red accents */
@@ -5133,6 +5354,379 @@ body.app-body {
     display: none !important;
   }
 }
+
+/* 🎱 Demo 13: 3D Real-Physics Bingo & Diamond Drum Styles */
+.bingo-overlay-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 360px;
+  max-height: calc(100% - 32px);
+  background: rgba(10, 18, 30, 0.94);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75), 0 0 24px rgba(56, 189, 248, 0.2);
+  border-radius: 12px;
+  backdrop-filter: blur(14px);
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  color: #f1f5f9;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.4) transparent;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+  pointer-events: auto;
+}
+
+.bingo-overlay-panel.minimized,
+.bingo-overlay-panel.mobile-minimized {
+  transform: translateX(120%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bingo-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.25);
+  background: linear-gradient(180deg, rgba(14, 165, 233, 0.15) 0%, transparent 100%);
+}
+
+.bingo-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.bingo-header .plinko-header-btn {
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #93c5fd;
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.6);
+  transition: all 0.2s;
+  pointer-events: auto;
+}
+
+.bingo-header .plinko-header-btn:hover {
+  border-color: #38bdf8;
+  color: #ffffff;
+  background: rgba(56, 189, 248, 0.25);
+  transform: scale(1.05);
+}
+
+.bingo-title {
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.05em;
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bingo-subtitle {
+  font-size: 10px;
+  font-family: monospace;
+  color: #93c5fd;
+  margin-top: 2px;
+  letter-spacing: 0.04em;
+}
+
+/* Callout Bar */
+.bingo-callout-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 10px 14px 4px;
+}
+
+.bingo-big-ball {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-weight: 900;
+  font-family: monospace;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.4);
+  flex-shrink: 0;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.bingo-big-ball .ball-letter {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+.bingo-big-ball .ball-num {
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+/* Ball category theme colors */
+.ball-cat-B { background: radial-gradient(circle at 35% 30%, #38bdf8, #0284c7 70%, #0369a1); color: #ffffff; }
+.ball-cat-I { background: radial-gradient(circle at 35% 30%, #f87171, #dc2626 70%, #991b1b); color: #ffffff; }
+.ball-cat-N { background: radial-gradient(circle at 35% 30%, #ffffff, #e2e8f0 70%, #94a3b8); color: #0f172a; text-shadow: none; }
+.ball-cat-G { background: radial-gradient(circle at 35% 30%, #4ade80, #16a34a 70%, #166534); color: #ffffff; }
+.ball-cat-O { background: radial-gradient(circle at 35% 30%, #fb923c, #ea580c 70%, #9a3412); color: #ffffff; }
+.ball-cat-none { background: #334155; color: #64748b; }
+
+.bingo-callout-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bingo-callout-label {
+  font-size: 10px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bingo-callout-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.bingo-history-strip {
+  display: flex;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.bingo-mini-ball {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: bold;
+  font-family: monospace;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* 5x5 Classic Bingo Card */
+.bingo-card-container {
+  padding: 10px 14px;
+}
+
+.bingo-card {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.bingo-col-header {
+  font-weight: 900;
+  font-size: 14px;
+  font-family: monospace;
+  text-align: center;
+  padding: 4px 0;
+  border-radius: 4px;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.bingo-cell {
+  aspect-ratio: 1;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  font-family: monospace;
+  color: #cbd5e1;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.bingo-cell:hover:not(.daubed) {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #ffffff;
+  transform: scale(1.04);
+}
+
+.bingo-cell.free-cell {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: #f59e0b;
+  color: #fbbf24;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.bingo-cell.daubed {
+  background: rgba(14, 165, 233, 0.35);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.bingo-cell.daubed::after {
+  content: '';
+  position: absolute;
+  width: 76%;
+  height: 76%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.85) 0%, rgba(220, 38, 38, 0.7) 65%, transparent 100%);
+  z-index: 1;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+  animation: daubStamp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.bingo-cell.winning {
+  border-color: #fbbf24 !important;
+  background: rgba(251, 191, 36, 0.35) !important;
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.6);
+  animation: winPulse 1.2s infinite alternate;
+}
+
+@keyframes daubStamp {
+  0% { transform: scale(1.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes winPulse {
+  0% { box-shadow: 0 0 6px rgba(251, 191, 36, 0.4); }
+  100% { box-shadow: 0 0 16px rgba(251, 191, 36, 0.9); }
+}
+
+/* Master Board 75 Numbers in Tab */
+.bingo-master-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.bingo-master-tag {
+  width: 24px;
+  font-weight: 900;
+  font-size: 12px;
+  font-family: monospace;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 4px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.bingo-master-grid {
+  display: grid;
+  grid-template-columns: repeat(15, 1fr);
+  gap: 3px;
+  flex: 1;
+}
+
+.bingo-master-num {
+  font-size: 10px;
+  font-family: monospace;
+  text-align: center;
+  padding: 3px 0;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  color: #64748b;
+  transition: all 0.2s ease;
+}
+
+.bingo-master-num.active {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+  font-weight: bold;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+}
+
+/* Floating HUD banner */
+.bingo-banner-hud {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(10, 18, 30, 0.92);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  border-radius: 10px;
+  padding: 8px 14px;
+  z-index: 140;
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.bingo-win-badge {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #0f172a;
+  font-weight: 900;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+  display: none;
+  animation: winPulse 1s infinite alternate;
+}
+
+/* Mobile responsive for Bingo overlay */
+@media (max-width: 768px) {
+  .bingo-overlay-panel {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    border: none;
+    z-index: 1000;
+  }
+  .bingo-overlay-panel.minimized {
+    transform: translateY(100%);
+  }
+  .bingo-banner-hud {
+    left: 8px;
+    right: 8px;
+    transform: none;
+    top: 8px;
+    padding: 6px 10px;
+    gap: 8px;
+    justify-content: space-between;
+  }
+}
+
 
 
 

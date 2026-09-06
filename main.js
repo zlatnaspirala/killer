@@ -1564,6 +1564,162 @@ namespace RoulettePhysics {
 }
 `,
 
+  '13_bingo_physics.cpp': `// examples/13_bingo_physics.cpp
+// Filament / Native C++ Demo 13: 3D Real-Physics Bingo Game
+// Features an authoritative diamond-shaped tumbling drum, continuous rigid-body 
+// ball kinematics, diamond cage collision planes, dynamic baffles, ball extraction chute,
+// and complete classic 75-ball Bingo (B-I-N-G-O) game rules.
+
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <random>
+#include <algorithm>
+#include <string>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+namespace BingoPhysics {
+
+    enum class BallCategory {
+        B = 0, // 1 - 15
+        I = 1, // 16 - 30
+        N = 2, // 31 - 45
+        G = 3, // 46 - 60
+        O = 4  // 61 - 75
+    };
+
+    struct Vector3 {
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        Vector3() = default;
+        Vector3(float _x, float _y, float _z) : x(_x), y(_y), z(_z) {}
+        Vector3 operator+(const Vector3& o) const { return Vector3(x + o.x, y + o.y, z + o.z); }
+        Vector3 operator-(const Vector3& o) const { return Vector3(x - o.x, y - o.y, z - o.z); }
+        Vector3 operator*(float s) const { return Vector3(x * s, y * s, z * s); }
+        float Length() const { return std::sqrt(x * x + y * y + z * z); }
+        float LengthSq() const { return x * x + y * y + z * z; }
+        static float Dot(const Vector3& a, const Vector3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+        static Vector3 Cross(const Vector3& a, const Vector3& b) {
+            return Vector3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+        }
+    };
+
+    struct BingoBall {
+        int number = 1;
+        BallCategory category = BallCategory::B;
+        Vector3 position;
+        Vector3 velocity;
+        float radius = 0.065f;
+        bool isDrawn = false;
+        bool isExiting = false;
+        float exitProgress = 0.0f;
+    };
+
+    struct BingoCard {
+        int grid[5][5] = {{0}};
+        bool daubed[5][5] = {{false}};
+
+        void Generate(std::mt19939& rng) {
+            for (int col = 0; col < 5; ++col) {
+                std::vector<int> pool;
+                int start = col * 15 + 1;
+                for (int n = start; n < start + 15; ++n) pool.push_back(n);
+                std::shuffle(pool.begin(), pool.end(), rng);
+                for (int row = 0; row < 5; ++row) {
+                    if (col == 2 && row == 2) {
+                        grid[row][col] = 0;
+                        daubed[row][col] = true;
+                    } else {
+                        grid[row][col] = pool[row];
+                        daubed[row][col] = false;
+                    }
+                }
+            }
+        }
+
+        bool DaubNumber(int num) {
+            for (int r = 0; r < 5; ++r)
+                for (int c = 0; c < 5; ++c)
+                    if (grid[r][c] == num) { daubed[r][c] = true; return true; }
+            return false;
+        }
+
+        bool CheckWin(std::string& pattern) const {
+            for (int r = 0; r < 5; ++r) {
+                bool rowWin = true;
+                for (int c = 0; c < 5; ++c) if (!daubed[r][c]) { rowWin = false; break; }
+                if (rowWin) { pattern = "Horizontal Row " + std::to_string(r + 1); return true; }
+            }
+            for (int c = 0; c < 5; ++c) {
+                bool colWin = true;
+                for (int r = 0; r < 5; ++r) if (!daubed[r][c]) { colWin = false; break; }
+                if (colWin) {
+                    const char names[] = {'B', 'I', 'N', 'G', 'O'};
+                    pattern = std::string("Vertical Column ") + names[c];
+                    return true;
+                }
+            }
+            bool d1 = true, d2 = true;
+            for (int i = 0; i < 5; ++i) {
+                if (!daubed[i][i]) d1 = false;
+                if (!daubed[i][4 - i]) d2 = false;
+            }
+            if (d1 || d2) { pattern = "Diagonal Line"; return true; }
+            if (daubed[0][0] && daubed[0][4] && daubed[4][0] && daubed[4][4]) {
+                pattern = "Four Corners";
+                return true;
+            }
+            return false;
+        }
+    };
+
+    class DiamondBingoSimulation {
+    public:
+        float drumAngle = 0.0f;
+        float drumAngularVelocity = 2.8f;
+        float drumLength = 1.30f;
+        float diamondRadius = 0.88f;
+        Vector3 gravity = Vector3(0.0f, -7.35f, 0.0f);
+        float restitution = 0.72f;
+        float friction = 0.40f;
+
+        std::vector<BingoBall> balls;
+        BingoCard playerCard;
+        bool isSpinning = true;
+        bool hasWon = false;
+        std::string winPattern = "";
+        std::mt19939 rng;
+
+        DiamondBingoSimulation() {
+            rng.seed(1337);
+            ResetGame();
+        }
+
+        void ResetGame() {
+            balls.clear();
+            hasWon = false;
+            winPattern = "";
+            drumAngle = 0.0f;
+            drumAngularVelocity = 2.8f;
+            for (int i = 1; i <= 75; ++i) {
+                BingoBall b;
+                b.number = i;
+                b.category = (BallCategory)((i - 1) / 15);
+                float x = -drumLength * 0.4f + ((float)(rng() % 1000) / 1000.0f) * (drumLength * 0.8f);
+                float y = -diamondRadius * 0.35f + ((float)(rng() % 500) / 1000.0f) * 0.25f;
+                float z = -0.25f + ((float)(rng() % 500) / 1000.0f) * 0.5f;
+                b.position = Vector3(x, y, z);
+                b.velocity = Vector3(((float)(rng() % 100) - 50.0f) * 0.005f, 0.0f, ((float)(rng() % 100) - 50.0f) * 0.005f);
+                balls.push_back(b);
+            }
+            playerCard.Generate(rng);
+        }
+    };
+}
+`,
+
   'CMakeLists.txt': `cmake_minimum_required(VERSION 3.15)
 project(NativeCppEngine CXX)
 
@@ -1849,25 +2005,24 @@ void main() {
     // PROCEDURAL MATERIAL SYNTHESIZERS (u_matType)
     // -------------------------------------------------------------
     if (u_matType == 1) {
-        // 1. PROCEDURAL DARK WALNUT WOOD
+        // 1. PROCEDURAL DARK WALNUT WOOD - SMOOTH HIGH-GLOSS LACQUER
         vec3 woodP = p * (scale * 0.35);
         float ringDist = length(woodP.xz) * 6.0 + fbm3d(woodP * 1.5, 3) * 3.5;
         float ring = pow(sin(ringDist * 3.14159) * 0.5 + 0.5, 0.6);
-        float grain = noise2d(vec2(woodP.x * 35.0, woodP.y * 3.0)) * 0.5 + 0.5;
-        float pores = pow(noise2d(vec2(woodP.x * 90.0, woodP.y * 12.0)), 3.0);
+        float grain = noise2d(vec2(woodP.x * 6.0, woodP.y * 1.0)) * 0.5 + 0.5; // smoother, low-frequency grain
+        float pores = 0.0; // Remove noisy pores entirely
 
-        vec3 darkWalnut = vec3(0.22, 0.11, 0.05);
-        vec3 lightAmber = vec3(0.55, 0.32, 0.16);
-        vec3 poreColor  = vec3(0.12, 0.06, 0.02);
+        vec3 darkWalnut = vec3(0.24, 0.12, 0.06);
+        vec3 lightAmber = vec3(0.50, 0.28, 0.14);
 
         vec3 woodColor = mix(darkWalnut, lightAmber, ring * 0.65 + grain * 0.35);
-        woodColor = mix(woodColor, poreColor, pores * 0.7);
         albedo = woodColor * (u_baseColor / max(vec3(0.38, 0.22, 0.12), vec3(0.01)));
 
-        float woodHeight = ring * 0.6 + grain * 0.25 - pores * 0.3;
-        N = perturbNormal(N, v_worldPos, woodHeight, bumpScale * 1.6);
-        roughness = mix(0.32, 0.68, ring * 0.7 + pores * 0.3);
-        metallic = 0.0;
+        float woodHeight = ring * 0.08 + grain * 0.04; // extremely subtle height variation
+        N = perturbNormal(N, v_worldPos, woodHeight, bumpScale * 0.15); // extremely smooth bump normal
+        roughness = mix(0.12, 0.22, ring * 0.3); // highly polished and shiny lacquer finish!
+        metallic = 0.05; // slight polished specularity
+        clearCoat = 0.98; // elegant protective glossy lacquer coat
     }
     else if (u_matType == 2) {
         // 2. PROCEDURAL BASALT & GRANITE CRAG ROCK
@@ -3054,6 +3209,7 @@ EMSCRIPTEN_BINDINGS(EngineModule) {
   'examples/10_sliding_puzzle.cpp': SOURCE_FILES['10_sliding_puzzle.cpp'],
   'examples/11_plinko.cpp': SOURCE_FILES['11_plinko.cpp'],
   'examples/12_roulette.cpp': SOURCE_FILES['12_roulette.cpp'],
+  'examples/13_bingo_physics.cpp': SOURCE_FILES['13_bingo_physics.cpp'],
   'include/engine/Engine.hpp': SOURCE_FILES['Engine.hpp'],
   'include/engine/Camera.hpp': SOURCE_FILES['Camera.hpp'],
   'include/engine/GLBLoader.hpp': SOURCE_FILES['GLBLoader.hpp'],
@@ -3699,7 +3855,7 @@ class NativeApp {
     }
 
     this.state = {
-      demoScene: '12_roulette.cpp', // Default to Demo 12 3D Physics-Engine Roulette Wheel
+      demoScene: '13_bingo_physics.cpp', // Default to Demo 13 3D Real-Physics Bingo & Diamond Drum
       activeMesh: 0,
       activeShader: 0, // Default to Full PBR Filament Shader
       fpsCheapMaterial: false,
@@ -3722,11 +3878,11 @@ class NativeApp {
       cameraMode: 0, // 0: Orbit, 1: FP Drag Look, 2: Free-Fly, 3: FPS Shooter
       invertMouseX: true,
       invertMouseY: false,
-      camYaw: 0.0,
-      camPitch: 0.76,
-      camRadius: 5.4,
+      camYaw: 0.22,
+      camPitch: 0.32,
+      camRadius: 5.2,
       camPos: new Float32Array([0.0, -3.8, 4.0]),
-      camTarget: new Float32Array([0.0, 0.0, 0.05]),
+      camTarget: new Float32Array([0.0, 1.15, 0.0]),
       camFront: new Float32Array([0.0, 0.0, -1.0]),
       camRight: new Float32Array([1.0, 0.0, 0.0]),
       moveSpeed: 6.5,
@@ -4003,7 +4159,9 @@ class NativeApp {
     this.initProjectWorkspace();
     this.initShowroomUI();
     this.initNetworkSystem();
-    if (this.state.demoScene && this.state.demoScene.includes('12_roulette')) {
+    if (this.state.demoScene && this.state.demoScene.includes('13_bingo')) {
+      this.initBingoDemo();
+    } else if (this.state.demoScene && this.state.demoScene.includes('12_roulette')) {
       this.initRouletteDemo();
     } else {
       this.initFpsStartupMenu();
@@ -4704,7 +4862,8 @@ void main() {
       const isSlidingPuzzle = this.state.demoScene.includes('10_sliding_puzzle');
       const isPlinko = this.state.demoScene.includes('11_plinko');
       const isRoulette = this.state.demoScene.includes('12_roulette');
-      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette;
+      const isBingo = this.state.demoScene.includes('13_bingo');
+      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo;
       const crosshairEl = document.getElementById('fps-crosshair-overlay');
       const bannerEl = document.getElementById('fps-pointerlock-banner');
       const weaponHudEl = document.getElementById('fps-weapon-hud');
@@ -4726,6 +4885,12 @@ void main() {
       const rouletteOverlayEl = document.getElementById('roulette-overlay');
       const rouletteBannerEl = document.getElementById('roulette-banner');
 
+      const bingoOverlayEl = document.getElementById('bingo-overlay');
+      const bingoBannerEl = document.getElementById('bingo-banner');
+      const bingoFabEl = document.getElementById('bingo-mobile-fab');
+      const bingoDesktopBtnEl = document.getElementById('bingo-desktop-show-btn');
+      const bingoControlsPanel = document.getElementById('bingo-controls-panel');
+
       if (crosshairEl) crosshairEl.style.display = isFPS ? 'flex' : 'none';
       if (bannerEl) {
         if (isFPS) {
@@ -4740,7 +4905,7 @@ void main() {
         }
       }
       if (weaponHudEl) weaponHudEl.style.display = isFPS ? 'flex' : 'none';
-      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette) ? 'block' : 'none';
+      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo) ? 'block' : 'none';
 
       if (showroomTopEl) showroomTopEl.style.display = isShowroom ? 'flex' : 'none';
       if (showroomCardEl) showroomCardEl.style.display = isShowroom ? 'block' : 'none';
@@ -4769,11 +4934,25 @@ void main() {
       }
 
       const rouletteFabEl = document.getElementById('roulette-mobile-fab');
+      const rouletteDesktopBtnEl = document.getElementById('roulette-desktop-show-btn');
       if (rouletteOverlayEl) rouletteOverlayEl.style.display = isRoulette ? 'flex' : 'none';
       if (rouletteBannerEl) rouletteBannerEl.style.display = isRoulette ? 'flex' : 'none';
       if (rouletteFabEl && !isRoulette) rouletteFabEl.style.display = 'none';
+      if (rouletteDesktopBtnEl && !isRoulette) rouletteDesktopBtnEl.style.display = 'none';
 
-      if (isSlotMachine || isSlidingPuzzle || isPlinko || isRoulette) {
+      if (bingoOverlayEl) {
+        bingoOverlayEl.style.display = isBingo ? 'flex' : 'none';
+        if (!isBingo) {
+          bingoOverlayEl.classList.remove('mobile-minimized');
+          bingoOverlayEl.classList.remove('minimized');
+        }
+      }
+      if (bingoBannerEl) bingoBannerEl.style.display = isBingo ? 'flex' : 'none';
+      if (bingoFabEl && !isBingo) bingoFabEl.style.display = 'none';
+      if (bingoDesktopBtnEl && !isBingo) bingoDesktopBtnEl.style.display = 'none';
+      if (bingoControlsPanel) bingoControlsPanel.style.display = isBingo ? 'block' : 'none';
+
+      if (isSlotMachine || isSlidingPuzzle || isPlinko || isRoulette || isBingo) {
         const startupOverlay = document.getElementById('fps-startup-overlay');
         if (startupOverlay) startupOverlay.style.display = 'none';
       }
@@ -4804,7 +4983,7 @@ void main() {
     canvasContainer.addEventListener('click', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
-      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab')) return;
+      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab, #bingo-overlay, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell')) return;
 
       if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
         this.handleRouletteClick(e.clientX, e.clientY);
@@ -4924,7 +5103,7 @@ void main() {
     canvasContainer.addEventListener('mousedown', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
-      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, .plinko-overlay-panel, .plinko-mobile-fab, .slot-machine-overlay-panel, .puzzle-overlay-panel')) return;
+      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, .plinko-overlay-panel, .plinko-mobile-fab, .slot-machine-overlay-panel, .puzzle-overlay-panel, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-overlay, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell')) return;
 
       this.state.isDragging = true;
       this.state.mouseButton = e.button; // 0: Left, 1: Middle, 2: Right
@@ -4995,12 +5174,12 @@ void main() {
     canvasContainer.addEventListener('wheel', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
-      if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .panel')) {
+      if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, .bingo-overlay-panel, #fps-startup-overlay, .modal-overlay, .panel')) {
         return; // Allow native mouse wheel scrolling in UI panels
       }
       e.preventDefault();
       if (this.state.cameraMode === 0) {
-        this.state.camRadius = Math.max(0.8, Math.min(30.0, this.state.camRadius + e.deltaY * 0.004));
+        this.state.camRadius = Math.max(0.5, Math.min(30.0, this.state.camRadius + e.deltaY * 0.004));
       } else {
         this.state.moveSpeed = Math.max(0.5, Math.min(30.0, this.state.moveSpeed * (e.deltaY > 0 ? 0.9 : 1.1)));
         this.log(`FP Camera Speed: ${this.state.moveSpeed.toFixed(1)} u/s`, "info");
@@ -5203,6 +5382,20 @@ void main() {
           updateFPSOverlays();
           this.log("Loaded Demo 12: 3D Physics-Engine Roulette Wheel Showcase", "cpp");
           this.initRouletteDemo();
+        } else if (this.state.demoScene.includes('13_bingo')) {
+          this.state.cameraMode = 0;
+          const camSelect = document.getElementById('camera-mode-select');
+          if (camSelect) camSelect.value = "0";
+          const isMobile = this.isMobileDevice();
+          this.state.camRadius = isMobile ? 6.8 : 5.2;
+          this.state.camPitch = 0.32;
+          this.state.camYaw = 0.22;
+          this.state.camTarget[0] = 0.0;
+          this.state.camTarget[1] = 1.15;
+          this.state.camTarget[2] = 0.0;
+          updateFPSOverlays();
+          this.log("Loaded Demo 13: 3D Real-Physics Bingo & Diamond Drum Showcase", "cpp");
+          this.initBingoDemo();
         } else {
           this.log(`Loaded Demo: ${this.state.demoScene}`, "cpp");
         }
@@ -6164,7 +6357,7 @@ void main() {
             // Fingers pinch together (deltaDist < 0) -> zoom out (higher radius)
             if (this.state.cameraMode === 0 || this.state.demoScene.includes('11_plinko')) {
               const zoomSens = 0.014 * Math.max(0.4, this.state.camRadius * 0.22);
-              this.state.camRadius = Math.max(1.0, Math.min(26.0, this.state.camRadius - deltaDist * zoomSens));
+              this.state.camRadius = Math.max(0.5, Math.min(26.0, this.state.camRadius - deltaDist * zoomSens));
             } else {
               this.state.moveSpeed = Math.max(0.5, Math.min(30.0, this.state.moveSpeed + deltaDist * 0.02));
             }
@@ -6359,6 +6552,7 @@ void main() {
       { value: "10_sliding_puzzle.cpp", path: "examples/10_sliding_puzzle.cpp", name: "Demo 10: Dynamic Sliding 3D Puzzle", isDemoScene: true, isLiveFile: true, isExampleTab: true },
       { value: "11_plinko.cpp", path: "examples/11_plinko.cpp", name: "Demo 11: 3D Plinko Cascade Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
       { value: "12_roulette.cpp", path: "examples/12_roulette.cpp", name: "Demo 12: 3D Physics-Engine Roulette Wheel", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "13_bingo_physics.cpp", path: "examples/13_bingo_physics.cpp", name: "Demo 13: 3D Real-Physics Bingo & Diamond Drum", isDemoScene: true, isLiveFile: true, isExampleTab: true },
 
       // Engine Internals
       { value: "src/core/Engine.cpp", path: "src/core/Engine.cpp", name: "Engine Core C++", isDemoScene: false, isLiveFile: true, isExampleTab: false },
@@ -10106,26 +10300,64 @@ else if (typeof define === 'function' && define['amd'])
     }
   }
 
-  hideRouletteMobileUI() {
+  getRouletteNumberColor(num) {
+    if (num === 0) return 'green';
+    const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+    return reds.includes(num) ? 'red' : 'black';
+  }
+
+  hideRouletteUI() {
+    const isMobile = this.isMobileDevice() || window.innerWidth <= 768;
     const rOverlayEl = document.getElementById('roulette-overlay');
     const rFabEl = document.getElementById('roulette-mobile-fab');
+    const rDesktopBtn = document.getElementById('roulette-desktop-show-btn');
+    const rBanner = document.getElementById('roulette-banner');
+
     if (rOverlayEl) {
-      rOverlayEl.classList.add('mobile-minimized');
+      if (isMobile) {
+        rOverlayEl.classList.add('mobile-minimized');
+      } else {
+        rOverlayEl.style.display = 'none';
+      }
     }
-    if (rFabEl && this.state.demoScene.includes('12_roulette')) {
-      rFabEl.style.display = 'flex';
+    if (this.state.demoScene && this.state.demoScene.includes('12_roulette')) {
+      if (isMobile) {
+        if (rFabEl) rFabEl.style.display = 'flex';
+        if (rDesktopBtn) rDesktopBtn.style.display = 'none';
+      } else {
+        if (rDesktopBtn) rDesktopBtn.style.display = 'flex';
+        if (rFabEl) rFabEl.style.display = 'none';
+      }
+      if (rBanner) {
+        rBanner.classList.add('panel-closed');
+      }
     }
   }
 
-  showRouletteMobileUI() {
+  showRouletteUI() {
+    const isMobile = this.isMobileDevice() || window.innerWidth <= 768;
     const rOverlayEl = document.getElementById('roulette-overlay');
     const rFabEl = document.getElementById('roulette-mobile-fab');
+    const rDesktopBtn = document.getElementById('roulette-desktop-show-btn');
+    const rBanner = document.getElementById('roulette-banner');
+
     if (rOverlayEl) {
+      rOverlayEl.style.display = 'block';
       rOverlayEl.classList.remove('mobile-minimized');
     }
-    if (rFabEl) {
-      rFabEl.style.display = 'none';
+    if (rFabEl) rFabEl.style.display = 'none';
+    if (rDesktopBtn) rDesktopBtn.style.display = 'none';
+    if (rBanner) {
+      rBanner.classList.remove('panel-closed');
     }
+  }
+
+  hideRouletteMobileUI() {
+    this.hideRouletteUI();
+  }
+
+  showRouletteMobileUI() {
+    this.showRouletteUI();
   }
 
   showPlinkoMobileUI() {
@@ -10695,6 +10927,8 @@ else if (typeof define === 'function' && define['amd'])
         specificNumber: 'none',
         lastPayout: 0,
         lastOutcomePocket: null,
+        lastDroppedNumber: null,
+        last10Results: [32, 15, 19, 4, 21, 2, 25, 17, 34, 6],
         ball: null,
         wheelAngle: 0.0,
         wheelSpeed: -0.6,
@@ -10705,6 +10939,9 @@ else if (typeof define === 'function' && define['amd'])
       };
     } else {
       this.rouletteState.active = true;
+      if (!this.rouletteState.last10Results) {
+        this.rouletteState.last10Results = [32, 15, 19, 4, 21, 2, 25, 17, 34, 6];
+      }
     }
 
     // Hide Plinko and show Roulette panels
@@ -10714,9 +10951,19 @@ else if (typeof define === 'function' && define['amd'])
     if (plinkoBanner) plinkoBanner.style.display = 'none';
 
     const rOverlay = document.getElementById('roulette-overlay');
-    if (rOverlay) rOverlay.style.display = 'block';
+    if (rOverlay) {
+      rOverlay.style.display = 'block';
+      rOverlay.classList.remove('mobile-minimized');
+    }
     const rBanner = document.getElementById('roulette-banner');
-    if (rBanner) rBanner.style.display = 'flex';
+    if (rBanner) {
+      rBanner.style.display = 'flex';
+      rBanner.classList.remove('panel-closed');
+    }
+    const rDesktopBtn = document.getElementById('roulette-desktop-show-btn');
+    if (rDesktopBtn) rDesktopBtn.style.display = 'none';
+    const rFab = document.getElementById('roulette-mobile-fab');
+    if (rFab) rFab.style.display = 'none';
 
     this.setupRouletteUI();
     this.updateRouletteUI();
@@ -10743,10 +10990,10 @@ else if (typeof define === 'function' && define['amd'])
 
     const isMobile = this.isMobileDevice();
     this.state.cameraMode = 0; // Ensure Orbit/Inspect camera mode for interactive felt betting
-    this.state.camRadius = isMobile ? 6.4 : 5.4;
+    this.state.camRadius = isMobile ? 6.4 : 5.0;
     this.state.camPitch = 0.76; // spacious angled vantage point (~43.5 deg above horizon)
     this.state.camYaw = 0.0;
-    this.state.camTarget[0] = 0.15;
+    this.state.camTarget[0] = 0.20;
     this.state.camTarget[1] = 0.0;
     this.state.camTarget[2] = 0.05;
 
@@ -10973,6 +11220,104 @@ else if (typeof define === 'function' && define['amd'])
         }
       }
     }
+
+    // 6. Action Buttons in Right Bottom Edge: CLEAR ALL, REPEAT, CLEAR LAST
+    const actionX = rightX;
+    const actionW = rightW;
+    const gapY = 12;
+    const totalH = outsideY + outsideH - dozenY; // 834 - 484 = 350px
+    const actionH = Math.floor((totalH - 2 * gapY) / 3); // 108px
+
+    const drawTableActionBtn = (bx, by, bw, bh, title, sub, icon, gradTop, gradBot, strokeColor, titleColor, subColor) => {
+      ctx.save();
+      const r = 8;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(bx, by, bw, bh, r);
+      } else {
+        ctx.rect(bx, by, bw, bh);
+      }
+      ctx.closePath();
+
+      // Satin gradient fill
+      const grad = ctx.createLinearGradient(bx, by, bx, by + bh);
+      grad.addColorStop(0, gradTop);
+      grad.addColorStop(0.5, gradBot);
+      grad.addColorStop(1.0, gradTop);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Outer bezel border
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+
+      // Inner glass bevel highlight
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(bx + 3, by + 3, bw - 6, bh - 6, Math.max(2, r - 3));
+      } else {
+        ctx.rect(bx + 3, by + 3, bw - 6, bh - 6);
+      }
+      ctx.stroke();
+
+      // Corner gold filigree diamonds
+      ctx.fillStyle = '#facc15';
+      const drawCornerDiamond = (dx, dy) => {
+        ctx.beginPath();
+        ctx.moveTo(dx, dy - 3);
+        ctx.lineTo(dx + 3, dy);
+        ctx.lineTo(dx, dy + 3);
+        ctx.lineTo(dx - 3, dy);
+        ctx.closePath();
+        ctx.fill();
+      };
+      drawCornerDiamond(bx + 9, by + 9);
+      drawCornerDiamond(bx + bw - 9, by + 9);
+      drawCornerDiamond(bx + 9, by + bh - 9);
+      drawCornerDiamond(bx + bw - 9, by + bh - 9);
+
+      // Text and Icon layout
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+      ctx.shadowBlur = 5;
+
+      // Icon
+      ctx.fillStyle = strokeColor;
+      ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText(icon, bx + bw * 0.5, by + bh * 0.26);
+
+      // Main title
+      ctx.fillStyle = titleColor;
+      ctx.font = 'bold 23px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText(title, bx + bw * 0.5, by + bh * 0.58);
+
+      // Subtitle
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = subColor;
+      ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText(sub, bx + bw * 0.5, by + bh * 0.83);
+
+      ctx.restore();
+    };
+
+    // Button 1: CLEAR ALL
+    const b0_y = dozenY;
+    const b0_h = actionH;
+    drawTableActionBtn(actionX, b0_y, actionW, b0_h, 'CLEAR ALL', 'RESET BETS', '✕', '#7f1d1d', '#3b0707', '#ef4444', '#ffffff', '#fca5a5');
+
+    // Button 2: REPEAT
+    const b1_y = dozenY + actionH + gapY;
+    const b1_h = actionH;
+    drawTableActionBtn(actionX, b1_y, actionW, b1_h, 'REPEAT', 'REBET LAST', '⟳', '#065f46', '#022c22', '#34d399', '#ffffff', '#a7f3d0');
+
+    // Button 3: CLEAR LAST
+    const b2_y = b1_y + actionH + gapY;
+    const b2_h = outsideY + outsideH - b2_y;
+    drawTableActionBtn(actionX, b2_y, actionW, b2_h, 'CLEAR LAST', 'UNDO CHIP', '↩', '#854d0e', '#381604', '#fbbf24', '#ffffff', '#fde68a');
 
     const gl = this.gl;
     const tex = gl.createTexture();
@@ -11265,10 +11610,10 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   initRouletteTableActors() {
-    const tableX = 1.95;
+    const tableX = 2.50;
     const tableY = 0.0;
-    const tableW = 3.30;
-    const tableH = 1.38;
+    const tableW = 4.46;
+    const tableH = 1.86;
 
     const canvasW = 2048.0;
     const canvasH = 864.0;
@@ -11492,7 +11837,8 @@ else if (typeof define === 'function' && define['amd'])
         type: 'street',
         payout: 11,
         numbers: stNums,
-        box: toBox(cx + mx, by - my, cx + colW - mx, by + my)
+        box: toBox(cx + mx, by - my, cx + colW - mx, by + my),
+        boxAlt: toBox(cx + mx, row0Y + 3 * rowH - my, cx + colW - mx, row0Y + 3 * rowH + my)
       });
     }
 
@@ -11507,9 +11853,54 @@ else if (typeof define === 'function' && define['amd'])
         type: 'sixline',
         payout: 5,
         numbers: sixNums,
-        box: toBox(bx - mx, by - my, bx + mx, by + my)
+        box: toBox(bx - mx, by - my, bx + mx, by + my),
+        boxAlt: toBox(bx - mx, row0Y + 3 * rowH - my, bx + mx, row0Y + 3 * rowH + my)
       });
     }
+
+    // 12. Table Action Buttons in Right Bottom Edge
+    const gapY = 12;
+    const totalActionH = outsideY + outsideH - dozenY;
+    const actionBtnH = Math.floor((totalActionH - 2 * gapY) / 3);
+
+    // Button 1: CLEAR ALL
+    const b0_y = dozenY;
+    const b0_h = actionBtnH;
+    actors.push({
+      id: 'btn_clear_all',
+      name: 'Clear All Bets',
+      type: 'action',
+      action: 'clear_all',
+      payout: 0,
+      numbers: [],
+      box: toBox(rightX, b0_y, rightX + rightW, b0_y + b0_h)
+    });
+
+    // Button 2: REPEAT
+    const b1_y = dozenY + actionBtnH + gapY;
+    const b1_h = actionBtnH;
+    actors.push({
+      id: 'btn_repeat',
+      name: 'Repeat Previous Bets',
+      type: 'action',
+      action: 'repeat',
+      payout: 0,
+      numbers: [],
+      box: toBox(rightX, b1_y, rightX + rightW, b1_y + b1_h)
+    });
+
+    // Button 3: CLEAR LAST
+    const b2_y = b1_y + actionBtnH + gapY;
+    const b2_h = outsideY + outsideH - b2_y;
+    actors.push({
+      id: 'btn_clear_last',
+      name: 'Clear Last Bet',
+      type: 'action',
+      action: 'clear_last',
+      payout: 0,
+      numbers: [],
+      box: toBox(rightX, b2_y, rightX + rightW, b2_y + b2_h)
+    });
 
     this.rouletteActors = actors;
     this.rouletteActorsMap = new Map();
@@ -11563,6 +11954,13 @@ else if (typeof define === 'function' && define['amd'])
   getRouletteActorAt(hitX, hitY) {
     if (!this.rouletteActors) return null;
 
+    // 0. Table Action Buttons in Right Bottom Edge (Clear All, Repeat, Clear Last)
+    for (const a of this.rouletteActors) {
+      if (a.type === 'action' && hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
+        return a;
+      }
+    }
+
     // 1. Highest specificity: Corners (at intersections)
     for (const a of this.rouletteActors) {
       if (a.type === 'corner' && hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
@@ -11577,14 +11975,28 @@ else if (typeof define === 'function' && define['amd'])
     }
     // 3. Six-line / Double street
     for (const a of this.rouletteActors) {
-      if (a.type === 'sixline' && hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
-        return a;
+      if (a.type === 'sixline') {
+        if (hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
+          a.activeBox = a.box;
+          return a;
+        }
+        if (a.boxAlt && hitX >= a.boxAlt.minX && hitX <= a.boxAlt.maxX && hitY >= a.boxAlt.minY && hitY <= a.boxAlt.maxY) {
+          a.activeBox = a.boxAlt;
+          return a;
+        }
       }
     }
     // 4. Streets (lines of 3)
     for (const a of this.rouletteActors) {
-      if (a.type === 'street' && hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
-        return a;
+      if (a.type === 'street') {
+        if (hitX >= a.box.minX && hitX <= a.box.maxX && hitY >= a.box.minY && hitY <= a.box.maxY) {
+          a.activeBox = a.box;
+          return a;
+        }
+        if (a.boxAlt && hitX >= a.boxAlt.minX && hitX <= a.boxAlt.maxX && hitY >= a.boxAlt.minY && hitY <= a.boxAlt.maxY) {
+          a.activeBox = a.boxAlt;
+          return a;
+        }
       }
     }
     // 5. Straight Numbers (smaller than full field to leave room for splits)
@@ -11608,10 +12020,10 @@ else if (typeof define === 'function' && define['amd'])
     }
 
     // 8. Geometric proximity fallback for any hit within the active betting felt area
-    const minTableX = 1.95 - 3.30 * 0.5 - 0.08;
-    const maxTableX = 1.95 + 3.30 * 0.5 + 0.08;
-    const minTableY = 0.0 - 1.38 * 0.5 - 0.08;
-    const maxTableY = 0.0 + 1.38 * 0.5 + 0.08;
+    const minTableX = 2.50 - 4.46 * 0.5 - 0.08;
+    const maxTableX = 2.50 + 4.46 * 0.5 + 0.08;
+    const minTableY = 0.0 - 1.86 * 0.5 - 0.08;
+    const maxTableY = 0.0 + 1.86 * 0.5 + 0.08;
     if (hitX >= minTableX && hitX <= maxTableX && hitY >= minTableY && hitY <= maxTableY) {
       let closest = null;
       let minDist = Infinity;
@@ -11644,8 +12056,13 @@ else if (typeof define === 'function' && define['amd'])
         const summaryEl = document.getElementById('roulette-stats-summary');
         if (summaryEl) {
           if (actor) {
-            summaryEl.textContent = `🎯 ${actor.name} (${actor.payout}:1) — Click to Drop $${this.rouletteState.betAmount || 10} Chip`;
-            summaryEl.style.color = '#38bdf8';
+            if (actor.type === 'action') {
+              summaryEl.textContent = `⚡ ${actor.name} — Click to execute`;
+              summaryEl.style.color = '#38bdf8';
+            } else {
+              summaryEl.textContent = `🎯 ${actor.name} (${actor.payout}:1) — Click to Drop $${this.rouletteState.betAmount || 10} Chip`;
+              summaryEl.style.color = '#38bdf8';
+            }
           } else {
             const betType = this.rouletteState.betType || 'red';
             summaryEl.textContent = `Active Bet: ${betType.toUpperCase()} | Click on any number, split, or half to bet!`;
@@ -11666,7 +12083,17 @@ else if (typeof define === 'function' && define['amd'])
     if (hit) {
       const actor = this.getRouletteActorAt(hit[0], hit[1]);
       if (actor) {
-        this.placeRouletteBetOnActor(actor);
+        if (actor.type === 'action') {
+          if (actor.action === 'clear_all') {
+            this.clearAllRouletteBets();
+          } else if (actor.action === 'repeat') {
+            this.repeatRouletteBets();
+          } else if (actor.action === 'clear_last') {
+            this.clearLastRouletteBet();
+          }
+        } else {
+          this.placeRouletteBetOnActor(actor);
+        }
       }
     }
   }
@@ -11699,6 +12126,11 @@ else if (typeof define === 'function' && define['amd'])
       rs.specificNumber = String(actor.numbers[0]);
       const numSel = document.getElementById('roulette-specific-number');
       if (numSel) numSel.value = String(actor.numbers[0]);
+    } else if (actor.type === 'street' || actor.type === 'sixline') {
+      rs.betType = actor.id;
+      rs.specificNumber = 'none';
+      const numSel = document.getElementById('roulette-specific-number');
+      if (numSel) numSel.value = actor.id;
     } else if (actor.id === 'outside_red') {
       rs.betType = 'red';
       rs.specificNumber = 'none';
@@ -11722,8 +12154,9 @@ else if (typeof define === 'function' && define['amd'])
     const stackZ = 0.012 + existingChips.length * 0.008;
 
     const chipColor = this.getChipColor(betAmt);
-    const targetX = actor.box.chipPos[0] + (Math.random() - 0.5) * 0.010;
-    const targetY = actor.box.chipPos[1] + (Math.random() - 0.5) * 0.010;
+    const activeBox = actor.activeBox || actor.box;
+    const targetX = activeBox.chipPos[0] + (Math.random() - 0.5) * 0.010;
+    const targetY = activeBox.chipPos[1] + (Math.random() - 0.5) * 0.010;
 
     const chip = {
       actorId: actor.id,
@@ -11745,11 +12178,18 @@ else if (typeof define === 'function' && define['amd'])
     this.updateRouletteUI();
   }
 
-  clearRouletteChips() {
+  clearAllRouletteBets() {
     const rs = this.rouletteState;
     if (!rs || rs.spinning) return;
 
     if (this.rouletteChips && this.rouletteChips.length > 0) {
+      // Stash cleared chips so REPEAT can restore them
+      rs.lastClearedBets = this.rouletteChips.map(c => ({
+        actorId: c.actorId,
+        value: c.value,
+        actorName: c.actorName
+      }));
+
       let refund = 0;
       this.rouletteChips.forEach(c => { refund += c.value; });
       rs.credits += refund;
@@ -11758,9 +12198,95 @@ else if (typeof define === 'function' && define['amd'])
         this.rouletteActors.forEach(a => { a.betTotal = 0; });
       }
       if (this.synth) this.synth.play('teleport');
-      this.log(`Cleared all chips from table. Refunded $${refund} to credits.`, "info");
+      this.log(`🗑️ Cleared all chips from table. Refunded $${refund} to credits.`, "info");
       this.updateRouletteUI();
+    } else {
+      this.log("No active bets on table to clear.", "info");
     }
+  }
+
+  clearRouletteChips() {
+    this.clearAllRouletteBets();
+  }
+
+  clearLastRouletteBet() {
+    const rs = this.rouletteState;
+    if (!rs || rs.spinning) return;
+
+    if (this.rouletteChips && this.rouletteChips.length > 0) {
+      const lastChip = this.rouletteChips.pop();
+      rs.credits += lastChip.value;
+
+      if (this.rouletteActorsMap) {
+        const actor = this.rouletteActorsMap.get(lastChip.actorId);
+        if (actor) {
+          actor.betTotal = Math.max(0, (actor.betTotal || 0) - lastChip.value);
+        }
+      }
+
+      if (this.synth) this.synth.play('pickup');
+      const label = lastChip.actorName || lastChip.actorId;
+      this.log(`↩️ Cleared last bet: $${lastChip.value} on [${label}]. Refunded to credits.`, "info");
+      this.updateRouletteUI();
+    } else {
+      this.log("No bets to clear.", "info");
+    }
+  }
+
+  repeatRouletteBets() {
+    const rs = this.rouletteState;
+    if (!rs || rs.spinning) return;
+
+    const betsToRepeat = (rs.lastRoundBets && rs.lastRoundBets.length > 0)
+      ? rs.lastRoundBets
+      : rs.lastClearedBets;
+
+    if (!betsToRepeat || betsToRepeat.length === 0) {
+      this.log("No previous bets available to repeat.", "info");
+      return;
+    }
+
+    const totalCost = betsToRepeat.reduce((sum, b) => sum + b.value, 0);
+    if (rs.credits < totalCost) {
+      this.log(`Insufficient credits ($${rs.credits}) to repeat bets ($${totalCost}).`, "error");
+      if (this.synth) this.synth.play('damage');
+      return;
+    }
+
+    // Deduct and spawn each chip onto table
+    rs.credits -= totalCost;
+    if (!this.rouletteChips) this.rouletteChips = [];
+
+    betsToRepeat.forEach(b => {
+      const actor = this.rouletteActorsMap ? this.rouletteActorsMap.get(b.actorId) : null;
+      if (actor) {
+        actor.betTotal = (actor.betTotal || 0) + b.value;
+        const existingChips = this.rouletteChips.filter(c => c.actorId === actor.id);
+        const stackZ = 0.012 + existingChips.length * 0.008;
+        const chipColor = this.getChipColor(b.value);
+        const activeBox = actor.activeBox || actor.box;
+        const targetX = activeBox.chipPos[0] + (Math.random() - 0.5) * 0.010;
+        const targetY = activeBox.chipPos[1] + (Math.random() - 0.5) * 0.010;
+
+        this.rouletteChips.push({
+          actorId: actor.id,
+          actorName: actor.name,
+          value: b.value,
+          pos: [targetX, targetY, 0.40 + Math.random() * 0.08],
+          vel: [(Math.random() - 0.5) * 0.10, (Math.random() - 0.5) * 0.10, -0.22 - Math.random() * 0.14],
+          rot: [Math.random() * 0.2, Math.random() * 0.2, Math.random() * Math.PI * 2],
+          rotVel: [(Math.random() - 0.5) * 5.0, (Math.random() - 0.5) * 5.0, (Math.random() - 0.5) * 8.0],
+          targetZ: stackZ,
+          bounces: 0,
+          settled: false,
+          color: chipColor
+        });
+      }
+    });
+
+    if (this.synth) this.synth.play('pickup');
+    this.log(`⟳ Repeated previous bets: ${betsToRepeat.length} chip(s) placed ($${totalCost} total).`, "success");
+    this.updateRouletteUI();
   }
 
   updateRouletteChipsPhysics(dt) {
@@ -11869,16 +12395,22 @@ else if (typeof define === 'function' && define['amd'])
       });
     });
 
-    // Specific single-number bet dropdown
+    // Specific single-number, street, or double-street bet dropdown
     const numSelect = document.getElementById('roulette-specific-number');
     if (numSelect) {
       numSelect.addEventListener('change', (e) => {
         const val = e.target.value;
         if (val !== 'none') {
           choiceBtns.forEach(b => b.classList.remove('active'));
-          rs.betType = 'number';
-          rs.specificNumber = val;
-          const actorId = `num_${val}`;
+          let actorId = `num_${val}`;
+          if (val.startsWith('street_') || val.startsWith('sixline_')) {
+            actorId = val;
+            rs.betType = val;
+            rs.specificNumber = 'none';
+          } else {
+            rs.betType = 'number';
+            rs.specificNumber = val;
+          }
           if (this.rouletteActorsMap) {
             const actor = this.rouletteActorsMap.get(actorId);
             if (actor) this.placeRouletteBetOnActor(actor);
@@ -11893,11 +12425,32 @@ else if (typeof define === 'function' && define['amd'])
       });
     }
 
-    // Clear chips button
+    // Clear chips & table bet action buttons
     const clearChipsBtn = document.getElementById('btn-roulette-clear-chips');
     if (clearChipsBtn) {
       clearChipsBtn.addEventListener('click', () => {
-        this.clearRouletteChips();
+        this.clearAllRouletteBets();
+      });
+    }
+
+    const clearAllBtn = document.getElementById('btn-roulette-clear-all');
+    if (clearAllBtn) {
+      clearAllBtn.addEventListener('click', () => {
+        this.clearAllRouletteBets();
+      });
+    }
+
+    const repeatBtn = document.getElementById('btn-roulette-repeat');
+    if (repeatBtn) {
+      repeatBtn.addEventListener('click', () => {
+        this.repeatRouletteBets();
+      });
+    }
+
+    const clearLastBtn = document.getElementById('btn-roulette-clear-last');
+    if (clearLastBtn) {
+      clearLastBtn.addEventListener('click', () => {
+        this.clearLastRouletteBet();
       });
     }
 
@@ -11910,23 +12463,70 @@ else if (typeof define === 'function' && define['amd'])
       newSpinBtn.addEventListener('click', () => {
         if (rs.spinning) return;
 
-        if (rs.credits < rs.betAmount) {
-          this.log("Insufficient Credits! Reset board or lower bet.", "error");
-          if (this.synth) this.synth.play('damage');
-          return;
+        // If no physical chips were placed on the table, use DOM bet selection
+        if (!this.rouletteChips || this.rouletteChips.length === 0) {
+          if (rs.credits < rs.betAmount) {
+            this.log("Insufficient Credits! Reset board or lower bet.", "error");
+            if (this.synth) this.synth.play('damage');
+            return;
+          }
+          rs.credits -= rs.betAmount;
+
+          let actorId = 'outside_red';
+          let actorName = 'Red Color';
+          if (rs.betType === 'number' && rs.specificNumber !== 'none') {
+            actorId = `num_${rs.specificNumber}`;
+            actorName = `Number ${rs.specificNumber}`;
+          } else if (rs.betType.startsWith('street_') || rs.betType.startsWith('sixline_') || rs.betType.startsWith('dozen_') || rs.betType.startsWith('col_')) {
+            actorId = rs.betType;
+            const act = this.rouletteActorsMap ? this.rouletteActorsMap.get(actorId) : null;
+            if (act) actorName = act.name;
+          } else if (rs.betType === 'black') {
+            actorId = 'outside_black';
+            actorName = 'Black Color';
+          } else if (rs.betType === 'even') {
+            actorId = 'outside_even';
+            actorName = 'Even Half';
+          } else if (rs.betType === 'odd') {
+            actorId = 'outside_odd';
+            actorName = 'Odd Half';
+          } else if (rs.betType === 'zero') {
+            actorId = 'num_0';
+            actorName = 'Number 0';
+          }
+          rs.lastRoundBets = [{
+            actorId,
+            value: rs.betAmount,
+            actorName
+          }];
+        } else {
+          // Record current active chips for REPEAT
+          rs.lastRoundBets = this.rouletteChips.map(c => ({
+            actorId: c.actorId,
+            value: c.value,
+            actorName: c.actorName
+          }));
         }
 
-        // Deduct bet and trigger spin
-        rs.credits -= rs.betAmount;
         rs.spinning = true;
         rs.payoutHandled = false;
         rs.lastOutcomePocket = null;
         rs.trail = [];
         this.updateRouletteUI();
 
+        // For mobile variant hide bet ui after clicking drop
+        const isMobile = this.isMobileDevice() || window.innerWidth <= 768;
+        if (isMobile) {
+          this.hideRouletteUI();
+        }
+
         if (this.synth) this.synth.play('teleport');
 
         let betLabel = rs.betType === 'number' ? `NUMBER ${rs.specificNumber}` : rs.betType.toUpperCase();
+        if ((rs.betType.startsWith('street_') || rs.betType.startsWith('sixline_')) && this.rouletteActorsMap) {
+          const actor = this.rouletteActorsMap.get(rs.betType);
+          if (actor) betLabel = actor.name.toUpperCase();
+        }
         this.log(`Roulette wheel and ball spun! Bet: ${rs.betAmount} on [${betLabel}].`, "info");
 
         if (this.physicsWorker) {
@@ -11939,15 +12539,33 @@ else if (typeof define === 'function' && define['amd'])
     const closeBtn = document.getElementById('btn-roulette-close');
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
-        if (this.isMobileDevice()) {
-          this.hideRouletteMobileUI();
+        this.hideRouletteUI();
+        if (this.synth) this.synth.play('pickup');
+        this.log("Roulette bet panel closed. Reopen with 'SHOW BET UI' or 'BETS'.", "info");
+      });
+    }
+
+    // Desktop button to show bet UI
+    const rDesktopBtn = document.getElementById('roulette-desktop-show-btn');
+    if (rDesktopBtn) {
+      rDesktopBtn.addEventListener('click', () => {
+        this.showRouletteUI();
+        if (this.synth) this.synth.play('pickup');
+      });
+    }
+
+    // Top banner toggle bets button
+    const bannerBetsBtn = document.getElementById('roulette-banner-toggle-bets-btn');
+    if (bannerBetsBtn) {
+      bannerBetsBtn.addEventListener('click', () => {
+        const rOverlay = document.getElementById('roulette-overlay');
+        const isClosed = !rOverlay || rOverlay.style.display === 'none' || rOverlay.classList.contains('mobile-minimized');
+        if (isClosed) {
+          this.showRouletteUI();
         } else {
-          const rOverlay = document.getElementById('roulette-overlay');
-          if (rOverlay) rOverlay.style.display = 'none';
-          const rBanner = document.getElementById('roulette-banner');
-          if (rBanner) rBanner.style.display = 'none';
-          this.log("Roulette control panel closed. (Reselect Roulette demo to reopen controls)", "info");
+          this.hideRouletteUI();
         }
+        if (this.synth) this.synth.play('pickup');
       });
     }
 
@@ -11955,7 +12573,8 @@ else if (typeof define === 'function' && define['amd'])
     const rFab = document.getElementById('roulette-mobile-fab');
     if (rFab) {
       rFab.addEventListener('click', () => {
-        this.showRouletteMobileUI();
+        this.showRouletteUI();
+        if (this.synth) this.synth.play('pickup');
       });
     }
   }
@@ -11968,7 +12587,6 @@ else if (typeof define === 'function' && define['amd'])
     const payoutVal = document.getElementById('roulette-payout-val');
     const hitVal = document.getElementById('roulette-hit-val');
     const highVal = document.getElementById('roulette-highscore-val');
-    const summary = document.getElementById('roulette-stats-summary');
 
     if (credsVal) credsVal.textContent = rs.credits;
     if (payoutVal) payoutVal.textContent = rs.lastPayout > 0 ? `+${rs.lastPayout}` : "0";
@@ -11994,11 +12612,37 @@ else if (typeof define === 'function' && define['amd'])
       }
     }
 
-    if (summary) {
-      let label = rs.betType === 'number' ? `Number ${rs.specificNumber}` : rs.betType.toUpperCase();
-      let multiplier = "2x";
-      if (rs.betType === 'zero' || rs.betType === 'number') multiplier = "35x";
-      summary.textContent = `Bet Placement: ${label} (${rs.betAmount} Credits) | Potential Payout: ${multiplier}`;
+    // Top Gameplay HUD: Last Dropped Ball Number
+    const lastDropBadge = document.getElementById('roulette-last-drop-badge');
+    if (lastDropBadge) {
+      if (rs.lastDroppedNumber !== null && rs.lastDroppedNumber !== undefined) {
+        const num = typeof rs.lastDroppedNumber === 'object' ? rs.lastDroppedNumber.num : rs.lastDroppedNumber;
+        const color = this.getRouletteNumberColor(num);
+        lastDropBadge.className = `roulette-ball-badge large ${color}`;
+        lastDropBadge.textContent = `${num}`;
+      } else {
+        lastDropBadge.className = 'roulette-ball-badge large none';
+        lastDropBadge.textContent = rs.spinning ? '...' : '--';
+      }
+    }
+
+    // Top Gameplay HUD: Last 10 Results Strip
+    const historyStrip = document.getElementById('roulette-last-10-strip');
+    if (historyStrip) {
+      if (!rs.last10Results || rs.last10Results.length === 0) {
+        rs.last10Results = [32, 15, 19, 4, 21, 2, 25, 17, 34, 6];
+      }
+      historyStrip.innerHTML = '';
+      const list = rs.last10Results.slice(0, 10);
+      list.forEach((item, idx) => {
+        const num = typeof item === 'object' ? item.num : item;
+        const color = this.getRouletteNumberColor(num);
+        const badge = document.createElement('div');
+        badge.className = `roulette-ball-badge small ${color}`;
+        badge.textContent = `${num}`;
+        badge.title = `Result #${idx + 1}: ${num} (${color.toUpperCase()})`;
+        historyStrip.appendChild(badge);
+      });
     }
   }
 
@@ -12011,8 +12655,14 @@ else if (typeof define === 'function' && define['amd'])
       24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
     ];
     const winningNum = ROULETTE_NUMBERS[pocketIdx];
+    const color = this.getRouletteNumberColor(winningNum);
 
-    let color = 'black';
+    rs.lastDroppedNumber = { num: winningNum, color: color };
+    if (!rs.last10Results) rs.last10Results = [];
+    rs.last10Results.unshift({ num: winningNum, color: color });
+    if (rs.last10Results.length > 10) {
+      rs.last10Results = rs.last10Results.slice(0, 10);
+    }
     if (winningNum === 0) color = 'green';
     else {
       const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
@@ -12119,12 +12769,12 @@ else if (typeof define === 'function' && define['amd'])
 
     if (!sphereMesh || !cubeMesh || !torusMesh) return;
 
-    const wheelX = -1.65;
+    const wheelX = -2.10;
     const wheelY = 0.0;
-    const tableX = 1.95;
+    const tableX = 2.50;
     const tableY = 0.0;
-    const tableW = 3.30;
-    const tableH = 1.38;
+    const tableW = 4.46;
+    const tableH = 1.86;
 
     // Helper: draw rotated cube with yaw angle rotZ (rigid rotation with scale)
     const drawRotatedCube = (px, py, pz, sx, sy, sz, rotZ, color, rough = 0.25, metal = 0.85, matType = 0) => {
@@ -12360,21 +13010,21 @@ else if (typeof define === 'function' && define['amd'])
     // 3. ROULETTE WHEEL ASSEMBLY (SIDE-BY-SIDE)
     // ==========================================
     // Outer mahogany housing cabinet base
-    drawDisk(wheelX, wheelY, 0.002, 1.48, 1.48, 1.0, rimColor, rimRough, rimMetal, 1);
+    drawDisk(wheelX, wheelY, 0.002, 2.00, 2.00, 1.0, rimColor, rimRough, rimMetal, 1);
 
     // Ball track Torus
-    drawHorizontalTorus(wheelX, wheelY, 0.040, 1.08, 1.08, 0.09, rimColor, rimRough, rimMetal, 1);
+    drawHorizontalTorus(wheelX, wheelY, 0.040, 1.46, 1.46, 0.12, rimColor, rimRough, rimMetal, 1);
 
     // Safety Ring Torus in 24k Gold
-    drawHorizontalTorus(wheelX, wheelY, 0.076, 1.05, 1.05, 0.04, [0.96, 0.82, 0.36], 0.08, 0.98, 0);
+    drawHorizontalTorus(wheelX, wheelY, 0.076, 1.42, 1.42, 0.05, [0.96, 0.82, 0.36], 0.08, 0.98, 0);
 
     // Inner concave wood bowl slope
-    drawDisk(wheelX, wheelY, 0.012, 1.04, 1.04, 1.0, rimColor, rimRough, rimMetal, 1);
+    drawDisk(wheelX, wheelY, 0.012, 1.40, 1.40, 1.0, rimColor, rimRough, rimMetal, 1);
 
     // 8 Brass Diamond Deflectors
     for (let k = 0; k < 8; k++) {
       const dAngle = k * (Math.PI / 4);
-      drawRotatedCube(wheelX + 0.92 * Math.cos(dAngle), wheelY + 0.92 * Math.sin(dAngle), 0.054, 0.028, 0.028, 0.016, dAngle + 0.785, [0.96, 0.84, 0.36], 0.08, 0.98, 0);
+      drawRotatedCube(wheelX + 1.24 * Math.cos(dAngle), wheelY + 1.24 * Math.sin(dAngle), 0.054, 0.038, 0.038, 0.022, dAngle + 0.785, [0.96, 0.84, 0.36], 0.08, 0.98, 0);
     }
 
     // Central spinning wheel turntable disk
@@ -12384,8 +13034,8 @@ else if (typeof define === 'function' && define['amd'])
       gl.uniformMatrix4fv(this.rouletteFeltProg.uViewProj, false, this.viewProjMatrix);
 
       const cW = Math.cos(wheelAngle), sW = Math.sin(wheelAngle);
-      this.modelMatrix[0] = 0.78 * cW;  this.modelMatrix[1] = 0.78 * sW;  this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
-      this.modelMatrix[4] = -0.78 * sW; this.modelMatrix[5] = 0.78 * cW;  this.modelMatrix[6] = 0;   this.modelMatrix[7] = 0;
+      this.modelMatrix[0] = 1.05 * cW;  this.modelMatrix[1] = 1.05 * sW;  this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = -1.05 * sW; this.modelMatrix[5] = 1.05 * cW;  this.modelMatrix[6] = 0;   this.modelMatrix[7] = 0;
       this.modelMatrix[8] = 0;          this.modelMatrix[9] = 0;          this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
       this.modelMatrix[12] = wheelX;    this.modelMatrix[13] = wheelY;    this.modelMatrix[14] = 0.024; this.modelMatrix[15] = 1;
       gl.uniformMatrix4fv(this.rouletteFeltProg.uModel, false, this.modelMatrix);
@@ -12401,13 +13051,14 @@ else if (typeof define === 'function' && define['amd'])
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, null);
 
+      // Return back to main PBR program for rest of scene
       gl.useProgram(progInfo.prog);
       this.bindMaterialTextures(progInfo);
     } else if (diskMesh) {
       gl.bindVertexArray(diskMesh.vao);
       const cW = Math.cos(wheelAngle), sW = Math.sin(wheelAngle);
-      this.modelMatrix[0] = 0.78 * cW;  this.modelMatrix[1] = 0.78 * sW;  this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
-      this.modelMatrix[4] = -0.78 * sW; this.modelMatrix[5] = 0.78 * cW;  this.modelMatrix[6] = 0;   this.modelMatrix[7] = 0;
+      this.modelMatrix[0] = 1.05 * cW;  this.modelMatrix[1] = 1.05 * sW;  this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = -1.05 * sW; this.modelMatrix[5] = 1.05 * cW;  this.modelMatrix[6] = 0;   this.modelMatrix[7] = 0;
       this.modelMatrix[8] = 0;          this.modelMatrix[9] = 0;          this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
       this.modelMatrix[12] = wheelX;    this.modelMatrix[13] = wheelY;    this.modelMatrix[14] = 0.024; this.modelMatrix[15] = 1;
       Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
@@ -12425,15 +13076,18 @@ else if (typeof define === 'function' && define['amd'])
       24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
     ];
 
-    for (let i = 0; i < 37; i++) {
-      const angle = wheelAngle + i * (2 * Math.PI / 37);
+    const angleOffset = 4.86 * Math.PI / 180; // Fine-tuned alignment with pocket tracks and wheel numbers
+    const pocketRadius = 0.581; // Align perfectly with the pocket track on the texture
 
-      // Radial divider fret in 24k polished gold
-      drawRotatedCube(wheelX + 0.68 * Math.cos(angle), wheelY + 0.68 * Math.sin(angle), 0.028, 0.09, 0.007, 0.024, angle, [0.96, 0.82, 0.36], 0.08, 0.98, 0);
+    for (let i = 0; i < 37; i++) {
+      const angle = wheelAngle + i * (2 * Math.PI / 37) + angleOffset;
+
+      // Radial divider fret in 24k polished gold (Scaled and elongated to fit perfectly)
+      drawRotatedCube(wheelX + pocketRadius * Math.cos(angle), wheelY + pocketRadius * Math.sin(angle), 0.028, 0.16, 0.012, 0.045, angle, [0.96, 0.82, 0.36], 0.08, 0.98, 0);
 
       const midAngle = angle + (Math.PI / 37);
-      const px = 0.68 * Math.cos(midAngle);
-      const py = 0.68 * Math.sin(midAngle);
+      const px = pocketRadius * Math.cos(midAngle);
+      const py = pocketRadius * Math.sin(midAngle);
 
       const num = ROULETTE_NUMBERS[i];
       let col = [0.03, 0.03, 0.03];
@@ -12444,36 +13098,42 @@ else if (typeof define === 'function' && define['amd'])
         if (reds.includes(num)) col = [0.85, 0.08, 0.08];
       }
 
-      // Pocket cup floor
-      drawRotatedCube(wheelX + px, wheelY + py, 0.024, 0.08, 0.046, 0.008, midAngle, col, 0.25, 0.3, 0);
+      // Pocket cup floor (scaled up to cover the pocket wells beautifully!)
+      drawRotatedCube(wheelX + px, wheelY + py, 0.024, 0.15, 0.092, 0.015, midAngle, col, 0.25, 0.3, 0);
 
       // Shiny colored pocket indicator sphere
-      drawSphere(wheelX + px, wheelY + py, 0.028, 0.016, 0.016, 0.016, col, 0.06, 0.15);
+      drawSphere(wheelX + px, wheelY + py, 0.028, 0.030, 0.030, 0.030, col, 0.06, 0.15);
     }
 
     // Central Turret & 4-Arm Spinner Cross
-    drawSphere(wheelX, wheelY, 0.035, 0.20, 0.20, 0.06, spindleColor, spindleRough, spindleMetal);
-    drawSphere(wheelX, wheelY, 0.075, 0.065, 0.065, 0.09, spindleColor, spindleRough, spindleMetal);
-    drawSphere(wheelX, wheelY, 0.13, 0.035, 0.035, 0.035, spindleColor, spindleRough, spindleMetal);
+    drawSphere(wheelX, wheelY, 0.035, 0.27, 0.27, 0.08, spindleColor, spindleRough, spindleMetal);
+    drawSphere(wheelX, wheelY, 0.075, 0.088, 0.088, 0.12, spindleColor, spindleRough, spindleMetal);
+    drawSphere(wheelX, wheelY, 0.13, 0.047, 0.047, 0.047, spindleColor, spindleRough, spindleMetal);
 
     for (let a = 0; a < 4; a++) {
       const armAng = wheelAngle + a * (Math.PI / 2);
-      drawRotatedCube(wheelX + 0.06 * Math.cos(armAng), wheelY + 0.06 * Math.sin(armAng), 0.11, 0.10, 0.014, 0.014, armAng, spindleColor, spindleRough, spindleMetal);
-      drawSphere(wheelX + 0.11 * Math.cos(armAng), wheelY + 0.11 * Math.sin(armAng), 0.11, 0.018, 0.018, 0.018, spindleColor, spindleRough, spindleMetal);
+      drawRotatedCube(wheelX + 0.08 * Math.cos(armAng), wheelY + 0.08 * Math.sin(armAng), 0.11, 0.135, 0.019, 0.019, armAng, spindleColor, spindleRough, spindleMetal);
+      drawSphere(wheelX + 0.15 * Math.cos(armAng), wheelY + 0.15 * Math.sin(armAng), 0.11, 0.024, 0.024, 0.024, spindleColor, spindleRough, spindleMetal);
     }
 
     // Physical rolling ivory ball
     const b = rs.ball;
     if (b) {
-      drawSphere(wheelX + b.pos[0], wheelY + b.pos[1], b.pos[2], 0.035, 0.035, 0.035, [0.97, 0.97, 0.95], 0.06, 0.12, 0, b.rot || [0, 0, 0]);
+      const ballScale = 0.854; // Aligns ball perfectly with pocket track (0.581 / 0.68)
+      const cosA = Math.cos(angleOffset);
+      const sinA = Math.sin(angleOffset);
+      const rx = (b.pos[0] * cosA - b.pos[1] * sinA) * ballScale;
+      const ry = (b.pos[0] * sinA + b.pos[1] * cosA) * ballScale;
+
+      drawSphere(wheelX + rx, wheelY + ry, b.pos[2], 0.047, 0.047, 0.047, [0.97, 0.97, 0.95], 0.06, 0.12, 0, b.rot || [0, 0, 0]);
 
       if (!b.trapped) {
-        rs.trail.push({ x: b.pos[0], y: b.pos[1], z: b.pos[2] });
+        rs.trail.push({ x: rx, y: ry, z: b.pos[2] });
         if (rs.trail.length > 14) rs.trail.shift();
 
         rs.trail.forEach((t, index) => {
           const ratio = index / rs.trail.length;
-          const rSize = 0.035 * ratio * 0.7;
+          const rSize = 0.047 * ratio * 0.7;
           drawSphere(wheelX + t.x, wheelY + t.y, t.z, rSize, rSize, rSize, [1.0, 1.0, 1.0], 0.05, 0.1, 0);
         });
       }
@@ -12588,6 +13248,1244 @@ else if (typeof define === 'function' && define['amd'])
     }
 
     // Restore back-face culling if active globally
+    if (this.state.cullFace) {
+      gl.enable(gl.CULL_FACE);
+    }
+  }
+
+  // =========================================================================
+  // DEMO 13: 3D REAL-PHYSICS BINGO & DIAMOND DRUM ENGINE
+  // =========================================================================
+
+  initBingoDemo() {
+    const isMobile = this.isMobileDevice();
+    this.state.cameraMode = 0;
+    this.state.camRadius = isMobile ? 6.8 : 5.2;
+    this.state.camPitch = 0.32;
+    this.state.camYaw = 0.22;
+    this.state.camTarget[0] = 0.0;
+    this.state.camTarget[1] = 1.15;
+    this.state.camTarget[2] = 0.0;
+
+    // Hide Plinko and Roulette panels
+    const plinkoOverlay = document.getElementById('plinko-overlay');
+    if (plinkoOverlay) plinkoOverlay.style.display = 'none';
+    const plinkoBanner = document.getElementById('plinko-banner');
+    if (plinkoBanner) plinkoBanner.style.display = 'none';
+    const rOverlay = document.getElementById('roulette-overlay');
+    if (rOverlay) rOverlay.style.display = 'none';
+    const rBanner = document.getElementById('roulette-banner');
+    if (rBanner) rBanner.style.display = 'none';
+
+    // Show Bingo UI
+    const bingoOverlay = document.getElementById('bingo-overlay');
+    if (bingoOverlay) bingoOverlay.style.display = 'flex';
+    const bingoBanner = document.getElementById('bingo-banner');
+    if (bingoBanner) bingoBanner.style.display = 'flex';
+    const bingoControls = document.getElementById('bingo-controls-panel');
+    if (bingoControls) bingoControls.style.display = 'block';
+
+    const CATEGORY_COLORS = {
+      B: [0.08, 0.62, 0.98], // Electric Cyan / Blue (1-15)
+      I: [0.92, 0.18, 0.22], // Vivid Crimson Red (16-30)
+      N: [0.95, 0.95, 0.98], // Polished Silver-White (31-45)
+      G: [0.12, 0.82, 0.38], // Vibrant Emerald Green (46-60)
+      O: [0.98, 0.58, 0.12]  // Warm Amber Gold (61-75)
+    };
+
+    const CALLER_PHRASES = {
+      1: "Kelly's Eye", 2: "One Little Duck", 3: "Cup of Tea", 4: "Knock at the Door",
+      5: "Man Alive", 7: "Lucky Seven", 11: "Legs Eleven", 12: "One Dozen",
+      13: "Unlucky for Some", 15: "Young and Keen", 16: "Sweet Sixteen", 21: "Key of the Door",
+      22: "Two Little Ducks", 30: "Dirty Gertie", 33: "All the Threes", 44: "Droopy Drawers",
+      45: "Halfway There", 50: "Half a Century", 55: "Snakes Alive", 66: "Clickety Click",
+      69: "Either Way Up", 75: "Strive and Strive"
+    };
+
+    this.bingoState = {
+      active: true,
+      isSpinning: true,
+      drumAngle: 0.0,
+      drumAngularVelocity: 2.8,
+      drumTargetVelocity: 2.8,
+      drumRadius: 0.88,
+      drumLength: 1.30,
+      drumCenter: [0.0, 1.25, 0.0],
+      gravity: [0.0, -7.5, 0.0],
+      restitution: 0.72,
+      friction: 0.35,
+
+      balls: [],
+      drawnBalls: [],
+      currentDrawnBall: null,
+      isDrawing: false,
+      exitProgress: 0.0,
+      autoDraw: false,
+      autoDrawInterval: 3500,
+      autoDrawTimer: null,
+      autoDaub: true,
+      soundEnabled: true,
+      hasWon: false,
+      winPattern: "",
+      winningCells: [],
+      callerPhrases: CALLER_PHRASES,
+      categoryColors: CATEGORY_COLORS,
+
+      playerCard: {
+        grid: Array(5).fill(null).map(() => Array(5).fill(0)),
+        daubed: Array(5).fill(null).map(() => Array(5).fill(false))
+      }
+    };
+
+    // Populate the 75 classic numbered balls with physics cascade intro
+    const bs = this.bingoState;
+    const cats = ['B', 'I', 'N', 'G', 'O'];
+    for (let i = 1; i <= 75; i++) {
+      const catIdx = Math.floor((i - 1) / 15);
+      const cat = cats[catIdx];
+      // Physics cascade intro: balls enter in a dynamic tumbling cascade inside the spinning drum
+      const x = -bs.drumLength * 0.38 + Math.random() * (bs.drumLength * 0.76);
+      const y = bs.drumCenter[1] + 0.12 + (i % 8) * 0.045 + Math.random() * 0.06;
+      const z = (Math.random() - 0.5) * 0.28;
+
+      bs.balls.push({
+        num: i,
+        category: cat,
+        color: CATEGORY_COLORS[cat],
+        pos: [x, y, z],
+        vel: [(Math.random() - 0.5) * 0.5, -0.8 - Math.random() * 0.9, (Math.random() - 0.5) * 0.5],
+        rot: [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI],
+        angVel: [(Math.random() - 0.5) * 6.0, (Math.random() - 0.5) * 6.0, (Math.random() - 0.5) * 6.0],
+        radius: 0.072,
+        isDrawn: false,
+        isExiting: false,
+        exitProgress: 0.0
+      });
+    }
+
+    this.generateBingoCard();
+    this.setupBingoUI();
+    this.updateBingoUI();
+    this.updateSceneEntitiesForActiveDemo();
+    this.log("Demo 13 Initialized: 3D Diamond-Drum Physics Bingo loaded with 75 tumbling spheres!", "success");
+  }
+
+  generateBingoCard() {
+    const bs = this.bingoState;
+    if (!bs) return;
+
+    bs.hasWon = false;
+    bs.winPattern = "";
+    bs.winningCells = [];
+
+    // Columns: B (1-15), I (16-30), N (31-45), G (46-60), O (61-75)
+    for (let col = 0; col < 5; col++) {
+      const pool = [];
+      const start = col * 15 + 1;
+      for (let n = start; n < start + 15; n++) pool.push(n);
+      // Shuffle pool
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+
+      for (let row = 0; row < 5; row++) {
+        if (col === 2 && row === 2) {
+          bs.playerCard.grid[row][col] = 0; // FREE space
+          bs.playerCard.daubed[row][col] = true;
+        } else {
+          bs.playerCard.grid[row][col] = pool[row];
+          bs.playerCard.daubed[row][col] = false;
+        }
+      }
+    }
+  }
+
+  daubBingoCard(num) {
+    const bs = this.bingoState;
+    if (!bs) return false;
+
+    let daubedAny = false;
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 5; c++) {
+        if (bs.playerCard.grid[r][c] === num) {
+          bs.playerCard.daubed[r][c] = true;
+          daubedAny = true;
+        }
+      }
+    }
+    if (daubedAny) {
+      this.checkBingoWin();
+    }
+    return daubedAny;
+  }
+
+  checkBingoWin() {
+    const bs = this.bingoState;
+    if (!bs || bs.hasWon) return;
+
+    const grid = bs.playerCard.daubed;
+    let won = false;
+    let pattern = "";
+    let winCells = [];
+
+    // 1. Horizontal Rows
+    for (let r = 0; r < 5; r++) {
+      if (grid[r].every(v => v)) {
+        won = true;
+        pattern = `Horizontal Row ${r + 1}`;
+        winCells = [ [r,0], [r,1], [r,2], [r,3], [r,4] ];
+        break;
+      }
+    }
+
+    // 2. Vertical Columns
+    if (!won) {
+      const colLetters = ['B', 'I', 'N', 'G', 'O'];
+      for (let c = 0; c < 5; c++) {
+        if (grid.every(row => row[c])) {
+          won = true;
+          pattern = `Vertical Column ${colLetters[c]}`;
+          winCells = [ [0,c], [1,c], [2,c], [3,c], [4,c] ];
+          break;
+        }
+      }
+    }
+
+    // 3. Diagonals
+    if (!won) {
+      if ([0,1,2,3,4].every(i => grid[i][i])) {
+        won = true;
+        pattern = "Diagonal Line (Top-Left to Bottom-Right)";
+        winCells = [ [0,0], [1,1], [2,2], [3,3], [4,4] ];
+      } else if ([0,1,2,3,4].every(i => grid[i][4 - i])) {
+        won = true;
+        pattern = "Diagonal Line (Top-Right to Bottom-Left)";
+        winCells = [ [0,4], [1,3], [2,2], [3,1], [4,0] ];
+      }
+    }
+
+    // 4. Four Corners
+    if (!won && grid[0][0] && grid[0][4] && grid[4][0] && grid[4][4]) {
+      won = true;
+      pattern = "Four Corners";
+      winCells = [ [0,0], [0,4], [4,0], [4,4] ];
+    }
+
+    if (won) {
+      bs.hasWon = true;
+      bs.winPattern = pattern;
+      bs.winningCells = winCells;
+      this.playBingoSound('win');
+      this.log(`🎉 BINGO! Player won with ${pattern}!`, "success");
+
+      const banner = document.getElementById('bingo-banner');
+      if (banner) {
+        banner.innerHTML = `<span>🏆 <b>B-I-N-G-O! WINNER!</b> &bull; ${pattern} &bull; Congratulations!</span>`;
+        banner.classList.add('bingo-win-highlight');
+      }
+    }
+  }
+
+  drawBingoBall() {
+    const bs = this.bingoState;
+    if (!bs || bs.isDrawing) return;
+
+    const available = bs.balls.filter(b => !b.isDrawn && !b.isExiting);
+    if (available.length === 0) {
+      this.log("All 75 Bingo balls have been drawn!", "info");
+      return;
+    }
+
+    bs.isDrawing = true;
+    // Pick random available ball
+    const pick = available[Math.floor(Math.random() * available.length)];
+    pick.isExiting = true;
+    pick.exitProgress = 0.0;
+    bs.currentDrawnBall = pick;
+    bs.drawnBalls.push(pick.num);
+
+    this.playBingoSound('draw');
+    this.log(`Drawn Ball: ${pick.category}-${pick.num} (${bs.callerPhrases[pick.num] || 'Called!'})`, "cpp");
+
+    if (bs.autoDaub) {
+      this.daubBingoCard(pick.num);
+    }
+    this.updateBingoUI();
+  }
+
+  resetBingoRound() {
+    const bs = this.bingoState;
+    if (!bs) return;
+
+    if (bs.autoDrawTimer) {
+      clearInterval(bs.autoDrawTimer);
+      bs.autoDrawTimer = null;
+      bs.autoDraw = false;
+    }
+
+    bs.drawnBalls = [];
+    bs.currentDrawnBall = null;
+    bs.isDrawing = false;
+    bs.hasWon = false;
+    bs.winPattern = "";
+    bs.winningCells = [];
+
+    // Return balls to drum with physics cascade intro
+    bs.balls.forEach((b, i) => {
+      b.isDrawn = false;
+      b.isExiting = false;
+      b.exitProgress = 0.0;
+      b.radius = 0.072;
+      b.pos[0] = -bs.drumLength * 0.38 + Math.random() * (bs.drumLength * 0.76);
+      b.pos[1] = bs.drumCenter[1] + 0.12 + (i % 8) * 0.045 + Math.random() * 0.06;
+      b.pos[2] = (Math.random() - 0.5) * 0.28;
+      b.vel = [(Math.random() - 0.5) * 0.5, -0.8 - Math.random() * 0.9, (Math.random() - 0.5) * 0.5];
+      b.angVel = [(Math.random() - 0.5) * 6.0, (Math.random() - 0.5) * 6.0, (Math.random() - 0.5) * 6.0];
+    });
+
+    this.generateBingoCard();
+    this.updateBingoUI();
+    this.log("Bingo game reset. Fresh card generated and all 75 balls returned to diamond drum!", "success");
+  }
+
+  playBingoSound(type) {
+    const bs = this.bingoState;
+    if (!bs || !bs.soundEnabled) return;
+
+    try {
+      if (!this._audioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) this._audioCtx = new AudioCtx();
+      }
+      if (!this._audioCtx || this._audioCtx.state === 'suspended') {
+        this._audioCtx?.resume?.();
+      }
+      const ctx = this._audioCtx;
+      if (!ctx) return;
+
+      const now = ctx.currentTime;
+      if (type === 'tumble') {
+        // Fast subtle plastic rattle click
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(320 + Math.random() * 240, now);
+        osc.frequency.exponentialRampToValueAtTime(140, now + 0.035);
+        gain.gain.setValueAtTime(0.04, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.04);
+      } else if (type === 'draw') {
+        // Bell chime tone: C5 & E5
+        [523.25, 659.25].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+          gain.gain.setValueAtTime(0.12, now + idx * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.45);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + idx * 0.08);
+          osc.stop(now + idx * 0.08 + 0.5);
+        });
+      } else if (type === 'win') {
+        // Triumphant BINGO fanfare: C5 -> E5 -> G5 -> C6
+        [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+          gain.gain.setValueAtTime(0.18, now + idx * 0.12);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.12 + 0.6);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + idx * 0.12);
+          osc.stop(now + idx * 0.12 + 0.65);
+        });
+      }
+    } catch(err) {}
+  }
+
+  setupBingoUI() {
+    const bs = this.bingoState;
+    if (!bs) return;
+
+    // Viewport Overlay Isolation
+    const overlay = document.getElementById('bingo-overlay');
+    if (overlay && !overlay._eventsIsolated) {
+      overlay._eventsIsolated = true;
+      const stop = (e) => e.stopPropagation();
+      overlay.addEventListener('wheel', stop, { passive: true });
+    }
+
+    // Toggle overlay visibility buttons (minimize / restore / close)
+    const btnClose = document.getElementById('btn-bingo-close') || document.getElementById('bingo-btn-minimize');
+    const fab = document.getElementById('bingo-mobile-fab');
+    const desktopShowBtn = document.getElementById('bingo-desktop-show-btn');
+    const bannerToggleBtn = document.getElementById('bingo-banner-toggle-card-btn');
+
+    const minimizeOverlay = (e) => {
+      if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+      if (overlay) {
+        overlay.classList.add('minimized');
+        overlay.classList.add('mobile-minimized');
+        overlay.style.display = 'none';
+      }
+      if (fab) fab.style.display = 'flex';
+      if (desktopShowBtn) desktopShowBtn.style.display = 'block';
+    };
+
+    const restoreOverlay = (e) => {
+      if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+      if (overlay) {
+        overlay.classList.remove('minimized');
+        overlay.classList.remove('mobile-minimized');
+        overlay.style.display = 'flex';
+      }
+      if (fab) fab.style.display = 'none';
+      if (desktopShowBtn) desktopShowBtn.style.display = 'none';
+    };
+
+    if (btnClose) {
+      btnClose.onclick = minimizeOverlay;
+    }
+    if (fab) fab.onclick = restoreOverlay;
+    if (desktopShowBtn) desktopShowBtn.onclick = restoreOverlay;
+
+    if (bannerToggleBtn) {
+      bannerToggleBtn.onclick = (e) => {
+        if (e) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+        if (overlay && (overlay.style.display === 'none' || overlay.classList.contains('minimized') || overlay.classList.contains('mobile-minimized'))) {
+          restoreOverlay(e);
+        } else {
+          minimizeOverlay(e);
+        }
+      };
+    }
+
+    // Viewport Action Buttons
+    const btnSpin = document.getElementById('btn-bingo-spin') || document.getElementById('bingo-btn-spin');
+    if (btnSpin) {
+      btnSpin.onclick = (e) => {
+        if (e) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+        if (!bs.isSpinning) bs.isSpinning = true;
+        this.drawBingoBall();
+      };
+    }
+
+    const btnAuto = document.getElementById('btn-bingo-autodraw') || document.getElementById('bingo-btn-autodraw');
+    const handleAutoToggle = (e) => {
+      if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+      bs.autoDraw = !bs.autoDraw;
+      if (bs.autoDraw) {
+        if (btnAuto) {
+          btnAuto.classList.add('active');
+          btnAuto.innerHTML = '<span>⏹ STOP AUTO</span>';
+          btnAuto.style.background = '#dc2626';
+        }
+        const tabBtn = document.getElementById('tab-btn-bingo-autodraw');
+        if (tabBtn) {
+          tabBtn.textContent = '⏹ Stop Auto-Draw';
+          tabBtn.style.background = '#dc2626';
+        }
+        bs.autoDrawTimer = setInterval(() => {
+          if (!bs.hasWon && bs.drawnBalls.length < 75) {
+            this.drawBingoBall();
+          } else {
+            handleAutoToggle();
+          }
+        }, bs.autoDrawInterval);
+      } else {
+        if (btnAuto) {
+          btnAuto.classList.remove('active');
+          btnAuto.innerHTML = '<span>⚡ AUTO DRAW</span>';
+          btnAuto.style.background = '';
+        }
+        const tabBtn = document.getElementById('tab-btn-bingo-autodraw');
+        if (tabBtn) {
+          tabBtn.textContent = '⚡ Auto Draw: OFF';
+          tabBtn.style.background = '';
+        }
+        if (bs.autoDrawTimer) {
+          clearInterval(bs.autoDrawTimer);
+          bs.autoDrawTimer = null;
+        }
+      }
+    };
+    if (btnAuto) btnAuto.onclick = handleAutoToggle;
+
+    const btnNewCard = document.getElementById('btn-bingo-newcard') || document.getElementById('bingo-btn-newcard');
+    if (btnNewCard) {
+      btnNewCard.onclick = (e) => {
+        if (e) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+        this.generateBingoCard();
+        this.updateBingoUI();
+        this.log("Generated fresh 5×5 Bingo card!", "info");
+      };
+    }
+
+    const btnReset = document.getElementById('btn-bingo-reset') || document.getElementById('bingo-btn-reset');
+    if (btnReset) {
+      btnReset.onclick = (e) => {
+        if (e) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+        this.resetBingoRound();
+      };
+    }
+
+    // Controls & Demos Tab UI Controls
+    const tabBtnSpin = document.getElementById('tab-btn-bingo-spin');
+    if (tabBtnSpin) {
+      tabBtnSpin.onclick = (e) => {
+        if (e) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+        if (!bs.isSpinning) bs.isSpinning = true;
+        this.drawBingoBall();
+      };
+    }
+
+    const tabBtnAuto = document.getElementById('tab-btn-bingo-autodraw');
+    if (tabBtnAuto) tabBtnAuto.onclick = handleAutoToggle;
+
+    const tabBtnNewCard = document.getElementById('tab-btn-bingo-newcard');
+    if (tabBtnNewCard) {
+      tabBtnNewCard.onclick = (e) => {
+        if (e) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+        this.generateBingoCard();
+        this.updateBingoUI();
+        this.log("Generated fresh 5×5 Bingo card!", "info");
+      };
+    }
+
+    const tabBtnReset = document.getElementById('tab-btn-bingo-reset');
+    if (tabBtnReset) {
+      tabBtnReset.onclick = (e) => {
+        if (e) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+        this.resetBingoRound();
+      };
+    }
+
+    // Speed Slider
+    const speedSlider = document.getElementById('tab-bingo-speed-slider');
+    const speedVal = document.getElementById('tab-bingo-speed-val');
+    if (speedSlider) {
+      speedSlider.oninput = (e) => {
+        const val = parseFloat(e.target.value);
+        bs.drumTargetVelocity = val;
+        if (speedVal) speedVal.textContent = val.toFixed(1) + " rad/s";
+      };
+    }
+
+    // Auto-Daub Checkbox
+    const chkAutoDaub = document.getElementById('tab-chk-bingo-autodaub');
+    if (chkAutoDaub) {
+      chkAutoDaub.checked = bs.autoDaub;
+      chkAutoDaub.onchange = (e) => {
+        bs.autoDaub = e.target.checked;
+      };
+    }
+
+    // Sound Checkbox
+    const chkAudio = document.getElementById('tab-chk-bingo-audio');
+    if (chkAudio) {
+      chkAudio.checked = bs.soundEnabled;
+      chkAudio.onchange = (e) => {
+        bs.soundEnabled = e.target.checked;
+      };
+    }
+  }
+
+  updateBingoUI() {
+    const bs = this.bingoState;
+    if (!bs) return;
+
+    // 1. Update Caller Display (Active Drawn Ball)
+    const callBallEl = document.getElementById('bingo-drawn-ball') || document.getElementById('bingo-current-ball');
+    const callLetterEl = document.getElementById('bingo-drawn-letter') || document.getElementById('bingo-caller-letter');
+    const callNumEl = document.getElementById('bingo-drawn-number') || document.getElementById('bingo-caller-num');
+    const callPhraseEl = document.getElementById('bingo-drawn-text') || document.getElementById('bingo-caller-phrase');
+    const curBall = bs.currentDrawnBall;
+
+    if (curBall) {
+      if (callLetterEl) callLetterEl.textContent = curBall.category;
+      if (callNumEl) callNumEl.textContent = curBall.num;
+      if (callPhraseEl) callPhraseEl.textContent = bs.callerPhrases[curBall.num] || `${curBall.category}-${curBall.num}!`;
+      if (callBallEl) {
+        callBallEl.className = `bingo-big-ball ball-cat-${curBall.category}`;
+      }
+    } else {
+      if (callLetterEl) callLetterEl.textContent = "--";
+      if (callNumEl) callNumEl.textContent = "--";
+      if (callPhraseEl) callPhraseEl.textContent = "Press Spin Drum to Draw!";
+      if (callBallEl) callBallEl.className = 'bingo-big-ball ball-cat-none';
+    }
+
+    // 2. Update Banner HUD
+    const bannerBallEl = document.getElementById('bingo-banner-ball');
+    const bannerTextEl = document.getElementById('bingo-banner-text');
+    const bannerWinEl = document.getElementById('bingo-banner-win');
+    const cardWinEl = document.getElementById('bingo-win-badge');
+
+    if (bannerBallEl) {
+      if (curBall) {
+        bannerBallEl.textContent = `${curBall.category}${curBall.num}`;
+        bannerBallEl.className = `bingo-mini-ball ball-cat-${curBall.category}`;
+      } else {
+        bannerBallEl.textContent = "--";
+        bannerBallEl.className = 'bingo-mini-ball ball-cat-none';
+      }
+    }
+    if (bannerTextEl) {
+      if (curBall) {
+        bannerTextEl.textContent = `${curBall.category}-${curBall.num} (${bs.callerPhrases[curBall.num] || 'Called'})`;
+      } else {
+        bannerTextEl.textContent = "Ready to Spin";
+      }
+    }
+
+    if (bannerWinEl) bannerWinEl.style.display = bs.hasWon ? 'inline-block' : 'none';
+    if (cardWinEl) cardWinEl.style.display = bs.hasWon ? 'inline-block' : 'none';
+
+    // 3. Update Recent 5 Balls Strip
+    const recentStrip = document.getElementById('bingo-history-strip') || document.getElementById('bingo-recent-strip');
+    if (recentStrip) {
+      recentStrip.innerHTML = '';
+      const recent = bs.drawnBalls.slice(-5).reverse();
+      recent.forEach(num => {
+        const catIdx = Math.floor((num - 1) / 15);
+        const cat = ['B', 'I', 'N', 'G', 'O'][catIdx];
+        const mini = document.createElement('div');
+        mini.className = `bingo-mini-ball ball-cat-${cat}`;
+        mini.textContent = `${num}`;
+        mini.title = `${cat}-${num}`;
+        recentStrip.appendChild(mini);
+      });
+      if (recent.length === 0) {
+        recentStrip.innerHTML = '<span style="font-size:10px; color:#64748b; font-style:italic;">None drawn yet</span>';
+      }
+    }
+
+    // 4. Update Player 5x5 Bingo Card Grid
+    const cardGrid = document.getElementById('bingo-card-grid');
+    if (cardGrid) {
+      cardGrid.innerHTML = '';
+
+      // Column Headers: B, I, N, G, O
+      const colHeaders = [
+        { letter: 'B', color: '#0284c7' },
+        { letter: 'I', color: '#dc2626' },
+        { letter: 'N', color: '#64748b' },
+        { letter: 'G', color: '#16a34a' },
+        { letter: 'O', color: '#ea580c' }
+      ];
+      colHeaders.forEach(ch => {
+        const hdr = document.createElement('div');
+        hdr.className = 'bingo-col-header';
+        hdr.style.background = ch.color;
+        hdr.textContent = ch.letter;
+        cardGrid.appendChild(hdr);
+      });
+
+      // 5 Rows x 5 Columns
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const num = bs.playerCard.grid[r][c];
+          const isDaubed = bs.playerCard.daubed[r][c];
+          const isFree = (r === 2 && c === 2);
+          const isWinning = bs.winningCells.some(([wr, wc]) => wr === r && wc === c);
+
+          const cell = document.createElement('button');
+          cell.type = 'button';
+          cell.className = 'bingo-cell';
+          if (isDaubed) cell.classList.add('daubed');
+          if (isFree) {
+            cell.classList.add('free-cell');
+            cell.innerHTML = '★<br><span style="font-size:8px;">FREE</span>';
+          } else {
+            cell.textContent = num;
+          }
+          if (isWinning) cell.classList.add('winning');
+
+          cell.onclick = (e) => {
+            if (e) {
+              e.stopPropagation();
+              e.preventDefault();
+            }
+            if (!isDaubed && (bs.drawnBalls.includes(num) || isFree)) {
+              bs.playerCard.daubed[r][c] = true;
+              this.playBingoSound('tumble');
+              this.checkBingoWin();
+              this.updateBingoUI();
+            }
+          };
+          cardGrid.appendChild(cell);
+        }
+      }
+    }
+
+    // 5. Update Master 75-Ball Board in Sidebar Tab
+    const tabDrawnCount = document.getElementById('tab-bingo-drawn-count');
+    if (tabDrawnCount) tabDrawnCount.textContent = `Drawn: ${bs.drawnBalls.length} / 75`;
+
+    const tabMasterBoard = document.getElementById('tab-bingo-master-board');
+    if (tabMasterBoard) {
+      tabMasterBoard.innerHTML = '';
+      const catData = [
+        { letter: 'B', start: 1, end: 15, bg: '#0284c7' },
+        { letter: 'I', start: 16, end: 30, bg: '#dc2626' },
+        { letter: 'N', start: 31, end: 45, bg: '#64748b' },
+        { letter: 'G', start: 46, end: 60, bg: '#16a34a' },
+        { letter: 'O', start: 61, end: 75, bg: '#ea580c' }
+      ];
+      catData.forEach(cat => {
+        const row = document.createElement('div');
+        row.className = 'bingo-master-row';
+
+        const tag = document.createElement('div');
+        tag.className = 'bingo-master-tag';
+        tag.style.background = cat.bg;
+        tag.textContent = cat.letter;
+        row.appendChild(tag);
+
+        const grid = document.createElement('div');
+        grid.className = 'bingo-master-grid';
+        for (let i = cat.start; i <= cat.end; i++) {
+          const numEl = document.createElement('div');
+          numEl.className = `bingo-master-num ${bs.drawnBalls.includes(i) ? 'active' : ''}`;
+          numEl.textContent = i;
+          grid.appendChild(numEl);
+        }
+        row.appendChild(grid);
+        tabMasterBoard.appendChild(row);
+      });
+    }
+  }
+
+  updateBingoPhysics(dt) {
+    const bs = this.bingoState;
+    if (!bs) return;
+
+    const safeDt = Math.min(dt, 0.033);
+
+    // 1. Drum Rotation Kinematics
+    if (bs.isSpinning) {
+      bs.drumAngularVelocity += (bs.drumTargetVelocity - bs.drumAngularVelocity) * 3.0 * safeDt;
+      bs.drumAngle += bs.drumAngularVelocity * safeDt;
+      bs.drumAngle = bs.drumAngle % (2 * Math.PI);
+    }
+
+    const cosA = Math.cos(bs.drumAngle);
+    const sinA = Math.sin(bs.drumAngle);
+
+    // Diamond Rhombus has 4 facet planes in local coordinates:
+    // (0, 1/sqrt(2), 1/sqrt(2)), (0, 1/sqrt(2), -1/sqrt(2)), (0, -1/sqrt(2), 1/sqrt(2)), (0, -1/sqrt(2), -1/sqrt(2))
+    const invSqrt2 = 0.70710678;
+    const localNormals = [
+      [0.0, invSqrt2, invSqrt2],
+      [0.0, invSqrt2, -invSqrt2],
+      [0.0, -invSqrt2, invSqrt2],
+      [0.0, -invSqrt2, -invSqrt2]
+    ];
+
+    const worldNormals = localNormals.map(([nx, ny, nz]) => {
+      const wy = ny * cosA - nz * sinA;
+      const wz = ny * sinA + nz * cosA;
+      return [0.0, wy, wz];
+    });
+
+    const diamondFacetDist = bs.drumRadius * invSqrt2; // Perpendicular distance to flat diamond facet
+    const halfLen = bs.drumLength * 0.5;
+    const cy = bs.drumCenter[1];
+    const cz = bs.drumCenter[2];
+
+    let tumbleImpactCount = 0;
+
+    // 2. Update Ball Kinematics & Collisions
+    for (let i = 0; i < bs.balls.length; i++) {
+      const b = bs.balls[i];
+
+      // Ball Chute Delivery Animation
+      if (b.isExiting) {
+        b.exitProgress += safeDt * 1.5;
+        if (b.exitProgress >= 1.0) {
+          b.exitProgress = 1.0;
+          b.isExiting = false;
+          b.isDrawn = true;
+          bs.isDrawing = false;
+          this.checkBingoWin();
+        }
+        // Smooth spline glide from drum gate to caller cup
+        const t = b.exitProgress;
+        b.pos[0] = halfLen + 0.15 + t * 0.28;
+        b.pos[1] = (cy - 0.10) - t * 0.70;
+        b.pos[2] = 0.12 + Math.sin(t * Math.PI) * 0.24 + t * 0.10;
+        continue;
+      }
+
+      if (b.isDrawn) {
+        // Rests in the velvet-lined caller cup
+        b.pos[0] = 0.95;
+        b.pos[1] = 0.48;
+        b.pos[2] = 0.35;
+        continue;
+      }
+
+      // Gravity Integration
+      b.vel[0] += bs.gravity[0] * safeDt;
+      b.vel[1] += bs.gravity[1] * safeDt;
+      b.vel[2] += bs.gravity[2] * safeDt;
+
+      // Position Euler Step
+      b.pos[0] += b.vel[0] * safeDt;
+      b.pos[1] += b.vel[1] * safeDt;
+      b.pos[2] += b.vel[2] * safeDt;
+
+      // Relative to drum center
+      const ry = b.pos[1] - cy;
+      const rz = b.pos[2] - cz;
+
+      // Collision with the 4 rotating diamond facets
+      for (let w = 0; w < 4; w++) {
+        const n = worldNormals[w];
+        const dist = ry * n[1] + rz * n[2];
+
+        if (dist + b.radius > diamondFacetDist) {
+          const penetration = (dist + b.radius) - diamondFacetDist;
+          b.pos[1] -= n[1] * penetration;
+          b.pos[2] -= n[2] * penetration;
+
+          // Tangential wall velocity from drum rotation around X axis:
+          // v = omega x r => ( -omega * rz, omega * ry )
+          const vWallY = -bs.drumAngularVelocity * rz;
+          const vWallZ = bs.drumAngularVelocity * ry;
+
+          const vRelY = b.vel[1] - vWallY;
+          const vRelZ = b.vel[2] - vWallZ;
+          const normalVel = vRelY * n[1] + vRelZ * n[2];
+
+          if (normalVel > 0) {
+            const vnY = n[1] * normalVel;
+            const vnZ = n[2] * normalVel;
+            const vtY = vRelY - vnY;
+            const vtZ = vRelZ - vnZ;
+
+            const frictionDecay = Math.max(0.0, 1.0 - bs.friction * safeDt * 25.0);
+            b.vel[1] = vWallY - vnY * bs.restitution + vtY * frictionDecay;
+            b.vel[2] = vWallZ - vnZ * bs.restitution + vtZ * frictionDecay;
+
+            if (normalVel > 0.8) tumbleImpactCount++;
+          }
+        }
+      }
+
+      // Collision with End Caps (X Axis limits)
+      if (b.pos[0] - b.radius < -halfLen + 0.05) {
+        b.pos[0] = -halfLen + 0.05 + b.radius;
+        if (b.vel[0] < 0) b.vel[0] = -b.vel[0] * bs.restitution;
+      } else if (b.pos[0] + b.radius > halfLen - 0.05) {
+        b.pos[0] = halfLen - 0.05 - b.radius;
+        if (b.vel[0] > 0) b.vel[0] = -b.vel[0] * bs.restitution;
+      }
+
+      // Safety Radial Boundary Clamp (Keep balls strictly inside diamond cage perimeter)
+      const distFromCenter = Math.hypot(ry, rz);
+      const maxRadius = bs.drumRadius * 0.88;
+      if (distFromCenter + b.radius > maxRadius) {
+        const scale = (maxRadius - b.radius) / (distFromCenter || 1.0);
+        b.pos[1] = cy + ry * scale;
+        b.pos[2] = cz + rz * scale;
+        const radNy = ry / (distFromCenter || 1.0);
+        const radNz = rz / (distFromCenter || 1.0);
+        const radVel = b.vel[1] * radNy + b.vel[2] * radNz;
+        if (radVel > 0) {
+          b.vel[1] -= (1.0 + bs.restitution) * radVel * radNy;
+          b.vel[2] -= (1.0 + bs.restitution) * radVel * radNz;
+        }
+      }
+
+      // Internal Lifter Baffles (2 scoops mounted to opposite vertices k=0 and k=2)
+      // They lift balls smoothly up and drop them into a tumbling cascade
+      [0, 2].forEach(k => {
+        const apexAngle = bs.drumAngle + k * (Math.PI * 0.5);
+        const scoopY = cy + (bs.drumRadius * 0.55) * Math.cos(apexAngle);
+        const scoopZ = cz + (bs.drumRadius * 0.55) * Math.sin(apexAngle);
+        const sDist = Math.hypot(b.pos[1] - scoopY, b.pos[2] - scoopZ);
+        if (sDist < b.radius * 2.4) {
+          const omega = bs.drumAngularVelocity;
+          b.vel[1] += Math.abs(omega) * 0.95;
+          b.vel[2] += omega * 0.55;
+          tumbleImpactCount++;
+        }
+      });
+
+      // Ball rotational tumble
+      b.rot[0] += b.angVel[0] * safeDt;
+      b.rot[1] += b.angVel[1] * safeDt;
+      b.rot[2] += b.angVel[2] * safeDt;
+    }
+
+    // 3. Ball-to-Ball Collisions (Elastic impulses)
+    const active = bs.balls.filter(b => !b.isDrawn && !b.isExiting);
+    for (let i = 0; i < active.length; i++) {
+      const bi = active[i];
+      for (let j = i + 1; j < active.length; j++) {
+        const bj = active[j];
+
+        const dx = bj.pos[0] - bi.pos[0];
+        const dy = bj.pos[1] - bi.pos[1];
+        const dz = bj.pos[2] - bi.pos[2];
+        const distSq = dx * dx + dy * dy + dz * dz;
+        const minDist = bi.radius + bj.radius;
+
+        if (distSq < minDist * minDist && distSq > 1e-6) {
+          const dist = Math.sqrt(distSq);
+          const nx = dx / dist;
+          const ny = dy / dist;
+          const nz = dz / dist;
+          const overlap = 0.5 * (minDist - dist);
+
+          bi.pos[0] -= nx * overlap;
+          bi.pos[1] -= ny * overlap;
+          bi.pos[2] -= nz * overlap;
+
+          bj.pos[0] += nx * overlap;
+          bj.pos[1] += ny * overlap;
+          bj.pos[2] += nz * overlap;
+
+          const vRelX = bj.vel[0] - bi.vel[0];
+          const vRelY = bj.vel[1] - bi.vel[1];
+          const vRelZ = bj.vel[2] - bi.vel[2];
+          const sepVel = vRelX * nx + vRelY * ny + vRelZ * nz;
+
+          if (sepVel < 0) {
+            const impulse = -(1.0 + bs.restitution) * sepVel * 0.5;
+            bi.vel[0] -= nx * impulse;
+            bi.vel[1] -= ny * impulse;
+            bi.vel[2] -= nz * impulse;
+
+            bj.vel[0] += nx * impulse;
+            bj.vel[1] += ny * impulse;
+            bj.vel[2] += nz * impulse;
+          }
+        }
+      }
+    }
+
+    if (tumbleImpactCount > 2 && Math.random() < 0.12) {
+      this.playBingoSound('tumble');
+    }
+  }
+
+  render3DBingo(progInfo, timestamp) {
+    const gl = this.gl;
+    const bs = this.bingoState;
+    if (!bs) return;
+
+    gl.disable(gl.BLEND);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.depthFunc(gl.LEQUAL);
+    gl.disable(gl.CULL_FACE);
+
+    const sphereMesh = this.meshBuffers[0];
+    const cubeMesh = this.meshBuffers[1];
+    const torusMesh = this.meshBuffers[4];
+    const quadMesh = this.meshBuffers[5];
+    const ringMesh = this.meshBuffers[6];
+    const diskMesh = this.meshBuffers[7];
+
+    if (!sphereMesh || !cubeMesh) return;
+
+    if (progInfo.uUseTexMaps) gl.uniform1i(progInfo.uUseTexMaps, 0);
+
+    // Helper: draw simple aligned cube with full PBR uniforms & normal matrix
+    const drawCube = (px, py, pz, sx, sy, sz, color, rough = 0.25, metal = 0.85, matType = 0) => {
+      gl.bindVertexArray(cubeMesh.vao);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0;  this.modelMatrix[2] = 0;  this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0;  this.modelMatrix[5] = sy; this.modelMatrix[6] = 0;  this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0;  this.modelMatrix[9] = 0;  this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.1);
+      if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+      if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+      if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    // Helper: draw cube rotated around X axis with full PBR uniforms & normal matrix
+    const drawRotatedCubeX = (px, py, pz, sx, sy, sz, rotX, color, rough = 0.20, metal = 0.90) => {
+      gl.bindVertexArray(cubeMesh.vao);
+      const c = Math.cos(rotX), s = Math.sin(rotX);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0;      this.modelMatrix[2] = 0;     this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0;  this.modelMatrix[5] = sy * c; this.modelMatrix[6] = sy * s; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0;  this.modelMatrix[9] = -sz * s; this.modelMatrix[10] = sz * c; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py;   this.modelMatrix[14] = pz;   this.modelMatrix[15] = 1;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.1);
+      if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+      if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+      if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    // Helper: draw sphere with full PBR uniforms & normal matrix
+    const drawSphere = (px, py, pz, sx, sy, sz, color, rough = 0.08, metal = 0.15, clearCoat = 0.6) => {
+      gl.bindVertexArray(sphereMesh.vao);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0;  this.modelMatrix[2] = 0;  this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0;  this.modelMatrix[5] = sy; this.modelMatrix[6] = 0;  this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0;  this.modelMatrix[9] = 0;  this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
+      if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+      if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+      if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+      gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    // Helper: draw disk oriented in YZ plane (facing along X axis)
+    const drawDiskX = (px, py, pz, radius, color, rough = 0.20, metal = 0.90) => {
+      if (!diskMesh) return;
+      gl.bindVertexArray(diskMesh.vao);
+      this.modelMatrix[0] = 0; this.modelMatrix[1] = 0; this.modelMatrix[2] = -radius; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = radius; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = radius; this.modelMatrix[9] = 0; this.modelMatrix[10] = 0; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.1);
+      if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+      if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+      if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+      gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    // Helper: draw ring oriented in YZ plane (facing along X axis)
+    const drawRingX = (px, py, pz, radius, color, rough = 0.15, metal = 0.95) => {
+      if (!ringMesh) return;
+      gl.bindVertexArray(ringMesh.vao);
+      this.modelMatrix[0] = 0; this.modelMatrix[1] = 0; this.modelMatrix[2] = -radius; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = radius; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = radius; this.modelMatrix[9] = 0; this.modelMatrix[10] = 0; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.2);
+      if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+      if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+      if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+      gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    // 1. Table Platform (Rich Dark Mahogany with Polished Gold Trim & Legs)
+    drawCube(0.0, 0.08, 0.0, 3.4, 0.16, 2.2, [0.22, 0.08, 0.03], 0.26, 0.08); // Mahogany Table Top
+    drawCube(0.0, 0.17, 0.0, 3.44, 0.02, 2.24, [0.96, 0.80, 0.32], 0.12, 0.96); // Polished 24k Gold Beveled Trim
+    // 4 Turned Brass Table Legs
+    [[-1.5, -0.85], [1.5, -0.85], [-1.5, 0.85], [1.5, 0.85]].forEach(([lx, lz]) => {
+      drawCube(lx, -0.22, lz, 0.10, 0.44, 0.10, [0.88, 0.72, 0.25], 0.22, 0.92);
+      drawSphere(lx, -0.01, lz, 0.08, 0.04, 0.08, [0.95, 0.82, 0.35], 0.15, 0.95);
+    });
+
+    // 2. Twin A-Frame Support Stands (Antique Cast Bronze / Iron)
+    const cy = bs.drumCenter[1];
+    const cz = bs.drumCenter[2];
+    [-0.75, 0.75].forEach(x => {
+      // Upright angled legs
+      drawCube(x, 0.68, -0.24, 0.10, 1.20, 0.08, [0.18, 0.15, 0.14], 0.32, 0.78);
+      drawCube(x, 0.68, 0.24, 0.10, 1.20, 0.08, [0.18, 0.15, 0.14], 0.32, 0.78);
+      // Horizontal cross-tie brace
+      drawCube(x, 0.34, 0.0, 0.09, 0.06, 0.48, [0.18, 0.15, 0.14], 0.32, 0.78);
+      // Polished brass pillow-block bearing housing
+      drawCube(x, cy, cz, 0.18, 0.18, 0.18, [0.95, 0.78, 0.30], 0.14, 0.96);
+      drawSphere(x, cy, cz, 0.11, 0.11, 0.11, [0.98, 0.82, 0.35], 0.10, 0.98);
+    });
+
+    // 3. Central Solid Brass Axle Shaft
+    drawCube(0.0, cy, cz, 1.86, 0.05, 0.05, [0.95, 0.76, 0.28], 0.12, 0.96);
+
+    // Left hand-crank flywheel and rotating handle
+    const crankAngle = bs.drumAngle;
+    const crankRadius = 0.20;
+    drawDiskX(-0.84, cy, cz, 0.18, [0.92, 0.74, 0.26], 0.18, 0.95);
+    drawRingX(-0.835, cy, cz, 0.18, [0.98, 0.82, 0.32], 0.12, 0.98);
+    const armY = cy + Math.sin(crankAngle) * (crankRadius * 0.5);
+    const armZ = cz + Math.cos(crankAngle) * (crankRadius * 0.5);
+    const handleY = cy + Math.sin(crankAngle) * crankRadius;
+    const handleZ = cz + Math.cos(crankAngle) * crankRadius;
+    drawCube(-0.86, armY, armZ, 0.035, crankRadius, 0.035, [0.95, 0.78, 0.30], 0.15, 0.95);
+    drawSphere(-0.90, handleY, handleZ, 0.045, 0.045, 0.08, [0.24, 0.09, 0.04], 0.25, 0.10); // Wooden handle
+
+    // 4. Diamond-Shaped Tumbling Drum Assembly
+    const theta = bs.drumAngle;
+    const R = bs.drumRadius;
+    const L = bs.drumLength;
+    const halfL = L * 0.5;
+
+    // 4 Apexes of the rotating diamond drum in YZ space:
+    const apexes = [];
+    for (let k = 0; k < 4; k++) {
+      const a = theta + k * (Math.PI * 0.5);
+      apexes.push({
+        y: cy + R * Math.cos(a),
+        z: cz + R * Math.sin(a)
+      });
+    }
+
+    // 4 Longitudinal Corner Rails in polished 24k gold
+    for (let k = 0; k < 4; k++) {
+      const p = apexes[k];
+      drawCube(0.0, p.y, p.z, L, 0.045, 0.045, [0.98, 0.82, 0.35], 0.12, 0.98);
+    }
+
+    // 3 Diamond Perimeter Frames (Left: x = -halfL, Middle: x = 0, Right: x = halfL)
+    [-halfL, 0.0, halfL].forEach(x => {
+      for (let k = 0; k < 4; k++) {
+        const p1 = apexes[k];
+        const p2 = apexes[(k + 1) % 4];
+        const mx = x;
+        const my = (p1.y + p2.y) * 0.5;
+        const mz = (p1.z + p2.z) * 0.5;
+        const ang = Math.atan2(p2.z - p1.z, p2.y - p1.y);
+        const len = Math.hypot(p2.y - p1.y, p2.z - p1.z);
+        drawRotatedCubeX(mx, my, mz, 0.038, len, 0.038, -ang, [0.96, 0.78, 0.32], 0.14, 0.96);
+      }
+    });
+
+    // End-Cap Golden Rings and Radial Spokes connecting axle to apexes
+    [-halfL, halfL].forEach(x => {
+      drawRingX(x, cy, cz, R * 0.72, [0.95, 0.78, 0.32], 0.15, 0.96);
+      for (let k = 0; k < 4; k++) {
+        const p = apexes[k];
+        const sy = (cy + p.y) * 0.5;
+        const sz = (cz + p.z) * 0.5;
+        const ang = Math.atan2(p.z - cz, p.y - cy);
+        drawRotatedCubeX(x, sy, sz, 0.024, R, 0.024, -ang, [0.95, 0.76, 0.28], 0.16, 0.95);
+      }
+    });
+
+    // Transparent Wire Cage Struts (24 fine brass wire slats forming the see-through cage)
+    for (let w = 0; w < 24; w++) {
+      const frac = w / 24.0;
+      const k = Math.floor(frac * 4);
+      const sub = (frac * 4) % 1.0;
+      const p1 = apexes[k];
+      const p2 = apexes[(k + 1) % 4];
+      const wy = p1.y + (p2.y - p1.y) * sub;
+      const wz = p1.z + (p2.z - p1.z) * sub;
+      drawCube(0.0, wy, wz, L - 0.03, 0.012, 0.012, [0.90, 0.76, 0.36], 0.18, 0.94);
+    }
+
+    // 2 Internal Lifting Baffles (Paddles inside diamond drum scooping balls up)
+    [0, 2].forEach(k => {
+      const p = apexes[k];
+      const my = cy + (p.y - cy) * 0.65;
+      const mz = cz + (p.z - cz) * 0.65;
+      const ang = Math.atan2(p.z - cz, p.y - cy);
+      drawRotatedCubeX(0.0, my, mz, L - 0.08, 0.24, 0.022, -ang, [0.95, 0.76, 0.30], 0.16, 0.96);
+    });
+
+    // 5. Ball Extraction Funnel & Curved Delivery Chute
+    const chuteStart = [halfL + 0.06, cy - 0.05, cz + 0.15];
+    const chuteEnd = [0.95, 0.45, 0.35];
+
+    // Chute hopper funnel at drum side
+    drawCube(halfL + 0.08, cy - 0.06, cz + 0.15, 0.14, 0.15, 0.15, [0.95, 0.78, 0.32], 0.14, 0.96);
+
+    // Chute double rail segments descending gracefully
+    for (let s = 0; s <= 12; s++) {
+      const t = s / 12.0;
+      const sx = chuteStart[0] + (chuteEnd[0] - chuteStart[0]) * t;
+      const sy = chuteStart[1] + (chuteEnd[1] - chuteStart[1]) * t;
+      const sz = chuteStart[2] + (chuteEnd[2] - chuteStart[2]) * t + Math.sin(t * Math.PI) * 0.08;
+      drawCube(sx, sy, sz - 0.04, 0.035, 0.015, 0.015, [0.96, 0.82, 0.35], 0.10, 0.98);
+      drawCube(sx, sy, sz + 0.04, 0.035, 0.015, 0.015, [0.96, 0.82, 0.35], 0.10, 0.98);
+    }
+
+    // 6. Caller Presentation Cup & Velvet Cushion
+    drawCube(chuteEnd[0], 0.26, chuteEnd[2], 0.16, 0.24, 0.16, [0.95, 0.78, 0.32], 0.15, 0.95); // Brass pedestal
+    drawSphere(chuteEnd[0], chuteEnd[1], chuteEnd[2], 0.14, 0.06, 0.14, [0.98, 0.82, 0.36], 0.10, 0.98); // Outer cup rim
+    drawSphere(chuteEnd[0], chuteEnd[1] + 0.018, chuteEnd[2], 0.11, 0.03, 0.11, [0.08, 0.14, 0.42], 0.85, 0.05); // Royal blue velvet lining
+
+    // 7. Active Tumbling Balls (75 Numbered Spheres with Glossy PBR Finish)
+    for (let i = 0; i < bs.balls.length; i++) {
+      const b = bs.balls[i];
+      if (b.isDrawn && b !== bs.currentDrawnBall) continue; // Only active current drawn ball displayed prominently
+      drawSphere(b.pos[0], b.pos[1], b.pos[2], b.radius, b.radius, b.radius, b.color, 0.08, 0.20, 0.65);
+    }
+
+    // 8. Halo Ring around current drawn ball in caller cup
+    if (bs.currentDrawnBall && !bs.currentDrawnBall.isExiting) {
+      const cur = bs.currentDrawnBall;
+      drawRingX(cur.pos[0], cur.pos[1] + 0.02, cur.pos[2], 0.10, [0.98, 0.85, 0.35], 0.10, 0.98);
+    }
+
+    // Restore culling if needed
     if (this.state.cullFace) {
       gl.enable(gl.CULL_FACE);
     }
@@ -14051,8 +15949,8 @@ else if (typeof define === 'function' && define['amd'])
         { id: 0, name: "Roulette_Central_Gold_Spindle", type: "Faceted Gold Hub Spindle", materialKey: "gold", pos: [0, 0, 0.09], scale: [0.15, 0.15, 0.18], roughness: 0.08, metallic: 0.98, color: [0.96, 0.78, 0.30], collider: "Faceted Hub Cylinder", layer: "Layer_Interactive", badge: "Central Spindle", trigger: false },
         { id: 1, name: "Mahogany_Turntable_Wheel", type: "Segmented Number Turntable Wheel", materialKey: "wood", pos: [0, 0, 0], scale: [1.1, 1.1, 0.08], roughness: 0.22, metallic: 0.12, color: [0.32, 0.12, 0.06], collider: "Rotating Cylinder Wheel", layer: "Layer_Interactive", badge: "Spindle Wheel", trigger: false },
         { id: 2, name: "Polished_Mahogany_Rim", type: "Outer Static Mahogany Guide Rim", materialKey: "wood", pos: [0, 0, -0.04], scale: [1.3, 1.3, 0.08], roughness: 0.25, metallic: 0.08, color: [0.28, 0.10, 0.05], collider: "Static Outer Ring Rim", layer: "Layer_Static", badge: "Outer Rim", trigger: false },
-        { id: 101, name: "Wheel_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [-1.65, 0.0, 3.2], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.94, 0.82], intensity: 28.0, spotCutoff: 0.88, outerCutoff: 0.65, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
-        { id: 102, name: "Table_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [1.95, 0.0, 3.2], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.96, 0.88], intensity: 28.0, spotCutoff: 0.88, outerCutoff: 0.65, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
+        { id: 101, name: "Wheel_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [-2.10, 0.0, 3.2], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.94, 0.82], intensity: 34.0, spotCutoff: 0.88, outerCutoff: 0.65, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
+        { id: 102, name: "Table_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [2.50, 0.0, 3.2], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.96, 0.88], intensity: 34.0, spotCutoff: 0.88, outerCutoff: 0.65, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
         { id: 103, name: "Casino_Hall_Ambient_Fill", type: "Warm Ambient Chandelier Fill", isLight: true, lightType: "point", pos: [0.0, -2.0, 2.5], scale: [1.0, 1.0, 1.0], color: [1.0, 0.88, 0.70], intensity: 16.0, radius: 14.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Ambient Fill", contact: false }
       ];
       if (this.rouletteState && this.rouletteState.ball) {
@@ -14072,6 +15970,39 @@ else if (typeof define === 'function' && define['amd'])
           badge: "Ivory Ball",
           trigger: false
         });
+      }
+    } else if (ds.includes('13_bingo')) {
+      entities = [
+        { id: 0, name: "Diamond_Tumbler_Drum", type: "Rotating Diamond Wire Cage", materialKey: "gold", pos: [0, 1.25, 0], scale: [1.3, 0.88, 0.88], roughness: 0.15, metallic: 0.95, color: [0.95, 0.78, 0.32], collider: "Diamond Rhombus Hull", layer: "Layer_Interactive", badge: "Diamond Drum", trigger: false },
+        { id: 1, name: "Central_Drive_Axle", type: "Machined Solid Brass Shaft", materialKey: "gold", pos: [0, 1.25, 0], scale: [1.7, 0.05, 0.05], roughness: 0.12, metallic: 0.96, color: [0.92, 0.72, 0.28], collider: "Cylinder Axle", layer: "Layer_Static", badge: "Axle Shaft", trigger: false },
+        { id: 2, name: "Left_A_Frame_Pedestal", type: "Cast Bronze Bearing Upright", materialKey: "obsidian", pos: [-0.75, 0.65, 0], scale: [0.15, 1.15, 0.45], roughness: 0.35, metallic: 0.75, color: [0.22, 0.18, 0.16], collider: "A-Frame Static Collider", layer: "Layer_Static", badge: "Left Stand", trigger: false },
+        { id: 3, name: "Right_A_Frame_Pedestal", type: "Cast Bronze Bearing Upright", materialKey: "obsidian", pos: [0.75, 0.65, 0], scale: [0.15, 1.15, 0.45], roughness: 0.35, metallic: 0.75, color: [0.22, 0.18, 0.16], collider: "A-Frame Static Collider", layer: "Layer_Static", badge: "Right Stand", trigger: false },
+        { id: 4, name: "Mahogany_Pedestal_Base", type: "Lacquered Hardwood Display Foundation", materialKey: "wood", pos: [0, 0.10, 0], scale: [2.6, 0.18, 1.6], roughness: 0.25, metallic: 0.08, color: [0.28, 0.10, 0.05], collider: "Base Box Collider", layer: "Layer_Static", badge: "Pedestal Base", trigger: false },
+        { id: 5, name: "Spiral_Ball_Extraction_Chute", type: "Curved Brass Delivery Rails", materialKey: "gold", pos: [0.82, 0.85, 0.18], scale: [0.45, 0.70, 0.45], roughness: 0.15, metallic: 0.92, color: [0.95, 0.80, 0.35], collider: "Helical Rail Collider", layer: "Layer_Static", badge: "Exit Chute", trigger: false },
+        { id: 6, name: "Caller_Presentation_Pedestal", type: "Velvet-Lined Gold Display Cup", materialKey: "gold", pos: [0.95, 0.45, 0.35], scale: [0.25, 0.12, 0.25], roughness: 0.18, metallic: 0.90, color: [0.92, 0.75, 0.25], collider: "Cup Cylinder", layer: "Layer_Interactive", badge: "Caller Cup", trigger: false },
+        { id: 101, name: "Drum_Spotlight_Warm", type: "Spot Key Light", isLight: true, lightType: "spot", pos: [0.0, 3.5, 2.5], scale: [1, 1, 1], color: [1.0, 0.92, 0.82], intensity: 22.0, radius: 10.0, roughness: 0.0, metallic: 0.0, collider: "Light", layer: "Layer_Light", trigger: false, badge: "Drum Key", contact: false },
+        { id: 102, name: "Caller_Spotlight_Accent", type: "Accent Display Spot", isLight: true, lightType: "spot", pos: [1.2, 2.2, 1.4], scale: [1, 1, 1], color: [1.0, 0.96, 0.88], intensity: 18.0, radius: 6.0, roughness: 0.0, metallic: 0.0, collider: "Light", layer: "Layer_Light", trigger: false, badge: "Cup Spot", contact: false }
+      ];
+      if (this.bingoState && this.bingoState.balls) {
+        const activeBalls = this.bingoState.balls.filter(b => !b.isDrawn);
+        for (let i = 0; i < Math.min(8, activeBalls.length); i++) {
+          const b = activeBalls[i];
+          entities.push({
+            id: 800 + i,
+            name: `Bingo_Ball_${b.category}-${b.num}`,
+            type: "Kinematic Tumbling Numbered Sphere",
+            materialKey: "plastic",
+            pos: [b.pos[0], b.pos[1], b.pos[2]],
+            scale: [0.06, 0.06, 0.06],
+            roughness: 0.10,
+            metallic: 0.15,
+            color: b.color || [0.9, 0.9, 0.9],
+            collider: "Rigid Sphere Collider",
+            layer: "Layer_Dynamic_Balls",
+            badge: `${b.category}-${b.num}`,
+            trigger: false
+          });
+        }
       }
     }
 
@@ -16328,6 +18259,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // -------------------------------------------------------------
       this.updateRoulettePhysics(dt);
       this.render3DRoulette(progInfo, timestamp);
+    } else if (this.state.demoScene.includes('13_bingo')) {
+      // -------------------------------------------------------------
+      // DEMO 13: 3D REAL-PHYSICS BINGO & DIAMOND DRUM
+      // -------------------------------------------------------------
+      this.updateBingoPhysics(dt);
+      this.render3DBingo(progInfo, timestamp);
     } else {
       // DEMO 1 & DEMO 3: SINGLE OBJECT PBR / STUDIO
       const mesh = this.meshBuffers[this.state.activeMesh];

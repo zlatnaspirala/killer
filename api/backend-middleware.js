@@ -293,6 +293,7 @@ export function backendApiPlugin() {
               'examples/10_sliding_puzzle.cpp',
               'examples/11_plinko.cpp',
               'examples/12_roulette.cpp',
+              'examples/13_bingo_physics.cpp',
               'src/core/Engine.cpp',
               'src/core/Renderer.cpp',
               'src/core/Bindings.cpp',
