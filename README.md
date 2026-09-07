@@ -252,3 +252,11 @@ MIT License.
 
 Built with Google Filament PBR principles and modern C++17.
 
+### Credits
+
+- Characters used from great mixamo.com
+  -✅What you can do
+  You can use Mixamo characters and animations royalty-free in commercial, personal, or non‑profit projects (games, films, prints, etc.).You own your creations / how you use them.No requirement to credit Adobe / Mixamo (though allowed).
+  -🚫What you cannot do
+  You cannot redistribute or sell the raw Mixamo character or animation files “as is” (i.e. as standalone assets) to others.You can’t use Mixamo content to create a competing library of characters / animations (i.e. you can’t just package them and sell them to others).
+  You can’t use Mixamo’s content (or outputs) to train AI / machine learning models.
