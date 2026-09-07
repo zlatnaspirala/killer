@@ -40,6 +40,12 @@
           </select>
         </div>
         <div class="header-right">
+          <!-- Clickable Debug Render Data Toggle Pill -->
+          <div class="status-pill" id="debug-toggle-pill" style="cursor: pointer; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.35); transition: all 0.2s; user-select: none;" title="Toggle real-time vertices, triangles, and memory telemetry overlays">
+            <span class="status-dot" style="background: #ef4444; box-shadow: 0 0 8px #ef4444; animation: none;" id="debug-toggle-dot"></span>
+            <span class="status-text" style="color: #a5f3fc; font-weight: 700; font-size: 11px; white-space: nowrap;">DEBUG DATA: <span id="debug-toggle-status" style="color: #fca5a5; font-weight: 800;">OFF</span></span>
+          </div>
+
           <div class="status-pill" id="engine-status-pill">
             <span class="status-dot"></span>
             <span class="status-text">Engine: ACTIVE</span>
@@ -102,6 +108,14 @@
         <div class="tab-content active" id="tab-viewport">
           <div class="canvas-container" id="canvas-container" tabindex="0">
             <canvas id="engine-canvas"></canvas>
+            
+            <!-- Interactive 3D Vertex/Triangle Debug Telemetry Overlay (Controlled by DEBUG_RENDER_DATA) -->
+            <div id="debug-overlay-canvas" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 120; overflow: hidden;"></div>
+            
+            <!-- Roulette Multiplayer Seats Overlay -->
+            <div id="roulette-multiplayer-seats" style="display: none; position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); width: 95%; max-width: 950px; justify-content: center; gap: 12px; z-index: 10; pointer-events: none; flex-wrap: wrap;">
+              <!-- Dynamic player seats go here -->
+            </div>
             
             <!-- FPS Shooter Center Crosshair & Hitmarker HUD Overlay -->
             <div class="fps-crosshair-overlay" id="fps-crosshair-overlay" style="display: none;">
@@ -424,12 +438,69 @@
 
             <!-- 🎰 3D Real-Physics Roulette Panel (Demo 12) -->
             <div id="roulette-overlay" class="plinko-overlay-panel" style="display: none; background: rgba(9, 21, 16, 0.9); border: 1px solid rgba(16, 185, 129, 0.3); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);">
+              
+              <!-- Camera Choice Modal (Inside Roulette Overlay for elegant containment) -->
+              <div id="roulette-camera-modal" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(9, 21, 16, 0.98); z-index: 100; flex-direction: column; justify-content: center; align-items: center; padding: 24px; border-radius: 12px; text-align: center;">
+                <div style="font-size: 40px; margin-bottom: 12px; filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.4));">🎥</div>
+                <h4 style="font-size: 16px; font-weight: bold; color: #10b981; margin-bottom: 8px; letter-spacing: 0.05em; text-transform: uppercase;">Join Multiplayer Table</h4>
+                <p style="font-size: 11px; color: #a7f3d0; margin-bottom: 20px; line-height: 1.5; max-width: 280px; margin-left: auto; margin-right: auto;">Do you want to share your camera and microphone for a live WebRTC video call with other players around the table, or use a simple avatar?</p>
+                
+                <div style="display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 250px;">
+                  <button id="btn-roulette-cam-yes" class="plinko-primary-btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); font-size: 12px; padding: 10px; font-weight: bold;">
+                    🎥 SHARE CAMERA &amp; JOIN
+                  </button>
+                  <button id="btn-roulette-cam-no" class="plinko-secondary-btn" style="font-size: 12px; padding: 10px; background: rgba(255,255,255,0.05); color: #cbd5e1; border-color: rgba(255,255,255,0.15); font-weight: bold;">
+                    👤 JOIN WITH AVATAR
+                  </button>
+                  <button id="btn-roulette-cam-cancel" style="font-size: 11px; background: none; border: none; color: #94a3b8; cursor: pointer; margin-top: 8px; text-decoration: underline; outline: none;">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+
               <div class="plinko-header" style="border-bottom: 1px solid rgba(16, 185, 129, 0.25);">
                 <div class="plinko-header-row">
                   <div class="plinko-title" style="color: #10b981;">🎰 3D PHYSICS ROULETTE</div>
                   <button id="btn-roulette-close" class="plinko-header-btn" title="Minimize Panel" aria-label="Minimize Panel">✕</button>
                 </div>
                 <div class="plinko-subtitle" style="color: #6ee7b7;">REAL-TIME WORKER-THREADED ROTATION SOLVER</div>
+              </div>
+
+              <!-- Monaco Casino Global Synchronized Draw Status / Countdown -->
+              <div id="roulette-synchronized-draw-panel" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.05) 100%); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; margin: 10px; padding: 12px; display: flex; flex-direction: column; gap: 4px; box-shadow: inset 0 0 12px rgba(16, 185, 129, 0.08);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-weight: 800; font-size: 11px; color: #10b981; letter-spacing: 0.08em; text-transform: uppercase; display: flex; align-items: center; gap: 6px;">
+                    <span style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981; display: inline-block;" id="roulette-sync-pulse"></span>
+                    MONACO DRAW STATUS
+                  </span>
+                  <span id="roulette-connection-badge" style="font-size: 10px; font-weight: 700; color: #34d399; text-transform: uppercase; background: rgba(52, 211, 153, 0.15); padding: 2px 6px; border-radius: 4px;">ONLINE</span>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                  <span style="font-size: 11px; color: #a7f3d0;">Next Draw Countdown:</span>
+                  <span id="roulette-countdown-timer" style="font-family: monospace; font-size: 20px; font-weight: bold; color: #fbbf24; text-shadow: 0 0 6px rgba(251, 191, 36, 0.4);">02:00</span>
+                </div>
+
+                <!-- Recent results ticker -->
+                <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px; border-top: 1px solid rgba(16, 185, 129, 0.15); padding-top: 6px;">
+                  <span style="font-size: 10px; color: #6ee7b7; font-weight: bold; white-space: nowrap;">LAST DRAW RESULTS:</span>
+                  <div id="roulette-history-list" style="display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;">
+                    <span style="font-size: 10px; background: #ef4444; color: #fff; padding: 1px 5px; border-radius: 3px; font-weight: bold;">32</span>
+                    <span style="font-size: 10px; background: #1e293b; color: #fff; padding: 1px 5px; border-radius: 3px; font-weight: bold;">15</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Multiplayer Lobby Panel -->
+              <div id="roulette-multiplayer-panel" style="background: rgba(16, 37, 28, 0.7); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px; margin: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-weight: bold; font-size: 12px; color: #6ee7b7; display: flex; align-items: center; gap: 4px;">👥 MULTIPLAYER LOBBY</span>
+                  <span id="roulette-net-status" style="font-size: 10px; font-weight: 700; color: #ef4444; text-transform: uppercase; background: rgba(239, 68, 68, 0.1); padding: 2px 6px; border-radius: 4px;">Single Player</span>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <button id="btn-roulette-join-public" class="plinko-primary-btn" style="flex: 1; padding: 6px 10px; font-size: 11px; font-weight: bold; background: linear-gradient(135deg, #059669 0%, #047857 100%); border-color: #10b981;">🌐 JOIN PUBLIC TABLE</button>
+                  <button id="btn-roulette-leave-public" class="plinko-effect-btn" style="display: none; flex: 1; padding: 6px 10px; font-size: 11px; font-weight: bold; background: rgba(220, 38, 38, 0.2); border-color: #ef4444; color: #fca5a5;">✕ LEAVE TABLE</button>
+                </div>
               </div>
 
               <!-- Stats Box -->
@@ -986,8 +1057,8 @@
               </div>
             </div>
 
-            <!-- Viewport Overlay HUD -->
-            <div class="viewport-hud">
+            <!-- Viewport Overlay HUD (controlled by DEBUG_RENDER_DATA) -->
+            <div class="viewport-hud" id="viewport-stats-hud" style="display: none;">
               <div class="hud-item">
                 <span class="hud-label">DRAW CALLS</span>
                 <span class="hud-value" id="hud-drawcalls">1</span>
@@ -1002,7 +1073,7 @@
               </div>
               <div class="hud-item">
                 <span class="hud-label">MEMORY ALLOC</span>
-                <span class="hud-value highlight">0 B / frame</span>
+                <span class="hud-value highlight" id="hud-memory">0 B / frame</span>
               </div>
               <div class="hud-item">
                 <span class="hud-label">PIPELINE</span>

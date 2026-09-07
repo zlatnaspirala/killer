@@ -3854,8 +3854,12 @@ class NativeApp {
       return;
     }
 
+    // Set default global debug flag
+    window.DEBUG_RENDER_DATA = false;
+
     this.state = {
-      demoScene: '13_bingo_physics.cpp', // Default to Demo 13 3D Real-Physics Bingo & Diamond Drum
+      DEBUG_RENDER_DATA: false,
+      demoScene: '12_roulette.cpp', // Default to Demo 12 3D Physics-Engine Roulette Wheel
       activeMesh: 0,
       activeShader: 0, // Default to Full PBR Filament Shader
       fpsCheapMaterial: false,
@@ -3878,11 +3882,11 @@ class NativeApp {
       cameraMode: 0, // 0: Orbit, 1: FP Drag Look, 2: Free-Fly, 3: FPS Shooter
       invertMouseX: true,
       invertMouseY: false,
-      camYaw: 0.22,
-      camPitch: 0.32,
-      camRadius: 5.2,
+      camYaw: 0.0,
+      camPitch: 0.76,
+      camRadius: 5.0,
       camPos: new Float32Array([0.0, -3.8, 4.0]),
-      camTarget: new Float32Array([0.0, 1.15, 0.0]),
+      camTarget: new Float32Array([0.20, 0.0, 0.05]),
       camFront: new Float32Array([0.0, 0.0, -1.0]),
       camRight: new Float32Array([1.0, 0.0, 0.0]),
       moveSpeed: 6.5,
@@ -4670,6 +4674,203 @@ void main() {
     }
   }
 
+  project3DToScreen(pos3D, viewProj, canvasWidth, canvasHeight) {
+    const x = pos3D[0];
+    const y = pos3D[1];
+    const z = pos3D[2];
+
+    const w = viewProj[3] * x + viewProj[7] * y + viewProj[11] * z + viewProj[15];
+    if (w <= 0.0) return null; // Behind camera
+
+    const xp = (viewProj[0] * x + viewProj[4] * y + viewProj[8] * z + viewProj[12]) / w;
+    const yp = (viewProj[1] * x + viewProj[5] * y + viewProj[9] * z + viewProj[13]) / w;
+
+    // Convert normalized device coordinates (NDC) to screen coordinates
+    const screenX = (xp * 0.5 + 0.5) * canvasWidth;
+    const screenY = (1.0 - (yp * 0.5 + 0.5)) * canvasHeight;
+
+    return { x: screenX, y: screenY };
+  }
+
+  calculateMemoryAllocation() {
+    let meshBytes = 0;
+    if (this.rawMeshes) {
+      this.rawMeshes.forEach(m => {
+        if (m.positions) meshBytes += m.positions.length * 4;
+        if (m.normals) meshBytes += m.normals.length * 4;
+        if (m.uvs) meshBytes += m.uvs.length * 4;
+        if (m.barys) meshBytes += m.barys.length * 4;
+        if (m.indices) meshBytes += m.indices.length * 2;
+      });
+    }
+
+    // Framebuffer color/depth textures: width * height * 4 bytes per pixel * AA samples/passes
+    const width = this.canvas ? this.canvas.width : window.innerWidth;
+    const height = this.canvas ? this.canvas.height : window.innerHeight;
+    const fboBytes = width * height * 4 * 2; // Color + Depth
+
+    // Estimate material and runtime textures (typically around 8 textures of 1024x1024 RGBA)
+    const textureBytes = 8 * 1024 * 1024 * 4; // ~32MB
+
+    return meshBytes + fboBytes + textureBytes;
+  }
+
+  updateDebugOverlay() {
+    const overlay = document.getElementById('debug-overlay-canvas');
+    const hud = document.getElementById('viewport-stats-hud');
+    if (!overlay) return;
+
+    // Check both local state and global flag
+    const isDebug = !!(window.DEBUG_RENDER_DATA || this.state.DEBUG_RENDER_DATA);
+
+    if (!isDebug) {
+      overlay.style.display = 'none';
+      if (hud) hud.style.display = 'none';
+      return;
+    }
+
+    // Ensure they are visible
+    overlay.style.display = 'block';
+    if (hud) hud.style.display = 'flex';
+
+    // Update standard HUD statistics
+    this.updateHUDStats();
+
+    // Calculate memory allocation
+    const memAlloc = this.calculateMemoryAllocation();
+    const memEl = document.getElementById('hud-memory');
+    if (memEl) {
+      if (memAlloc > 1024 * 1024) {
+        memEl.textContent = `${(memAlloc / (1024 * 1024)).toFixed(2)} MB`;
+      } else {
+        memEl.textContent = `${(memAlloc / 1024).toFixed(0)} KB`;
+      }
+    }
+
+    // Build SVG/HTML overlay elements for vertices and triangles of the main active mesh
+    const currentMeshIndex = this.state.activeMesh || 0;
+    const rawMesh = this.rawMeshes[currentMeshIndex];
+    if (!rawMesh || !rawMesh.positions) return;
+
+    const positions = rawMesh.positions;
+    const indices = rawMesh.indices;
+    const vertexCount = rawMesh.vertexCount || (positions.length / 3);
+    const triangleCount = rawMesh.triangleCount || (indices ? indices.length / 3 : 0);
+
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    const clientWidth = this.canvas.clientWidth;
+    const clientHeight = this.canvas.clientHeight;
+
+    // Normalizing screen coordinates matching client CSS sizes
+    const scaleX = clientWidth / width;
+    const scaleY = clientHeight / height;
+
+    let html = '';
+
+    // Let's find the active mesh entity model matrix
+    let modelMat = this.instanceMatrix || new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+
+    // Choose 6 vertices to project as interactive labels
+    const step = Math.max(1, Math.floor(vertexCount / 6));
+    const labelIndices = [];
+    for (let i = 0; i < vertexCount; i += step) {
+      if (labelIndices.length < 6) labelIndices.push(i);
+    }
+
+    labelIndices.forEach((vIdx) => {
+      const vx = positions[vIdx * 3];
+      const vy = positions[vIdx * 3 + 1];
+      const vz = positions[vIdx * 3 + 2];
+
+      if (vx === undefined || vy === undefined || vz === undefined) return;
+
+      // Transform object-space vertex to world-space
+      const wx = modelMat[0]*vx + modelMat[4]*vy + modelMat[8]*vz + modelMat[12];
+      const wy = modelMat[1]*vx + modelMat[5]*vy + modelMat[9]*vz + modelMat[13];
+      const wz = modelMat[2]*vx + modelMat[6]*vy + modelMat[10]*vz + modelMat[14];
+
+      // Project world space vertex to screen space
+      const screenPos = this.project3DToScreen([wx, wy, wz], this.viewProjMatrix, width, height);
+      if (screenPos) {
+        const x2d = screenPos.x * scaleX;
+        const y2d = screenPos.y * scaleY;
+
+        // Ensure within canvas boundaries
+        if (x2d >= 0 && x2d <= clientWidth && y2d >= 0 && y2d <= clientHeight) {
+          html += `
+            <div style="position: absolute; left: ${x2d}px; top: ${y2d}px; transform: translate(-50%, -50%); pointer-events: auto; z-index: 10;">
+              <!-- Vertex node dot -->
+              <div class="debug-node-dot" style="width: 8px; height: 8px; background: #38bdf8; border: 1.5px solid #ffffff; border-radius: 50%; box-shadow: 0 0 6px #38bdf8; cursor: pointer; position: relative;">
+                <!-- Floating Popup Label -->
+                <div class="debug-popup-label" style="position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 6px; padding: 4px 8px; color: #f8fafc; font-family: monospace; font-size: 9px; white-space: nowrap; pointer-events: none; opacity: 0.9; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+                  <div style="font-weight: bold; color: #38bdf8;">VERTEX #${vIdx}</div>
+                  <div>Loc: [${vx.toFixed(2)}, ${vy.toFixed(2)}, ${vz.toFixed(2)}]</div>
+                  <div>World: [${wx.toFixed(1)}, ${wy.toFixed(1)}, ${wz.toFixed(1)}]</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      }
+    });
+
+    // Also project 3 representative triangles
+    if (indices && indices.length > 0) {
+      const triStep = Math.max(1, Math.floor(triangleCount / 3));
+      const labelTriangles = [];
+      for (let i = 0; i < triangleCount; i += triStep) {
+        if (labelTriangles.length < 3) labelTriangles.push(i);
+      }
+
+      labelTriangles.forEach((tIdx) => {
+        const idx0 = indices[tIdx * 3];
+        const idx1 = indices[tIdx * 3 + 1];
+        const idx2 = indices[tIdx * 3 + 2];
+
+        if (idx0 === undefined || idx1 === undefined || idx2 === undefined) return;
+
+        // Get the 3 vertices
+        const v0x = positions[idx0 * 3], v0y = positions[idx0 * 3 + 1], v0z = positions[idx0 * 3 + 2];
+        const v1x = positions[idx1 * 3], v1y = positions[idx1 * 3 + 1], v1z = positions[idx1 * 3 + 2];
+        const v2x = positions[idx2 * 3], v2y = positions[idx2 * 3 + 1], v2z = positions[idx2 * 3 + 2];
+
+        if (v0x === undefined || v1x === undefined || v2x === undefined) return;
+
+        // Center point of triangle in world space
+        const cx = (v0x + v1x + v2x) / 3;
+        const cy = (v0y + v1y + v2y) / 3;
+        const cz = (v0z + v1z + v2z) / 3;
+
+        const wcx = modelMat[0]*cx + modelMat[4]*cy + modelMat[8]*cz + modelMat[12];
+        const wcy = modelMat[1]*cx + modelMat[5]*cy + modelMat[9]*cz + modelMat[13];
+        const wcz = modelMat[2]*cx + modelMat[6]*cy + modelMat[10]*cz + modelMat[14];
+
+        const screenPos = this.project3DToScreen([wcx, wcy, wcz], this.viewProjMatrix, width, height);
+        if (screenPos) {
+          const x2d = screenPos.x * scaleX;
+          const y2d = screenPos.y * scaleY;
+
+          if (x2d >= 0 && x2d <= clientWidth && y2d >= 0 && y2d <= clientHeight) {
+            html += `
+              <div style="position: absolute; left: ${x2d}px; top: ${y2d}px; transform: translate(-50%, -50%); pointer-events: auto; z-index: 9;">
+                <div class="debug-tri-dot" style="width: 8px; height: 8px; background: #fbbf24; border: 1.5px solid #ffffff; border-radius: 50%; box-shadow: 0 0 6px #fbbf24; cursor: pointer; position: relative;">
+                  <div class="debug-popup-label" style="position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 6px; padding: 4px 8px; color: #f8fafc; font-family: monospace; font-size: 9px; white-space: nowrap; pointer-events: none; opacity: 0.9; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+                    <div style="font-weight: bold; color: #fbbf24;">TRIANGLE #${tIdx}</div>
+                    <div>Vertices: [${idx0}, ${idx1}, ${idx2}]</div>
+                    <div>Mesh: ${rawMesh.name || 'Active Specimen'}</div>
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+        }
+      });
+    }
+
+    overlay.innerHTML = html;
+  }
+
   initShowroomUI() {
     const strip = document.getElementById('showroom-materials-strip');
     if (strip) {
@@ -5244,6 +5445,36 @@ void main() {
       if (e.code === 'Space') this.state.keys.space = false;
       if (!e.shiftKey) this.state.keys.shift = false;
     });
+
+    // Debug Data Toggle Pill Click Handler
+    const debugPill = document.getElementById('debug-toggle-pill');
+    if (debugPill) {
+      debugPill.onclick = () => {
+        window.DEBUG_RENDER_DATA = !window.DEBUG_RENDER_DATA;
+        this.state.DEBUG_RENDER_DATA = window.DEBUG_RENDER_DATA;
+        const dot = document.getElementById('debug-toggle-dot');
+        const status = document.getElementById('debug-toggle-status');
+        if (dot && status) {
+          if (window.DEBUG_RENDER_DATA) {
+            dot.style.background = '#10b981';
+            dot.style.boxShadow = '0 0 8px #10b981';
+            status.textContent = 'ON';
+            status.style.color = '#34d399';
+            debugPill.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+            debugPill.style.background = 'rgba(16, 185, 129, 0.08)';
+            this.log("🐞 Real-time 3D Vertex, Triangle, and GPU Memory Diagnostic Telemetry active!", "success");
+          } else {
+            dot.style.background = '#ef4444';
+            dot.style.boxShadow = '0 0 8px #ef4444';
+            status.textContent = 'OFF';
+            status.style.color = '#fca5a5';
+            debugPill.style.borderColor = 'rgba(56, 189, 248, 0.35)';
+            debugPill.style.background = 'rgba(56, 189, 248, 0.08)';
+            this.log("🐞 Telemetry HUD hidden.", "info");
+          }
+        }
+      };
+    }
 
     // Demo Scene Switcher
     const demoSelect = document.getElementById('demo-scene-select');
@@ -11002,7 +11233,279 @@ else if (typeof define === 'function' && define['amd'])
       wheelAngle: this.rouletteState.wheelAngle
     });
 
+    // Setup server-authoritative Monaco Casino synchronization
+    this.rouletteServerConnected = false;
+    
+    if (this.net) {
+      // Subscribe to backend
+      this.net.send('roulette:subscribe', {});
+
+      // Setup dynamic listeners
+      this._unsubRouletteState = this.net.on('roulette:state', (data) => {
+        this.rouletteServerConnected = true;
+        this.handleRouletteServerState(data);
+      });
+
+      this._unsubRouletteTick = this.net.on('roulette:tick', (data) => {
+        this.rouletteServerConnected = true;
+        this.handleRouletteServerTick(data);
+      });
+
+      this._unsubRouletteDraw = this.net.on('roulette:server_draw', (data) => {
+        this.rouletteServerConnected = true;
+        this.handleRouletteServerDraw(data);
+      });
+
+      // Quick ping / status check interval listener
+      this.net.on('status', (evt) => {
+        const badge = document.getElementById('roulette-connection-badge');
+        const pulse = document.getElementById('roulette-sync-pulse');
+        if (badge && pulse) {
+          if (evt.state === 'connected') {
+            badge.innerText = 'ONLINE';
+            badge.style.background = 'rgba(52, 211, 153, 0.15)';
+            badge.style.color = '#34d399';
+            pulse.style.background = '#10b981';
+            pulse.style.boxShadow = '0 0 8px #10b981';
+            this.rouletteServerConnected = true;
+          } else if (evt.state === 'error' || evt.state === 'disconnected') {
+            badge.innerText = 'OFFLINE (LOCAL DRAW)';
+            badge.style.background = 'rgba(239, 68, 68, 0.15)';
+            badge.style.color = '#fca5a5';
+            pulse.style.background = '#ef4444';
+            pulse.style.boxShadow = '0 0 8px #ef4444';
+            this.rouletteServerConnected = false;
+          }
+        }
+      });
+    }
+
+    // Start a client-side timer fallback loop
+    this.startRouletteClientTimerLoop();
+
     this.log("Roulette Demo Loaded! Click directly on the 3D felt or use DOM controls to drop chips.", "success");
+  }
+
+  startRouletteClientTimerLoop() {
+    if (this.rouletteTimerInterval) {
+      clearInterval(this.rouletteTimerInterval);
+    }
+
+    this.rouletteLocalTimeLeft = 120; // 2 minutes local countdown fallback
+
+    this.rouletteTimerInterval = setInterval(() => {
+      const rs = this.rouletteState;
+      if (!rs) return;
+
+      const badge = document.getElementById('roulette-connection-badge');
+      
+      // Determine if using online or offline
+      if (this.net && this.net.activeTransport && this.net.activeTransport.connected) {
+        this.rouletteServerConnected = true;
+      } else {
+        this.rouletteServerConnected = false;
+      }
+
+      if (badge) {
+        if (this.rouletteServerConnected) {
+          badge.innerText = 'ONLINE';
+          badge.style.background = 'rgba(52, 211, 153, 0.15)';
+          badge.style.color = '#34d399';
+        } else {
+          badge.innerText = 'OFFLINE (LOCAL DRAW)';
+          badge.style.background = 'rgba(239, 68, 68, 0.15)';
+          badge.style.color = '#fca5a5';
+        }
+      }
+
+      if (!this.rouletteServerConnected) {
+        // Disconnected fallback: tick client-side countdown
+        if (this.rouletteLocalTimeLeft > 0) {
+          this.rouletteLocalTimeLeft--;
+        } else {
+          this.triggerRouletteLocalDraw();
+          this.rouletteLocalTimeLeft = 120; // Reset local timer
+        }
+
+        this.updateRouletteTimerDisplay(this.rouletteLocalTimeLeft);
+      }
+    }, 1000);
+  }
+
+  triggerRouletteLocalDraw() {
+    const rs = this.rouletteState;
+    if (!rs || rs.spinning) return;
+
+    // Local secure random draw
+    const randomArray = new Uint32Array(1);
+    window.crypto.getRandomValues(randomArray);
+    const winningNumber = randomArray[0] % 37;
+
+    this.log(`[OFFLINE] Next draw cycle reached! Local cryptographically secure drawn number: ${winningNumber}`, "info");
+
+    if (!rs.last10Results) rs.last10Results = [];
+    rs.last10Results.unshift(winningNumber);
+    if (rs.last10Results.length > 10) rs.last10Results.pop();
+
+    this.updateRouletteHistoryUI(rs.last10Results);
+
+    const startAngle = Math.random() * 2 * Math.PI;
+    const initialTangentialSpeed = 5.2 + Math.random() * 1.0;
+    const wheelSpeed = -1.15 - Math.random() * 0.25;
+
+    if (!this.rouletteChips || this.rouletteChips.length === 0) {
+      rs.lastRoundBets = [{
+        actorId: `outside_${rs.betType}`,
+        value: rs.betAmount,
+        actorName: rs.betType.toUpperCase()
+      }];
+    } else {
+      rs.lastRoundBets = this.rouletteChips.map(c => ({
+        actorId: c.actorId,
+        value: c.value,
+        actorName: c.actorName
+      }));
+    }
+
+    rs.spinning = true;
+    rs.payoutHandled = false;
+    rs.lastOutcomePocket = null;
+    rs.trail = [];
+    this.updateRouletteUI();
+
+    if (this.synth) this.synth.play('teleport');
+
+    const ROULETTE_NUMBERS = [
+      0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 
+      24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
+    ];
+
+    if (this.physicsWorker) {
+      this.physicsWorker.postMessage({
+        type: 'spinRoulette',
+        startAngle,
+        initialTangentialSpeed,
+        wheelSpeed,
+        forcedPocket: ROULETTE_NUMBERS.indexOf(winningNumber)
+      });
+    }
+  }
+
+  handleRouletteServerState(data) {
+    const rs = this.rouletteState;
+    if (!rs || !data) return;
+
+    this.updateRouletteTimerDisplay(data.timeLeft);
+    if (data.history && data.history.length > 0) {
+      this.updateRouletteHistoryUI(data.history);
+      rs.last10Results = [...data.history].slice(0, 10);
+    }
+  }
+
+  handleRouletteServerTick(data) {
+    if (!data) return;
+    this.updateRouletteTimerDisplay(data.timeLeft);
+    if (data.history) {
+      this.updateRouletteHistoryUI(data.history);
+    }
+  }
+
+  handleRouletteServerDraw(data) {
+    const rs = this.rouletteState;
+    if (!rs || !data) return;
+
+    this.log(`[ONLINE] Monaco server initiated spin! Synchronized pocket target: ${data.winningNumber}`, "success");
+
+    if (!this.rouletteChips || this.rouletteChips.length === 0) {
+      rs.lastRoundBets = [{
+        actorId: `outside_${rs.betType}`,
+        value: rs.betAmount,
+        actorName: rs.betType.toUpperCase()
+      }];
+    } else {
+      rs.lastRoundBets = this.rouletteChips.map(c => ({
+        actorId: c.actorId,
+        value: c.value,
+        actorName: c.actorName
+      }));
+    }
+
+    rs.spinning = true;
+    rs.payoutHandled = false;
+    rs.lastOutcomePocket = null;
+    rs.trail = [];
+    this.updateRouletteUI();
+
+    if (data.history) {
+      this.updateRouletteHistoryUI(data.history);
+      rs.last10Results = [...data.history].slice(0, 10);
+    }
+
+    if (this.synth) this.synth.play('teleport');
+
+    const ROULETTE_NUMBERS = [
+      0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 
+      24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
+    ];
+
+    if (this.physicsWorker) {
+      this.physicsWorker.postMessage({
+        type: 'spinRoulette',
+        startAngle: data.startAngle,
+        initialTangentialSpeed: data.initialTangentialSpeed,
+        wheelSpeed: data.wheelSpeed,
+        forcedPocket: ROULETTE_NUMBERS.indexOf(data.winningNumber)
+      });
+    }
+  }
+
+  updateRouletteTimerDisplay(secondsLeft) {
+    const timerEl = document.getElementById('roulette-countdown-timer');
+    if (!timerEl) return;
+
+    const mins = Math.floor(secondsLeft / 60);
+    const secs = secondsLeft % 60;
+    const formatMins = mins.toString().padStart(2, '0');
+    const formatSecs = secs.toString().padStart(2, '0');
+    timerEl.innerText = `${formatMins}:${formatSecs}`;
+
+    if (secondsLeft <= 10) {
+      timerEl.style.color = '#ef4444';
+    } else {
+      timerEl.style.color = '#fbbf24';
+    }
+  }
+
+  updateRouletteHistoryUI(historyArray) {
+    const container = document.getElementById('roulette-history-list');
+    if (!container || !historyArray) return;
+
+    const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+
+    container.innerHTML = '';
+    const sliceHistory = historyArray.slice(0, 10);
+    sliceHistory.forEach(num => {
+      const isRed = reds.includes(num);
+      const isZero = num === 0;
+
+      let bg = '#1e293b'; // Black
+      if (isRed) bg = '#dc2626'; // Red
+      if (isZero) bg = '#10b981'; // Green
+
+      const tag = document.createElement('span');
+      tag.style.fontSize = '11px';
+      tag.style.background = bg;
+      tag.style.color = '#ffffff';
+      tag.style.padding = '2px 7px';
+      tag.style.borderRadius = '4px';
+      tag.style.fontWeight = '800';
+      tag.style.minWidth = '22px';
+      tag.style.textAlign = 'center';
+      tag.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)';
+      tag.innerText = num.toString();
+
+      container.appendChild(tag);
+    });
   }
 
   createRouletteTableTexture() {
@@ -12173,6 +12676,15 @@ else if (typeof define === 'function' && define['amd'])
     };
     this.rouletteChips.push(chip);
 
+    if (this.rouletteMultiplayerActive) {
+      this.broadcastRouletteEvent('bet', {
+        actorId: actor.id,
+        value: betAmt,
+        ownerId: this.net.localPlayerId,
+        ownerName: this.rouletteLocalName || 'You'
+      });
+    }
+
     if (this.synth) this.synth.play('pickup');
     this.log(`Placed $${betAmt} chip on [${actor.name}] (Payout ${actor.payout}:1). Total on spot: $${actor.betTotal}.`, "info");
     this.updateRouletteUI();
@@ -12529,8 +13041,26 @@ else if (typeof define === 'function' && define['amd'])
         }
         this.log(`Roulette wheel and ball spun! Bet: ${rs.betAmount} on [${betLabel}].`, "info");
 
+        const startAngle = Math.random() * 2 * Math.PI;
+        const initialTangentialSpeed = 5.2 + Math.random() * 1.0;
+        const wheelSpeed = -1.15 - Math.random() * 0.25;
+
+        if (this.rouletteMultiplayerActive) {
+          this.broadcastRouletteEvent('spin', {
+            startAngle,
+            initialTangentialSpeed,
+            wheelSpeed,
+            spunBy: this.rouletteLocalName || 'Someone'
+          });
+        }
+
         if (this.physicsWorker) {
-          this.physicsWorker.postMessage({ type: 'spinRoulette' });
+          this.physicsWorker.postMessage({
+            type: 'spinRoulette',
+            startAngle,
+            initialTangentialSpeed,
+            wheelSpeed
+          });
         }
       });
     }
@@ -12576,6 +13106,51 @@ else if (typeof define === 'function' && define['amd'])
         this.showRouletteUI();
         if (this.synth) this.synth.play('pickup');
       });
+    }
+
+    // Multiplayer button bindings
+    const btnJoinPublic = document.getElementById('btn-roulette-join-public');
+    const btnLeavePublic = document.getElementById('btn-roulette-leave-public');
+    const camModal = document.getElementById('roulette-camera-modal');
+    const btnCamYes = document.getElementById('btn-roulette-cam-yes');
+    const btnCamNo = document.getElementById('btn-roulette-cam-no');
+    const btnCamCancel = document.getElementById('btn-roulette-cam-cancel');
+
+    if (btnJoinPublic) {
+      btnJoinPublic.onclick = () => {
+        if (camModal) camModal.style.display = 'flex';
+        if (this.synth) this.synth.play('pickup');
+      };
+    }
+
+    if (btnLeavePublic) {
+      btnLeavePublic.onclick = () => {
+        this.leaveRouletteMultiplayer();
+        if (this.synth) this.synth.play('teleport');
+      };
+    }
+
+    if (btnCamYes) {
+      btnCamYes.onclick = () => {
+        if (camModal) camModal.style.display = 'none';
+        this.joinRouletteMultiplayer(true);
+        if (this.synth) this.synth.play('health');
+      };
+    }
+
+    if (btnCamNo) {
+      btnCamNo.onclick = () => {
+        if (camModal) camModal.style.display = 'none';
+        this.joinRouletteMultiplayer(false);
+        if (this.synth) this.synth.play('pickup');
+      };
+    }
+
+    if (btnCamCancel) {
+      btnCamCancel.onclick = () => {
+        if (camModal) camModal.style.display = 'none';
+        if (this.synth) this.synth.play('pickup');
+      };
     }
   }
 
@@ -12644,6 +13219,492 @@ else if (typeof define === 'function' && define['amd'])
         historyStrip.appendChild(badge);
       });
     }
+
+    // Update the spin button state and text based on server connectivity
+    const spinBtn = document.getElementById('btn-roulette-spin');
+    if (spinBtn) {
+      if (rs.spinning) {
+        spinBtn.disabled = true;
+        spinBtn.textContent = '🎰 ROLLING...';
+        spinBtn.style.opacity = '0.6';
+        spinBtn.style.cursor = 'not-allowed';
+      } else if (this.rouletteServerConnected) {
+        spinBtn.disabled = true;
+        spinBtn.textContent = '🔄 AUTOMATIC DRAW TIME';
+        spinBtn.style.opacity = '0.75';
+        spinBtn.style.cursor = 'not-allowed';
+      } else {
+        spinBtn.disabled = false;
+        spinBtn.textContent = '🟢 SPIN & DROP BALL';
+        spinBtn.style.opacity = '1.0';
+        spinBtn.style.cursor = 'pointer';
+      }
+    }
+  }
+
+  joinRouletteMultiplayer(wantsCamera) {
+    if (this.rouletteMultiplayerActive) return;
+
+    this.rouletteMultiplayerActive = true;
+    
+    const defaultNames = ['Ares', 'Zeus', 'Hades', 'Poseidon', 'Apollo', 'Athena', 'Artemis', 'Hermes', 'Hera', 'Demeter'];
+    this.rouletteLocalName = defaultNames[Math.floor(Math.random() * defaultNames.length)] + '_' + Math.floor(10 + Math.random() * 90);
+    
+    this.roulettePeers = new Map();
+    this.rouletteParticipants = new Map();
+
+    const joinSession = (stream = null) => {
+      this.localStream = stream;
+      this.updateRouletteMultiplayerSeatsUI();
+
+      const netStatus = document.getElementById('roulette-net-status');
+      if (netStatus) {
+        netStatus.textContent = "Online Session";
+        netStatus.style.color = "#10b981";
+        netStatus.style.background = "rgba(16, 185, 129, 0.1)";
+      }
+      const btnJoin = document.getElementById('btn-roulette-join-public');
+      const btnLeave = document.getElementById('btn-roulette-leave-public');
+      if (btnJoin) btnJoin.style.display = 'none';
+      if (btnLeave) btnLeave.style.display = 'block';
+
+      this._netRouletteListeners = {
+        'roulette:join': (data) => this.handleRemotePlayerJoined(data),
+        'roulette:presence': (data) => this.handleRemotePlayerPresence(data),
+        'roulette:signal': (data) => this.handleRemoteSignal(data),
+        'roulette:bet': (data) => this.handleRemoteBet(data),
+        'roulette:spin': (data) => this.handleRemoteSpin(data),
+        'roulette:left': (data) => this.handleRemotePlayerLeft(data)
+      };
+
+      for (const [evt, cb] of Object.entries(this._netRouletteListeners)) {
+        this.net.on(evt, cb);
+      }
+
+      this.broadcastRouletteEvent('join', {
+        playerId: this.net.localPlayerId,
+        playerName: this.rouletteLocalName,
+        hasVideo: !!stream,
+        credits: this.rouletteState ? this.rouletteState.credits : 1000
+      });
+
+      this.log(`👥 Joined multiplayer table session as [${this.rouletteLocalName}].`, "success");
+    };
+
+    if (wantsCamera) {
+      this.log("🎥 Requesting camera permissions for real-time video session...", "info");
+      navigator.mediaDevices.getUserMedia({
+        video: { width: 320, height: 240, frameRate: 15 },
+        audio: true
+      }).then(stream => {
+        joinSession(stream);
+      }).catch(err => {
+        console.warn("Camera access denied or failed:", err);
+        this.log("⚠️ Camera access denied or not available. Joining with avatar only.", "warning");
+        joinSession(null);
+      });
+    } else {
+      joinSession(null);
+    }
+  }
+
+  leaveRouletteMultiplayer() {
+    if (!this.rouletteMultiplayerActive) return;
+    this.rouletteMultiplayerActive = false;
+    
+    this.broadcastRouletteEvent('left', { playerId: this.net.localPlayerId });
+
+    if (this.roulettePeers) {
+      for (const [peerId, pc] of this.roulettePeers.entries()) {
+        pc.close();
+      }
+      this.roulettePeers.clear();
+    }
+
+    if (this.localStream) {
+      this.localStream.getTracks().forEach(track => track.stop());
+      this.localStream = null;
+    }
+
+    if (this._netRouletteListeners) {
+      for (const [evt, cb] of Object.entries(this._netRouletteListeners)) {
+        this.net.off(evt, cb);
+      }
+      this._netRouletteListeners = null;
+    }
+
+    this.rouletteParticipants = new Map();
+    this.updateRouletteMultiplayerSeatsUI();
+    
+    const netStatus = document.getElementById('roulette-net-status');
+    if (netStatus) {
+      netStatus.textContent = "Single Player";
+      netStatus.style.color = "#ef4444";
+      netStatus.style.background = "rgba(239, 68, 68, 0.1)";
+    }
+    const btnJoin = document.getElementById('btn-roulette-join-public');
+    const btnLeave = document.getElementById('btn-roulette-leave-public');
+    if (btnJoin) btnJoin.style.display = 'block';
+    if (btnLeave) btnLeave.style.display = 'none';
+
+    const seatsContainer = document.getElementById('roulette-multiplayer-seats');
+    if (seatsContainer) seatsContainer.style.display = 'none';
+
+    this.log("Disconnected from public table. Switched to single-player mode.", "info");
+  }
+
+  broadcastRouletteEvent(type, data) {
+    if (this.net && this.net.activeTransport && this.net.activeTransport.connected) {
+      this.net.activeTransport.send(`roulette:${type}`, data);
+    }
+  }
+
+  handleRemotePlayerJoined(data) {
+    if (!data || data.playerId === this.net.localPlayerId) return;
+
+    console.log(`[Multiplayer] Player joined: ${data.playerName} (${data.playerId})`);
+    
+    this.rouletteParticipants.set(data.playerId, {
+      playerId: data.playerId,
+      playerName: data.playerName,
+      hasVideo: data.hasVideo,
+      credits: data.credits || 1000,
+      stream: null
+    });
+
+    this.broadcastRouletteEvent('presence', {
+      playerId: this.net.localPlayerId,
+      playerName: this.rouletteLocalName,
+      hasVideo: !!this.localStream,
+      credits: this.rouletteState ? this.rouletteState.credits : 1000
+    });
+
+    this.log(`👥 Player [${data.playerName}] joined the table.`, "info");
+
+    this.initiatePeerConnection(data.playerId);
+    this.updateRouletteMultiplayerSeatsUI();
+  }
+
+  handleRemotePlayerPresence(data) {
+    if (!data || data.playerId === this.net.localPlayerId) return;
+
+    console.log(`[Multiplayer] Received presence from: ${data.playerName} (${data.playerId})`);
+
+    if (!this.rouletteParticipants.has(data.playerId)) {
+      this.rouletteParticipants.set(data.playerId, {
+        playerId: data.playerId,
+        playerName: data.playerName,
+        hasVideo: data.hasVideo,
+        credits: data.credits || 1000,
+        stream: null
+      });
+
+      this.log(`👥 Discovered player [${data.playerName}] at the table.`, "info");
+    } else {
+      const p = this.rouletteParticipants.get(data.playerId);
+      p.credits = data.credits || p.credits;
+    }
+
+    this.initiatePeerConnection(data.playerId);
+    this.updateRouletteMultiplayerSeatsUI();
+  }
+
+  handleRemotePlayerLeft(data) {
+    if (!data || data.playerId === this.net.localPlayerId) return;
+
+    const p = this.rouletteParticipants.get(data.playerId);
+    if (p) {
+      this.log(`👥 Player [${p.playerName}] left the table.`, "info");
+      this.rouletteParticipants.delete(data.playerId);
+    }
+
+    const pc = this.roulettePeers.get(data.playerId);
+    if (pc) {
+      pc.close();
+      this.roulettePeers.delete(data.playerId);
+    }
+
+    this.updateRouletteMultiplayerSeatsUI();
+  }
+
+  handleRemoteBet(data) {
+    if (!data || data.ownerId === this.net.localPlayerId) return;
+    this.spawnRemoteChip(data);
+
+    const p = this.rouletteParticipants.get(data.ownerId);
+    if (p) {
+      p.credits = Math.max(0, (p.credits || 1000) - data.value);
+      this.updateRouletteMultiplayerSeatsUI();
+    }
+  }
+
+  handleRemoteSpin(data) {
+    if (!data || !this.rouletteState) return;
+
+    if (!this.rouletteState.spinning) {
+      this.rouletteState.spinning = true;
+      this.rouletteState.payoutHandled = false;
+      this.rouletteState.lastOutcomePocket = null;
+      this.rouletteState.trail = [];
+      this.updateRouletteUI();
+
+      if (this.synth) this.synth.play('teleport');
+      this.log(`🎰 Roulette wheel spun deterministically by peer [${data.spunBy}]!`, "info");
+
+      if (this.physicsWorker) {
+        this.physicsWorker.postMessage({
+          type: 'spinRoulette',
+          startAngle: data.startAngle,
+          initialTangentialSpeed: data.initialTangentialSpeed,
+          wheelSpeed: data.wheelSpeed
+        });
+      }
+    }
+  }
+
+  handleRemoteSignal(data) {
+    if (!data || data.targetId !== this.net.localPlayerId) return;
+    const remoteId = data.fromId;
+    
+    this.initiatePeerConnection(remoteId);
+    const pc = this.roulettePeers.get(remoteId);
+    if (!pc) return;
+
+    try {
+      if (data.type === 'offer') {
+        console.log(`[WebRTC Mesh] Received offer from ${remoteId}`);
+        pc.setRemoteDescription(new RTCSessionDescription(data.sdp))
+          .then(() => pc.createAnswer())
+          .then(answer => pc.setLocalDescription(answer))
+          .then(() => {
+            this.broadcastRouletteEvent('signal', {
+              targetId: remoteId,
+              fromId: this.net.localPlayerId,
+              type: 'answer',
+              sdp: pc.localDescription
+            });
+          }).catch(err => console.error("[WebRTC Mesh] Offer reply failed:", err));
+      } else if (data.type === 'answer') {
+        console.log(`[WebRTC Mesh] Received answer from ${remoteId}`);
+        pc.setRemoteDescription(new RTCSessionDescription(data.sdp))
+          .catch(err => console.error("[WebRTC Mesh] Set Answer failed:", err));
+      } else if (data.type === 'candidate') {
+        console.log(`[WebRTC Mesh] Received ICE candidate from ${remoteId}`);
+        pc.addIceCandidate(new RTCIceCandidate(data.candidate))
+          .catch(err => console.error("[WebRTC Mesh] Add ICE failed:", err));
+      }
+    } catch (err) {
+      console.error(`[WebRTC Mesh] Signal error from ${remoteId}:`, err);
+    }
+  }
+
+  initiatePeerConnection(remoteId) {
+    if (!this.roulettePeers) this.roulettePeers = new Map();
+    if (this.roulettePeers.has(remoteId)) return;
+
+    console.log(`[WebRTC Mesh] Creating PeerConnection to: ${remoteId}`);
+
+    const rtcConfig = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+
+    const pc = new RTCPeerConnection(rtcConfig);
+    this.roulettePeers.set(remoteId, pc);
+
+    if (this.localStream) {
+      this.localStream.getTracks().forEach(track => {
+        pc.addTrack(track, this.localStream);
+      });
+    }
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.broadcastRouletteEvent('signal', {
+          targetId: remoteId,
+          fromId: this.net.localPlayerId,
+          type: 'candidate',
+          candidate: event.candidate
+        });
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log(`[WebRTC Mesh] Connection state with ${remoteId}: ${pc.connectionState}`);
+    };
+
+    pc.ontrack = (event) => {
+      console.log(`[WebRTC Mesh] Track received from remote ID: ${remoteId}`);
+      const remoteStream = event.streams[0];
+      this.setRemotePlayerStream(remoteId, remoteStream);
+    };
+
+    const isOfferer = this.net.localPlayerId < remoteId;
+    if (isOfferer) {
+      pc.onnegotiationneeded = async () => {
+        try {
+          console.log(`[WebRTC Mesh] Symmetrical rules: Local ID is smaller than ${remoteId}. Initiating negotiation Offer...`);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          this.broadcastRouletteEvent('signal', {
+            targetId: remoteId,
+            fromId: this.net.localPlayerId,
+            type: 'offer',
+            sdp: offer
+          });
+        } catch (err) {
+          console.error(`[WebRTC Mesh] Offer generation failed to ${remoteId}:`, err);
+        }
+      };
+    }
+  }
+
+  setRemotePlayerStream(remoteId, stream) {
+    const p = this.rouletteParticipants.get(remoteId);
+    if (p) {
+      p.stream = stream;
+      this.updateRouletteMultiplayerSeatsUI();
+    }
+  }
+
+  updateRouletteMultiplayerSeatsUI() {
+    const seatsContainer = document.getElementById('roulette-multiplayer-seats');
+    if (!seatsContainer) return;
+
+    if (!this.rouletteMultiplayerActive) {
+      seatsContainer.style.display = 'none';
+      return;
+    }
+
+    seatsContainer.style.display = 'flex';
+    seatsContainer.innerHTML = '';
+
+    const localSeat = document.createElement('div');
+    localSeat.className = 'roulette-seat';
+    const localColor = '#10b981';
+    const localCredits = this.rouletteState ? this.rouletteState.credits : 1000;
+    
+    localSeat.style = `pointer-events: auto; background: rgba(9, 21, 16, 0.85); border: 2px solid ${localColor}; border-radius: 12px; width: 130px; display: flex; flex-direction: column; align-items: center; padding: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); overflow: hidden; position: relative;`;
+    
+    if (this.localStream) {
+      localSeat.innerHTML = `
+        <div style="position: relative; width: 118px; height: 88px; background: #000; border-radius: 8px; overflow: hidden;">
+          <video id="roulette-local-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
+          <div class="roulette-chips-indicator" style="position: absolute; bottom: 4px; right: 4px; background: rgba(16,185,129,0.95); padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #fff; font-weight: bold; font-family: monospace; border: 1px solid rgba(255,255,255,0.2); text-shadow: 0 1px 1px #000;">$${localCredits}</div>
+        </div>
+        <span style="font-size: 11px; font-weight: bold; color: #6ee7b7; margin-top: 4px; text-shadow: 0 1px 2px #000; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">You (Cam)</span>
+      `;
+      seatsContainer.appendChild(localSeat);
+      setTimeout(() => {
+        const video = document.getElementById('roulette-local-video');
+        if (video && this.localStream) {
+          video.srcObject = this.localStream;
+        }
+      }, 0);
+    } else {
+      localSeat.innerHTML = `
+        <div style="position: relative; width: 118px; height: 88px; background: #1e293b; border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(16,185,129,0.15);">
+          <div style="width: 44px; height: 44px; border-radius: 50%; background: #10b981; color: #fff; font-weight: bold; font-size: 18px; display: flex; align-items: center; justify-content: center; border: 2px solid #34d399; text-shadow: 0 1px 1px #000;">ME</div>
+          <div class="roulette-chips-indicator" style="position: absolute; bottom: 4px; right: 4px; background: rgba(16,185,129,0.95); padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #fff; font-weight: bold; font-family: monospace; border: 1px solid rgba(255,255,255,0.2); text-shadow: 0 1px 1px #000;">$${localCredits}</div>
+        </div>
+        <span style="font-size: 11px; font-weight: bold; color: #6ee7b7; margin-top: 4px; text-shadow: 0 1px 2px #000; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">You</span>
+      `;
+      seatsContainer.appendChild(localSeat);
+    }
+
+    if (this.rouletteParticipants) {
+      for (const [id, p] of this.rouletteParticipants.entries()) {
+        const remoteSeat = document.createElement('div');
+        remoteSeat.className = 'roulette-seat';
+        const pColorFloat = this.getNetworkPlayerColor(id);
+        const pColorHex = `rgb(${Math.round(pColorFloat[0]*255)}, ${Math.round(pColorFloat[1]*255)}, ${Math.round(pColorFloat[2]*255)})`;
+        const initials = p.playerName ? p.playerName.substr(0, 2).toUpperCase() : 'PN';
+
+        remoteSeat.style = `pointer-events: auto; background: rgba(9, 21, 16, 0.85); border: 2px solid ${pColorHex}; border-radius: 12px; width: 130px; display: flex; flex-direction: column; align-items: center; padding: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); overflow: hidden; position: relative;`;
+
+        if (p.hasVideo && p.stream) {
+          const videoId = `roulette-video-${id}`;
+          remoteSeat.innerHTML = `
+            <div style="position: relative; width: 118px; height: 88px; background: #000; border-radius: 8px; overflow: hidden;">
+              <video id="${videoId}" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+              <div class="roulette-chips-indicator" style="position: absolute; bottom: 4px; right: 4px; background: rgba(16,185,129,0.95); padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #fff; font-weight: bold; font-family: monospace; border: 1px solid rgba(255,255,255,0.2); text-shadow: 0 1px 1px #000;">$${p.credits || 1000}</div>
+            </div>
+            <span style="font-size: 11px; font-weight: bold; color: ${pColorHex}; margin-top: 4px; text-shadow: 0 1px 2px #000; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p.playerName || 'Player'}</span>
+          `;
+          seatsContainer.appendChild(remoteSeat);
+          setTimeout(() => {
+            const v = document.getElementById(videoId);
+            if (v && p.stream) {
+              v.srcObject = p.stream;
+            }
+          }, 0);
+        } else {
+          remoteSeat.innerHTML = `
+            <div style="position: relative; width: 118px; height: 88px; background: #1e293b; border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.05);">
+              <div style="width: 44px; height: 44px; border-radius: 50%; background: ${pColorHex}; color: #fff; font-weight: bold; font-size: 18px; display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,0.3); text-shadow: 0 1px 1px #000;">${initials}</div>
+              <div class="roulette-chips-indicator" style="position: absolute; bottom: 4px; right: 4px; background: rgba(16,185,129,0.95); padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #fff; font-weight: bold; font-family: monospace; border: 1px solid rgba(255,255,255,0.2); text-shadow: 0 1px 1px #000;">$${p.credits || 1000}</div>
+            </div>
+            <span style="font-size: 11px; font-weight: bold; color: ${pColorHex}; margin-top: 4px; text-shadow: 0 1px 2px #000; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p.playerName || 'Player'}</span>
+          `;
+          seatsContainer.appendChild(remoteSeat);
+        }
+      }
+    }
+  }
+
+  getNetworkPlayerColor(playerId) {
+    if (!playerId || playerId === this.net.localPlayerId) return [0.95, 0.82, 0.35];
+    const colors = [
+      [0.23, 0.60, 0.96],
+      [0.67, 0.32, 0.94],
+      [1.00, 0.38, 0.10],
+      [0.10, 0.74, 0.61],
+      [0.91, 0.18, 0.45],
+      [0.95, 0.77, 0.05]
+    ];
+    let hash = 0;
+    for (let i = 0; i < playerId.length; i++) {
+      hash += playerId.charCodeAt(i);
+    }
+    return colors[hash % colors.length];
+  }
+
+  spawnRemoteChip(payload) {
+    const actor = this.rouletteActorsMap ? this.rouletteActorsMap.get(payload.actorId) : null;
+    if (!actor) return;
+
+    if (!this.rouletteChips) this.rouletteChips = [];
+    const existingChips = this.rouletteChips.filter(c => c.actorId === actor.id);
+    const stackZ = 0.012 + existingChips.length * 0.008;
+
+    const chipColor = this.getChipColor(payload.value);
+    const activeBox = actor.activeBox || actor.box;
+    const targetX = activeBox.chipPos[0] + (Math.random() - 0.5) * 0.010;
+    const targetY = activeBox.chipPos[1] + (Math.random() - 0.5) * 0.010;
+
+    const ownerColor = this.getNetworkPlayerColor(payload.ownerId);
+
+    const chip = {
+      actorId: actor.id,
+      actorName: actor.name,
+      value: payload.value,
+      pos: [targetX, targetY, 0.40 + Math.random() * 0.08],
+      vel: [(Math.random() - 0.5) * 0.10, (Math.random() - 0.5) * 0.10, -0.22 - Math.random() * 0.14],
+      rot: [Math.random() * 0.2, Math.random() * 0.2, Math.random() * Math.PI * 2],
+      rotVel: [(Math.random() - 0.5) * 5.0, (Math.random() - 0.5) * 5.0, (Math.random() - 0.5) * 8.0],
+      targetZ: stackZ,
+      bounces: 0,
+      settled: false,
+      color: chipColor,
+      ownerId: payload.ownerId,
+      ownerColor: ownerColor,
+      ownerName: payload.ownerName
+    };
+    this.rouletteChips.push(chip);
+
+    if (this.synth) this.synth.play('pickup');
   }
 
   computeRoulettePayout(pocketIdx) {
@@ -12669,8 +13730,8 @@ else if (typeof define === 'function' && define['amd'])
       if (reds.includes(winningNum)) color = 'red';
     }
 
-    let totalWon = 0;
-    let winningChipsCount = 0;
+    let localWon = 0;
+    let localWinningChipsCount = 0;
 
     // 1. Evaluate chips placed on 3D table actors
     if (this.rouletteChips && this.rouletteChips.length > 0) {
@@ -12678,17 +13739,30 @@ else if (typeof define === 'function' && define['amd'])
         const actor = this.rouletteActorsMap ? this.rouletteActorsMap.get(chip.actorId) : null;
         if (actor && actor.numbers && actor.numbers.includes(winningNum)) {
           const winAmt = chip.value * (actor.payout + 1);
-          totalWon += winAmt;
-          winningChipsCount++;
           chip.isWinner = true;
+
+          const isLocal = !chip.ownerId || chip.ownerId === this.net.localPlayerId;
+          if (isLocal) {
+            localWon += winAmt;
+            localWinningChipsCount++;
+          } else {
+            // Update remote player credits in participant list
+            const p = this.rouletteParticipants ? this.rouletteParticipants.get(chip.ownerId) : null;
+            if (p) {
+              p.credits = (p.credits || 1000) + winAmt;
+            }
+          }
         }
       }
 
-      if (totalWon > 0) {
-        rs.credits += totalWon;
-        rs.lastPayout = totalWon;
+      // Refresh dynamic player seats list in DOM
+      this.updateRouletteMultiplayerSeatsUI();
+
+      if (localWon > 0) {
+        rs.credits += localWon;
+        rs.lastPayout = localWon;
         if (this.synth) this.synth.play('health');
-        this.log(`🎉 WINNER! Ball landed in slot ${winningNum} (${color.toUpperCase()})! ${winningChipsCount} winning chip(s) awarded $${totalWon} credits!`, "success");
+        this.log(`🎉 WINNER! Ball landed in slot ${winningNum} (${color.toUpperCase()})! ${localWinningChipsCount} winning chip(s) awarded $${localWon} credits!`, "success");
       } else {
         rs.lastPayout = 0;
         if (this.synth) this.synth.play('damage');
@@ -13076,7 +14150,7 @@ else if (typeof define === 'function' && define['amd'])
       24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
     ];
 
-    const angleOffset = 4.86 * Math.PI / 180; // Fine-tuned alignment with pocket tracks and wheel numbers
+    const angleOffset = -Math.PI * 0.5 - (Math.PI / 37); // Perfectly calibrated UV and holder alignments (eliminates any physical offsets!)
     const pocketRadius = 0.581; // Align perfectly with the pocket track on the texture
 
     for (let i = 0; i < 37; i++) {
@@ -13125,7 +14199,7 @@ else if (typeof define === 'function' && define['amd'])
       const rx = (b.pos[0] * cosA - b.pos[1] * sinA) * ballScale;
       const ry = (b.pos[0] * sinA + b.pos[1] * cosA) * ballScale;
 
-      drawSphere(wheelX + rx, wheelY + ry, b.pos[2], 0.047, 0.047, 0.047, [0.97, 0.97, 0.95], 0.06, 0.12, 0, b.rot || [0, 0, 0]);
+      drawSphere(wheelX + rx, wheelY + ry, b.pos[2], 0.047, 0.047, 0.047, [0.97, 0.97, 0.95], 0.06, 0.12, 15, b.rot || [0, 0, 0]);
 
       if (!b.trapped) {
         rs.trail.push({ x: rx, y: ry, z: b.pos[2] });
@@ -13156,15 +14230,22 @@ else if (typeof define === 'function' && define['amd'])
           drawDisk(px, py, pz - 0.001, 0.052, 0.052, 1.0, [1.0, 0.90, 0.20], 0.1, 0.9);
         }
 
+        // Draw player color ring indicator under remote players' chips
+        if (chip.ownerColor && chip.ownerId && chip.ownerId !== this.net.localPlayerId) {
+          drawDisk(px, py, pz - 0.0005, 0.046, 0.046, 1.0, chip.ownerColor, 0.2, 0.8);
+        }
+
         // Chip main top & bottom disks
         drawDisk(px, py, pz + 0.0038, 0.038, 0.038, 1.0, chip.color, 0.22, 0.05);
         drawDisk(px, py, pz - 0.0038, 0.038, 0.038, 1.0, chip.color, 0.22, 0.05);
 
-        // Chip outer thick rim with metallic sheen
-        drawHorizontalTorus(px, py, pz, 0.035, 0.035, 0.0075, [0.94, 0.94, 0.96], 0.16, 0.75, 0);
+        // Chip outer thick rim with metallic sheen (tinted to player color or standard silver)
+        const rimColor = chip.ownerColor || [0.94, 0.94, 0.96];
+        drawHorizontalTorus(px, py, pz, 0.035, 0.035, 0.0075, rimColor, 0.16, 0.75, 0);
 
-        // Chip central stamped gold crest seal
-        drawDisk(px, py, pz + 0.0042, 0.022, 0.022, 1.0, [0.95, 0.82, 0.35], 0.12, 0.92);
+        // Chip central stamped gold/player crest seal
+        const crestColor = chip.ownerColor || [0.95, 0.82, 0.35];
+        drawDisk(px, py, pz + 0.0042, 0.022, 0.022, 1.0, crestColor, 0.12, 0.92);
       }
     }
 
@@ -18429,6 +19510,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       gl.bindTexture(gl.TEXTURE_2D, null);
     }
 
+    this.updateDebugOverlay();
     requestAnimationFrame(this._renderLoopBound);
   }
 

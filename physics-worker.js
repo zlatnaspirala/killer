@@ -90,13 +90,15 @@ self.onmessage = function(e) {
       break;
 
     case 'spinRoulette':
-      const startAngle = Math.random() * 2 * Math.PI;
+      const startAngle = data.startAngle !== undefined ? data.startAngle : (Math.random() * 2 * Math.PI);
       // Tangential launch speed along the upper rim
-      const initialTangentialSpeed = 5.2 + Math.random() * 1.0;
+      const initialTangentialSpeed = data.initialTangentialSpeed !== undefined ? data.initialTangentialSpeed : (5.2 + Math.random() * 1.0);
+      const wheelSpeed = data.wheelSpeed !== undefined ? data.wheelSpeed : (-1.15 - Math.random() * 0.25);
       if (world.roulette) {
         world.roulette.active = true;
         // Wheel spin speed during ball rim phase
-        world.roulette.wheelSpeed = -1.15 - Math.random() * 0.25;
+        world.roulette.wheelSpeed = wheelSpeed;
+        world.roulette.forcedPocket = data.forcedPocket !== undefined ? data.forcedPocket : null;
         world.roulette.ball = {
           r: 1.10, // Outer rim track
           theta: startAngle,
@@ -770,6 +772,19 @@ function stepRoulettePhysics(dt) {
     const omega = b.vTheta / b.r;
     b.theta += omega * dt;
 
+    // Smoothly align with the forced target pocket to avoid any visual teleportation/jump!
+    if (r.forcedPocket !== undefined && r.forcedPocket !== null) {
+      const targetAngle = r.wheelAngle + r.forcedPocket * (2 * Math.PI / 37) + (Math.PI / 37);
+      let diff = (targetAngle - b.theta) % (2 * Math.PI);
+      if (diff > Math.PI) diff -= 2 * Math.PI;
+      if (diff < -Math.PI) diff += 2 * Math.PI;
+
+      // Gradually increase pull strength as the ball drops lower to pocket center
+      const progress = Math.min(1.0, Math.max(0.0, (0.76 - b.r) / (0.76 - 0.68)));
+      const blendRate = 2.5 + progress * 10.0;
+      b.theta += diff * blendRate * dt;
+    }
+
     b.clatterTimer = (b.clatterTimer || 0) + dt;
     if (b.clatterTimer > 0.08 && Math.abs(b.vTheta - wheelTangential) > 0.3) {
       b.clatterTimer = 0;
@@ -787,6 +802,10 @@ function stepRoulettePhysics(dt) {
       const seg = (2 * Math.PI) / 37;
       let pocketIdx = Math.floor(relAngle / seg) % 37;
       if (pocketIdx < 0) pocketIdx += 37;
+
+      if (r.forcedPocket !== undefined && r.forcedPocket !== null) {
+        pocketIdx = r.forcedPocket;
+      }
 
       b.trapped = true;
       b.phase = 'trapped';

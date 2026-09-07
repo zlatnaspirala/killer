@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { exec } from 'child_process';
 import os from 'os';
 import { WebSocketServer } from 'ws';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -517,6 +518,139 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`C++ Graphics Backend Server listening on port ${PORT}`);
 });
 
+// ============================================================================
+// ABSTRACT GAMEPLAY BACKEND FRAMEWORK
+// ============================================================================
+class GameplayBackend {
+  constructor(gameId) {
+    this.gameId = gameId;
+    this.subscribers = new Set();
+  }
+
+  subscribe(ws) {
+    this.subscribers.add(ws);
+    this.onSubscribe(ws);
+  }
+
+  unsubscribe(ws) {
+    this.subscribers.delete(ws);
+    this.onUnsubscribe(ws);
+  }
+
+  broadcast(event, payload) {
+    const data = JSON.stringify({ event, payload });
+    for (const client of this.subscribers) {
+      if (client.readyState === 1) {
+        client.send(data);
+      }
+    }
+  }
+
+  onSubscribe(ws) {}
+  onUnsubscribe(ws) {}
+}
+
+class RouletteBackend extends GameplayBackend {
+  constructor() {
+    super('roulette');
+    this.history = [];
+    this.roundDuration = 120; // 2 minutes in seconds
+    this.timeLeft = this.roundDuration;
+    this.spinning = false;
+    this.winningNumber = null;
+    
+    // Start central ticking
+    this.startTimer();
+  }
+
+  startTimer() {
+    setInterval(() => {
+      if (this.timeLeft > 0) {
+        this.timeLeft--;
+        this.broadcast('roulette:tick', {
+          timeLeft: this.timeLeft,
+          spinning: this.spinning,
+          history: this.history
+        });
+      } else {
+        this.drawWinningNumber();
+      }
+    }, 1000);
+  }
+
+  drawWinningNumber() {
+    if (this.spinning) return;
+    this.spinning = true;
+
+    // Cryptographically secure random number between 0 and 36 (inclusive)
+    let secureNum;
+    try {
+      secureNum = crypto.randomInt(0, 37);
+    } catch (e) {
+      const buffer = crypto.randomBytes(1);
+      secureNum = buffer[0] % 37;
+    }
+
+    this.winningNumber = secureNum;
+    this.history.unshift(secureNum);
+    if (this.history.length > 20) {
+      this.history.pop();
+    }
+
+    console.log(`[Roulette Server Backend] DRAWN WINNING NUMBER: ${secureNum}`);
+
+    // Generate matching randomized physics parameters
+    const startAngle = Math.random() * 2 * Math.PI;
+    const initialTangentialSpeed = 5.2 + Math.random() * 1.0;
+    const wheelSpeed = -1.15 - Math.random() * 0.25;
+
+    // Broadcast final result to initiate deterministic animation on all clients
+    this.broadcast('roulette:server_draw', {
+      winningNumber: secureNum,
+      startAngle,
+      initialTangentialSpeed,
+      wheelSpeed,
+      history: this.history,
+      timeLeft: this.roundDuration
+    });
+
+    // Pause briefly for animation time before starting next countdown
+    setTimeout(() => {
+      this.timeLeft = this.roundDuration;
+      this.spinning = false;
+      this.winningNumber = null;
+    }, 12000); // 12 seconds animation buffer
+  }
+
+  onSubscribe(ws) {
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        event: 'roulette:state',
+        payload: {
+          timeLeft: this.timeLeft,
+          spinning: this.spinning,
+          history: this.history,
+          winningNumber: this.winningNumber
+        }
+      }));
+    }
+  }
+}
+
+const gameplayRegistry = {
+  backends: new Map(),
+  register(gameId, instance) {
+    this.backends.set(gameId, instance);
+    console.log(`[Gameplay Backend Manager] Registered: ${gameId}`);
+  },
+  get(gameId) {
+    return this.backends.get(gameId);
+  }
+};
+
+const rouletteBackend = new RouletteBackend();
+gameplayRegistry.register('roulette', rouletteBackend);
+
 // Create WebSocket server for classic WS transport and WebRTC fallback
 const wss = new WebSocketServer({ server, path: '/ws' });
 const connectedClients = new Set();
@@ -603,6 +737,12 @@ wss.on('connection', (ws) => {
         if (parsed.payload.mapId) matchLobbyState.mapId = parsed.payload.mapId;
         broadcastLobbyState();
         return;
+      } else if (parsed.event === 'roulette:subscribe') {
+        rouletteBackend.subscribe(ws);
+        return;
+      } else if (parsed.event === 'roulette:unsubscribe') {
+        rouletteBackend.unsubscribe(ws);
+        return;
       }
     }
 
@@ -616,6 +756,7 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     connectedClients.delete(ws);
+    rouletteBackend.unsubscribe(ws);
     console.log(`[WS] Client disconnected. Remaining: ${connectedClients.size}`);
   });
 });

@@ -79,6 +79,13 @@ export class NetworkManager {
     this.activeTransport.on('worldTeleport', (data) => this.emit('worldTeleport', data));
     this.activeTransport.on('binary', (buf) => this.handleBinaryPacket(buf));
 
+    // Bind any dynamically subscribed custom events
+    for (const event of this.eventListeners.keys()) {
+      if (!['status', 'ping', 'playerTransform', 'playerFire', 'worldElevator', 'worldTeleport', 'binary'].includes(event)) {
+        this.activeTransport.on(event, (data) => this.emit(event, data));
+      }
+    }
+
     this.activeTransport.connect();
   }
 
@@ -161,6 +168,13 @@ export class NetworkManager {
     });
   }
 
+  send(event, payload) {
+    if (this.activeTransport && this.activeTransport.connected) {
+      return this.activeTransport.send(event, payload);
+    }
+    return false;
+  }
+
   handleBinaryPacket(buffer) {
     const view = new Float32Array(buffer);
     if (view.length < 8) return;
@@ -178,6 +192,9 @@ export class NetworkManager {
   on(event, callback) {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, []);
+      if (this.activeTransport && !['status', 'ping', 'playerTransform', 'playerFire', 'worldElevator', 'worldTeleport', 'binary'].includes(event)) {
+        this.activeTransport.on(event, (data) => this.emit(event, data));
+      }
     }
     this.eventListeners.get(event).push(callback);
     return () => this.off(event, callback);

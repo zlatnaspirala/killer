@@ -395,6 +395,13 @@ void main() {
         roughness = 0.58;
         metallic = 0.0;
     }
+    else if (uMatType == 15) {
+        // 15. KILLER ENGINE IVORY BALL (Low direct light influence, high soft ambient/emissive to avoid dark shadow/bright specular blinking)
+        albedo = uBaseColor;
+        roughness = 0.95; // Extremely soft diffuse reflection
+        metallic = 0.0;
+        emissive = uBaseColor * 0.45; // Soft self-illumination
+    }
 
     // Blend optional 2D Texture Maps if active
     if (uUseTexMaps > 0) {
@@ -464,6 +471,10 @@ void main() {
     if (clearCoat > 0.0) {
         vec3 clearCoatFresnel = FresnelSchlick(NoV, vec3(0.04)) * clearCoat;
         iblSpecular += iblSpecularColor * clearCoatFresnel * 0.8;
+    }
+
+    if (uMatType == 15) {
+        Lo *= 0.22; // Greatly reduce direct light influence to avoid blink/contrast extremes!
     }
 
     vec3 color = Lo + (iblDiffuse + iblSpecular) * 0.55 + emissive;
