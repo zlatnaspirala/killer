@@ -4805,7 +4805,10 @@ void main() {
     // IBO
     const ibo = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(data.indices), gl.STATIC_DRAW);
+    const hasUint32Indices = data.indices.some(idx => idx > 65535);
+    const indexType = hasUint32Indices ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+    const indicesTypedArray = hasUint32Indices ? new Uint32Array(data.indices) : new Uint16Array(data.indices);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indicesTypedArray, gl.STATIC_DRAW);
 
     gl.bindVertexArray(null);
 
@@ -4816,7 +4819,8 @@ void main() {
       name: data.name,
       indexCount: data.indices.length,
       vertexCount: data.positions.length / 3,
-      triangleCount: data.indices.length / 3
+      triangleCount: data.indices.length / 3,
+      indexType: indexType
     };
   }
 
@@ -10803,7 +10807,8 @@ else if (typeof define === 'function' && define['amd'])
     if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, wClearCoat);
     if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, wBump);
 
-    gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    const idxType = mesh.indexType || gl.UNSIGNED_SHORT;
+    gl.drawElements(gl.TRIANGLES, mesh.indexCount, idxType, 0);
   }
 
   drawBotMeshPart(progInfo, mesh, charPos, charYaw, offsetX, offsetY, offsetZ, sizeX, sizeY, sizeZ, color, rough = 0.25, metal = 0.85, pMatType = 0, pClearCoat = 0.15) {
@@ -10850,7 +10855,8 @@ else if (typeof define === 'function' && define['amd'])
     if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, pClearCoat);
     if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
-    gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    const idxType = mesh.indexType || gl.UNSIGNED_SHORT;
+    gl.drawElements(gl.TRIANGLES, mesh.indexCount, idxType, 0);
   }
 
   initSlotMachineDemo() {
