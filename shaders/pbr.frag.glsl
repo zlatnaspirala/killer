@@ -186,221 +186,236 @@ void main() {
     // PROCEDURAL MATERIAL SYNTHESIZERS (uMatType)
     // -------------------------------------------------------------
     if (uMatType == 1) {
-        // 1. PROCEDURAL DARK WALNUT WOOD
-        vec3 woodP = p * (scale * 0.35);
-        float ringDist = length(woodP.xz) * 6.0 + fbm3d(woodP * 1.5, 3) * 3.5;
-        float ring = pow(sin(ringDist * 3.14159) * 0.5 + 0.5, 0.6);
-        float grain = noise2d(vec2(woodP.x * 35.0, woodP.y * 3.0)) * 0.5 + 0.5;
-        float pores = pow(noise2d(vec2(woodP.x * 90.0, woodP.y * 12.0)), 3.0);
+        // 1. SLEEK POLISHED MAHOGANY WOOD (NOISE-FREE)
+        vec3 woodP = p * (scale * 0.15);
+        float ringDist = length(woodP.xz) * 1.5 + sin(woodP.y * 3.0) * 0.5;
+        float ring = sin(ringDist * 6.28) * 0.5 + 0.5;
+        float grain = sin(woodP.x * 40.0) * sin(woodP.y * 10.0) * 0.5 + 0.5;
 
-        vec3 darkWalnut = vec3(0.22, 0.11, 0.05);
-        vec3 lightAmber = vec3(0.55, 0.32, 0.16);
-        vec3 poreColor  = vec3(0.12, 0.06, 0.02);
+        vec3 darkWalnut = vec3(0.18, 0.08, 0.04);
+        vec3 lightAmber = vec3(0.48, 0.24, 0.12);
+        vec3 woodColor = mix(darkWalnut, lightAmber, ring * 0.7 + grain * 0.3);
+        albedo = woodColor * (uBaseColor / vec3(0.35, 0.18, 0.09));
 
-        vec3 woodColor = mix(darkWalnut, lightAmber, ring * 0.65 + grain * 0.35);
-        woodColor = mix(woodColor, poreColor, pores * 0.7);
-        albedo = woodColor * (uBaseColor / max(vec3(0.38, 0.22, 0.12), vec3(0.01)));
-
-        float woodHeight = ring * 0.6 + grain * 0.25 - pores * 0.3;
-        N = perturbNormal(N, vWorldPos, woodHeight, bumpScale * 1.6);
-        roughness = mix(0.32, 0.68, ring * 0.7 + pores * 0.3);
-        metallic = 0.0;
-    }
-    else if (uMatType == 2) {
-        // 2. PROCEDURAL BASALT & GRANITE CRAG ROCK
-        vec3 rockP = p * (scale * 0.3);
-        vec2 vCell = voronoi2d(uv * 0.8);
-        float rockFbm = fbm3d(rockP * 2.0, 4);
-        float specks = hash13(floor(rockP * 40.0));
-
-        vec3 basaltColor = vec3(0.18, 0.19, 0.22);
-        vec3 graniteFleck = vec3(0.48, 0.50, 0.54);
-        vec3 quartzSpeck = vec3(0.75, 0.76, 0.80);
-
-        vec3 rockColor = mix(basaltColor, graniteFleck, rockFbm * 0.8 + (1.0 - vCell.x) * 0.4);
-        if (specks > 0.85) rockColor = mix(rockColor, quartzSpeck, 0.6);
-
-        albedo = rockColor * (uBaseColor / max(vec3(0.32, 0.32, 0.35), vec3(0.01)));
-        float rockHeight = (1.0 - vCell.x) * 0.7 + rockFbm * 0.5;
-        N = perturbNormal(N, vWorldPos, rockHeight, bumpScale * 2.5);
-        roughness = clamp(0.75 + rockFbm * 0.2 - (specks > 0.85 ? 0.3 : 0.0), 0.2, 1.0);
-        ao = clamp(vCell.x * 1.4, 0.3, 1.0);
-        metallic = 0.0;
-    }
-    else if (uMatType == 3) {
-        // 3. BRUSHED AEROSPACE TITANIUM
-        vec2 metalUV = uv * 2.0;
-        float brushLines = sin(metalUV.y * 120.0 + noise2d(metalUV * 25.0) * 6.0) * 0.5 + 0.5;
-        float scratches = pow(noise2d(metalUV * vec2(4.0, 180.0)), 4.0);
-
-        vec3 titaniumBase = vec3(0.78, 0.82, 0.88);
-        albedo = mix(titaniumBase * 0.85, titaniumBase * 1.15, brushLines * 0.4 - scratches * 0.3);
-        albedo *= (uBaseColor / max(vec3(0.72, 0.76, 0.82), vec3(0.01)));
-
-        float metalHeight = brushLines * 0.3 + scratches * 0.5;
-        N = perturbNormal(N, vWorldPos, metalHeight, bumpScale * 0.9);
-        roughness = clamp(uRoughness + (scratches * 0.35 - brushLines * 0.08), 0.08, 0.95);
-        metallic = 0.96;
-    }
-    else if (uMatType == 4) {
-        // 4. PROCEDURAL CALACATTA MARBLE
-        vec3 marbleP = p * (scale * 0.25);
-        float turb = fbm3d(marbleP * 1.8 + vec3(fbm3d(marbleP * 2.5, 3) * 2.0), 4);
-        float veins = abs(sin(marbleP.x * 2.5 + turb * 7.5));
-        float veinMask = smoothstep(0.12, 0.0, veins);
-        float subVein = smoothstep(0.3, 0.0, abs(sin(marbleP.z * 3.0 + turb * 5.0))) * 0.5;
-
-        vec3 marbleWhite = vec3(0.96, 0.97, 0.98);
-        vec3 veinGold    = vec3(0.68, 0.55, 0.38);
-        vec3 veinCharcoal = vec3(0.22, 0.23, 0.26);
-
-        vec3 veinCol = mix(veinCharcoal, veinGold, turb);
-        albedo = mix(marbleWhite, veinCol, clamp(veinMask + subVein, 0.0, 1.0));
-        albedo *= (uBaseColor / max(vec3(0.92, 0.92, 0.94), vec3(0.01)));
-
-        float marbleHeight = (1.0 - veinMask) * 0.15;
-        N = perturbNormal(N, vWorldPos, marbleHeight, bumpScale * 0.4);
-        roughness = mix(0.12, 0.35, veinMask);
+        N = perturbNormal(N, vWorldPos, ring * 0.1, bumpScale * 0.5);
+        roughness = mix(0.12, 0.28, ring);
         metallic = 0.0;
         clearCoat = 0.95;
     }
+    else if (uMatType == 2) {
+        // 2. SCI-FI OBSIDIAN WITH GLOWING ENERGY CRACKS
+        vec3 rockP = p * (scale * 0.2);
+        float crackPattern = sin(rockP.x * 2.5 + sin(rockP.y * 2.0 + uTime)) * 
+                             cos(rockP.z * 2.5 + cos(rockP.x * 2.0 - uTime));
+        float crack = smoothstep(0.72, 0.98, abs(crackPattern));
+
+        vec3 basaltColor = vec3(0.08, 0.09, 0.11);
+        vec3 energyGlow = vec3(1.0, 0.35, 0.05);
+
+        albedo = mix(basaltColor, energyGlow * 0.3, crack);
+        emissive = energyGlow * crack * (3.0 + sin(uTime * 3.0) * 1.5);
+
+        N = perturbNormal(N, vWorldPos, crackPattern * 0.2, bumpScale * 1.2);
+        roughness = mix(0.85, 0.15, crack);
+        metallic = 0.1;
+    }
+    else if (uMatType == 3) {
+        // 3. SLEEK AEROSPACE POLISHED TITANIUM
+        float brushLines = sin(vWorldPos.y * 150.0) * 0.5 + 0.5;
+        vec3 titaniumBase = vec3(0.85, 0.88, 0.92);
+        
+        albedo = mix(titaniumBase * 0.9, titaniumBase * 1.1, brushLines * 0.1);
+        albedo *= uBaseColor;
+        N = perturbNormal(N, vWorldPos, brushLines * 0.05, bumpScale * 0.2);
+        roughness = clamp(uRoughness - 0.1, 0.05, 0.8);
+        metallic = 0.98;
+    }
+    else if (uMatType == 4) {
+        // 4. SCI-FI JADE MARBLE WITH GLOWING CYBER-VEINS
+        vec3 marbleP = p * (scale * 0.2);
+        float veins = sin(marbleP.x * 3.0 + cos(marbleP.y * 3.0 + uTime * 0.5)) * 
+                      cos(marbleP.z * 3.0 + sin(marbleP.x * 2.0 - uTime * 0.5));
+        float veinMask = smoothstep(0.85, 0.99, abs(veins));
+
+        vec3 marbleWhite = vec3(0.92, 0.95, 0.98);
+        vec3 cyanGlow = vec3(0.0, 0.8, 1.0);
+
+        albedo = mix(marbleWhite, cyanGlow * 0.2, veinMask);
+        emissive = cyanGlow * veinMask * (2.5 + cos(uTime * 2.0) * 1.0);
+
+        N = perturbNormal(N, vWorldPos, veins * 0.05, bumpScale * 0.3);
+        roughness = mix(0.08, 0.3, veinMask);
+        metallic = 0.05;
+        clearCoat = 0.98;
+    }
     else if (uMatType == 5) {
-        // 5. TWILL WEAVE CARBON FIBER
-        vec2 cUv = uv * 3.5;
+        // 5. PERFECT MATHEMATICAL TWILL CARBON FIBER
+        vec2 cUv = uv * 4.0;
         vec2 cell = fract(cUv);
         vec2 id = floor(cUv);
         float pattern = mod(id.x + id.y, 2.0);
-        float strand = (pattern > 0.5) ? sin(cell.x * PI * 2.0) : sin(cell.y * PI * 2.0);
+        float strand = (pattern > 0.5) ? sin(cell.x * PI) : sin(cell.y * PI);
         strand = strand * 0.5 + 0.5;
 
-        vec3 carbonWeave = mix(vec3(0.08, 0.09, 0.11), vec3(0.24, 0.26, 0.30), strand);
-        albedo = carbonWeave * (uBaseColor / max(vec3(0.12, 0.13, 0.15), vec3(0.01)));
+        vec3 carbonWeave = mix(vec3(0.05, 0.06, 0.08), vec3(0.18, 0.20, 0.24), strand);
+        albedo = carbonWeave * uBaseColor;
 
-        float weaveHeight = strand * 0.6;
-        N = perturbNormal(N, vWorldPos, weaveHeight, bumpScale * 1.8);
-        roughness = 0.32;
-        metallic = 0.55;
-        clearCoat = 0.95;
+        N = perturbNormal(N, vWorldPos, strand * 0.1, bumpScale * 0.8);
+        roughness = 0.15;
+        metallic = 0.7;
+        clearCoat = 0.98;
     }
     else if (uMatType == 6) {
-        // 6. CORRODED IRON & RUST
-        vec3 rustP = p * (scale * 0.35);
-        float rustNoise = fbm3d(rustP * 2.2, 4);
-        float rustMask = smoothstep(0.38, 0.62, rustNoise);
+        // 6. DAMASCUS TEMPERED STEEL WITH CHROMA GLOW
+        vec3 damascusP = p * (scale * 0.25);
+        float wave = sin(damascusP.x * 8.0 + sin(damascusP.y * 6.0 + uTime)) * 
+                     cos(damascusP.z * 8.0 + cos(damascusP.x * 5.0 - uTime));
+        float pattern = sin(wave * 5.0) * 0.5 + 0.5;
 
-        vec3 cleanSteel = vec3(0.72, 0.75, 0.80);
-        vec3 orangeRust = vec3(0.68, 0.28, 0.12);
-        vec3 darkPit    = vec3(0.28, 0.12, 0.06);
-        vec3 rustColor  = mix(orangeRust, darkPit, noise3d(rustP * 8.0));
+        vec3 deepBlue = vec3(0.05, 0.12, 0.35);
+        vec3 steelSilver = vec3(0.85, 0.88, 0.92);
+        vec3 goldAccent = vec3(0.85, 0.65, 0.25);
 
-        albedo = mix(cleanSteel, rustColor, rustMask);
-        albedo *= (uBaseColor / max(vec3(0.65, 0.28, 0.16), vec3(0.01)));
+        vec3 metalColor = mix(deepBlue, steelSilver, pattern);
+        if (pattern > 0.8) metalColor = mix(metalColor, goldAccent, 0.5);
 
-        float rustHeight = rustMask * 0.8 + (1.0 - rustMask) * 0.1;
-        N = perturbNormal(N, vWorldPos, rustHeight, bumpScale * 2.2);
-        roughness = mix(0.18, 0.88, rustMask);
-        metallic  = mix(0.95, 0.05, rustMask);
+        albedo = metalColor * uBaseColor;
+        emissive = deepBlue * (1.0 - pattern) * 0.5;
+
+        N = perturbNormal(N, vWorldPos, wave * 0.1, bumpScale * 0.6);
+        roughness = mix(0.1, 0.35, pattern);
+        metallic = 0.95;
     }
     else if (uMatType == 7) {
-        // 7. VOLCANIC MAGMA & LAVA CRUST
-        vec2 lCell = voronoi2d(uv * 0.5 + vec2(uTime * 0.04, 0.0));
-        float crack = smoothstep(0.0, 0.22, lCell.x);
-        float heatPulse = sin(uTime * 2.5 + lCell.y * 6.28) * 0.5 + 0.5;
+        // 7. SUPERFLUID LAVA FLOW & FLAME PLASMA (NOISE-FREE / HIGH-PERFORMANCE)
+        vec2 lavaUV = uv * 0.15;
+        float t = uTime * 0.6;
+        float w1 = sin(lavaUV.x * 4.0 + t) + cos(lavaUV.y * 3.0 - t);
+        float w2 = sin(lavaUV.y * 5.0 - t * 1.3) + cos(lavaUV.x * 4.0 + t * 0.8);
+        vec2 warpedUV = lavaUV + vec2(sin(w1 + t), cos(w2 - t)) * 0.4;
+        
+        float fluidPattern = sin(warpedUV.x * 6.0 + t) * cos(warpedUV.y * 6.0 - t) * 0.5 + 0.5;
+        float crustMask = smoothstep(0.4, 0.72, fluidPattern);
 
-        vec3 basaltCrust = vec3(0.08, 0.07, 0.07);
-        vec3 magmaYellow = vec3(1.0, 0.85, 0.2);
-        vec3 magmaOrange = vec3(1.0, 0.28, 0.04);
-        vec3 magmaRed    = vec3(0.6, 0.05, 0.01);
+        vec3 basaltCrust = vec3(0.04, 0.03, 0.04);
+        vec3 lavaYellow  = vec3(1.2, 0.92, 0.1);
+        vec3 lavaOrange  = vec3(1.1, 0.32, 0.02);
+        vec3 lavaRed     = vec3(0.7, 0.04, 0.0);
 
-        vec3 glowCol = mix(magmaYellow, magmaOrange, lCell.x * 4.0);
-        glowCol = mix(glowCol, magmaRed, heatPulse * 0.3);
+        vec3 fluidColor = mix(lavaYellow, lavaOrange, fluidPattern);
+        fluidColor = mix(fluidColor, lavaRed, sin(uTime * 2.0 + w1) * 0.3 + 0.3);
 
-        albedo = mix(glowCol, basaltCrust, crack);
-        emissive = glowCol * (1.0 - crack) * (2.8 + heatPulse * 1.5);
+        albedo = mix(fluidColor, basaltCrust, crustMask);
+        emissive = fluidColor * (1.0 - crustMask) * (3.5 + sin(uTime * 2.0) * 1.5);
 
-        float lavaHeight = crack * 0.7;
-        N = perturbNormal(N, vWorldPos, lavaHeight, bumpScale * 2.0);
-        roughness = mix(0.1, 0.9, crack);
+        N = perturbNormal(N, vWorldPos, fluidPattern * 0.3, bumpScale * 1.5);
+        roughness = mix(0.1, 0.95, crustMask);
         metallic = 0.0;
     }
     else if (uMatType == 8) {
-        // 8. FLAKE METALLIC CAR PAINT
-        float flake = hash13(floor(p * (scale * 8.0)));
-        float flakeGlint = (flake > 0.72) ? pow((flake - 0.72) / 0.28, 2.0) : 0.0;
-
+        // 8. FLAWLESS METALLIC CANDY CAR PAINT
+        float fresnelRim = pow(1.0 - NoV_base, 3.0);
         vec3 candyColor = uBaseColor;
-        vec3 glintColor = vec3(1.0, 0.95, 0.85);
+        vec3 rimColor = vec3(1.0, 0.9, 0.95);
 
-        albedo = mix(candyColor, glintColor, flakeGlint * 0.75);
-        roughness = 0.18;
-        metallic = 0.85;
+        albedo = mix(candyColor, rimColor, fresnelRim * 0.4);
+        roughness = 0.08;
+        metallic = 0.9;
         clearCoat = 1.0;
-        clearCoatRoughness = 0.04;
+        clearCoatRoughness = 0.02;
     }
     else if (uMatType == 9) {
-        // 9. OPTICAL DIELECTRIC GLASS & CHROMATIC DISPERSION
+        // 9. HIGH-TECH HOLOGRAPHIC CHROMATIC GLASS
         float fresnelGlass = pow(1.0 - NoV_base, 3.5);
-        vec3 glassBody = vec3(0.92, 0.96, 1.0);
-        albedo = mix(glassBody * 0.15, glassBody, fresnelGlass);
-        roughness = 0.03;
+        vec3 redChannel = vec3(0.95, 0.05, 0.1) * pow(NoV_base, 1.5);
+        vec3 blueChannel = vec3(0.05, 0.3, 0.95) * pow(1.0 - NoV_base, 2.0);
+        vec3 glassBody = mix(vec3(0.9, 0.98, 1.0), redChannel + blueChannel, 0.4);
+
+        albedo = mix(glassBody * 0.2, glassBody, fresnelGlass);
+        emissive = (redChannel * 0.3 + blueChannel * 0.6) * (1.5 + sin(uTime) * 0.5);
+        roughness = 0.02;
         metallic = 0.0;
-        clearCoat = 0.95;
+        clearCoat = 1.0;
     }
     else if (uMatType == 10) {
-        // 10. SHEEN MICROFIBER VELVET CLOTH
-        float sheenRim = pow(1.0 - NoV_base, 2.2);
-        vec3 sheenCol = vec3(1.0, 0.45, 0.65);
-        albedo = uBaseColor + sheenCol * sheenRim * 0.65;
-        roughness = 0.78;
+        // 10. LUXURY VELVET SHEEN CLOTH
+        float sheenRim = pow(1.0 - NoV_base, 2.5);
+        vec3 sheenCol = vec3(0.95, 0.35, 0.65);
+        albedo = uBaseColor + sheenCol * sheenRim * 0.8;
+        roughness = 0.85;
         metallic = 0.0;
     }
     else if (uMatType == 11) {
-        // 11. QUANTUM HOLOGRAPHIC MATRIX
-        float holoFresnel = pow(1.0 - NoV_base, 2.5);
-        float scanline = sin(vWorldPos.y * 45.0 - uTime * 7.0) * 0.5 + 0.5;
-        scanline = pow(scanline, 4.0);
-        float grid = step(0.92, fract(uv.x * 2.0)) + step(0.92, fract(uv.y * 2.0));
+        // 11. QUANTUM DIGITAL HOLOGRAPHIC GRID
+        float scanline = sin(vWorldPos.y * 30.0 - uTime * 6.0) * 0.5 + 0.5;
+        scanline = pow(scanline, 5.0);
+        float gridX = step(0.95, fract(vWorldPos.x * 5.0));
+        float gridZ = step(0.95, fract(vWorldPos.z * 5.0));
+        float grid = max(gridX, gridZ);
 
-        emissive = uBaseColor * (holoFresnel * 1.8 + scanline * 1.2 + grid * 0.8 + 0.2);
-        albedo = uBaseColor * 0.2;
-        roughness = 0.08;
-        metallic = 0.0;
-    }
-    else if (uMatType == 12) {
-        // 12. SUPERCHARGED EMISSIVE NEON
-        float pulse = sin(uTime * 4.0) * 0.15 + 0.85;
-        emissive = uBaseColor * pulse * 3.5;
-        albedo = uBaseColor;
+        float holoFresnel = pow(1.0 - NoV_base, 2.2);
+        vec3 holoColor = vec3(0.0, 0.95, 0.72);
+
+        emissive = holoColor * (holoFresnel * 2.0 + scanline * 1.5 + grid * 1.2 + 0.3);
+        albedo = holoColor * 0.1;
         roughness = 0.05;
         metallic = 0.0;
     }
+    else if (uMatType == 12) {
+        // 12. SUPERCHARGED COHERENT LASER NEON
+        float pulse = sin(uTime * 5.0) * 0.12 + 0.88;
+        float edgeGlow = pow(1.0 - NoV_base, 2.5);
+        
+        vec3 neonColor = uBaseColor;
+        vec3 coreColor = vec3(1.0, 1.0, 1.0);
+        
+        emissive = mix(neonColor * 4.0, coreColor * 5.0, edgeGlow * 0.5) * pulse;
+        albedo = neonColor;
+        roughness = 0.03;
+        metallic = 0.0;
+    }
     else if (uMatType == 13) {
-        // 13. TROCHOIDAL RIPPLE WATER
-        vec2 wUv = uv * 0.4;
-        float wave1 = sin(wUv.x * 6.0 + wUv.y * 4.0 - uTime * 2.5);
-        float wave2 = cos(wUv.x * 4.0 - wUv.y * 7.0 + uTime * 2.0);
-        float waveHeight = (wave1 + wave2) * 0.5;
-        N = perturbNormal(N, vWorldPos, waveHeight, bumpScale * 2.8);
-        albedo = mix(vec3(0.05, 0.25, 0.55), vec3(0.15, 0.55, 0.85), waveHeight * 0.5 + 0.5);
-        roughness = 0.06;
-        metallic = 0.1;
+        // 13. SCI-FI RIPPLE FLUID / ENERGY WATER
+        vec2 wUv = uv * 0.15;
+        float t = uTime * 1.5;
+        float wave1 = sin(wUv.x * 5.0 + wUv.y * 3.0 + t);
+        float wave2 = cos(wUv.x * 4.0 - wUv.y * 6.0 - t * 0.8);
+        float totalWaves = (wave1 + wave2) * 0.5;
+
+        vec3 deepWater = vec3(0.02, 0.22, 0.42);
+        vec3 energyTeal = vec3(0.0, 0.9, 0.85);
+
+        albedo = mix(deepWater, energyTeal * 0.4, totalWaves * 0.5 + 0.5);
+        emissive = energyTeal * (totalWaves * 0.5 + 0.5) * 0.8;
+
+        N = perturbNormal(N, vWorldPos, totalWaves * 0.2, bumpScale * 2.0);
+        roughness = 0.04;
+        metallic = 0.05;
         clearCoat = 0.95;
     }
     else if (uMatType == 14) {
-        // 14. PEBBLE GRAIN LEATHER
-        vec2 lPebble = voronoi2d(uv * 2.5);
-        float leatherHeight = (1.0 - lPebble.x) * 0.8;
-        N = perturbNormal(N, vWorldPos, leatherHeight, bumpScale * 1.9);
-        albedo = mix(uBaseColor * 0.75, uBaseColor * 1.1, lPebble.x);
-        roughness = 0.58;
-        metallic = 0.0;
+        // 14. SCI-FI HEX-GRID METALLIC ARMOR PLATING
+        vec2 hexUv = uv * 2.5;
+        float hexLine = abs(sin(hexUv.x * 1.732 + hexUv.y) * sin(hexUv.y * 2.0));
+        float hexMask = smoothstep(0.08, 0.0, hexLine);
+
+        vec3 metalPlate = vec3(0.22, 0.24, 0.26);
+        vec3 orangeGlow = vec3(1.0, 0.4, 0.0);
+
+        albedo = mix(metalPlate * uBaseColor, orangeGlow * 0.3, hexMask);
+        emissive = orangeGlow * hexMask * (3.0 + sin(uTime * 4.0) * 1.0);
+
+        N = perturbNormal(N, vWorldPos, (1.0 - hexMask) * 0.15, bumpScale * 0.8);
+        roughness = mix(0.18, 0.08, hexMask);
+        metallic = 0.9;
     }
     else if (uMatType == 15) {
-        // 15. KILLER ENGINE IVORY BALL (Low direct light influence, high soft ambient/emissive to avoid dark shadow/bright specular blinking)
+        // 15. HIGH-ENERGY GLOWING CORE / HYPER BALL
+        float corePulse = sin(uTime * 3.0) * 0.15 + 0.85;
         albedo = uBaseColor;
-        roughness = 0.95; // Extremely soft diffuse reflection
+        roughness = 0.9;
         metallic = 0.0;
-        emissive = uBaseColor * 0.45; // Soft self-illumination
+        emissive = uBaseColor * (1.2 + corePulse * 1.5);
     }
 
     // Blend optional 2D Texture Maps if active

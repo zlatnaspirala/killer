@@ -68,4 +68,23 @@ void Renderer::SetCurrentShader(int shaderType) {
     m_activeShaderIndex = shaderType;
 }
 
+void Renderer::SetLODPolicy(LODPolicy policy) {
+    m_lodSystem.SetPolicy(policy);
+}
+
+void Renderer::SubmitMaterialBatch(const MaterialBatchBucket& batch) {
+    m_batchQueue.push_back(batch);
+}
+
+void Renderer::FlushMaterialBatches() {
+    // Process all material buckets in single pass per material
+    for (const auto& bucket : m_batchQueue) {
+        if (!bucket.instances.empty()) {
+            m_drawCalls++;
+            m_triangleCount += (bucket.indexCount / 3) * bucket.instances.size();
+        }
+    }
+    m_batchQueue.clear();
+}
+
 } // namespace EngineCore

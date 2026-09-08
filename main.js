@@ -597,10 +597,65 @@ public:
 
 }`,
 
+  'LOD.hpp': `// include/engine/LOD.hpp
+#pragma once
+#include <vector>
+#include <cmath>
+#include <string>
+
+namespace EngineCore {
+
+enum class LODPolicy {
+    DesktopForceQuality = 0,    // Force LOD0 for all hero & secondary elements
+    MobileMaxOptimisation = 1,  // Aggressively use decimated geometry & material batching
+    AdaptiveDistanceBased = 2   // Dynamically scale LOD based on screen-space projected area
+};
+
+enum class LODLevel {
+    LOD0_High = 0,      // Full vertex resolution (24x24 bands, 1152 tris)
+    LOD1_Medium = 1,    // Intermediate resolution (14x14 bands, 392 tris)
+    LOD2_Decimated = 2  // Aggressive decimation (6x6 bands, 72 tris - 94% vertex reduction)
+};
+
+struct LODMeshDescriptor {
+    int lodLevel = 0;
+    int vertexCount = 0;
+    int triangleCount = 0;
+    float maxDistance = 50.0f;
+    float screenCoverageThreshold = 0.05f;
+    uint32_t vao = 0;
+    uint32_t indexCount = 0;
+};
+
+// AAA Render Principle: Material-Sorted Batch Queue (Draw per material, not per mesh)
+struct MaterialBatchBucket {
+    uint32_t vao = 0;
+    uint32_t indexCount = 0;
+    float baseColor[3];
+    float roughness;
+    float metallic;
+    int matType;
+    std::vector<float> instanceTransforms; // 16 floats per instance
+};
+
+class LODSystem {
+public:
+    LODPolicy activePolicy = LODPolicy::DesktopForceQuality;
+    bool isMobileDevice = false;
+
+    void Initialize(bool isMobile) {
+        isMobileDevice = isMobile;
+        activePolicy = isMobile ? LODPolicy::MobileMaxOptimisation : LODPolicy::DesktopForceQuality;
+    }
+};
+
+}`,
+
   'Renderer.hpp': `// include/engine/Renderer.hpp
 #pragma once
 #include <cstdint>
 #include <vector>
+#include "LOD.hpp"
 
 namespace EngineCore {
 
@@ -614,6 +669,12 @@ public:
     void UpdateModelTransform(float pitch, float yaw);
     void DrawScene(const class CameraController& camera, float time, const float baseColor[3], float roughness, float metallic);
     void EndFrame();
+
+    // AAA Render Principles: Draw per material & LOD
+    void SetLODPolicy(LODPolicy policy);
+    LODPolicy GetLODPolicy() const;
+    void SubmitMaterialBatch(const MaterialBatchBucket& batch);
+    void FlushMaterialBatches();
 };
 
 }`,
@@ -2005,214 +2066,236 @@ void main() {
     // PROCEDURAL MATERIAL SYNTHESIZERS (u_matType)
     // -------------------------------------------------------------
     if (u_matType == 1) {
-        // 1. PROCEDURAL DARK WALNUT WOOD - SMOOTH HIGH-GLOSS LACQUER
-        vec3 woodP = p * (scale * 0.35);
-        float ringDist = length(woodP.xz) * 6.0 + fbm3d(woodP * 1.5, 3) * 3.5;
-        float ring = pow(sin(ringDist * 3.14159) * 0.5 + 0.5, 0.6);
-        float grain = noise2d(vec2(woodP.x * 6.0, woodP.y * 1.0)) * 0.5 + 0.5; // smoother, low-frequency grain
-        float pores = 0.0; // Remove noisy pores entirely
+        // 1. SLEEK POLISHED MAHOGANY WOOD (NOISE-FREE)
+        vec3 woodP = p * (scale * 0.15);
+        float ringDist = length(woodP.xz) * 1.5 + sin(woodP.y * 3.0) * 0.5;
+        float ring = sin(ringDist * 6.28) * 0.5 + 0.5;
+        float grain = sin(woodP.x * 40.0) * sin(woodP.y * 10.0) * 0.5 + 0.5;
 
-        vec3 darkWalnut = vec3(0.24, 0.12, 0.06);
-        vec3 lightAmber = vec3(0.50, 0.28, 0.14);
+        vec3 darkWalnut = vec3(0.18, 0.08, 0.04);
+        vec3 lightAmber = vec3(0.48, 0.24, 0.12);
+        vec3 woodColor = mix(darkWalnut, lightAmber, ring * 0.7 + grain * 0.3);
+        albedo = woodColor * (u_baseColor / vec3(0.35, 0.18, 0.09));
 
-        vec3 woodColor = mix(darkWalnut, lightAmber, ring * 0.65 + grain * 0.35);
-        albedo = woodColor * (u_baseColor / max(vec3(0.38, 0.22, 0.12), vec3(0.01)));
-
-        float woodHeight = ring * 0.08 + grain * 0.04; // extremely subtle height variation
-        N = perturbNormal(N, v_worldPos, woodHeight, bumpScale * 0.15); // extremely smooth bump normal
-        roughness = mix(0.12, 0.22, ring * 0.3); // highly polished and shiny lacquer finish!
-        metallic = 0.05; // slight polished specularity
-        clearCoat = 0.98; // elegant protective glossy lacquer coat
-    }
-    else if (u_matType == 2) {
-        // 2. PROCEDURAL BASALT & GRANITE CRAG ROCK
-        vec3 rockP = p * (scale * 0.3);
-        vec2 vCell = voronoi2d(uv * 0.8);
-        float rockFbm = fbm3d(rockP * 2.0, 4);
-        float specks = hash13(floor(rockP * 40.0));
-
-        vec3 basaltColor = vec3(0.18, 0.19, 0.22);
-        vec3 graniteFleck = vec3(0.48, 0.50, 0.54);
-        vec3 quartzSpeck = vec3(0.75, 0.76, 0.80);
-
-        vec3 rockColor = mix(basaltColor, graniteFleck, rockFbm * 0.8 + (1.0 - vCell.x) * 0.4);
-        if (specks > 0.85) rockColor = mix(rockColor, quartzSpeck, 0.6);
-
-        albedo = rockColor * (u_baseColor / max(vec3(0.32, 0.32, 0.35), vec3(0.01)));
-        float rockHeight = (1.0 - vCell.x) * 0.7 + rockFbm * 0.5;
-        N = perturbNormal(N, v_worldPos, rockHeight, bumpScale * 2.5);
-        roughness = clamp(0.75 + rockFbm * 0.2 - (specks > 0.85 ? 0.3 : 0.0), 0.2, 1.0);
-        ao = clamp(vCell.x * 1.4, 0.3, 1.0);
-        metallic = 0.0;
-    }
-    else if (u_matType == 3) {
-        // 3. BRUSHED AEROSPACE TITANIUM
-        vec2 metalUV = uv * 2.0;
-        float brushLines = sin(metalUV.y * 120.0 + noise2d(metalUV * 25.0) * 6.0) * 0.5 + 0.5;
-        float scratches = pow(noise2d(metalUV * vec2(4.0, 180.0)), 4.0);
-
-        vec3 titaniumBase = vec3(0.78, 0.82, 0.88);
-        albedo = mix(titaniumBase * 0.85, titaniumBase * 1.15, brushLines * 0.4 - scratches * 0.3);
-        albedo *= (u_baseColor / max(vec3(0.72, 0.76, 0.82), vec3(0.01)));
-
-        float metalHeight = brushLines * 0.3 + scratches * 0.5;
-        N = perturbNormal(N, v_worldPos, metalHeight, bumpScale * 1.4);
-        roughness = mix(0.18, 0.38, scratches);
-        metallic = 0.96;
-    }
-    else if (u_matType == 4) {
-        // 4. CALACATTA MARBLE
-        vec3 marbleP = p * (scale * 0.25);
-        float turb = fbm3d(marbleP * 2.5, 4);
-        float veins = sin(marbleP.x * 4.0 + marbleP.y * 2.0 + turb * 8.0);
-        veins = abs(veins);
-        float veinMask = smoothstep(0.12, 0.0, veins);
-        float subVein = smoothstep(0.3, 0.0, abs(sin(marbleP.z * 3.0 + turb * 5.0))) * 0.5;
-
-        vec3 marbleWhite = vec3(0.96, 0.97, 0.98);
-        vec3 veinGold    = vec3(0.68, 0.55, 0.38);
-        vec3 veinCharcoal = vec3(0.22, 0.23, 0.26);
-
-        vec3 veinCol = mix(veinCharcoal, veinGold, turb);
-        albedo = mix(marbleWhite, veinCol, clamp(veinMask + subVein, 0.0, 1.0));
-        albedo *= (u_baseColor / max(vec3(0.92, 0.92, 0.94), vec3(0.01)));
-
-        float marbleHeight = (1.0 - veinMask) * 0.15;
-        N = perturbNormal(N, v_worldPos, marbleHeight, bumpScale * 0.4);
-        roughness = mix(0.12, 0.35, veinMask);
+        N = perturbNormal(N, v_worldPos, ring * 0.1, bumpScale * 0.5);
+        roughness = mix(0.12, 0.28, ring);
         metallic = 0.0;
         clearCoat = 0.95;
     }
+    else if (u_matType == 2) {
+        // 2. SCI-FI OBSIDIAN WITH GLOWING ENERGY CRACKS
+        vec3 rockP = p * (scale * 0.2);
+        float crackPattern = sin(rockP.x * 2.5 + sin(rockP.y * 2.0 + u_time)) * 
+                             cos(rockP.z * 2.5 + cos(rockP.x * 2.0 - u_time));
+        float crack = smoothstep(0.72, 0.98, abs(crackPattern));
+
+        vec3 basaltColor = vec3(0.08, 0.09, 0.11);
+        vec3 energyGlow = vec3(1.0, 0.35, 0.05);
+
+        albedo = mix(basaltColor, energyGlow * 0.3, crack);
+        emissive = energyGlow * crack * (3.0 + sin(u_time * 3.0) * 1.5);
+
+        N = perturbNormal(N, v_worldPos, crackPattern * 0.2, bumpScale * 1.2);
+        roughness = mix(0.85, 0.15, crack);
+        metallic = 0.1;
+    }
+    else if (u_matType == 3) {
+        // 3. SLEEK AEROSPACE POLISHED TITANIUM
+        float brushLines = sin(v_worldPos.y * 150.0) * 0.5 + 0.5;
+        vec3 titaniumBase = vec3(0.85, 0.88, 0.92);
+        
+        albedo = mix(titaniumBase * 0.9, titaniumBase * 1.1, brushLines * 0.1);
+        albedo *= u_baseColor;
+        N = perturbNormal(N, v_worldPos, brushLines * 0.05, bumpScale * 0.2);
+        roughness = clamp(u_roughness - 0.1, 0.05, 0.8);
+        metallic = 0.98;
+    }
+    else if (u_matType == 4) {
+        // 4. SCI-FI JADE MARBLE WITH GLOWING CYBER-VEINS
+        vec3 marbleP = p * (scale * 0.2);
+        float veins = sin(marbleP.x * 3.0 + cos(marbleP.y * 3.0 + u_time * 0.5)) * 
+                      cos(marbleP.z * 3.0 + sin(marbleP.x * 2.0 - u_time * 0.5));
+        float veinMask = smoothstep(0.85, 0.99, abs(veins));
+
+        vec3 marbleWhite = vec3(0.92, 0.95, 0.98);
+        vec3 cyanGlow = vec3(0.0, 0.8, 1.0);
+
+        albedo = mix(marbleWhite, cyanGlow * 0.2, veinMask);
+        emissive = cyanGlow * veinMask * (2.5 + cos(u_time * 2.0) * 1.0);
+
+        N = perturbNormal(N, v_worldPos, veins * 0.05, bumpScale * 0.3);
+        roughness = mix(0.08, 0.3, veinMask);
+        metallic = 0.05;
+        clearCoat = 0.98;
+    }
     else if (u_matType == 5) {
-        // 5. TWILL WEAVE CARBON FIBER
-        vec2 cUv = uv * 3.5;
+        // 5. PERFECT MATHEMATICAL TWILL CARBON FIBER
+        vec2 cUv = uv * 4.0;
         vec2 cell = fract(cUv);
         vec2 id = floor(cUv);
         float pattern = mod(id.x + id.y, 2.0);
-        float strand = (pattern > 0.5) ? sin(cell.x * PI * 2.0) : sin(cell.y * PI * 2.0);
+        float strand = (pattern > 0.5) ? sin(cell.x * PI) : sin(cell.y * PI);
         strand = strand * 0.5 + 0.5;
 
-        vec3 carbonWeave = mix(vec3(0.08, 0.09, 0.11), vec3(0.24, 0.26, 0.30), strand);
-        albedo = carbonWeave * (u_baseColor / max(vec3(0.12, 0.13, 0.15), vec3(0.01)));
+        vec3 carbonWeave = mix(vec3(0.05, 0.06, 0.08), vec3(0.18, 0.20, 0.24), strand);
+        albedo = carbonWeave * u_baseColor;
 
-        float weaveHeight = strand * 0.6;
-        N = perturbNormal(N, v_worldPos, weaveHeight, bumpScale * 1.8);
-        roughness = 0.32;
-        metallic = 0.55;
-        clearCoat = 0.95;
+        N = perturbNormal(N, v_worldPos, strand * 0.1, bumpScale * 0.8);
+        roughness = 0.15;
+        metallic = 0.7;
+        clearCoat = 0.98;
     }
     else if (u_matType == 6) {
-        // 6. CORRODED IRON & RUST
-        vec3 rustP = p * (scale * 0.35);
-        float rustNoise = fbm3d(rustP * 2.2, 4);
-        float rustMask = smoothstep(0.38, 0.62, rustNoise);
+        // 6. DAMASCUS TEMPERED STEEL WITH CHROMA GLOW
+        vec3 damascusP = p * (scale * 0.25);
+        float wave = sin(damascusP.x * 8.0 + sin(damascusP.y * 6.0 + u_time)) * 
+                     cos(damascusP.z * 8.0 + cos(damascusP.x * 5.0 - u_time));
+        float pattern = sin(wave * 5.0) * 0.5 + 0.5;
 
-        vec3 cleanSteel = vec3(0.72, 0.75, 0.80);
-        vec3 orangeRust = vec3(0.68, 0.28, 0.12);
-        vec3 darkPit    = vec3(0.28, 0.12, 0.06);
-        vec3 rustColor  = mix(orangeRust, darkPit, noise3d(rustP * 8.0));
+        vec3 deepBlue = vec3(0.05, 0.12, 0.35);
+        vec3 steelSilver = vec3(0.85, 0.88, 0.92);
+        vec3 goldAccent = vec3(0.85, 0.65, 0.25);
 
-        albedo = mix(cleanSteel, rustColor, rustMask);
-        albedo *= (u_baseColor / max(vec3(0.65, 0.28, 0.16), vec3(0.01)));
+        vec3 metalColor = mix(deepBlue, steelSilver, pattern);
+        if (pattern > 0.8) metalColor = mix(metalColor, goldAccent, 0.5);
 
-        float rustHeight = rustMask * 0.8 + (1.0 - rustMask) * 0.1;
-        N = perturbNormal(N, v_worldPos, rustHeight, bumpScale * 2.2);
-        roughness = mix(0.18, 0.88, rustMask);
-        metallic  = mix(0.95, 0.05, rustMask);
+        albedo = metalColor * u_baseColor;
+        emissive = deepBlue * (1.0 - pattern) * 0.5;
+
+        N = perturbNormal(N, v_worldPos, wave * 0.1, bumpScale * 0.6);
+        roughness = mix(0.1, 0.35, pattern);
+        metallic = 0.95;
     }
     else if (u_matType == 7) {
-        // 7. VOLCANIC MAGMA & LAVA CRUST
-        vec2 lCell = voronoi2d(uv * 0.5 + vec2(u_time * 0.04, 0.0));
-        float crack = smoothstep(0.0, 0.22, lCell.x);
-        float heatPulse = sin(u_time * 2.5 + lCell.y * 6.28) * 0.5 + 0.5;
+        // 7. SUPERFLUID LAVA FLOW & FLAME PLASMA (NOISE-FREE / HIGH-PERFORMANCE)
+        vec2 lavaUV = uv * 0.15;
+        float t = u_time * 0.6;
+        float w1 = sin(lavaUV.x * 4.0 + t) + cos(lavaUV.y * 3.0 - t);
+        float w2 = sin(lavaUV.y * 5.0 - t * 1.3) + cos(lavaUV.x * 4.0 + t * 0.8);
+        vec2 warpedUV = lavaUV + vec2(sin(w1 + t), cos(w2 - t)) * 0.4;
+        
+        float fluidPattern = sin(warpedUV.x * 6.0 + t) * cos(warpedUV.y * 6.0 - t) * 0.5 + 0.5;
+        float crustMask = smoothstep(0.4, 0.72, fluidPattern);
 
-        vec3 basaltCrust = vec3(0.08, 0.07, 0.07);
-        vec3 magmaYellow = vec3(1.0, 0.85, 0.2);
-        vec3 magmaOrange = vec3(1.0, 0.28, 0.04);
-        vec3 magmaRed    = vec3(0.6, 0.05, 0.01);
+        vec3 basaltCrust = vec3(0.04, 0.03, 0.04);
+        vec3 lavaYellow  = vec3(1.2, 0.92, 0.1);
+        vec3 lavaOrange  = vec3(1.1, 0.32, 0.02);
+        vec3 lavaRed     = vec3(0.7, 0.04, 0.0);
 
-        vec3 glowCol = mix(magmaYellow, magmaOrange, lCell.x * 4.0);
-        glowCol = mix(glowCol, magmaRed, heatPulse * 0.3);
+        vec3 fluidColor = mix(lavaYellow, lavaOrange, fluidPattern);
+        fluidColor = mix(fluidColor, lavaRed, sin(u_time * 2.0 + w1) * 0.3 + 0.3);
 
-        albedo = mix(glowCol, basaltCrust, crack);
-        emissive = glowCol * (1.0 - crack) * (2.8 + heatPulse * 1.5);
+        albedo = mix(fluidColor, basaltCrust, crustMask);
+        emissive = fluidColor * (1.0 - crustMask) * (3.5 + sin(u_time * 2.0) * 1.5);
 
-        float lavaHeight = crack * 0.7;
-        N = perturbNormal(N, v_worldPos, lavaHeight, bumpScale * 2.0);
-        roughness = mix(0.1, 0.9, crack);
+        N = perturbNormal(N, v_worldPos, fluidPattern * 0.3, bumpScale * 1.5);
+        roughness = mix(0.1, 0.95, crustMask);
         metallic = 0.0;
     }
     else if (u_matType == 8) {
-        // 8. FLAKE METALLIC CAR PAINT
-        float flake = hash13(floor(p * (scale * 8.0)));
-        float flakeGlint = (flake > 0.72) ? pow((flake - 0.72) / 0.28, 2.0) : 0.0;
-
+        // 8. FLAWLESS METALLIC CANDY CAR PAINT
+        float fresnelRim = pow(1.0 - NoV_base, 3.0);
         vec3 candyColor = u_baseColor;
-        vec3 glintColor = vec3(1.0, 0.95, 0.85);
+        vec3 rimColor = vec3(1.0, 0.9, 0.95);
 
-        albedo = mix(candyColor, glintColor, flakeGlint * 0.75);
-        roughness = 0.18;
-        metallic = 0.85;
+        albedo = mix(candyColor, rimColor, fresnelRim * 0.4);
+        roughness = 0.08;
+        metallic = 0.9;
         clearCoat = 1.0;
-        clearCoatRoughness = 0.04;
+        clearCoatRoughness = 0.02;
     }
     else if (u_matType == 9) {
-        // 9. OPTICAL DIELECTRIC GLASS & CHROMATIC DISPERSION
+        // 9. HIGH-TECH HOLOGRAPHIC CHROMATIC GLASS
         float fresnelGlass = pow(1.0 - NoV_base, 3.5);
-        vec3 glassBody = vec3(0.92, 0.96, 1.0);
-        albedo = mix(glassBody * 0.15, glassBody, fresnelGlass);
-        roughness = 0.03;
+        vec3 redChannel = vec3(0.95, 0.05, 0.1) * pow(NoV_base, 1.5);
+        vec3 blueChannel = vec3(0.05, 0.3, 0.95) * pow(1.0 - NoV_base, 2.0);
+        vec3 glassBody = mix(vec3(0.9, 0.98, 1.0), redChannel + blueChannel, 0.4);
+
+        albedo = mix(glassBody * 0.2, glassBody, fresnelGlass);
+        emissive = (redChannel * 0.3 + blueChannel * 0.6) * (1.5 + sin(u_time) * 0.5);
+        roughness = 0.02;
         metallic = 0.0;
-        clearCoat = 0.95;
+        clearCoat = 1.0;
     }
     else if (u_matType == 10) {
-        // 10. SHEEN MICROFIBER VELVET CLOTH
-        float sheenRim = pow(1.0 - NoV_base, 2.2);
-        vec3 sheenCol = vec3(1.0, 0.45, 0.65);
-        albedo = u_baseColor + sheenCol * sheenRim * 0.65;
-        roughness = 0.78;
+        // 10. LUXURY VELVET SHEEN CLOTH
+        float sheenRim = pow(1.0 - NoV_base, 2.5);
+        vec3 sheenCol = vec3(0.95, 0.35, 0.65);
+        albedo = u_baseColor + sheenCol * sheenRim * 0.8;
+        roughness = 0.85;
         metallic = 0.0;
     }
     else if (u_matType == 11) {
-        // 11. QUANTUM HOLOGRAPHIC MATRIX
-        float holoFresnel = pow(1.0 - NoV_base, 2.5);
-        float scanline = sin(v_worldPos.y * 45.0 - u_time * 7.0) * 0.5 + 0.5;
-        scanline = pow(scanline, 4.0);
-        float grid = step(0.92, fract(uv.x * 2.0)) + step(0.92, fract(uv.y * 2.0));
+        // 11. QUANTUM DIGITAL HOLOGRAPHIC GRID
+        float scanline = sin(v_worldPos.y * 30.0 - u_time * 6.0) * 0.5 + 0.5;
+        scanline = pow(scanline, 5.0);
+        float gridX = step(0.95, fract(v_worldPos.x * 5.0));
+        float gridZ = step(0.95, fract(v_worldPos.z * 5.0));
+        float grid = max(gridX, gridZ);
 
-        emissive = u_baseColor * (holoFresnel * 1.8 + scanline * 1.2 + grid * 0.8 + 0.2);
-        albedo = u_baseColor * 0.2;
-        roughness = 0.08;
-        metallic = 0.0;
-    }
-    else if (u_matType == 12) {
-        // 12. SUPERCHARGED EMISSIVE NEON
-        float pulse = sin(u_time * 4.0) * 0.15 + 0.85;
-        emissive = u_baseColor * pulse * 3.5;
-        albedo = u_baseColor;
+        float holoFresnel = pow(1.0 - NoV_base, 2.2);
+        vec3 holoColor = vec3(0.0, 0.95, 0.72);
+
+        emissive = holoColor * (holoFresnel * 2.0 + scanline * 1.5 + grid * 1.2 + 0.3);
+        albedo = holoColor * 0.1;
         roughness = 0.05;
         metallic = 0.0;
     }
+    else if (u_matType == 12) {
+        // 12. SUPERCHARGED COHERENT LASER NEON
+        float pulse = sin(u_time * 5.0) * 0.12 + 0.88;
+        float edgeGlow = pow(1.0 - NoV_base, 2.5);
+        
+        vec3 neonColor = u_baseColor;
+        vec3 coreColor = vec3(1.0, 1.0, 1.0);
+        
+        emissive = mix(neonColor * 4.0, coreColor * 5.0, edgeGlow * 0.5) * pulse;
+        albedo = neonColor;
+        roughness = 0.03;
+        metallic = 0.0;
+    }
     else if (u_matType == 13) {
-        // 13. TROCHOIDAL RIPPLE WATER
-        vec2 wUv = uv * 0.4;
-        float wave1 = sin(wUv.x * 6.0 + wUv.y * 4.0 - u_time * 2.5);
-        float wave2 = cos(wUv.x * 4.0 - wUv.y * 7.0 + u_time * 2.0);
-        float waveHeight = (wave1 + wave2) * 0.5;
-        N = perturbNormal(N, v_worldPos, waveHeight, bumpScale * 2.8);
-        albedo = mix(vec3(0.05, 0.25, 0.55), vec3(0.15, 0.55, 0.85), waveHeight * 0.5 + 0.5);
-        roughness = 0.06;
-        metallic = 0.1;
+        // 13. SCI-FI RIPPLE FLUID / ENERGY WATER
+        vec2 wUv = uv * 0.15;
+        float t = u_time * 1.5;
+        float wave1 = sin(wUv.x * 5.0 + wUv.y * 3.0 + t);
+        float wave2 = cos(wUv.x * 4.0 - wUv.y * 6.0 - t * 0.8);
+        float totalWaves = (wave1 + wave2) * 0.5;
+
+        vec3 deepWater = vec3(0.02, 0.22, 0.42);
+        vec3 energyTeal = vec3(0.0, 0.9, 0.85);
+
+        albedo = mix(deepWater, energyTeal * 0.4, totalWaves * 0.5 + 0.5);
+        emissive = energyTeal * (totalWaves * 0.5 + 0.5) * 0.8;
+
+        N = perturbNormal(N, v_worldPos, totalWaves * 0.2, bumpScale * 2.0);
+        roughness = 0.04;
+        metallic = 0.05;
         clearCoat = 0.95;
     }
     else if (u_matType == 14) {
-        // 14. PEBBLE GRAIN LEATHER
-        vec2 lPebble = voronoi2d(uv * 2.5);
-        float leatherHeight = (1.0 - lPebble.x) * 0.8;
-        N = perturbNormal(N, v_worldPos, leatherHeight, bumpScale * 1.9);
-        albedo = mix(u_baseColor * 0.75, u_baseColor * 1.1, lPebble.x);
-        roughness = 0.58;
+        // 14. SCI-FI HEX-GRID METALLIC ARMOR PLATING
+        vec2 hexUv = uv * 2.5;
+        float hexLine = abs(sin(hexUv.x * 1.732 + hexUv.y) * sin(hexUv.y * 2.0));
+        float hexMask = smoothstep(0.08, 0.0, hexLine);
+
+        vec3 metalPlate = vec3(0.22, 0.24, 0.26);
+        vec3 orangeGlow = vec3(1.0, 0.4, 0.0);
+
+        albedo = mix(metalPlate * u_baseColor, orangeGlow * 0.3, hexMask);
+        emissive = orangeGlow * hexMask * (3.0 + sin(u_time * 4.0) * 1.0);
+
+        N = perturbNormal(N, v_worldPos, (1.0 - hexMask) * 0.15, bumpScale * 0.8);
+        roughness = mix(0.18, 0.08, hexMask);
+        metallic = 0.9;
+    }
+    else if (u_matType == 15) {
+        // 15. HIGH-ENERGY GLOWING CORE / HYPER BALL
+        float corePulse = sin(u_time * 3.0) * 0.15 + 0.85;
+        albedo = u_baseColor;
+        roughness = 0.9;
         metallic = 0.0;
+        emissive = u_baseColor * (1.2 + corePulse * 1.5);
     }
 
     // Blend optional 2D Texture Maps if active
@@ -2301,12 +2384,14 @@ void main() {
             vec3 Fp = FresnelSchlick(max(dot(Hp, V), 0.0), F0);
             vec3 specularP = (NDFp * Gp * Fp) / (4.0 * NoV * NdotLp + 0.0001);
             vec3 kSp = Fp;
-            vec3 kDp = (vec3(1.0) - kSp) * (1.0 - metallic);
-            Lo += (kDp * albedo / PI + specularP) * u_pointLights[i].color * atten * NdotLp;
+            float diffuseWeightP = max(1.0 - metallic, 0.45);
+            vec3 kDp = (vec3(1.0) - kSp) * diffuseWeightP;
+            float wrapNdotLp = max(dot(N, Lp) * 0.8 + 0.2, 0.0);
+            Lo += (kDp * albedo / PI * wrapNdotLp + specularP * NdotLp) * u_pointLights[i].color * atten;
         }
     }
 
-    // 4. Dynamic Spot Light Entities
+    // 4. Dynamic Spot Light Entities (Consistent Omnidirectional Visibility & Target Focused)
     for (int i = 0; i < 4; i++) {
         if (i >= u_numSpotLights) break;
         vec3 lightVec = u_spotLights[i].pos - v_worldPos;
@@ -2317,20 +2402,20 @@ void main() {
         
         if (spotCos < u_spotLights[i].outerCutoff) continue;
         
-        float spotFactor = clamp((spotCos - u_spotLights[i].outerCutoff) / (u_spotLights[i].cutoff - u_spotLights[i].outerCutoff + 1e-4), 0.0, 1.0);
+        float spotFactor = smoothstep(u_spotLights[i].outerCutoff, u_spotLights[i].cutoff, spotCos);
         float atten = u_spotLights[i].intensity / (1.0 + 0.08 * dist + 0.02 * dist * dist) * spotFactor;
         
         vec3 Hs = normalize(V + Ls);
         float NdotLs = max(dot(N, Ls), 0.0);
-        if (NdotLs > 0.0) {
-            float NDFs = DistributionGGX(max(dot(N, Hs), 0.0), max(roughness, 0.04));
-            float Gs = GeometrySmith(N, V, Ls, max(roughness, 0.04));
-            vec3 Fs = FresnelSchlick(max(dot(Hs, V), 0.0), F0);
-            vec3 specularS = (NDFs * Gs * Fs) / (4.0 * NoV * NdotLs + 0.0001);
-            vec3 kSs = Fs;
-            vec3 kDs = (vec3(1.0) - kSs) * (1.0 - metallic);
-            Lo += (kDs * albedo / PI + specularS) * u_spotLights[i].color * atten * NdotLs;
-        }
+        float wrapNdotLs = max(dot(N, Ls) * 0.75 + 0.25, 0.0);
+        float NDFs = DistributionGGX(max(dot(N, Hs), 0.0), max(roughness, 0.04));
+        float Gs = GeometrySmith(N, V, Ls, max(roughness, 0.04));
+        vec3 Fs = FresnelSchlick(max(dot(Hs, V), 0.0), F0);
+        vec3 specularS = (NDFs * Gs * Fs) / (4.0 * NoV * NdotLs + 0.0001);
+        vec3 kSs = Fs;
+        float diffuseWeightS = max(1.0 - metallic, 0.45);
+        vec3 kDs = (vec3(1.0) - kSs) * diffuseWeightS;
+        Lo += (kDs * albedo / PI * wrapNdotLs + specularS * NdotLs) * u_spotLights[i].color * atten;
     }
 
     // 5. Filament IBL Hemisphere Ambient
@@ -2430,6 +2515,26 @@ uniform vec3 u_camPos;
 uniform vec3 u_lightDir;
 uniform vec3 u_lightColor;
 
+struct PointLight {
+    vec3 pos;
+    vec3 color;
+    float intensity;
+    float radius;
+};
+struct SpotLight {
+    vec3 pos;
+    vec3 dir;
+    vec3 color;
+    float intensity;
+    float cutoff;
+    float outerCutoff;
+};
+
+uniform int u_numPointLights;
+uniform PointLight u_pointLights[6];
+uniform int u_numSpotLights;
+uniform SpotLight u_spotLights[4];
+
 out vec4 fragColor;
 
 void main() {
@@ -2452,6 +2557,41 @@ void main() {
 
     vec3 diff = u_baseColor * (lCol * (NdotL * 0.72 + 0.20) + ambient);
     vec3 col = diff + vec3(spec);
+
+    // Dynamic Point Lights in Cheap/Mobile Shader
+    for (int i = 0; i < 6; i++) {
+        if (i >= u_numPointLights) break;
+        vec3 pVec = u_pointLights[i].pos - v_worldPos;
+        float d = length(pVec);
+        if (d < u_pointLights[i].radius && u_pointLights[i].intensity > 0.01) {
+            vec3 Lp = normalize(pVec);
+            float atten = (1.0 - d / u_pointLights[i].radius) * (u_pointLights[i].intensity / (1.0 + 0.1 * d + 0.03 * d * d));
+            float pNdotL = max(dot(N, Lp) * 0.75 + 0.25, 0.0);
+            vec3 Hp = normalize(V + Lp);
+            float pSpec = pow(max(dot(N, Hp), 0.0), specPower) * u_metallic * 0.35;
+            col += (u_baseColor * pNdotL + vec3(pSpec)) * u_pointLights[i].color * atten;
+        }
+    }
+
+    // Dynamic Spot Lights in Cheap/Mobile Shader
+    for (int i = 0; i < 4; i++) {
+        if (i >= u_numSpotLights) break;
+        vec3 sVec = u_spotLights[i].pos - v_worldPos;
+        float d = length(sVec);
+        if (u_spotLights[i].intensity > 0.01) {
+            vec3 Ls = normalize(sVec);
+            vec3 sDir = length(u_spotLights[i].dir) > 0.001 ? normalize(u_spotLights[i].dir) : vec3(0.0, -1.0, 0.0);
+            float sCos = dot(-Ls, sDir);
+            if (sCos >= u_spotLights[i].outerCutoff) {
+                float sFactor = smoothstep(u_spotLights[i].outerCutoff, u_spotLights[i].cutoff, sCos);
+                float atten = (u_spotLights[i].intensity / (1.0 + 0.08 * d + 0.02 * d * d)) * sFactor;
+                float sNdotL = max(dot(N, Ls) * 0.75 + 0.25, 0.0);
+                vec3 Hs = normalize(V + Ls);
+                float sSpec = pow(max(dot(N, Hs), 0.0), specPower) * u_metallic * 0.4;
+                col += (u_baseColor * sNdotL + vec3(sSpec)) * u_spotLights[i].color * atten;
+            }
+        }
+    }
 
     // Fast Glow / Neon Highlight for Laser bolts, Holograms, Visors, Item pickups
     if (u_matType == 11 || u_matType == 12 || u_matType == 7) {
@@ -3155,6 +3295,24 @@ void Renderer::EndFrame() {
     // End of Frame Barrier
 }
 
+void Renderer::SetLODPolicy(LODPolicy policy) {
+    m_lodSystem.SetPolicy(policy);
+}
+
+void Renderer::SubmitMaterialBatch(const MaterialBatchBucket& batch) {
+    m_batchQueue.push_back(batch);
+}
+
+void Renderer::FlushMaterialBatches() {
+    for (const auto& bucket : m_batchQueue) {
+        if (!bucket.instanceTransforms.empty()) {
+            m_drawCallCount++;
+            m_triangleCount += (bucket.indexCount / 3) * (bucket.instanceTransforms.size() / 16);
+        }
+    }
+    m_batchQueue.clear();
+}
+
 } // namespace EngineCore
 `,
 
@@ -3843,9 +4001,57 @@ class RetroSoundSynth {
 // FILAMENT_MATERIALS_CATALOG is imported from ./maps/index.js
 
 
+// ============================================================================
+// KILLER ENGINE CORE ARCHITECTURE: Level Of Detail (LOD) & AAA Render Layout
+// ============================================================================
+export const KillerEngine = {
+  version: '2.4.0-lod',
+  name: 'Killer Engine Core',
+
+  // Policies: Desktop forces maximum fidelity, Mobile enforces aggressive optimization
+  LODPolicy: {
+    DESKTOP_FORCE_QUALITY: 'desktop_force_quality',
+    MOBILE_MAX_OPTIMISATION: 'mobile_max_optimisation',
+    ADAPTIVE: 'adaptive'
+  },
+
+  // Levels of Detail
+  LODLevel: {
+    LOD0_ULTRA: 0,     // Full fidelity (e.g. 24x24 bands, 1152 tris)
+    LOD1_BALANCED: 1,  // Intermediate (e.g. 14x14 bands, 392 tris)
+    LOD2_DECIMATED: 2  // Aggressive decimation (e.g. 6x6 bands, 72 tris - 94% vertex decimation)
+  },
+
+  detectPlatformTier: () => {
+    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                     (window.innerWidth <= 768 && ('ontouchstart' in window || navigator.maxTouchPoints > 0)) ||
+                     window.innerWidth <= 640;
+    return isMobile ? 'mobile' : 'desktop';
+  },
+
+  getDefaultPolicy: () => {
+    return KillerEngine.detectPlatformTier() === 'mobile'
+      ? KillerEngine.LODPolicy.MOBILE_MAX_OPTIMISATION
+      : KillerEngine.LODPolicy.DESKTOP_FORCE_QUALITY;
+  }
+};
+
+
 /// Application State Controller
 class NativeApp {
   constructor() {
+    window.app = this;
+    window.startFpsMatch = () => this.startFpsMatch();
+    window.hideFpsStartupMenu = () => this.hideFpsStartupMenu();
+    window.showFpsStartupMenu = () => this.showFpsStartupMenu();
+    window.fireWeaponProjectile = () => this.fireWeaponProjectile();
+
+    this.fpsFireOption = 'both'; // 'both' | 'dblclick' | 'click' | 'keys_only'
+    this.fpsFireBtnMode = 'auto'; // 'auto' | 'always' | 'hidden'
+    this.lastFpsTapTime = 0;
+    this.lastFpsFireTime = 0;
+    this.fpsAutoFireInterval = null;
+
     this.canvas = document.getElementById('engine-canvas');
     this.gl = this.canvas.getContext('webgl2', { antialias: true, alpha: false });
     
@@ -3857,8 +4063,16 @@ class NativeApp {
     // Set default global debug flag
     window.DEBUG_RENDER_DATA = false;
 
+    // Detect platform tier & initialize Killer Engine LOD policy
+    const detectedTier = KillerEngine.detectPlatformTier();
+    const initialLODPolicy = detectedTier === 'mobile' 
+      ? KillerEngine.LODPolicy.MOBILE_MAX_OPTIMISATION 
+      : KillerEngine.LODPolicy.DESKTOP_FORCE_QUALITY;
+
     this.state = {
       DEBUG_RENDER_DATA: false,
+      lodPolicy: initialLODPolicy,
+      lodTier: detectedTier,
       demoScene: '12_roulette.cpp', // Default to Demo 12 3D Physics-Engine Roulette Wheel
       activeMesh: 0,
       activeShader: 0, // Default to Full PBR Filament Shader
@@ -4163,12 +4377,12 @@ class NativeApp {
     this.initProjectWorkspace();
     this.initShowroomUI();
     this.initNetworkSystem();
+    this.initFpsStartupMenu();
     if (this.state.demoScene && this.state.demoScene.includes('13_bingo')) {
       this.initBingoDemo();
     } else if (this.state.demoScene && this.state.demoScene.includes('12_roulette')) {
       this.initRouletteDemo();
-    } else {
-      this.initFpsStartupMenu();
+    } else if (this.state.demoScene && this.state.demoScene.includes('07_fps')) {
       this.sync3DBotsFromLobby();
       this.showFpsStartupMenu();
     }
@@ -4580,68 +4794,661 @@ void main() {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
-  initMeshes() {
+  buildMeshBuffer(data, isDynamic = false) {
     const gl = this.gl;
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    const usage = isDynamic ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW;
+
+    // Pos
+    const vboPos = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vboPos);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data.positions), usage);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+    // Norm
+    const vboNorm = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data.normals), usage);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+
+    // UV
+    const vboUV = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vboUV);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data.uvs), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
+
+    // Barycentric
+    const vboBary = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vboBary);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data.barys), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 0, 0);
+
+    // IBO
+    const ibo = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(data.indices), gl.STATIC_DRAW);
+
+    gl.bindVertexArray(null);
+
+    return {
+      vao,
+      vboPos,
+      vboNorm,
+      name: data.name,
+      indexCount: data.indices.length,
+      vertexCount: data.positions.length / 3,
+      triangleCount: data.indices.length / 3
+    };
+  }
+
+  initMeshes() {
+    // 1. Killer Engine LOD Sphere Levels:
+    // LOD 0 (High/Ultra): 24x24 bands (625 verts, 1,152 tris) - Desktop Quality
+    // LOD 1 (Balanced): 14x14 bands (225 verts, 392 tris) - Desktop secondary / Mobile Hero
+    // LOD 2 (Decimated): 6x6 bands (49 verts, 72 tris - 94% vertex decimation) - Mobile Max Optimisation
+    const sphereLOD0Data = createSphere(1.0, 24, 24);
+    sphereLOD0Data.name = "Sphere LOD0 High";
+    const sphereLOD1Data = createSphere(1.0, 14, 14);
+    sphereLOD1Data.name = "Sphere LOD1 Medium";
+    const sphereLOD2Data = createSphere(1.0, 6, 6);
+    sphereLOD2Data.name = "Sphere LOD2 Decimated";
+
+    this.sphereLODs = [
+      this.buildMeshBuffer(sphereLOD0Data),
+      this.buildMeshBuffer(sphereLOD1Data),
+      this.buildMeshBuffer(sphereLOD2Data)
+    ];
+
     this.rawMeshes = [
-      createSphere(1.0, 24, 24),
+      sphereLOD0Data,
       createCube(1.0),
       createIcosahedron(1.4),
       createTrefoilKnot(120, 20, 0.28),
       createTorus(0.45, 1.1, 48, 24),
       createQuad(1.0),
       createRing(0.82, 1.0, 48),
-      createDisk(1.0, 48)
+      createDisk(1.0, 48),
+      sphereLOD2Data
     ];
 
-    this.meshBuffers = this.rawMeshes.map(data => {
-      const vao = gl.createVertexArray();
-      gl.bindVertexArray(vao);
-
-      // Pos
-      const vboPos = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, vboPos);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data.positions), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(0);
-      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-
-      // Norm
-      const vboNorm = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, vboNorm);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data.normals), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(1);
-      gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
-
-      // UV
-      const vboUV = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, vboUV);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data.uvs), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(2);
-      gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
-
-      // Barycentric
-      const vboBary = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, vboBary);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data.barys), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(3);
-      gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 0, 0);
-
-      // IBO
-      const ibo = gl.createBuffer();
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(data.indices), gl.STATIC_DRAW);
-
-      gl.bindVertexArray(null);
-
-      return {
-        vao,
-        name: data.name,
-        indexCount: data.indices.length,
-        vertexCount: data.positions.length / 3,
-        triangleCount: data.indices.length / 3
-      };
-    });
+    this.meshBuffers = this.rawMeshes.map(data => this.buildMeshBuffer(data));
+    this.meshBuffers[0] = this.sphereLODs[0]; // Primary mesh points to LOD0
 
     this.updateHUDStats();
+    this.loadSoldierGLB();
+  }
+
+  slerpQuat(out, q0, q1, t) {
+    let cosOmega = q0[0]*q1[0] + q0[1]*q1[1] + q0[2]*q1[2] + q0[3]*q1[3];
+    let q1Copy = [q1[0], q1[1], q1[2], q1[3]];
+    if (cosOmega < 0) {
+      cosOmega = -cosOmega;
+      for (let i = 0; i < 4; i++) q1Copy[i] = -q1Copy[i];
+    }
+    if (cosOmega > 0.9995) {
+      for (let i = 0; i < 4; i++) out[i] = q0[i] + t * (q1Copy[i] - q0[i]);
+    } else {
+      const sinOmega = Math.sqrt(1.0 - cosOmega * cosOmega);
+      const omega = Math.atan2(sinOmega, cosOmega);
+      const s0 = Math.sin((1.0 - t) * omega) / sinOmega;
+      const s1 = Math.sin(t * omega) / sinOmega;
+      for (let i = 0; i < 4; i++) out[i] = s0 * q0[i] + s1 * q1Copy[i];
+    }
+  }
+
+  evaluateSoldierSkeleton(animTime) {
+    if (!this.soldierSkeletonData) return null;
+    const { nodes, animations, jointsNodeIndices, inverseBindMatrices } = this.soldierSkeletonData;
+    if (animations.length === 0) return null;
+
+    // Use first animation (usually Walk or Locomotion in character1/soldier.glb)
+    const anim = animations[0];
+    const duration = anim.duration;
+    const time = animTime % (duration || 1.0);
+
+    const fromRotationTranslationScale = (out, q, v, s) => {
+      const x = q[0], y = q[1], z = q[2], w = q[3];
+      const x2 = x + x, y2 = y + y, z2 = z + z;
+      const xx = x * x2, xy = x * y2, xz = x * z2;
+      const yy = y * y2, yz = y * z2, zz = z * z2;
+      const wx = w * x2, wy = w * y2, wz = w * z2;
+
+      const sx = s[0], sy = s[1], sz = s[2];
+
+      out[0] = (1 - (yy + zz)) * sx;
+      out[1] = (xy + wz) * sx;
+      out[2] = (xz - wy) * sx;
+      out[3] = 0;
+
+      out[4] = (xy - wz) * sy;
+      out[5] = (1 - (xx + zz)) * sy;
+      out[6] = (yz + wx) * sy;
+      out[7] = 0;
+
+      out[8] = (xz + wy) * sz;
+      out[9] = (yz - wx) * sz;
+      out[10] = (1 - (xx + yy)) * sz;
+      out[11] = 0;
+
+      out[12] = v[0];
+      out[13] = v[1];
+      out[14] = v[2];
+      out[15] = 1;
+      return out;
+    };
+
+    // 1. Reset node local TRS and track animated nodes
+    nodes.forEach(node => {
+      node.currTranslation = [node.translation[0], node.translation[1], node.translation[2]];
+      node.currRotation = [node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3]];
+      node.currScale = [node.scale[0], node.scale[1], node.scale[2]];
+      node.hasAnimation = false;
+    });
+
+    anim.channels.forEach(chan => {
+      const node = nodes[chan.targetNode];
+      if (!node) return;
+
+      node.hasAnimation = true;
+
+      const ts = chan.timestamps;
+      const vals = chan.values;
+      const path = chan.targetPath;
+
+      if (ts.length === 0) return;
+
+      let k0 = 0;
+      if (time <= ts[0]) {
+        if (path === 'translation') node.currTranslation = vals.slice(0, 3);
+        else if (path === 'rotation') node.currRotation = vals.slice(0, 4);
+        else if (path === 'scale') node.currScale = vals.slice(0, 3);
+        return;
+      }
+      if (time >= ts[ts.length - 1]) {
+        k0 = ts.length - 1;
+        const stride = path === 'rotation' ? 4 : 3;
+        const start = k0 * stride;
+        if (path === 'translation') node.currTranslation = vals.slice(start, start + 3);
+        else if (path === 'rotation') node.currRotation = vals.slice(start, start + 4);
+        else if (path === 'scale') node.currScale = vals.slice(start, start + 3);
+        return;
+      }
+
+      // Find keyframe
+      for (let i = 0; i < ts.length - 1; i++) {
+        if (time >= ts[i] && time <= ts[i+1]) {
+          k0 = i;
+          break;
+        }
+      }
+      const k1 = k0 + 1;
+      const t0 = ts[k0];
+      const t1 = ts[k1];
+      const factor = (time - t0) / ((t1 - t0) || 1);
+
+      if (path === 'translation') {
+        const v0 = k0 * 3, v1 = k1 * 3;
+        node.currTranslation = [
+          vals[v0] + factor * (vals[v1] - vals[v0]),
+          vals[v0+1] + factor * (vals[v1+1] - vals[v0+1]),
+          vals[v0+2] + factor * (vals[v1+2] - vals[v0+2])
+        ];
+      } else if (path === 'scale') {
+        const v0 = k0 * 3, v1 = k1 * 3;
+        node.currScale = [
+          vals[v0] + factor * (vals[v1] - vals[v0]),
+          vals[v0+1] + factor * (vals[v1+1] - vals[v0+1]),
+          vals[v0+2] + factor * (vals[v1+2] - vals[v0+2])
+        ];
+      } else if (path === 'rotation') {
+        const r0 = k0 * 4, r1 = k1 * 4;
+        const q0 = [vals[r0], vals[r0+1], vals[r0+2], vals[r0+3]];
+        const q1 = [vals[r1], vals[r1+1], vals[r1+2], vals[r1+3]];
+        node.currRotation = [0,0,0,1];
+        this.slerpQuat(node.currRotation, q0, q1, factor);
+      }
+    });
+
+    // 2. Compute Local matrices
+    nodes.forEach(node => {
+      if (node.hasAnimation) {
+        fromRotationTranslationScale(node.localMatrix, node.currRotation, node.currTranslation, node.currScale);
+      } else if (node.matrix) {
+        for (let i = 0; i < 16; i++) node.localMatrix[i] = node.matrix[i];
+      } else {
+        fromRotationTranslationScale(node.localMatrix, node.currRotation, node.currTranslation, node.currScale);
+      }
+    });
+
+    // Recursive function to correctly propagate transforms regardless of node list order
+    const computeWorldMatrix = (nodeIdx, parentWorldMatrix) => {
+      const node = nodes[nodeIdx];
+      if (!node) return;
+      if (parentWorldMatrix) {
+        Mat4.multiply(node.worldMatrix, parentWorldMatrix, node.localMatrix);
+      } else {
+        for (let i = 0; i < 16; i++) node.worldMatrix[i] = node.localMatrix[i];
+      }
+      node.children.forEach(childIdx => {
+        computeWorldMatrix(childIdx, node.worldMatrix);
+      });
+    };
+
+    // Evaluate root nodes recursively
+    nodes.forEach(node => {
+      if (node.parent === -1) {
+        computeWorldMatrix(node.index, null);
+      }
+    });
+
+    // 3. Compute skin matrices
+    const skinMatrices = [];
+    for (let i = 0; i < jointsNodeIndices.length; i++) {
+      const jointNode = nodes[jointsNodeIndices[i]];
+      const ibm = inverseBindMatrices[i];
+      const skinMat = Mat4.create();
+      if (jointNode && ibm) {
+        Mat4.multiply(skinMat, jointNode.worldMatrix, ibm);
+      }
+      skinMatrices.push(skinMat);
+    }
+    return skinMatrices;
+  }
+
+  updateSoldierMeshBuffer(skinMatrices) {
+    if (!this.soldierMesh || !this.soldierSkeletonData || !skinMatrices) return;
+    const { originalPos, originalNorm, joints, weights } = this.soldierSkeletonData;
+    const count = originalPos.length / 3;
+
+    if (!this.skinnedPosArray || this.skinnedPosArray.length !== originalPos.length) {
+      this.skinnedPosArray = new Float32Array(originalPos.length);
+      this.skinnedNormArray = new Float32Array(originalNorm.length);
+    }
+
+    const pos = this.skinnedPosArray;
+    const norm = this.skinnedNormArray;
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const i4 = i * 4;
+
+      const px = originalPos[i3];
+      const py = originalPos[i3 + 1];
+      const pz = originalPos[i3 + 2];
+
+      const nx = originalNorm[i3];
+      const ny = originalNorm[i3 + 1];
+      const nz = originalNorm[i3 + 2];
+
+      const j0 = joints[i4];
+      const j1 = joints[i4 + 1];
+      const j2 = joints[i4 + 2];
+      const j3 = joints[i4 + 3];
+
+      const w0 = weights[i4];
+      const w1 = weights[i4 + 1];
+      const w2 = weights[i4 + 2];
+      const w3 = weights[i4 + 3];
+
+      const wsum = w0 + w1 + w2 + w3;
+      if (wsum < 0.01) {
+        pos[i3] = px;
+        pos[i3 + 1] = py;
+        pos[i3 + 2] = pz;
+        norm[i3] = nx;
+        norm[i3 + 1] = ny;
+        norm[i3 + 2] = nz;
+        continue;
+      }
+
+      const invW = 1.0 / wsum;
+      const nw0 = w0 * invW;
+      const nw1 = w1 * invW;
+      const nw2 = w2 * invW;
+      const nw3 = w3 * invW;
+
+      let spx = 0, spy = 0, spz = 0;
+      let snx = 0, sny = 0, snz = 0;
+
+      if (nw0 > 0 && j0 >= 0 && j0 < skinMatrices.length) {
+        const m = skinMatrices[j0];
+        if (m) {
+          spx += (m[0]*px + m[4]*py + m[8]*pz + m[12]) * nw0;
+          spy += (m[1]*px + m[5]*py + m[9]*pz + m[13]) * nw0;
+          spz += (m[2]*px + m[6]*py + m[10]*pz + m[14]) * nw0;
+
+          snx += (m[0]*nx + m[4]*ny + m[8]*nz) * nw0;
+          sny += (m[1]*nx + m[5]*ny + m[9]*nz) * nw0;
+          snz += (m[2]*nx + m[6]*ny + m[10]*nz) * nw0;
+        }
+      }
+      if (nw1 > 0 && j1 >= 0 && j1 < skinMatrices.length) {
+        const m = skinMatrices[j1];
+        if (m) {
+          spx += (m[0]*px + m[4]*py + m[8]*pz + m[12]) * nw1;
+          spy += (m[1]*px + m[5]*py + m[9]*pz + m[13]) * nw1;
+          spz += (m[2]*px + m[6]*py + m[10]*pz + m[14]) * nw1;
+
+          snx += (m[0]*nx + m[4]*ny + m[8]*nz) * nw1;
+          sny += (m[1]*nx + m[5]*ny + m[9]*nz) * nw1;
+          snz += (m[2]*nx + m[6]*ny + m[10]*nz) * nw1;
+        }
+      }
+      if (nw2 > 0 && j2 >= 0 && j2 < skinMatrices.length) {
+        const m = skinMatrices[j2];
+        if (m) {
+          spx += (m[0]*px + m[4]*py + m[8]*pz + m[12]) * nw2;
+          spy += (m[1]*px + m[5]*py + m[9]*pz + m[13]) * nw2;
+          spz += (m[2]*px + m[6]*py + m[10]*pz + m[14]) * nw2;
+
+          snx += (m[0]*nx + m[4]*ny + m[8]*nz) * nw2;
+          sny += (m[1]*nx + m[5]*ny + m[9]*nz) * nw2;
+          snz += (m[2]*nx + m[6]*ny + m[10]*nz) * nw2;
+        }
+      }
+      if (nw3 > 0 && j3 >= 0 && j3 < skinMatrices.length) {
+        const m = skinMatrices[j3];
+        if (m) {
+          spx += (m[0]*px + m[4]*py + m[8]*pz + m[12]) * nw3;
+          spy += (m[1]*px + m[5]*py + m[9]*pz + m[13]) * nw3;
+          spz += (m[2]*px + m[6]*py + m[10]*pz + m[14]) * nw3;
+
+          snx += (m[0]*nx + m[4]*ny + m[8]*nz) * nw3;
+          sny += (m[1]*nx + m[5]*ny + m[9]*nz) * nw3;
+          snz += (m[2]*nx + m[6]*ny + m[10]*nz) * nw3;
+        }
+      }
+
+      pos[i3] = spx;
+      pos[i3 + 1] = spy;
+      pos[i3 + 2] = spz;
+
+      const nlen = Math.hypot(snx, sny, snz) || 1;
+      norm[i3] = snx / nlen;
+      norm[i3 + 1] = sny / nlen;
+      norm[i3 + 2] = snz / nlen;
+    }
+
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.soldierMesh.vboPos);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, pos);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.soldierMesh.vboNorm);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, norm);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  }
+
+  async loadSoldierGLB() {
+    try {
+      const url = 'assets/models/character1/soldier.glb';
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to fetch soldier.glb');
+      const arrayBuffer = await response.arrayBuffer();
+
+      const header = new DataView(arrayBuffer, 0, 12);
+      const magic = header.getUint32(0, true);
+      if (magic !== 0x46546C67) throw new Error('Invalid GLB magic');
+      const version = header.getUint32(4, true);
+      const length = header.getUint32(8, true);
+
+      let offset = 12;
+      let jsonChunk = null;
+      let binChunk = null;
+
+      while (offset < length) {
+        if (offset + 8 > length) break;
+        const chunkLength = new DataView(arrayBuffer, offset, 4).getUint32(0, true);
+        const chunkType = new DataView(arrayBuffer, offset + 4, 4).getUint32(0, true);
+        
+        if (chunkType === 0x4E4F534A) { // JSON
+          const jsonBytes = new Uint8Array(arrayBuffer, offset + 8, chunkLength);
+          const jsonText = new TextDecoder().decode(jsonBytes);
+          jsonChunk = JSON.parse(jsonText);
+        } else if (chunkType === 0x004E4942) { // BIN
+          binChunk = arrayBuffer.slice(offset + 8, offset + 8 + chunkLength);
+        }
+        offset += 8 + chunkLength;
+      }
+
+      if (!jsonChunk || !binChunk) throw new Error('Missing JSON or BIN chunk');
+
+      let allPos = [];
+      let allNorm = [];
+      let allUV = [];
+      let allIdx = [];
+      let allJoints = [];
+      let allWeights = [];
+      let vertexOffset = 0;
+
+      const getAccessorData = (accessorIndex) => {
+        try {
+          const accessor = jsonChunk.accessors[accessorIndex];
+          const bufferView = jsonChunk.bufferViews[accessor.bufferView];
+          const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+          
+          let typedArrayConstructor = Float32Array;
+          let elementBytes = 4;
+          if (accessor.componentType === 5126) { typedArrayConstructor = Float32Array; elementBytes = 4; }
+          else if (accessor.componentType === 5123) { typedArrayConstructor = Uint16Array; elementBytes = 2; }
+          else if (accessor.componentType === 5125) { typedArrayConstructor = Uint32Array; elementBytes = 4; }
+          else if (accessor.componentType === 5121) { typedArrayConstructor = Uint8Array; elementBytes = 1; }
+
+          const numComp = accessor.type === 'SCALAR' ? 1 : (accessor.type === 'VEC2' ? 2 : (accessor.type === 'VEC3' ? 3 : (accessor.type === 'VEC4' ? 4 : 1)));
+          const totalElements = accessor.count * numComp;
+
+          if (byteOffset % elementBytes !== 0) {
+            const slice = binChunk.slice(byteOffset, byteOffset + totalElements * elementBytes);
+            return new typedArrayConstructor(slice);
+          }
+
+          return new typedArrayConstructor(binChunk, byteOffset, totalElements);
+        } catch (e) {
+          console.warn("[GLB Loader] Error parsing accessor " + accessorIndex, e);
+          return null;
+        }
+      };
+
+      if (jsonChunk.meshes) {
+        jsonChunk.meshes.forEach(mesh => {
+          if (mesh.primitives) {
+            mesh.primitives.forEach(prim => {
+              if (prim.attributes.POSITION !== undefined) {
+                const posData = getAccessorData(prim.attributes.POSITION);
+                if (!posData) return;
+                const normData = prim.attributes.NORMAL !== undefined ? getAccessorData(prim.attributes.NORMAL) : null;
+                const uvData = prim.attributes.TEXCOORD_0 !== undefined ? getAccessorData(prim.attributes.TEXCOORD_0) : null;
+                const idxData = prim.indices !== undefined ? getAccessorData(prim.indices) : null;
+                const jointsData = prim.attributes.JOINTS_0 !== undefined ? getAccessorData(prim.attributes.JOINTS_0) : null;
+                const weightsData = prim.attributes.WEIGHTS_0 !== undefined ? getAccessorData(prim.attributes.WEIGHTS_0) : null;
+
+                const count = posData.length / 3;
+
+                for (let i = 0; i < posData.length; i++) allPos.push(posData[i]);
+                if (normData) {
+                  for (let i = 0; i < normData.length; i++) allNorm.push(normData[i]);
+                } else {
+                  for (let i = 0; i < count * 3; i++) allNorm.push(0);
+                }
+                if (uvData) {
+                  for (let i = 0; i < uvData.length; i++) allUV.push(uvData[i]);
+                } else {
+                  for (let i = 0; i < count * 2; i++) allUV.push(0);
+                }
+
+                if (idxData) {
+                  for (let i = 0; i < idxData.length; i++) {
+                    allIdx.push(idxData[i] + vertexOffset);
+                  }
+                } else {
+                  for (let i = 0; i < count; i++) {
+                    allIdx.push(i + vertexOffset);
+                  }
+                }
+
+                if (jointsData) {
+                  for (let i = 0; i < count * 4; i++) {
+                    allJoints.push(jointsData[i]);
+                  }
+                } else {
+                  for (let i = 0; i < count * 4; i++) {
+                    allJoints.push(0);
+                  }
+                }
+
+                if (weightsData) {
+                  for (let i = 0; i < count * 4; i++) {
+                    allWeights.push(weightsData[i]);
+                  }
+                } else {
+                  for (let i = 0; i < count * 4; i++) {
+                    allWeights.push(i % 4 === 0 ? 1.0 : 0.0);
+                  }
+                }
+
+                vertexOffset += count;
+              }
+            });
+          }
+        });
+      }
+
+      if (allPos.length === 0) throw new Error('No mesh positions found in soldier.glb');
+
+      // Load Skins
+      let jointsNodeIndices = [];
+      let inverseBindMatrices = [];
+      if (jsonChunk.skins && jsonChunk.skins.length > 0) {
+        const skin = jsonChunk.skins[0];
+        jointsNodeIndices = skin.joints;
+        if (skin.inverseBindMatrices !== undefined) {
+          const ibmData = getAccessorData(skin.inverseBindMatrices);
+          if (ibmData) {
+            for (let i = 0; i < jointsNodeIndices.length; i++) {
+              const mat = new Float32Array(16);
+              for (let m = 0; m < 16; m++) {
+                mat[m] = ibmData[i * 16 + m];
+              }
+              inverseBindMatrices.push(mat);
+            }
+          }
+        }
+      }
+
+      // Load Nodes
+      const nodes = [];
+      if (jsonChunk.nodes) {
+        jsonChunk.nodes.forEach((node, idx) => {
+          nodes.push({
+            index: idx,
+            name: node.name || `Node_${idx}`,
+            parent: -1,
+            children: node.children || [],
+            translation: node.translation ? Array.from(node.translation) : [0, 0, 0],
+            rotation: node.rotation ? Array.from(node.rotation) : [0, 0, 0, 1],
+            scale: node.scale ? Array.from(node.scale) : [1, 1, 1],
+            matrix: node.matrix ? Array.from(node.matrix) : null,
+            localMatrix: Mat4.create(),
+            worldMatrix: Mat4.create()
+          });
+        });
+        
+        // Link Parents
+        nodes.forEach(node => {
+          node.children.forEach(childIdx => {
+            if (nodes[childIdx]) {
+              nodes[childIdx].parent = node.index;
+            }
+          });
+        });
+      }
+
+      // Load Animations
+      const animations = [];
+      if (jsonChunk.animations) {
+        jsonChunk.animations.forEach((anim, animIdx) => {
+          const channels = [];
+          anim.channels.forEach(chan => {
+            const sampler = anim.samplers[chan.sampler];
+            const timestamps = getAccessorData(sampler.input);
+            const values = getAccessorData(sampler.output);
+            if (timestamps && values) {
+              channels.push({
+                targetNode: chan.target.node,
+                targetPath: chan.target.path,
+                timestamps: Array.from(timestamps),
+                values: Array.from(values)
+              });
+            }
+          });
+          
+          if (channels.length > 0) {
+            const maxDuration = Math.max(...channels.map(c => c.timestamps[c.timestamps.length - 1] || 0));
+            animations.push({
+              name: anim.name || `Anim_${animIdx}`,
+              duration: maxDuration,
+              channels: channels
+            });
+          }
+        });
+      }
+
+      this.soldierSkeletonData = {
+        nodes: nodes,
+        animations: animations,
+        jointsNodeIndices: jointsNodeIndices,
+        inverseBindMatrices: inverseBindMatrices,
+        originalPos: Float32Array.from(allPos),
+        originalNorm: Float32Array.from(allNorm),
+        joints: Uint16Array.from(allJoints),
+        weights: Float32Array.from(allWeights)
+      };
+
+      const barys = [];
+      for (let i = 0; i < allPos.length / 3; i++) {
+        barys.push(i % 3 === 0 ? 1 : 0, i % 3 === 1 ? 1 : 0, i % 3 === 2 ? 1 : 0);
+      }
+
+      const meshData = {
+        name: "Soldier_GLB",
+        positions: allPos,
+        normals: allNorm,
+        uvs: allUV,
+        barys: barys,
+        indices: allIdx
+      };
+
+      this.soldierMesh = this.buildMeshBuffer(meshData, true);
+      console.log("[GLB Loader] Successfully loaded soldier.glb with dynamic skeleton skinning. Vertices:", allPos.length / 3, "Animations loaded:", animations.length);
+    } catch(err) {
+      console.error("[GLB Loader] Failed to load soldier.glb:", err);
+    }
+  }
+
+  getSphereLOD(isSmallHolder = false) {
+    const isMobile = this.isMobileDevice();
+    const policy = this.state.lodPolicy || (isMobile ? 'mobile_max_optimisation' : 'desktop_force_quality');
+
+    // Desktop: force quality!
+    if (policy === 'desktop_force_quality') {
+      if (isSmallHolder) return this.sphereLODs[1]; // LOD1 for 0.03 sub-pixel sphere is plenty crisp on desktop
+      return this.sphereLODs[0]; // Full LOD0
+    }
+
+    // Mobile: max optimisation!
+    if (policy === 'mobile_max_optimisation' || isMobile) {
+      if (isSmallHolder) {
+        return this.sphereLODs[2]; // Decimated 6x6 (49 verts, 72 tris - 94% reduction!)
+      }
+      return this.sphereLODs[1]; // Balanced LOD1 for hero ball on mobile
+    }
+
+    return isSmallHolder ? this.sphereLODs[2] : this.sphereLODs[0];
   }
 
   updateHUDStats() {
@@ -4661,6 +5468,22 @@ void main() {
       if (vertEl) vertEl.textContent = totalVerts.toLocaleString();
       if (triEl) triEl.textContent = totalTris.toLocaleString();
       if (drawEl) drawEl.textContent = "35"; // 17 samples + 17 pedestals + 1 showroom floor
+    } else if (this.state.demoScene.includes('12_roulette')) {
+      const isMobile = this.isMobileDevice();
+      const policy = this.state.lodPolicy || (isMobile ? 'mobile_max_optimisation' : 'desktop_force_quality');
+      const holderSphere = (policy === 'mobile_max_optimisation' || isMobile)
+        ? (this.sphereLODs ? this.sphereLODs[2] : current)
+        : (this.sphereLODs ? this.sphereLODs[1] : current);
+      const cubeMesh = this.meshBuffers[1];
+      const diskMesh = this.meshBuffers[7] || current;
+      const torusMesh = this.meshBuffers[4] || current;
+
+      // 37 pocket spheres (using LOD!) + 37 frets + 37 pocket floors + wheel base & rims + deflectors + table
+      const totalTris = (holderSphere.triangleCount * 37) + (cubeMesh.triangleCount * (37 + 37 + 8 + 4 + 10)) + (diskMesh.triangleCount * 6) + (torusMesh.triangleCount * 2);
+      const totalVerts = (holderSphere.vertexCount * 37) + (cubeMesh.vertexCount * (37 + 37 + 8 + 4 + 10)) + (diskMesh.vertexCount * 6) + (torusMesh.vertexCount * 2);
+      if (vertEl) vertEl.textContent = totalVerts.toLocaleString();
+      if (triEl) triEl.textContent = totalTris.toLocaleString();
+      if (drawEl) drawEl.textContent = (policy === 'mobile_max_optimisation' || isMobile) ? "14 (Batched)" : "22 (LOD)";
     } else if (this.state.demoScene === 'matrix' || this.state.demoScene.includes('02_metallic')) {
       const totalTris = current.triangleCount * 25;
       const totalVerts = current.vertexCount * 25;
@@ -5105,7 +5928,7 @@ void main() {
           }
         }
       }
-      if (weaponHudEl) weaponHudEl.style.display = isFPS ? 'flex' : 'none';
+      if (weaponHudEl) weaponHudEl.style.display = 'none';
       if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo) ? 'block' : 'none';
 
       if (showroomTopEl) showroomTopEl.style.display = isShowroom ? 'flex' : 'none';
@@ -5157,8 +5980,21 @@ void main() {
         const startupOverlay = document.getElementById('fps-startup-overlay');
         if (startupOverlay) startupOverlay.style.display = 'none';
       }
+
+      // Update On-Screen Fire / Shoot Buttons
+      const floatingFireBtn = document.getElementById('fps-floating-fire-btn');
+      const touchShootBtn = document.getElementById('btn-touch-shoot');
+      if (floatingFireBtn) {
+        const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 900);
+        const shouldShow = isFPS && (this.fpsFireBtnMode === 'always' || (this.fpsFireBtnMode === 'auto' && isTouch));
+        floatingFireBtn.style.display = shouldShow ? 'flex' : 'none';
+      }
+      if (touchShootBtn) {
+        touchShootBtn.style.display = isFPS ? 'flex' : 'none';
+      }
     };
 
+    this.updateFPSOverlays = updateFPSOverlays;
     updateFPSOverlays();
 
     // Prevent default context menu on viewport for clean right-click pan/look
@@ -5170,10 +6006,10 @@ void main() {
       const banner = document.getElementById('fps-pointerlock-banner');
       if (banner) {
         if (isLocked) {
-          banner.innerHTML = `<span>🎯 <b>Pointer Locked</b> &bull; Mouse direct-look active &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click</b> to Shoot &bull; <b>Space</b> to Jump</span>`;
+          banner.innerHTML = `<span>🎯 <b>Pointer Locked</b> &bull; Direct Mouse-Look active &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click / Dbl-Click / [E]</b> to Shoot &bull; <b>Space</b> to Jump</span>`;
           banner.classList.add('locked');
         } else {
-          banner.innerHTML = `<span>🎯 <b>FPS Shooter Active</b>: Click viewport to Lock Mouse Look (No Mouse-Down needed!) &bull; Press <b>ESC</b> to unlock</span>`;
+          banner.innerHTML = `<span>🎯 <b>FPS Shooter Active</b>: Click, Double-Click / Touch / Tap to Shoot &bull; Key [E] or [Enter] &bull; Press <b>ESC</b> for Menu</span>`;
           banner.classList.remove('locked');
         }
         showBannerTemporarily(banner);
@@ -5184,20 +6020,20 @@ void main() {
     canvasContainer.addEventListener('click', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
-      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab, #bingo-overlay, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell')) return;
+      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab, #bingo-overlay, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell, .fps-floating-fire-btn, .btn-touch-shoot')) return;
 
       if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
         this.handleRouletteClick(e.clientX, e.clientY);
         return;
       }
 
-      if (this.state.cameraMode === 3) {
+      const isFPS = (this.state.cameraMode === 3) || (this.state.demoScene && this.state.demoScene.includes('07_fps'));
+      if (isFPS) {
         if (document.pointerLockElement !== this.canvas && document.pointerLockElement !== canvasContainer) {
           try {
             this.canvas.requestPointerLock?.();
           } catch(err) {}
         }
-        this.fireWeaponProjectile();
       } else if (this.state.demoScene.includes('10_sliding_puzzle') && this.puzzleState) {
         // Inverse view projection matrix raycasting
         const canvasRect = this.canvas.getBoundingClientRect();
@@ -5300,6 +6136,19 @@ void main() {
       }
     });
 
+    // Viewport Double-Click / Double-Touch to Shoot in FPS Mode
+    canvasContainer.addEventListener('dblclick', (e) => {
+      const fpsOverlay = document.getElementById('fps-startup-overlay');
+      if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
+      if (e.target.closest && e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab, #bingo-overlay, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell, .fps-floating-fire-btn, .btn-touch-shoot')) return;
+
+      const isFPS = (this.state.cameraMode === 3) || (this.state.demoScene && this.state.demoScene.includes('07_fps'));
+      if (isFPS) {
+        e.preventDefault();
+        this.fireWeaponProjectile();
+      }
+    });
+
     // Mouse Down
     canvasContainer.addEventListener('mousedown', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
@@ -5311,6 +6160,14 @@ void main() {
       this.state.lastMouseX = e.clientX;
       this.state.lastMouseY = e.clientY;
       canvasContainer.focus();
+
+      // Trigger instant firing on left mouse button press (MouseDown is 100% reliable even when looking/dragging at the same time!)
+      const isFPS = (this.state.cameraMode === 3) || (this.state.demoScene && this.state.demoScene.includes('07_fps'));
+      if (isFPS && e.button === 0) {
+        if (this.fpsFireOption !== 'dblclick' && this.fpsFireOption !== 'keys_only') {
+          this.fireWeaponProjectile();
+        }
+      }
     });
 
     // Mouse Move (Orbit / Pan / FP Look / FPS Direct Look without Mouse Down)
@@ -5417,6 +6274,19 @@ void main() {
         this.state.keys.space = true;
       }
       if (e.shiftKey) this.state.keys.shift = true;
+      if (k === 'f' && !e.repeat) {
+        this.toggleFlashlight();
+      }
+
+      // Shoot on keypress [E], [Enter], or [Ctrl] in FPS mode
+      const isFPS = (this.state.cameraMode === 3) || (this.state.demoScene && this.state.demoScene.includes('07_fps'));
+      if (isFPS) {
+        if (k === 'e' || e.code === 'KeyE' || e.code === 'Enter' || e.code === 'NumpadEnter' || e.key === 'Control') {
+          if (!e.repeat) {
+            this.fireWeaponProjectile();
+          }
+        }
+      }
     });
 
     window.addEventListener('keyup', (e) => {
@@ -5476,6 +6346,45 @@ void main() {
       };
     }
 
+    // Killer Engine LOD Policy Toggle Pill
+    const lodPill = document.getElementById('lod-toggle-pill');
+    const updateLODPillUI = () => {
+      const dot = document.getElementById('lod-toggle-dot');
+      const status = document.getElementById('lod-toggle-status');
+      if (!dot || !status || !lodPill) return;
+      const policy = this.state.lodPolicy;
+      if (policy === 'mobile_max_optimisation') {
+        dot.style.background = '#10b981';
+        dot.style.boxShadow = '0 0 8px #10b981';
+        status.textContent = 'MOBILE (DECIMATED)';
+        status.style.color = '#34d399';
+        lodPill.style.borderColor = 'rgba(16, 185, 129, 0.45)';
+        lodPill.style.background = 'rgba(16, 185, 129, 0.12)';
+      } else {
+        dot.style.background = '#38bdf8';
+        dot.style.boxShadow = '0 0 8px #38bdf8';
+        status.textContent = 'DESKTOP (QUALITY)';
+        status.style.color = '#7dd3fc';
+        lodPill.style.borderColor = 'rgba(56, 189, 248, 0.45)';
+        lodPill.style.background = 'rgba(56, 189, 248, 0.12)';
+      }
+    };
+    updateLODPillUI();
+
+    if (lodPill) {
+      lodPill.onclick = () => {
+        if (this.state.lodPolicy === 'mobile_max_optimisation') {
+          this.state.lodPolicy = 'desktop_force_quality';
+          this.log("💎 Killer Engine LOD: Switched to DESKTOP FORCE QUALITY (High-fidelity meshes)", "info");
+        } else {
+          this.state.lodPolicy = 'mobile_max_optimisation';
+          this.log("⚡ Killer Engine LOD: Switched to MOBILE MAX OPTIMISATION (Decimated 37 pocket spheres & material batching)", "success");
+        }
+        updateLODPillUI();
+        this.updateHUDStats();
+      };
+    }
+
     // Demo Scene Switcher
     const demoSelect = document.getElementById('demo-scene-select');
     const viewportDemoSelect = document.getElementById('viewport-demo-scene-select');
@@ -5505,7 +6414,7 @@ void main() {
           this.state.camTarget[0] = 0; this.state.camTarget[1] = 0.8; this.state.camTarget[2] = 0;
           updateFPSOverlays();
           this.focusShowroomMaterial(this.state.showroomFocusedMatKey || 'wood');
-          this.log("Loaded Demo 08: All Materials Presentation Showcase (17 PBR Shaders)", "cpp");
+          this.log("Loaded Demo 03: All Materials Presentation Showcase (17 PBR Shaders)", "cpp");
         } else if (this.state.demoScene.includes('07_fps')) {
           this.state.cameraMode = 3;
           const camSelect = document.getElementById('camera-mode-select');
@@ -5515,9 +6424,11 @@ void main() {
           this.state.camPos[2] = 5.0;
           this.state.camYaw = 0.0;
           this.state.camPitch = 0.0;
+          this.initFpsStartupMenu();
+          this.sync3DBotsFromLobby();
           updateFPSOverlays();
           this.showFpsStartupMenu();
-          this.log("Loaded Demo 07: First-Person Shooter & Damage System", "cpp");
+          this.log("Loaded Demo 02: First-Person Shooter & Damage System", "cpp");
           this.log("FPS Direct-Look Active: Click 'ENTER ARENA' in startup menu to begin!", "success");
         } else if (this.state.demoScene === '02_metallic_roughness_matrix.cpp' || this.state.demoScene === 'matrix') {
           this.state.cameraMode = 0;
@@ -5558,7 +6469,7 @@ void main() {
           this.state.camTarget[1] = this.playerController.pos[1] + 1.0;
           this.state.camTarget[2] = this.playerController.pos[2];
           updateFPSOverlays();
-          this.log("Loaded Demo 06: GLB Character, Collision & Player Controller", "cpp");
+          this.log("Loaded Demo 01: GLB Character, Collision & Player Controller", "cpp");
         } else if (this.state.demoScene.includes('09_slot_machine')) {
           this.state.cameraMode = 0;
           const camSelect = document.getElementById('camera-mode-select');
@@ -5570,7 +6481,7 @@ void main() {
           this.state.camTarget[1] = 0.2;
           this.state.camTarget[2] = 0.0;
           updateFPSOverlays();
-          this.log("Loaded Demo 09: 3D Casino Slot Machine & Gold Coins Showcase", "cpp");
+          this.log("Loaded Demo 04: 3D Casino Slot Machine & Gold Coins Showcase", "cpp");
           this.initSlotMachineDemo();
         } else if (this.state.demoScene.includes('10_sliding_puzzle')) {
           this.state.cameraMode = 0;
@@ -5583,7 +6494,7 @@ void main() {
           this.state.camTarget[1] = 1.3;
           this.state.camTarget[2] = 0.0;
           updateFPSOverlays();
-          this.log("Loaded Demo 10: Dynamic 3D Sliding Puzzle & UV Splitter", "cpp");
+          this.log("Loaded Demo 05: Dynamic 3D Sliding Puzzle & UV Splitter", "cpp");
           this.initSlidingPuzzleDemo();
         } else if (this.state.demoScene.includes('11_plinko')) {
           this.state.cameraMode = 0;
@@ -5597,7 +6508,7 @@ void main() {
           this.state.camTarget[1] = 1.35;
           this.state.camTarget[2] = 0.0;
           updateFPSOverlays();
-          this.log("Loaded Demo 11: 3D Plinko Cascade Showcase & Physics Engine", "cpp");
+          this.log("Loaded Demo 06: 3D Plinko Cascade Showcase & Physics Engine", "cpp");
           this.initPlinkoDemo();
         } else if (this.state.demoScene.includes('12_roulette')) {
           this.state.cameraMode = 0;
@@ -5611,7 +6522,7 @@ void main() {
           this.state.camTarget[1] = 0.0;
           this.state.camTarget[2] = 0.05;
           updateFPSOverlays();
-          this.log("Loaded Demo 12: 3D Physics-Engine Roulette Wheel Showcase", "cpp");
+          this.log("Loaded Demo 07: 3D Physics-Engine Roulette Wheel Showcase", "cpp");
           this.initRouletteDemo();
         } else if (this.state.demoScene.includes('13_bingo')) {
           this.state.cameraMode = 0;
@@ -5625,7 +6536,7 @@ void main() {
           this.state.camTarget[1] = 1.15;
           this.state.camTarget[2] = 0.0;
           updateFPSOverlays();
-          this.log("Loaded Demo 13: 3D Real-Physics Bingo & Diamond Drum Showcase", "cpp");
+          this.log("Loaded Demo 08: 3D Real-Physics Bingo & Diamond Drum Showcase", "cpp");
           this.initBingoDemo();
         } else {
           this.log(`Loaded Demo: ${this.state.demoScene}`, "cpp");
@@ -6345,6 +7256,8 @@ void main() {
       startY: 0,
       startTime: 0
     };
+    this.fpsSecondaryFireTouchId = null;
+    this.lastFpsTapTime = 0;
 
     const overlay = document.getElementById('mobile-touch-overlay');
     const joystickBase = document.getElementById('joystick-left-base');
@@ -6469,7 +7382,7 @@ void main() {
       });
     }
 
-    // Touch Look / Rotate on Viewport Canvas & Classic Gesture Touch Zoom
+    // Touch Look / Rotate on Viewport Canvas & Multi-Touch FPS Controls
     const canvasContainer = document.getElementById('canvas-container');
     if (canvasContainer) {
       this.pinchZoomState = {
@@ -6483,6 +7396,18 @@ void main() {
         return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
       };
 
+      // Helper to check if currently in FPS Shooter mode
+      const checkIsFPS = () => {
+        const ds = this.state.demoScene || '';
+        const isShowroom = ds.includes('08_all_materials') || ds.includes('materials_presentation');
+        const isSlotMachine = ds.includes('09_slot_machine');
+        const isSlidingPuzzle = ds.includes('10_sliding_puzzle');
+        const isPlinko = ds.includes('11_plinko');
+        const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
+        const isBingo = ds.includes('13_bingo');
+        return (this.state.cameraMode === 3 || ds.includes('07_fps')) && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo;
+      };
+
       canvasContainer.addEventListener('touchstart', (e) => {
         // If touch occurred inside any overlay dialog, buttons, or scrollable panels, do NOT preventDefault or trigger camera orbit!
         if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea')) {
@@ -6490,6 +7415,46 @@ void main() {
         }
         e.preventDefault();
 
+        const isFPS = checkIsFPS();
+        const now = Date.now();
+
+        if (isFPS) {
+          // 🎮 FPS MULTI-TOUCH CONTROLS:
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (touch.identifier === this.joystickState.touchId) continue;
+
+            if (!this.touchLookState.active) {
+              // Primary Look Finger: assigns this finger to direct look/aim
+              this.touchLookState.active = true;
+              this.touchLookState.touchId = touch.identifier;
+              this.touchLookState.lastX = touch.clientX;
+              this.touchLookState.lastY = touch.clientY;
+              this.touchLookState.startX = touch.clientX;
+              this.touchLookState.startY = touch.clientY;
+              this.touchLookState.startTime = now;
+              if (lookHint) lookHint.classList.add('faded');
+
+              // Check for Double-Tap Shoot on this primary finger
+              if (now - this.lastFpsTapTime < 350) {
+                if (this.fpsFireOption !== 'keys_only') {
+                  this.fireWeaponProjectile();
+                }
+              }
+              this.lastFpsTapTime = now;
+            } else if (touch.identifier !== this.touchLookState.touchId) {
+              // SECONDARY FINGER TOUCHED DOWN WHILE AIMING!
+              // Multi-Touch Tap to Shoot: fires weapon while continuing to aim with the first finger!
+              this.fpsSecondaryFireTouchId = touch.identifier;
+              if (this.fpsFireOption !== 'keys_only') {
+                this.fireWeaponProjectile();
+              }
+            }
+          }
+          return;
+        }
+
+        // --- NON-FPS MODES (Plinko, Roulette, Showroom, Orbit Camera) ---
         // ✌️ Classic Two-Finger Pinch-to-Zoom Gesture / 2-Finger Camera Translation
         if (e.touches.length >= 2) {
           const t0 = e.touches[0];
@@ -6508,11 +7473,11 @@ void main() {
         // 👆 Single Finger Orbit Look or Double-Tap Zoom Reset
         if (e.touches.length === 1) {
           const touch = e.touches[0];
-          const now = Date.now();
+          const ds = this.state.demoScene || '';
+          const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
+
           if (now - this.pinchZoomState.lastTapTime < 320) {
             // Quick double tap resets camera on 3D table / orbit mode (excluding roulette)
-            const ds = this.state.demoScene || '';
-            const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
             if (!isRoulette && (this.state.demoScene.includes('11_plinko') || this.state.cameraMode === 0)) {
               const isMobile = this.isMobileDevice();
               this.state.camRadius = isMobile ? 5.2 : 4.6;
@@ -6533,13 +7498,39 @@ void main() {
             this.touchLookState.lastY = touch.clientY;
             this.touchLookState.startX = touch.clientX;
             this.touchLookState.startY = touch.clientY;
-            this.touchLookState.startTime = Date.now();
+            this.touchLookState.startTime = now;
             if (lookHint) lookHint.classList.add('faded');
           }
         }
       }, { passive: false });
 
-      canvasContainer.addEventListener('touchmove', (e) => {
+      const handleTouchMove = (e) => {
+        const isFPS = checkIsFPS();
+
+        if (isFPS) {
+          // In FPS mode, ALWAYS track and update look if touchLookState is active, regardless of other touches!
+          if (!this.touchLookState.active || this.touchLookState.touchId === null) return;
+          const invX = this.state.invertMouseX ? -1 : 1;
+          const invY = this.state.invertMouseY ? -1 : 1;
+
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (touch.identifier === this.touchLookState.touchId) {
+              const dx = touch.clientX - this.touchLookState.lastX;
+              const dy = touch.clientY - this.touchLookState.lastY;
+              this.touchLookState.lastX = touch.clientX;
+              this.touchLookState.lastY = touch.clientY;
+
+              // Smooth FPS Swipe Look (even while shooting, joystick moving, or multi-touching!)
+              this.state.camYaw += dx * 0.005 * invX;
+              this.state.camPitch = Math.max(-1.5, Math.min(1.5, this.state.camPitch - dy * 0.005 * invY));
+              break;
+            }
+          }
+          return;
+        }
+
+        // NON-FPS MODES:
         if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea')) {
           return;
         }
@@ -6621,9 +7612,61 @@ void main() {
             break;
           }
         }
+      };
+
+      canvasContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+      window.addEventListener('touchmove', (e) => {
+        // Window listener ensures FPS look continues seamlessly even if finger moves over controls
+        if (checkIsFPS() && this.touchLookState.active) {
+          handleTouchMove(e);
+        }
       }, { passive: false });
 
       const endTouchLook = (e) => {
+        const isFPS = checkIsFPS();
+
+        if (isFPS) {
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (touch.identifier === this.fpsSecondaryFireTouchId) {
+              this.fpsSecondaryFireTouchId = null;
+            }
+            if (touch.identifier === this.touchLookState.touchId) {
+              const dx = touch.clientX - (this.touchLookState.startX || 0);
+              const dy = touch.clientY - (this.touchLookState.startY || 0);
+              const dist = Math.hypot(dx, dy);
+              const duration = Date.now() - (this.touchLookState.startTime || 0);
+
+              // Quick stationary tap triggers shoot
+              if (duration < 350 && dist < 15) {
+                if (this.fpsFireOption !== 'dblclick' && this.fpsFireOption !== 'keys_only') {
+                  this.fireWeaponProjectile();
+                }
+              }
+
+              this.touchLookState.active = false;
+              this.touchLookState.touchId = null;
+
+              // Check if another touch is still on the canvas to seamlessly continue looking
+              for (let j = 0; j < e.touches.length; j++) {
+                const rem = e.touches[j];
+                if (rem.identifier !== touch.identifier && rem.identifier !== this.joystickState.touchId && rem.identifier !== this.fpsSecondaryFireTouchId) {
+                  this.touchLookState.active = true;
+                  this.touchLookState.touchId = rem.identifier;
+                  this.touchLookState.lastX = rem.clientX;
+                  this.touchLookState.lastY = rem.clientY;
+                  this.touchLookState.startX = rem.clientX;
+                  this.touchLookState.startY = rem.clientY;
+                  this.touchLookState.startTime = Date.now();
+                  break;
+                }
+              }
+            }
+          }
+          return;
+        }
+
+        // NON-FPS MODES:
         if (e.touches.length < 2) {
           this.pinchZoomState.active = false;
         }
@@ -6678,9 +7721,21 @@ void main() {
 
       canvasContainer.addEventListener('touchend', endTouchLook, { passive: false });
       canvasContainer.addEventListener('touchcancel', endTouchLook, { passive: false });
+      window.addEventListener('touchend', (e) => {
+        if (checkIsFPS() && this.touchLookState.active) {
+          endTouchLook(e);
+        }
+      }, { passive: false });
+      window.addEventListener('touchcancel', (e) => {
+        if (checkIsFPS() && this.touchLookState.active) {
+          endTouchLook(e);
+        }
+      }, { passive: false });
     }
 
     // Mobile Action Pad Buttons
+    const btnShoot = document.getElementById('btn-touch-shoot');
+    const btnFloatingShoot = document.getElementById('fps-floating-fire-btn');
     const btnUp = document.getElementById('btn-touch-up');
     const btnDown = document.getElementById('btn-touch-down');
     const btnSprint = document.getElementById('btn-touch-sprint');
@@ -6711,6 +7766,61 @@ void main() {
         onUp();
       });
     };
+
+    // SHOOT / FIRE (Mobile Action Pad & Floating Fire Buttons - Multi-Touch Independent)
+    const setupShootButton = (elem) => {
+      if (!elem) return;
+      let buttonTouchId = null;
+
+      const triggerFireStart = (e) => {
+        if (e) {
+          e.preventDefault();
+          if (e.changedTouches && e.changedTouches.length > 0) {
+            buttonTouchId = e.changedTouches[0].identifier;
+          }
+        }
+        elem.classList.add('active');
+        elem.classList.add('firing');
+        this.fireWeaponProjectile();
+        if (!this.fpsAutoFireInterval) {
+          this.fpsAutoFireInterval = setInterval(() => {
+            this.fireWeaponProjectile();
+          }, 160);
+        }
+      };
+
+      const triggerFireEnd = (e) => {
+        if (e && e.changedTouches && buttonTouchId !== null) {
+          let matches = false;
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            if (e.changedTouches[i].identifier === buttonTouchId) {
+              matches = true;
+              break;
+            }
+          }
+          if (!matches) return; // A different touch ended, keep firing!
+        }
+        buttonTouchId = null;
+        elem.classList.remove('active');
+        elem.classList.remove('firing');
+        if (this.fpsAutoFireInterval) {
+          clearInterval(this.fpsAutoFireInterval);
+          this.fpsAutoFireInterval = null;
+        }
+      };
+
+      elem.addEventListener('touchstart', triggerFireStart, { passive: false });
+      elem.addEventListener('touchend', triggerFireEnd, { passive: false });
+      elem.addEventListener('touchcancel', triggerFireEnd, { passive: false });
+      window.addEventListener('touchend', triggerFireEnd, { passive: false });
+      window.addEventListener('touchcancel', triggerFireEnd, { passive: false });
+
+      elem.addEventListener('mousedown', triggerFireStart);
+      window.addEventListener('mouseup', triggerFireEnd);
+    };
+
+    setupShootButton(btnShoot);
+    setupShootButton(btnFloatingShoot);
 
     // JUMP / UP (Space key / E in Free-Fly)
     bindTouchButton(btnUp, () => {
@@ -6771,19 +7881,14 @@ void main() {
   populateUnifiedSelects() {
     const UNIFIED_DEMO_FILES_CONFIG = [
       // Examples / Demos
-      { value: "01_pbr_material_preview.cpp", path: "examples/01_pbr_material_preview.cpp", name: "Demo 01: PBR Material Preview", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "02_metallic_roughness_matrix.cpp", path: "examples/02_metallic_roughness_matrix.cpp", name: "Demo 02: Metallic Roughness Matrix", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "03_trefoil_studio.cpp", path: "examples/03_trefoil_studio.cpp", name: "Demo 03: Trefoil Studio Lighting", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "04_wasm_webgl_wrapper.cpp", path: "examples/04_wasm_webgl_wrapper.cpp", name: "Demo 04: WASM WebGL Wrapper", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "05_desktop_standalone_app.cpp", path: "examples/05_desktop_standalone_app.cpp", name: "Demo 05: Desktop Standalone SDL2 App", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "06_glb_character_collision_player.cpp", path: "examples/06_glb_character_collision_player.cpp", name: "Demo 06: GLB Character, Collision & Player Controller", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "07_fps_shooter_damage_system.cpp", path: "examples/07_fps_shooter_damage_system.cpp", name: "Demo 07: First-Person Shooter & Damage System", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "08_all_materials_presentation.cpp", path: "examples/08_all_materials_presentation.cpp", name: "Demo 08: All Materials Presentation Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "09_slot_machine.cpp", path: "examples/09_slot_machine.cpp", name: "Demo 09: 3D Casino Slot Machine & Particles", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "10_sliding_puzzle.cpp", path: "examples/10_sliding_puzzle.cpp", name: "Demo 10: Dynamic Sliding 3D Puzzle", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "11_plinko.cpp", path: "examples/11_plinko.cpp", name: "Demo 11: 3D Plinko Cascade Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "12_roulette.cpp", path: "examples/12_roulette.cpp", name: "Demo 12: 3D Physics-Engine Roulette Wheel", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "13_bingo_physics.cpp", path: "examples/13_bingo_physics.cpp", name: "Demo 13: 3D Real-Physics Bingo & Diamond Drum", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "06_glb_character_collision_player.cpp", path: "examples/06_glb_character_collision_player.cpp", name: "Demo 01: GLB Character, Collision & Player Controller", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "07_fps_shooter_damage_system.cpp", path: "examples/07_fps_shooter_damage_system.cpp", name: "Demo 02: First-Person Shooter & Damage System", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "08_all_materials_presentation.cpp", path: "examples/08_all_materials_presentation.cpp", name: "Demo 03: All Materials Presentation Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "09_slot_machine.cpp", path: "examples/09_slot_machine.cpp", name: "Demo 04: 3D Casino Slot Machine & Particles", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "10_sliding_puzzle.cpp", path: "examples/10_sliding_puzzle.cpp", name: "Demo 05: Dynamic Sliding 3D Puzzle", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "11_plinko.cpp", path: "examples/11_plinko.cpp", name: "Demo 06: 3D Plinko Cascade Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "12_roulette.cpp", path: "examples/12_roulette.cpp", name: "Demo 07: 3D Physics-Engine Roulette Wheel", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "13_bingo_physics.cpp", path: "examples/13_bingo_physics.cpp", name: "Demo 08: 3D Real-Physics Bingo & Diamond Drum", isDemoScene: true, isLiveFile: true, isExampleTab: true },
 
       // Engine Internals
       { value: "src/core/Engine.cpp", path: "src/core/Engine.cpp", name: "Engine Core C++", isDemoScene: false, isLiveFile: true, isExampleTab: false },
@@ -6796,6 +7901,7 @@ void main() {
       { value: "include/engine/DamageSystem.hpp", path: "include/engine/DamageSystem.hpp", name: "Damage System & Events Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
       { value: "include/engine/Projectile.hpp", path: "include/engine/Projectile.hpp", name: "FPS Projectile System Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
       { value: "include/engine/GLBLoader.hpp", path: "include/engine/GLBLoader.hpp", name: "GLB & Animation Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
+      { value: "include/engine/LOD.hpp", path: "include/engine/LOD.hpp", name: "LOD & Material Batching Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
       { value: "include/engine/Renderer.hpp", path: "include/engine/Renderer.hpp", name: "Renderer Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
       { value: "include/engine/Input.hpp", path: "include/engine/Input.hpp", name: "Input Header", isDemoScene: false, isLiveFile: true, isExampleTab: false },
       { value: "shaders/pbr.frag.glsl", path: "shaders/pbr.frag.glsl", name: "Cook-Torrance PBR Shader", isDemoScene: false, isLiveFile: true, isExampleTab: false },
@@ -6864,7 +7970,7 @@ void main() {
   }
 
   initLiveCodeEditor() {
-    this.currentLiveFile = 'examples/01_pbr_material_preview.cpp';
+    this.currentLiveFile = 'examples/06_glb_character_collision_player.cpp';
     this.populateUnifiedSelects();
 
     this.liveCppSources = JSON.parse(JSON.stringify(LIVE_CPP_SOURCES));
@@ -8292,9 +9398,33 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   fireWeaponProjectile() {
-    if (!this.isMatchActive) return;
+    const isShowroom = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
+    const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
+    const isSlidingPuzzle = this.state.demoScene.includes('10_sliding_puzzle');
+    const isPlinko = this.state.demoScene.includes('11_plinko');
+    const isRoulette = this.state.demoScene.includes('12_roulette');
+    const isBingo = this.state.demoScene.includes('13_bingo');
+    const isFPS = (this.state.cameraMode === 3 || this.state.demoScene.includes('07_fps')) && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo;
+    if (!isFPS) return;
+
+    // Auto-activate match state so weapon shoots immediately
+    this.isMatchActive = true;
+    window.isMatchActive = true;
+
+    // Debounce rapid duplicate event triggers (50ms)
+    const now = performance.now();
+    if (this.lastFpsFireTime && (now - this.lastFpsFireTime < 50)) return;
+    this.lastFpsFireTime = now;
+
     let proj = this.projectilePool.find(p => !p.active);
-    if (!proj) return; // Pool full
+    if (!proj) {
+      // Reuse oldest projectile if pool is temporarily saturated
+      let oldest = this.projectilePool[0];
+      for (let p of this.projectilePool) {
+        if (p.age > oldest.age) oldest = p;
+      }
+      proj = oldest;
+    }
 
     // Trigger FPS Weapon Recoil Kick & Muzzle Flash Flare
     if (this.weaponState) {
@@ -9373,15 +10503,10 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   initFpsStartupMenu() {
+    if (this.fpsMenuInitialized) return;
+    this.fpsMenuInitialized = true;
+
     const fpsOverlay = document.getElementById('fps-startup-overlay');
-    if (fpsOverlay) {
-      const stopProp = (e) => {
-        e.stopPropagation();
-      };
-      ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'contextmenu', 'wheel', 'keydown', 'keyup', 'keypress', 'touchstart', 'touchend', 'touchmove'].forEach(evt => {
-        fpsOverlay.addEventListener(evt, stopProp);
-      });
-    }
 
     const btnOpen = document.getElementById('btn-open-fps-menu');
     const btnClose = document.getElementById('btn-close-fps-menu');
@@ -9438,15 +10563,24 @@ else if (typeof define === 'function' && define['amd'])
     // Open / Close actions
     if (btnOpen) {
       btnOpen.addEventListener('click', (e) => {
-        e.stopPropagation();
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         this.showFpsStartupMenu();
       });
+      btnOpen.onclick = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        this.showFpsStartupMenu();
+      };
     }
 
     if (btnClose) {
-      btnClose.addEventListener('click', () => {
+      btnClose.addEventListener('click', (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         this.hideFpsStartupMenu();
       });
+      btnClose.onclick = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        this.hideFpsStartupMenu();
+      };
     }
 
     // Add Bot
@@ -9507,48 +10641,44 @@ else if (typeof define === 'function' && define['amd'])
       });
     }
 
+    // Shoot / Fire Trigger Option Select
+    const fireTriggerSelect = document.getElementById('fps-fire-trigger-select');
+    if (fireTriggerSelect) {
+      fireTriggerSelect.value = this.fpsFireOption;
+      fireTriggerSelect.addEventListener('change', (e) => {
+        this.fpsFireOption = e.target.value;
+        const hudTrigger = document.getElementById('hud-fire-trigger');
+        if (hudTrigger) {
+          if (this.fpsFireOption === 'both') hudTrigger.textContent = 'Click / Dbl-Tap / [E]';
+          else if (this.fpsFireOption === 'dblclick') hudTrigger.textContent = 'Dbl-Click / Dbl-Tap';
+          else if (this.fpsFireOption === 'click') hudTrigger.textContent = 'Single Click / Tap';
+          else hudTrigger.textContent = 'Keys [E], [Enter] & Button';
+        }
+        this.log(`FPS Fire Trigger Option set to: ${this.fpsFireOption}`, "info");
+      });
+    }
+
+    // On-Screen Shoot Button Display Select
+    const fireBtnDisplaySelect = document.getElementById('fps-fire-button-display');
+    if (fireBtnDisplaySelect) {
+      fireBtnDisplaySelect.value = this.fpsFireBtnMode;
+      fireBtnDisplaySelect.addEventListener('change', (e) => {
+        this.fpsFireBtnMode = e.target.value;
+        if (this.updateFPSOverlays) this.updateFPSOverlays();
+        this.log(`FPS On-Screen Fire Button mode set to: ${this.fpsFireBtnMode}`, "info");
+      });
+    }
+
     // Start Match
     if (btnStart) {
-      btnStart.addEventListener('click', () => {
-        const name = (playerNameInput ? playerNameInput.value.trim() : '') || 'Ranger';
-        const skin = playerSkinSelect ? playerSkinSelect.value : 'Phantam';
-        const team = playerTeamSelect ? playerTeamSelect.value : 'Red';
-
-        this.hideFpsStartupMenu();
-        this.isMatchActive = true;
-        window.isMatchActive = true;
-        
-        // Push current settings to the synth and start music
-        updateAudioSettings();
-        if (this.synth) this.synth.startMusic();
-
-        this.sync3DBotsFromLobby();
-        this.state.cameraMode = 3; // FPS Mode
-        const camSelect = document.getElementById('camera-mode-select');
-        if (camSelect) camSelect.value = "3";
-
-        // Lock mouse
-        try {
-          this.canvas.requestPointerLock?.();
-        } catch(e) {}
-
-        if (this.synth) this.synth.play('teleport');
-        this.showPickupToast("⚡ ARENA MATCH STARTED", `Welcome Player [${name}]! Target Bots & Fire!`, "powerup");
-        this.log(`Match Started! Player: ${name} (${team} Team) | Map: ${this.selectedFpsMap} | Loadout: ${this.selectedFpsWeapon.toUpperCase()}`, "success");
-
-        // Broadcast join event via WebSockets if connected
-        if (this.net && this.net.ws && this.net.ws.readyState === WebSocket.OPEN) {
-          try {
-            this.net.ws.send(JSON.stringify({
-              type: 'lobby:join',
-              name: name,
-              skin: skin,
-              team: team,
-              map: this.selectedFpsMap
-            }));
-          } catch(e) {}
-        }
+      btnStart.addEventListener('click', (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        this.startFpsMatch();
       });
+      btnStart.onclick = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        this.startFpsMatch();
+      };
     }
 
     // Listen to network lobbyStateUpdate if emitted
@@ -9559,6 +10689,63 @@ else if (typeof define === 'function' && define['amd'])
           this.renderFpsLobbyPlayers();
         }
       });
+    }
+  }
+
+  startFpsMatch() {
+    const playerNameInput = document.getElementById('fps-player-name');
+    const playerSkinSelect = document.getElementById('fps-player-skin');
+    const playerTeamSelect = document.getElementById('fps-player-team');
+
+    const name = (playerNameInput ? playerNameInput.value.trim() : '') || 'Ranger';
+    const skin = playerSkinSelect ? playerSkinSelect.value : 'Phantam';
+    const team = playerTeamSelect ? playerTeamSelect.value : 'Red';
+
+    this.hideFpsStartupMenu();
+    this.isMatchActive = true;
+    window.isMatchActive = true;
+    
+    // Audio settings & music
+    const musicToggle = document.getElementById('fps-music-toggle');
+    const sfxToggle = document.getElementById('fps-sfx-toggle');
+    const zombieDensitySelect = document.getElementById('fps-zombie-density');
+    const musicOn = musicToggle ? musicToggle.value === 'on' : true;
+    const sfxOn = sfxToggle ? sfxToggle.value === 'on' : true;
+    const density = zombieDensitySelect ? zombieDensitySelect.value : 'high';
+    if (this.synth) {
+      this.synth.updateSettings(musicOn, sfxOn, density);
+      this.synth.startMusic();
+    }
+
+    this.sync3DBotsFromLobby();
+    this.state.cameraMode = 3; // FPS Mode
+    const camSelect = document.getElementById('camera-mode-select');
+    if (camSelect) camSelect.value = "3";
+
+    if (this.updateFPSOverlays) {
+      this.updateFPSOverlays();
+    }
+
+    // Lock mouse
+    try {
+      this.canvas.requestPointerLock?.();
+    } catch(e) {}
+
+    if (this.synth) this.synth.play('teleport');
+    this.showPickupToast("⚡ ARENA MATCH STARTED", `Welcome Player [${name}]! Target Bots & Fire!`, "powerup");
+    this.log(`Match Started! Player: ${name} (${team} Team) | Map: ${this.selectedFpsMap || 'q3dm17'} | Loadout: ${(this.selectedFpsWeapon || 'plasma').toUpperCase()}`, "success");
+
+    // Broadcast join event via WebSockets if connected
+    if (this.net && this.net.ws && this.net.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.net.ws.send(JSON.stringify({
+          type: 'lobby:join',
+          name: name,
+          skin: skin,
+          team: team,
+          map: this.selectedFpsMap || 'q3dm17'
+        }));
+      } catch(e) {}
     }
   }
 
@@ -14144,72 +15331,195 @@ else if (typeof define === 'function' && define['amd'])
       gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     }
 
-    // 37 ball holders / pockets arranged in orbit
+    // =========================================================================
+    // AAA RENDER PRINCIPLES: DRAW PER MATERIAL PASSES & LOD SPHERE OPTIMIZATION
+    // Desktop: force quality (LOD0 high fidelity)
+    // Mobile: max optimisation (LOD2 decimated 6x6 bands, 49 verts, 72 tris per sphere)
+    // =========================================================================
+    const holderSphereMesh = this.getSphereLOD(true);
+    const heroSphereMesh = this.getSphereLOD(false);
+
     const ROULETTE_NUMBERS = [
       0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 
       24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
     ];
+    const RED_NUMBERS_SET = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
-    const angleOffset = -Math.PI * 0.5 - (Math.PI / 37); // Perfectly calibrated UV and holder alignments (eliminates any physical offsets!)
     const pocketRadius = 0.581; // Align perfectly with the pocket track on the texture
+    const pocketStep = (2 * Math.PI) / 37;
+
+    // Group pockets by material to eliminate redundant GPU state & shader pipeline switching
+    let greenPocket = null;
+    const redPockets = [];
+    const blackPockets = [];
 
     for (let i = 0; i < 37; i++) {
-      const angle = wheelAngle + i * (2 * Math.PI / 37) + angleOffset;
-
-      // Radial divider fret in 24k polished gold (Scaled and elongated to fit perfectly)
-      drawRotatedCube(wheelX + pocketRadius * Math.cos(angle), wheelY + pocketRadius * Math.sin(angle), 0.028, 0.16, 0.012, 0.045, angle, [0.96, 0.82, 0.36], 0.08, 0.98, 0);
-
-      const midAngle = angle + (Math.PI / 37);
+      const midAngle = wheelAngle - Math.PI * 0.5 + i * pocketStep;
+      const fretAngle = midAngle - pocketStep * 0.5;
       const px = pocketRadius * Math.cos(midAngle);
       const py = pocketRadius * Math.sin(midAngle);
+      const fretX = pocketRadius * Math.cos(fretAngle);
+      const fretY = pocketRadius * Math.sin(fretAngle);
+      const item = { i, midAngle, fretAngle, px, py, fretX, fretY };
 
       const num = ROULETTE_NUMBERS[i];
-      let col = [0.03, 0.03, 0.03];
       if (num === 0) {
-        col = [0.06, 0.75, 0.18];
+        greenPocket = item;
+      } else if (RED_NUMBERS_SET.has(num)) {
+        redPockets.push(item);
       } else {
-        const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
-        if (reds.includes(num)) col = [0.85, 0.08, 0.08];
+        blackPockets.push(item);
       }
-
-      // Pocket cup floor (scaled up to cover the pocket wells beautifully!)
-      drawRotatedCube(wheelX + px, wheelY + py, 0.024, 0.15, 0.092, 0.015, midAngle, col, 0.25, 0.3, 0);
-
-      // Shiny colored pocket indicator sphere
-      drawSphere(wheelX + px, wheelY + py, 0.028, 0.030, 0.030, 0.030, col, 0.06, 0.15);
     }
 
-    // Central Turret & 4-Arm Spinner Cross
-    drawSphere(wheelX, wheelY, 0.035, 0.27, 0.27, 0.08, spindleColor, spindleRough, spindleMetal);
-    drawSphere(wheelX, wheelY, 0.075, 0.088, 0.088, 0.12, spindleColor, spindleRough, spindleMetal);
-    drawSphere(wheelX, wheelY, 0.13, 0.047, 0.047, 0.047, spindleColor, spindleRough, spindleMetal);
+    // Fast inline model and normal matrix upload
+    const applyRotatedModel = (px, py, pz, sx, sy, sz, rotZ = 0) => {
+      if (rotZ !== 0) {
+        const c = Math.cos(rotZ), s = Math.sin(rotZ);
+        this.modelMatrix[0] = c * sx;  this.modelMatrix[1] = s * sx;  this.modelMatrix[2] = 0;       this.modelMatrix[3] = 0;
+        this.modelMatrix[4] = -s * sy; this.modelMatrix[5] = c * sy;  this.modelMatrix[6] = 0;       this.modelMatrix[7] = 0;
+        this.modelMatrix[8] = 0;       this.modelMatrix[9] = 0;       this.modelMatrix[10] = sz;     this.modelMatrix[11] = 0;
+        this.modelMatrix[12] = px;     this.modelMatrix[13] = py;     this.modelMatrix[14] = pz;     this.modelMatrix[15] = 1;
+      } else {
+        this.modelMatrix[0] = sx;  this.modelMatrix[1] = 0;   this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
+        this.modelMatrix[4] = 0;   this.modelMatrix[5] = sy;  this.modelMatrix[6] = 0;   this.modelMatrix[7] = 0;
+        this.modelMatrix[8] = 0;   this.modelMatrix[9] = 0;   this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+        this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      }
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+    };
+
+    const bindMaterialParams = (color, rough = 0.25, metal = 0.85, matType = 0) => {
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+    };
+
+    // -------------------------------------------------------------------------
+    // PASS 1: 24k Polished Gold (Cube Mesh) - 37 Frets + 4 Spinner Cross Arms
+    // -------------------------------------------------------------------------
+    gl.bindVertexArray(cubeMesh.vao);
+    bindMaterialParams([0.96, 0.82, 0.36], 0.08, 0.98, 0);
+
+    // 37 Radial divider frets in gold
+    for (let i = 0; i < 37; i++) {
+      const fretAngle = wheelAngle - Math.PI * 0.5 + i * pocketStep - pocketStep * 0.5;
+      applyRotatedModel(wheelX + pocketRadius * Math.cos(fretAngle), wheelY + pocketRadius * Math.sin(fretAngle), 0.028, 0.16, 0.012, 0.045, fretAngle);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // 4 Spinner arms (same gold material, same cube VAO!)
+    for (let a = 0; a < 4; a++) {
+      const armAng = wheelAngle + a * (Math.PI / 2);
+      applyRotatedModel(wheelX + 0.08 * Math.cos(armAng), wheelY + 0.08 * Math.sin(armAng), 0.11, 0.135, 0.019, 0.019, armAng);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // PASS 2: Pocket Floor Cups (Cube Mesh - VAO remains bound!)
+    // -------------------------------------------------------------------------
+    // 2a. Green pocket floor (index 0)
+    if (greenPocket) {
+      bindMaterialParams([0.06, 0.75, 0.18], 0.25, 0.30, 0);
+      applyRotatedModel(wheelX + greenPocket.px, wheelY + greenPocket.py, 0.024, 0.15, 0.092, 0.015, greenPocket.midAngle);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // 2b. Red pocket floors (18 pockets) - material uploaded once
+    bindMaterialParams([0.85, 0.08, 0.08], 0.25, 0.30, 0);
+    for (let j = 0; j < redPockets.length; j++) {
+      const p = redPockets[j];
+      applyRotatedModel(wheelX + p.px, wheelY + p.py, 0.024, 0.15, 0.092, 0.015, p.midAngle);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // 2c. Black pocket floors (18 pockets) - material uploaded once
+    bindMaterialParams([0.03, 0.03, 0.03], 0.25, 0.30, 0);
+    for (let j = 0; j < blackPockets.length; j++) {
+      const p = blackPockets[j];
+      applyRotatedModel(wheelX + p.px, wheelY + p.py, 0.024, 0.15, 0.092, 0.015, p.midAngle);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // PASS 3: 37 Pocket Indicator Spheres (Sphere Mesh with LOD)
+    // Bound ONCE; uses decimated 6x6 mesh (LOD2) on mobile, high quality on desktop
+    // -------------------------------------------------------------------------
+    gl.bindVertexArray(holderSphereMesh.vao);
+
+    // 3a. Green indicator sphere
+    if (greenPocket) {
+      bindMaterialParams([0.06, 0.75, 0.18], 0.06, 0.15, 0);
+      applyRotatedModel(wheelX + greenPocket.px, wheelY + greenPocket.py, 0.028, 0.030, 0.030, 0.030);
+      gl.drawElements(gl.TRIANGLES, holderSphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // 3b. Red indicator spheres (18 spheres)
+    bindMaterialParams([0.85, 0.08, 0.08], 0.06, 0.15, 0);
+    for (let j = 0; j < redPockets.length; j++) {
+      const p = redPockets[j];
+      applyRotatedModel(wheelX + p.px, wheelY + p.py, 0.028, 0.030, 0.030, 0.030);
+      gl.drawElements(gl.TRIANGLES, holderSphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // 3c. Black indicator spheres (18 spheres)
+    bindMaterialParams([0.03, 0.03, 0.03], 0.06, 0.15, 0);
+    for (let j = 0; j < blackPockets.length; j++) {
+      const p = blackPockets[j];
+      applyRotatedModel(wheelX + p.px, wheelY + p.py, 0.028, 0.030, 0.030, 0.030);
+      gl.drawElements(gl.TRIANGLES, holderSphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // PASS 4: Central Turret & 4-Arm Tip Gold Spheres
+    // -------------------------------------------------------------------------
+    gl.bindVertexArray(heroSphereMesh.vao);
+    bindMaterialParams(spindleColor, spindleRough, spindleMetal, 0);
+
+    applyRotatedModel(wheelX, wheelY, 0.035, 0.27, 0.27, 0.08);
+    gl.drawElements(gl.TRIANGLES, heroSphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+    applyRotatedModel(wheelX, wheelY, 0.075, 0.088, 0.088, 0.12);
+    gl.drawElements(gl.TRIANGLES, heroSphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+    applyRotatedModel(wheelX, wheelY, 0.13, 0.047, 0.047, 0.047);
+    gl.drawElements(gl.TRIANGLES, heroSphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
     for (let a = 0; a < 4; a++) {
       const armAng = wheelAngle + a * (Math.PI / 2);
-      drawRotatedCube(wheelX + 0.08 * Math.cos(armAng), wheelY + 0.08 * Math.sin(armAng), 0.11, 0.135, 0.019, 0.019, armAng, spindleColor, spindleRough, spindleMetal);
-      drawSphere(wheelX + 0.15 * Math.cos(armAng), wheelY + 0.15 * Math.sin(armAng), 0.11, 0.024, 0.024, 0.024, spindleColor, spindleRough, spindleMetal);
+      applyRotatedModel(wheelX + 0.15 * Math.cos(armAng), wheelY + 0.15 * Math.sin(armAng), 0.11, 0.024, 0.024, 0.024);
+      gl.drawElements(gl.TRIANGLES, heroSphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     }
 
-    // Physical rolling ivory ball
+    // -------------------------------------------------------------------------
+    // PASS 5: Physical Rolling Ivory Ball & Trail
+    // -------------------------------------------------------------------------
     const b = rs.ball;
     if (b) {
       const ballScale = 0.854; // Aligns ball perfectly with pocket track (0.581 / 0.68)
-      const cosA = Math.cos(angleOffset);
-      const sinA = Math.sin(angleOffset);
-      const rx = (b.pos[0] * cosA - b.pos[1] * sinA) * ballScale;
-      const ry = (b.pos[0] * sinA + b.pos[1] * cosA) * ballScale;
+      const rx = b.pos[0] * ballScale;
+      const ry = b.pos[1] * ballScale;
 
       drawSphere(wheelX + rx, wheelY + ry, b.pos[2], 0.047, 0.047, 0.047, [0.97, 0.97, 0.95], 0.06, 0.12, 15, b.rot || [0, 0, 0]);
 
       if (!b.trapped) {
         rs.trail.push({ x: rx, y: ry, z: b.pos[2] });
-        if (rs.trail.length > 14) rs.trail.shift();
+        const maxTrailLength = this.isMobileDevice() ? 6 : 14;
+        if (rs.trail.length > maxTrailLength) rs.trail.shift();
 
-        rs.trail.forEach((t, index) => {
-          const ratio = index / rs.trail.length;
+        // Trail batch: bind holderSphere VAO and material once
+        gl.bindVertexArray(holderSphereMesh.vao);
+        bindMaterialParams([1.0, 1.0, 1.0], 0.05, 0.10, 0);
+        for (let idx = 0; idx < rs.trail.length; idx++) {
+          const t = rs.trail[idx];
+          const ratio = idx / rs.trail.length;
           const rSize = 0.047 * ratio * 0.7;
-          drawSphere(wheelX + t.x, wheelY + t.y, t.z, rSize, rSize, rSize, [1.0, 1.0, 1.0], 0.05, 0.1, 0);
-        });
+          applyRotatedModel(wheelX + t.x, wheelY + t.y, t.z, rSize, rSize, rSize);
+          gl.drawElements(gl.TRIANGLES, holderSphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
       }
     }
 
@@ -16196,6 +17506,7 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   showFpsStartupMenu() {
+    this.initFpsStartupMenu();
     const overlay = document.getElementById('fps-startup-overlay');
     if (overlay) {
       overlay.style.display = 'flex';
@@ -16221,6 +17532,9 @@ else if (typeof define === 'function' && define['amd'])
     }
     this.isMatchActive = true;
     window.isMatchActive = true;
+    if (this.updateFPSOverlays) {
+      this.updateFPSOverlays();
+    }
     
     // Ensure music settings are up to date and play music
     const musicToggle = document.getElementById('fps-music-toggle');
@@ -16854,7 +18168,8 @@ else if (typeof define === 'function' && define['amd'])
       const activeMeshName = ["Sphere (GGX UV)", "Cube (Box UV)", "C++ Peg Pillar", "Trefoil Knot Model", "High-Poly Torus", "Procedural Quad Canvas", "Sleek Ring", "Convex Disk"][this.state.activeMesh || 0] || "Active Mesh";
       entities = [
         { id: 0, name: activeMeshName, type: "Inspectable PBR Mesh", materialKey: this.activeTunedMaterial || 'wood', pos: [0, 0, 0], scale: [1, 1, 1], roughness: this.state.roughness, metallic: this.state.metallic, color: this.state.baseColor || [0.9, 0.9, 0.95], collider: "Visual Mesh Bounds", layer: "PBR Inspect Target", badge: "GGX PBR", trigger: false },
-        { id: 1, name: "Studio_Sun_Light", type: "Directional Light", materialKey: "neon", pos: [4.0, 5.0, 4.0], scale: [1, 1, 1], roughness: 0.0, metallic: 0.0, color: [1.0, 0.95, 0.9], collider: "None", layer: "Layer_Light", badge: "Sun Light", trigger: false }
+        { id: 1, name: "Studio_Sun_Light", type: "Directional Light", materialKey: "neon", pos: [4.0, 5.0, 4.0], scale: [1, 1, 1], roughness: 0.0, metallic: 0.0, color: [1.0, 0.95, 0.9], collider: "None", layer: "Layer_Light", badge: "Sun Light", trigger: false },
+        { id: 101, name: "Key_PBR_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [2.5, 3.8, 3.0], target: [0.0, 0.0, 0.0], lightDir: [-0.47, -0.71, -0.56], scale: [1, 1, 1], color: [1.0, 0.94, 0.86], intensity: 28.0, spotCutoffAngle: 38, spotCutoff: 0.788, outerCutoff: 0.60, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", badge: "Key Spot", trigger: false }
       ];
     } else if (ds.includes('02_metallic') || ds === 'matrix') {
       entities = [
@@ -16890,7 +18205,8 @@ else if (typeof define === 'function' && define['amd'])
         { id: 0, name: "Trefoil_Knot_Mesh", type: "Studio PBR Mesh", materialKey: this.activeTunedMaterial || 'chrome', pos: [0, 0, 0], scale: [1, 1, 1], roughness: this.state.roughness || 0.15, metallic: this.state.metallic || 0.95, color: this.state.baseColor || [0.9, 0.9, 0.95], collider: "Mesh Face Bounds", layer: "PBR Inspect Target", badge: "Studio Model", trigger: false },
         { id: 1, name: "Key_Studio_Light", type: "Directional Light", materialKey: "neon", pos: [3.0, 3.5, 3.0], scale: [1, 1, 1], roughness: 0.0, metallic: 0.0, color: [1.0, 0.92, 0.85], collider: "None", layer: "Layer_Light", badge: "Key Light", trigger: false },
         { id: 2, name: "Fill_Studio_Light", type: "Directional Light", materialKey: "neon", pos: [-3.0, 2.0, 2.0], scale: [1, 1, 1], roughness: 0.0, metallic: 0.0, color: [0.85, 0.9, 1.0], collider: "None", layer: "Layer_Light", badge: "Fill Light", trigger: false },
-        { id: 3, name: "Rim_Studio_Light", type: "Directional Light", materialKey: "neon", pos: [0.0, 2.0, -4.0], scale: [1, 1, 1], roughness: 0.0, metallic: 0.0, color: [0.95, 0.95, 1.0], collider: "None", layer: "Layer_Light", badge: "Rim Light", trigger: false }
+        { id: 3, name: "Rim_Studio_Light", type: "Directional Light", materialKey: "neon", pos: [0.0, 2.0, -4.0], scale: [1, 1, 1], roughness: 0.0, metallic: 0.0, color: [0.95, 0.95, 1.0], collider: "None", layer: "Layer_Light", badge: "Rim Light", trigger: false },
+        { id: 101, name: "Studio_Key_Spotlight", type: "Spot Light", isLight: true, lightType: "spot", pos: [2.8, 3.6, 2.8], target: [0.0, 0.0, 0.0], lightDir: [-0.53, -0.68, -0.53], scale: [1, 1, 1], color: [1.0, 0.94, 0.86], intensity: 28.0, spotCutoffAngle: 38, spotCutoff: 0.788, outerCutoff: 0.60, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", badge: "Key Spot", trigger: false }
       ];
     } else if (ds.includes('04_wasm_webgl')) {
       entities = [
@@ -17030,8 +18346,8 @@ else if (typeof define === 'function' && define['amd'])
         { id: 0, name: "Roulette_Central_Gold_Spindle", type: "Faceted Gold Hub Spindle", materialKey: "gold", pos: [0, 0, 0.09], scale: [0.15, 0.15, 0.18], roughness: 0.08, metallic: 0.98, color: [0.96, 0.78, 0.30], collider: "Faceted Hub Cylinder", layer: "Layer_Interactive", badge: "Central Spindle", trigger: false },
         { id: 1, name: "Mahogany_Turntable_Wheel", type: "Segmented Number Turntable Wheel", materialKey: "wood", pos: [0, 0, 0], scale: [1.1, 1.1, 0.08], roughness: 0.22, metallic: 0.12, color: [0.32, 0.12, 0.06], collider: "Rotating Cylinder Wheel", layer: "Layer_Interactive", badge: "Spindle Wheel", trigger: false },
         { id: 2, name: "Polished_Mahogany_Rim", type: "Outer Static Mahogany Guide Rim", materialKey: "wood", pos: [0, 0, -0.04], scale: [1.3, 1.3, 0.08], roughness: 0.25, metallic: 0.08, color: [0.28, 0.10, 0.05], collider: "Static Outer Ring Rim", layer: "Layer_Static", badge: "Outer Rim", trigger: false },
-        { id: 101, name: "Wheel_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [-2.10, 0.0, 3.2], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.94, 0.82], intensity: 34.0, spotCutoff: 0.88, outerCutoff: 0.65, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
-        { id: 102, name: "Table_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [2.50, 0.0, 3.2], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.96, 0.88], intensity: 34.0, spotCutoff: 0.88, outerCutoff: 0.65, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
+        { id: 101, name: "Wheel_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [-2.10, 0.0, 3.2], target: [-2.10, 0.0, 0.0], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.94, 0.82], intensity: 36.0, spotCutoffAngle: 42, spotCutoff: 0.74, outerCutoff: 0.55, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
+        { id: 102, name: "Table_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [2.50, 0.0, 3.2], target: [2.50, 0.0, 0.0], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.96, 0.88], intensity: 36.0, spotCutoffAngle: 42, spotCutoff: 0.74, outerCutoff: 0.55, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
         { id: 103, name: "Casino_Hall_Ambient_Fill", type: "Warm Ambient Chandelier Fill", isLight: true, lightType: "point", pos: [0.0, -2.0, 2.5], scale: [1.0, 1.0, 1.0], color: [1.0, 0.88, 0.70], intensity: 16.0, radius: 14.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Ambient Fill", contact: false }
       ];
       if (this.rouletteState && this.rouletteState.ball) {
@@ -17061,8 +18377,8 @@ else if (typeof define === 'function' && define['amd'])
         { id: 4, name: "Mahogany_Pedestal_Base", type: "Lacquered Hardwood Display Foundation", materialKey: "wood", pos: [0, 0.10, 0], scale: [2.6, 0.18, 1.6], roughness: 0.25, metallic: 0.08, color: [0.28, 0.10, 0.05], collider: "Base Box Collider", layer: "Layer_Static", badge: "Pedestal Base", trigger: false },
         { id: 5, name: "Spiral_Ball_Extraction_Chute", type: "Curved Brass Delivery Rails", materialKey: "gold", pos: [0.82, 0.85, 0.18], scale: [0.45, 0.70, 0.45], roughness: 0.15, metallic: 0.92, color: [0.95, 0.80, 0.35], collider: "Helical Rail Collider", layer: "Layer_Static", badge: "Exit Chute", trigger: false },
         { id: 6, name: "Caller_Presentation_Pedestal", type: "Velvet-Lined Gold Display Cup", materialKey: "gold", pos: [0.95, 0.45, 0.35], scale: [0.25, 0.12, 0.25], roughness: 0.18, metallic: 0.90, color: [0.92, 0.75, 0.25], collider: "Cup Cylinder", layer: "Layer_Interactive", badge: "Caller Cup", trigger: false },
-        { id: 101, name: "Drum_Spotlight_Warm", type: "Spot Key Light", isLight: true, lightType: "spot", pos: [0.0, 3.5, 2.5], scale: [1, 1, 1], color: [1.0, 0.92, 0.82], intensity: 22.0, radius: 10.0, roughness: 0.0, metallic: 0.0, collider: "Light", layer: "Layer_Light", trigger: false, badge: "Drum Key", contact: false },
-        { id: 102, name: "Caller_Spotlight_Accent", type: "Accent Display Spot", isLight: true, lightType: "spot", pos: [1.2, 2.2, 1.4], scale: [1, 1, 1], color: [1.0, 0.96, 0.88], intensity: 18.0, radius: 6.0, roughness: 0.0, metallic: 0.0, collider: "Light", layer: "Layer_Light", trigger: false, badge: "Cup Spot", contact: false }
+        { id: 101, name: "Drum_Spotlight_Warm", type: "Spot Key Light", isLight: true, lightType: "spot", pos: [0.0, 3.5, 2.5], target: [0.0, 1.25, 0.0], lightDir: [0.0, -0.67, -0.74], scale: [1, 1, 1], color: [1.0, 0.92, 0.82], intensity: 28.0, spotCutoffAngle: 40, spotCutoff: 0.766, outerCutoff: 0.58, roughness: 0.0, metallic: 0.0, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Drum Key", contact: false },
+        { id: 102, name: "Caller_Spotlight_Accent", type: "Accent Display Spot", isLight: true, lightType: "spot", pos: [1.2, 2.2, 1.4], target: [0.95, 0.45, 0.35], lightDir: [-0.14, -0.82, -0.56], scale: [1, 1, 1], color: [1.0, 0.96, 0.88], intensity: 25.0, spotCutoffAngle: 38, spotCutoff: 0.788, outerCutoff: 0.62, roughness: 0.0, metallic: 0.0, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Cup Spot", contact: false }
       ];
       if (this.bingoState && this.bingoState.balls) {
         const activeBalls = this.bingoState.balls.filter(b => !b.isDrawn);
@@ -17257,9 +18573,6 @@ else if (typeof define === 'function' && define['amd'])
       const lightRadVal = document.getElementById('insp-light-radius-val');
       const lightCutoff = document.getElementById('insp-light-cutoff');
       const lightCutoffVal = document.getElementById('insp-light-cutoff-val');
-      const rowSpotCutoff = document.getElementById('insp-row-spot-cutoff');
-      const rowSpotDir = document.getElementById('insp-row-spot-dir');
-      const rowLightRadius = document.getElementById('insp-row-light-radius');
 
       if (lightTypeSel) lightTypeSel.value = entity.lightType || 'point';
       if (lightInten) {
@@ -17279,21 +18592,47 @@ else if (typeof define === 'function' && define['amd'])
       }
 
       const isSpot = entity.lightType === 'spot';
+      const rowSpotCutoff = document.getElementById('insp-row-spot-cutoff');
+      const rowSpotTarget = document.getElementById('insp-row-spot-target');
+      const rowSpotActions = document.getElementById('insp-row-spot-actions');
+      const rowSpotDir = document.getElementById('insp-row-spot-dir');
+      const rowLightRadius = document.getElementById('insp-row-light-radius');
+      const rowLightGizmo = document.getElementById('insp-row-light-gizmo');
+
       if (rowSpotCutoff) rowSpotCutoff.style.display = isSpot ? 'flex' : 'none';
+      if (rowSpotTarget) rowSpotTarget.style.display = isSpot ? 'flex' : 'none';
+      if (rowSpotActions) rowSpotActions.style.display = isSpot ? 'flex' : 'none';
       if (rowSpotDir) rowSpotDir.style.display = isSpot ? 'flex' : 'none';
       if (rowLightRadius) rowLightRadius.style.display = (entity.lightType === 'directional') ? 'none' : 'flex';
+      if (rowLightGizmo) rowLightGizmo.style.display = 'flex';
+
+      const gizmoCheck = document.getElementById('insp-light-gizmo-toggle');
+      if (gizmoCheck) gizmoCheck.checked = (this.state.showLightGizmos !== false);
 
       if (isSpot) {
         const deg = Math.round(entity.spotCutoffAngle !== undefined ? entity.spotCutoffAngle : 35);
         if (lightCutoff) lightCutoff.value = deg;
         if (lightCutoffVal) lightCutoffVal.textContent = `${deg}°`;
+
+        if (!entity.target && entity.pos) {
+          const d = entity.lightDir || [0, -1, 0];
+          entity.target = [entity.pos[0] + d[0] * 6.0, entity.pos[1] + d[1] * 6.0, entity.pos[2] + d[2] * 6.0];
+        }
+        const target = entity.target || [0, 0, 0];
+        const targetX = document.getElementById('insp-light-target-x');
+        const targetY = document.getElementById('insp-light-target-y');
+        const targetZ = document.getElementById('insp-light-target-z');
+        if (targetX) targetX.value = target[0].toFixed(1);
+        if (targetY) targetY.value = target[1].toFixed(1);
+        if (targetZ) targetZ.value = target[2].toFixed(1);
+
         const dirX = document.getElementById('insp-light-dir-x');
         const dirY = document.getElementById('insp-light-dir-y');
         const dirZ = document.getElementById('insp-light-dir-z');
         const dir = entity.lightDir || [0, -1, 0];
-        if (dirX) dirX.value = dir[0];
-        if (dirY) dirY.value = dir[1];
-        if (dirZ) dirZ.value = dir[2];
+        if (dirX) dirX.value = dir[0].toFixed(2);
+        if (dirY) dirY.value = dir[1].toFixed(2);
+        if (dirZ) dirZ.value = dir[2].toFixed(2);
       }
     } else {
       if (lightSec) lightSec.style.display = 'none';
@@ -17309,6 +18648,18 @@ else if (typeof define === 'function' && define['amd'])
       const posY = parseFloat(document.getElementById('insp-pos-y')?.value) || 0;
       const posZ = parseFloat(document.getElementById('insp-pos-z')?.value) || 0;
       entity.pos = [posX, posY, posZ];
+
+      if (entity.lightType === 'spot' && entity.target) {
+        const vx = entity.target[0] - posX, vy = entity.target[1] - posY, vz = entity.target[2] - posZ;
+        const len = Math.hypot(vx, vy, vz) || 1.0;
+        entity.lightDir = [vx / len, vy / len, vz / len];
+        const dirX = document.getElementById('insp-light-dir-x');
+        const dirY = document.getElementById('insp-light-dir-y');
+        const dirZ = document.getElementById('insp-light-dir-z');
+        if (dirX) dirX.value = entity.lightDir[0].toFixed(2);
+        if (dirY) dirY.value = entity.lightDir[1].toFixed(2);
+        if (dirZ) dirZ.value = entity.lightDir[2].toFixed(2);
+      }
 
       if (entity.layer === 'Layer_Player') {
         this.playerController.pos = [posX, posY, posZ];
@@ -17455,17 +18806,107 @@ else if (typeof define === 'function' && define['amd'])
       });
     }
 
+    const updateSpotFromTarget = () => {
+      const entity = this.sceneEntities[this.selectedEntityIndex];
+      if (entity && entity.lightType === 'spot') {
+        const tx = parseFloat(document.getElementById('insp-light-target-x')?.value) || 0;
+        const ty = parseFloat(document.getElementById('insp-light-target-y')?.value) || 0;
+        const tz = parseFloat(document.getElementById('insp-light-target-z')?.value) || 0;
+        entity.target = [tx, ty, tz];
+        const px = entity.pos ? entity.pos[0] : 0;
+        const py = entity.pos ? entity.pos[1] : 0;
+        const pz = entity.pos ? entity.pos[2] : 0;
+        const vx = tx - px, vy = ty - py, vz = tz - pz;
+        const len = Math.hypot(vx, vy, vz) || 1.0;
+        entity.lightDir = [vx / len, vy / len, vz / len];
+        const dirX = document.getElementById('insp-light-dir-x');
+        const dirY = document.getElementById('insp-light-dir-y');
+        const dirZ = document.getElementById('insp-light-dir-z');
+        if (dirX) dirX.value = entity.lightDir[0].toFixed(2);
+        if (dirY) dirY.value = entity.lightDir[1].toFixed(2);
+        if (dirZ) dirZ.value = entity.lightDir[2].toFixed(2);
+      }
+    };
+    ['insp-light-target-x', 'insp-light-target-y', 'insp-light-target-z'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', updateSpotFromTarget);
+    });
+
     const updateSpotDir = () => {
       const entity = this.sceneEntities[this.selectedEntityIndex];
       if (entity && entity.lightType === 'spot') {
         const dx = parseFloat(document.getElementById('insp-light-dir-x')?.value) || 0;
         const dy = parseFloat(document.getElementById('insp-light-dir-y')?.value) || -1;
         const dz = parseFloat(document.getElementById('insp-light-dir-z')?.value) || 0;
-        entity.lightDir = [dx, dy, dz];
+        const len = Math.hypot(dx, dy, dz) || 1.0;
+        entity.lightDir = [dx / len, dy / len, dz / len];
+        const dist = 6.0;
+        const px = entity.pos ? entity.pos[0] : 0;
+        const py = entity.pos ? entity.pos[1] : 0;
+        const pz = entity.pos ? entity.pos[2] : 0;
+        entity.target = [px + entity.lightDir[0] * dist, py + entity.lightDir[1] * dist, pz + entity.lightDir[2] * dist];
+        const targetX = document.getElementById('insp-light-target-x');
+        const targetY = document.getElementById('insp-light-target-y');
+        const targetZ = document.getElementById('insp-light-target-z');
+        if (targetX) targetX.value = entity.target[0].toFixed(1);
+        if (targetY) targetY.value = entity.target[1].toFixed(1);
+        if (targetZ) targetZ.value = entity.target[2].toFixed(1);
       }
     };
     ['insp-light-dir-x', 'insp-light-dir-y', 'insp-light-dir-z'].forEach(id => {
       document.getElementById(id)?.addEventListener('input', updateSpotDir);
+    });
+
+    // Quick Aim Action Handlers
+    document.getElementById('btn-spot-aim-origin')?.addEventListener('click', () => {
+      const entity = this.sceneEntities[this.selectedEntityIndex];
+      if (entity && entity.lightType === 'spot') {
+        entity.target = [0.0, 0.0, 0.0];
+        const px = entity.pos ? entity.pos[0] : 0;
+        const py = entity.pos ? entity.pos[1] : 0;
+        const pz = entity.pos ? entity.pos[2] : 0;
+        const vx = -px, vy = -py, vz = -pz;
+        const len = Math.hypot(vx, vy, vz) || 1.0;
+        entity.lightDir = [vx / len, vy / len, vz / len];
+        this.populateInspector(entity);
+        this.log(`Aim Spotlight [${entity.name}] at World Origin [0, 0, 0]`, "info");
+      }
+    });
+
+    document.getElementById('btn-spot-aim-camera')?.addEventListener('click', () => {
+      const entity = this.sceneEntities[this.selectedEntityIndex];
+      if (entity && entity.lightType === 'spot') {
+        const camPos = this.state.camPos || [0, 2, 5];
+        const camTarget = this.state.camTarget || [0, 0, 0];
+        entity.pos = [camPos[0], camPos[1], camPos[2]];
+        entity.target = [camTarget[0], camTarget[1], camTarget[2]];
+        const vx = camTarget[0] - camPos[0], vy = camTarget[1] - camPos[1], vz = camTarget[2] - camPos[2];
+        const len = Math.hypot(vx, vy, vz) || 1.0;
+        entity.lightDir = [vx / len, vy / len, vz / len];
+        this.populateInspector(entity);
+        this.log(`Moved & Aimed Spotlight [${entity.name}] from Camera View`, "info");
+      }
+    });
+
+    document.getElementById('btn-spot-aim-selected')?.addEventListener('click', () => {
+      const entity = this.sceneEntities[this.selectedEntityIndex];
+      if (entity && entity.lightType === 'spot') {
+        const targetEnt = this.sceneEntities.find(e => !e.isLight && e.layer !== 'Layer_Light' && e.id !== entity.id);
+        const tgtPos = targetEnt && targetEnt.pos ? targetEnt.pos : [0, 0, 0];
+        entity.target = [tgtPos[0], tgtPos[1], tgtPos[2]];
+        const px = entity.pos ? entity.pos[0] : 0;
+        const py = entity.pos ? entity.pos[1] : 0;
+        const pz = entity.pos ? entity.pos[2] : 0;
+        const vx = tgtPos[0] - px, vy = tgtPos[1] - py, vz = tgtPos[2] - pz;
+        const len = Math.hypot(vx, vy, vz) || 1.0;
+        entity.lightDir = [vx / len, vy / len, vz / len];
+        this.populateInspector(entity);
+        this.log(`Aim Spotlight [${entity.name}] at Object [${targetEnt ? targetEnt.name : 'Origin'}]`, "info");
+      }
+    });
+
+    document.getElementById('insp-light-gizmo-toggle')?.addEventListener('change', (e) => {
+      this.state.showLightGizmos = e.target.checked;
+      this.log(`Light Scene Gizmos: ${this.state.showLightGizmos ? 'Visible' : 'Hidden'}`, "info");
     });
 
     const addLight = (type) => {
@@ -17473,17 +18914,22 @@ else if (typeof define === 'function' && define['amd'])
       const isSpot = (type === 'spot');
       const camYaw = this.state.camYaw || 0;
       const camPos = this.state.camPos || [0, 5, 10];
+      const lightPos = [camPos[0] - Math.sin(camYaw) * 4.0, camPos[1] + 1.5, camPos[2] - Math.cos(camYaw) * 4.0];
+      const targetPos = [0, 0, 0];
+      const vx = targetPos[0] - lightPos[0], vy = targetPos[1] - lightPos[1], vz = targetPos[2] - lightPos[2];
+      const len = Math.hypot(vx, vy, vz) || 1.0;
       const newLight = {
         id: newId,
         name: isSpot ? `Spot_Light_${newId}` : `Area_Spheric_Light_${newId}`,
         type: isSpot ? "Spot Light" : "Spheric Area Light",
         isLight: true,
         lightType: isSpot ? "spot" : "point",
-        pos: [camPos[0] - Math.sin(camYaw) * 4.0, camPos[1] + 1.5, camPos[2] - Math.cos(camYaw) * 4.0],
-        lightDir: [0, -1, 0],
+        pos: lightPos,
+        target: isSpot ? targetPos : undefined,
+        lightDir: isSpot ? [vx / len, vy / len, vz / len] : [0, -1, 0],
         scale: [1.2, 1.2, 1.2],
         color: isSpot ? [0.2, 0.85, 1.0] : [1.0, 0.65, 0.2],
-        intensity: 20.0,
+        intensity: 24.0,
         radius: 12.0,
         spotCutoffAngle: 35,
         spotCutoff: Math.cos(35 * Math.PI / 180),
@@ -18234,8 +19680,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const sinY = Math.sin(this.state.camYaw);
         const cosY = Math.cos(this.state.camYaw);
 
-        moveDirX = normR * cosY - normF * sinY;
-        moveDirZ = normR * sinY + normF * cosY;
+        moveDirX = normR * cosY + normF * sinY;
+        moveDirZ = -normR * sinY + normF * cosY;
 
         // Face movement direction
         pc.yaw = Math.atan2(moveDirX, moveDirZ);
@@ -18407,17 +19853,34 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         joyR = this.joystickState.dirX;
       }
 
+      // Calculate normalized horizontal forward and right vectors for ground-based locomotion
+      const fwdX = -sinY;
+      const fwdZ = -cosY;
+      const fwdLen = Math.hypot(fwdX, fwdZ) || 1;
+      const normFwdX = fwdX / fwdLen;
+      const normFwdZ = fwdZ / fwdLen;
+
       const hasteMult = (this.activePowerups && this.activePowerups.haste && this.activePowerups.haste.active) ? 1.45 : 1.0;
       const moveSpeed = this.state.moveSpeed * (this.state.keys.shift ? 2.2 : 1.0) * hasteMult * dt;
       if (this.state.keys.w || joyF < -0.2) {
-        this.state.camPos[0] += this.state.camFront[0] * moveSpeed;
-        this.state.camPos[1] += (this.state.cameraMode === 2 ? this.state.camFront[1] : 0) * moveSpeed;
-        this.state.camPos[2] += this.state.camFront[2] * moveSpeed;
+        if (this.state.cameraMode === 2) {
+          this.state.camPos[0] += this.state.camFront[0] * moveSpeed;
+          this.state.camPos[1] += this.state.camFront[1] * moveSpeed;
+          this.state.camPos[2] += this.state.camFront[2] * moveSpeed;
+        } else {
+          this.state.camPos[0] += normFwdX * moveSpeed;
+          this.state.camPos[2] += normFwdZ * moveSpeed;
+        }
       }
       if (this.state.keys.s || joyF > 0.2) {
-        this.state.camPos[0] -= this.state.camFront[0] * moveSpeed;
-        this.state.camPos[1] -= (this.state.cameraMode === 2 ? this.state.camFront[1] : 0) * moveSpeed;
-        this.state.camPos[2] -= this.state.camFront[2] * moveSpeed;
+        if (this.state.cameraMode === 2) {
+          this.state.camPos[0] -= this.state.camFront[0] * moveSpeed;
+          this.state.camPos[1] -= this.state.camFront[1] * moveSpeed;
+          this.state.camPos[2] -= this.state.camFront[2] * moveSpeed;
+        } else {
+          this.state.camPos[0] -= normFwdX * moveSpeed;
+          this.state.camPos[2] -= normFwdZ * moveSpeed;
+        }
       }
       if (this.state.keys.d || joyR > 0.2) {
         this.state.camPos[0] += this.state.camRight[0] * moveSpeed;
@@ -18534,11 +19997,21 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (!u) continue;
         if (i < this._spotLightsList.length) {
           const l = this._spotLightsList[i];
-          const dir = l.lightDir || [0, -1, 0];
+          if (!l.target && l.pos && l.lightDir) {
+            l.target = [l.pos[0] + l.lightDir[0] * 6.0, l.pos[1] + l.lightDir[1] * 6.0, l.pos[2] + l.lightDir[2] * 6.0];
+          }
+          let dir = l.lightDir;
+          if (l.target && l.pos) {
+            dir = [l.target[0] - l.pos[0], l.target[1] - l.pos[1], l.target[2] - l.pos[2]];
+          } else if (!dir) {
+            dir = [0, -1, 0];
+          }
           const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
           this._spotNormDir[0] = dir[0] / len;
           this._spotNormDir[1] = dir[1] / len;
           this._spotNormDir[2] = dir[2] / len;
+          l.lightDir = [this._spotNormDir[0], this._spotNormDir[1], this._spotNormDir[2]];
+
           if (u.pos) gl.uniform3fv(u.pos, l.pos);
           if (u.dir) gl.uniform3fv(u.dir, this._spotNormDir);
           if (u.color) gl.uniform3fv(u.color, l.color || [1, 1, 1]);
@@ -18661,18 +20134,18 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           const wz = charPos[2] + (-offsetX * sy + offsetZ * cy);
 
           this.instanceMatrix[0] = cy * sizeX;
-          this.instanceMatrix[1] = sp * sizeX;
-          this.instanceMatrix[2] = sy * sizeX;
+          this.instanceMatrix[1] = 0;
+          this.instanceMatrix[2] = -sy * sizeX;
           this.instanceMatrix[3] = 0;
 
-          this.instanceMatrix[4] = 0;
+          this.instanceMatrix[4] = -sy * sp * sizeY;
           this.instanceMatrix[5] = cp * sizeY;
-          this.instanceMatrix[6] = 0;
+          this.instanceMatrix[6] = -cy * sp * sizeY;
           this.instanceMatrix[7] = 0;
 
-          this.instanceMatrix[8] = -sy * sizeZ;
-          this.instanceMatrix[9] = 0;
-          this.instanceMatrix[10] = cy * sizeZ;
+          this.instanceMatrix[8] = sy * cp * sizeZ;
+          this.instanceMatrix[9] = sp * sizeZ;
+          this.instanceMatrix[10] = cy * cp * sizeZ;
           this.instanceMatrix[11] = 0;
 
           this.instanceMatrix[12] = wx;
@@ -18922,7 +20395,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       }
 
-      // 3b. Render Active 3D AI Combat Bots (Gladiator / Cyber Suits with Weapons & Walk Animation)
+      // 3b. Render Active 3D AI Combat Bots (Mixamo Soldier Character Model with Walk Bobbing)
       if (this.active3DBots && cubeMesh && sphereMesh) {
         const numBots = this.active3DBots.length;
         for (let bi = 0; bi < numBots; bi++) {
@@ -18934,20 +20407,35 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           const swingAngle = Math.sin(timestamp * 0.008 + bot.id) * 0.45;
           const drawCol = bot.hitFlashTimer > 0 ? [1.0, 0.3, 0.3] : bot.color;
 
-          // Bot Torso Body
-          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0, 1.1, 0, 0.45, 0.6, 0.25, drawCol, 0.25, 0.85, 3, 0.5);
-          // Bot Head
-          this.drawBotMeshPart(progInfo, sphereMesh, charPos, charYaw, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.85, 0.85, 0.88], 0.35, 0.10, 0, 0.0);
-          // Bot Neon Visor
-          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95, 12, 0.9);
-          // Bot Left & Right Arms (Swinging)
-          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, -0.32, 1.05 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, drawCol, 0.25, 0.85, 3, 0.3);
-          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.32, 1.05 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, drawCol, 0.25, 0.85, 3, 0.3);
-          // Bot Left & Right Legs
-          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, -0.16, 0.45 - Math.sin(swingAngle)*0.06, -Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
-          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.16, 0.45 + Math.sin(swingAngle)*0.06, Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
-          // Bot Weapon
-          this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.35, 1.1, 0.35, 0.12, 0.15, 0.60, [0.2, 0.2, 0.25], 0.15, 0.9, 3, 0.2);
+          if (this.soldierMesh) {
+            if (this.soldierSkeletonData) {
+              // Individualized walking locomotion per bot based on timestamp and bot.id
+              const animTime = timestamp * 0.0012 + bot.id * 1.35;
+              const skinMatrices = this.evaluateSoldierSkeleton(animTime);
+              if (skinMatrices) {
+                this.updateSoldierMeshBuffer(skinMatrices);
+              }
+            }
+            // Mixamo soldier characters are standing upright at y=0.
+            // Add a natural locomotion bobbing up and down based on speed / movement phase:
+            const bob = Math.abs(Math.sin(timestamp * 0.008 + bot.id)) * 0.08;
+            this.drawBotMeshPart(progInfo, this.soldierMesh, charPos, charYaw, 0, bob, 0, 1.0, 1.0, 1.0, drawCol, 0.3, 0.1, 3, 0.1);
+          } else {
+            // Fallback: Bot Torso Body
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0, 1.1, 0, 0.45, 0.6, 0.25, drawCol, 0.25, 0.85, 3, 0.5);
+            // Fallback: Bot Head
+            this.drawBotMeshPart(progInfo, sphereMesh, charPos, charYaw, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.85, 0.85, 0.88], 0.35, 0.10, 0, 0.0);
+            // Fallback: Bot Neon Visor
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95, 12, 0.9);
+            // Fallback: Bot Left & Right Arms (Swinging)
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, -0.32, 1.05 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, drawCol, 0.25, 0.85, 3, 0.3);
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.32, 1.05 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, drawCol, 0.25, 0.85, 3, 0.3);
+            // Fallback: Bot Left & Right Legs
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, -0.16, 0.45 - Math.sin(swingAngle)*0.06, -Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.16, 0.45 + Math.sin(swingAngle)*0.06, Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
+            // Fallback: Bot Weapon
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.35, 1.1, 0.35, 0.12, 0.15, 0.60, [0.2, 0.2, 0.25], 0.15, 0.9, 3, 0.2);
+          }
         }
       }
 

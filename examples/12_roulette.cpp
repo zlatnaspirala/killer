@@ -110,4 +110,24 @@ namespace RoulettePhysics {
             return ROULETTE_NUMBERS[ball.settledPocketIndex];
         }
     };
+
+    // AAA Render Principles: Draw per material, not per mesh & LOD for 37 holder spheres
+    // Desktop: force quality (LOD0 high fidelity)
+    // Mobile: max optimisation (LOD2 decimated 6x6 bands, 49 verts, 72 tris per sphere)
+    struct RouletteRenderBuckets {
+        // Material Pass 1: Polished 24k Gold (37 Frets + 4 Spinner Arms)
+        std::vector<float> goldFretMatrices; // 37 * 16 floats
+        
+        // Material Pass 2: Pocket Floor Cups (Cube mesh, sorted by material)
+        float greenPocketMatrix[16];
+        std::vector<float> redPocketFloorMatrices;   // 18 * 16 floats
+        std::vector<float> blackPocketFloorMatrices; // 18 * 16 floats
+        
+        // Material Pass 3: Pocket Indicator Spheres (Sphere mesh with LOD)
+        // Mobile uses Decimated Mesh (LOD2), Desktop uses Quality Mesh (LOD0/1)
+        float greenIndicatorMatrix[16];
+        std::vector<float> redIndicatorMatrices;     // 18 * 16 floats
+        std::vector<float> blackIndicatorMatrices;   // 18 * 16 floats
+    };
 }
+

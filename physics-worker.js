@@ -70,7 +70,7 @@ self.onmessage = function(e) {
         wheelSpeed: -0.6,
         ball: {
           r: 0.68,
-          theta: 0.0,
+          theta: Math.PI * 0.5,
           z: 0.026,
           vr: 0.0,
           vTheta: 0.0,
@@ -81,7 +81,7 @@ self.onmessage = function(e) {
           trapped: true,
           circlesCompleted: 0,
           clatterTimer: 0,
-          pos: [0.68, 0.0, 0.026],
+          pos: [0.0, 0.68, 0.026],
           vel: [0, 0, 0]
         },
         pockets: 37,
@@ -667,7 +667,7 @@ function stepRoulettePhysics(dt) {
 
   if (b.trapped) {
     // Ball sits inside pocket, locked to rotating coordinate
-    const targetAngle = r.wheelAngle + b.pocketIndex * (2 * Math.PI / 37) + (Math.PI / 37);
+    const targetAngle = r.wheelAngle - Math.PI * 0.5 + b.pocketIndex * (2 * Math.PI / 37);
     b.r = 0.68;
     b.z = 0.026;
     b.pos[0] = b.r * Math.cos(targetAngle);
@@ -774,7 +774,7 @@ function stepRoulettePhysics(dt) {
 
     // Smoothly align with the forced target pocket to avoid any visual teleportation/jump!
     if (r.forcedPocket !== undefined && r.forcedPocket !== null) {
-      const targetAngle = r.wheelAngle + r.forcedPocket * (2 * Math.PI / 37) + (Math.PI / 37);
+      const targetAngle = r.wheelAngle + Math.PI * 0.5 - r.forcedPocket * (2 * Math.PI / 37);
       let diff = (targetAngle - b.theta) % (2 * Math.PI);
       if (diff > Math.PI) diff -= 2 * Math.PI;
       if (diff < -Math.PI) diff += 2 * Math.PI;
@@ -796,11 +796,11 @@ function stepRoulettePhysics(dt) {
 
     // Check if settled into a pocket
     if (Math.abs(b.vTheta - wheelTangential) < 0.28 && b.r <= 0.68) {
-      let relAngle = (b.theta - r.wheelAngle) % (2 * Math.PI);
+      let relAngle = (b.theta - r.wheelAngle + Math.PI * 0.5) % (2 * Math.PI);
       if (relAngle < 0) relAngle += 2 * Math.PI;
 
       const seg = (2 * Math.PI) / 37;
-      let pocketIdx = Math.floor(relAngle / seg) % 37;
+      let pocketIdx = Math.floor((relAngle + seg * 0.5) / seg) % 37;
       if (pocketIdx < 0) pocketIdx += 37;
 
       if (r.forcedPocket !== undefined && r.forcedPocket !== null) {

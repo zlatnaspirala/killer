@@ -24,19 +24,14 @@
         <div class="header-demo-selector-container">
           <span class="header-demo-label">⚡ POPUP ACTIVE LIVE DEMO</span>
           <select id="viewport-demo-scene-select" class="header-demo-select">
-            <option value="01_pbr_material_preview.cpp">Demo 01: PBR Material Preview</option>
-            <option value="02_metallic_roughness_matrix.cpp">Demo 02: Metallic Roughness Matrix</option>
-            <option value="03_trefoil_studio.cpp">Demo 03: Trefoil Studio Lighting</option>
-            <option value="04_wasm_webgl_wrapper.cpp">Demo 04: WASM WebGL Wrapper</option>
-            <option value="05_desktop_standalone_app.cpp">Demo 05: Desktop Standalone SDL2 App</option>
-            <option value="06_glb_character_collision_player.cpp">Demo 06: Player Controller &amp; Character</option>
-            <option value="07_fps_shooter_damage_system.cpp">Demo 07: First-Person Shooter Arena</option>
-            <option value="08_all_materials_presentation.cpp">Demo 08: Material Showroom Gallery</option>
-            <option value="09_slot_machine.cpp">Demo 09: 3D Casino Slot Machine</option>
-            <option value="10_sliding_puzzle.cpp">Demo 10: Dynamic 3D Sliding Puzzle</option>
-            <option value="11_plinko.cpp">Demo 11: 3D Plinko Cascade Board</option>
-            <option value="12_roulette.cpp">Demo 12: 3D Physics Roulette Wheel</option>
-            <option value="13_bingo_physics.cpp" selected>Demo 13: 3D Physics Bingo &amp; Diamond Drum</option>
+            <option value="06_glb_character_collision_player.cpp">Demo 01: Player Controller &amp; Character</option>
+            <option value="07_fps_shooter_damage_system.cpp">Demo 02: First-Person Shooter Arena</option>
+            <option value="08_all_materials_presentation.cpp">Demo 03: Material Showroom Gallery</option>
+            <option value="09_slot_machine.cpp">Demo 04: 3D Casino Slot Machine</option>
+            <option value="10_sliding_puzzle.cpp">Demo 05: Dynamic 3D Sliding Puzzle</option>
+            <option value="11_plinko.cpp">Demo 06: 3D Plinko Cascade Board</option>
+            <option value="12_roulette.cpp">Demo 07: 3D Physics Roulette Wheel</option>
+            <option value="13_bingo_physics.cpp" selected>Demo 08: 3D Physics Bingo &amp; Diamond Drum</option>
           </select>
         </div>
         <div class="header-right">
@@ -44,6 +39,12 @@
           <div class="status-pill" id="debug-toggle-pill" style="cursor: pointer; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.35); transition: all 0.2s; user-select: none;" title="Toggle real-time vertices, triangles, and memory telemetry overlays">
             <span class="status-dot" style="background: #ef4444; box-shadow: 0 0 8px #ef4444; animation: none;" id="debug-toggle-dot"></span>
             <span class="status-text" style="color: #a5f3fc; font-weight: 700; font-size: 11px; white-space: nowrap;">DEBUG DATA: <span id="debug-toggle-status" style="color: #fca5a5; font-weight: 800;">OFF</span></span>
+          </div>
+
+          <!-- Killer Engine LOD Policy Toggle Pill -->
+          <div class="status-pill" id="lod-toggle-pill" style="cursor: pointer; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.35); transition: all 0.2s; user-select: none;" title="Toggle Killer Engine LOD Policy: Desktop Force Quality vs Mobile Max Optimization">
+            <span class="status-dot" style="background: #10b981; box-shadow: 0 0 8px #10b981; animation: none;" id="lod-toggle-dot"></span>
+            <span class="status-text" style="color: #a7f3d0; font-weight: 700; font-size: 11px; white-space: nowrap;">LOD: <span id="lod-toggle-status" style="color: #6ee7b7; font-weight: 800;">AUTO</span></span>
           </div>
 
           <div class="status-pill" id="engine-status-pill">
@@ -135,13 +136,19 @@
             <!-- Floating 3D Damage Indicator Container -->
             <div class="damage-container" id="damage-container"></div>
 
+            <!-- FPS Floating Quick-Fire Touch Button (Mobile & Desktop) -->
+            <button id="fps-floating-fire-btn" class="fps-floating-fire-btn" style="display: none;" title="Fire Weapon (Click / Double-Click / Touch / Tap)">
+              <span class="fire-icon">🔥</span>
+              <span class="fire-text">SHOOT</span>
+            </button>
+
             <!-- FPS Shooter Pointer Lock Prompt / Banner -->
             <div class="fps-pointerlock-banner" id="fps-pointerlock-banner" style="display: none;">
               <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 8px;">
-                <span id="fps-banner-text">🎯 <b>FPS Shooter Active</b>: Click viewport to Lock Mouse Look &bull; Press <b>ESC</b> to unlock &bull; <b>L-Click</b> to Shoot &bull; <b>Space</b> to Jump</span>
+                <span id="fps-banner-text">🎯 <b>FPS Shooter Active</b>: Click / Double-Click / Touch / Tap to Shoot &bull; [E] or [Enter] &bull; Press <b>ESC</b> for Menu</span>
                 <div style="display: flex; gap: 8px; align-items: center;">
                   <button id="btn-fps-cheap-mat-toggle" class="btn-action" style="background: rgba(16, 185, 129, 0.25); border: 1px solid #10b981; color: #34d399; padding: 4px 10px; font-weight: bold; border-radius: 6px; cursor: pointer; white-space: nowrap;" title="Toggle Cheap Low-Cost Material for Mobile 60-120 FPS">⚡ Cheap Mat: ON (Mobile 60+ FPS)</button>
-                  <button id="btn-open-fps-menu" class="btn-action" style="background: rgba(6, 182, 212, 0.25); border: 1px solid #06b6d4; color: #38bdf8; padding: 4px 10px; font-weight: bold; border-radius: 6px; cursor: pointer; white-space: nowrap;">🎮 Arena Menu</button>
+                  <button id="btn-open-fps-menu" class="btn-action" style="background: rgba(6, 182, 212, 0.25); border: 1px solid #06b6d4; color: #38bdf8; padding: 4px 10px; font-weight: bold; border-radius: 6px; cursor: pointer; white-space: nowrap;" onclick="if (window.showFpsStartupMenu) window.showFpsStartupMenu(); else if (window.app &amp;&amp; window.app.showFpsStartupMenu) window.app.showFpsStartupMenu();">🎮 Arena Menu</button>
                 </div>
               </div>
             </div>
@@ -220,11 +227,11 @@
 
             <!-- 🧩 Sliding Puzzle Banner Info -->
             <div id="puzzle-banner" class="puzzle-banner" style="display: none;">
-              <span>🧩 <b>Demo 10 Active: 3D Sliding Puzzle</b> &bull; Drag to rotate camera view &bull; Click adjacent blocks next to empty slot to slide!</span>
+              <span>🧩 <b>Demo 05 Active: 3D Sliding Puzzle</b> &bull; Drag to rotate camera view &bull; Click adjacent blocks next to empty slot to slide!</span>
               <span id="puzzle-stats-summary" style="color: #06b6d4; font-weight: bold;">Moves: 0 | Grid: 3x3</span>
             </div>
 
-            <!-- 🎰 3D Cyber Slot Machine Interactive Panel (Demo 09) -->
+            <!-- 🎰 3D Cyber Slot Machine Interactive Panel (Demo 04) -->
             <div id="slot-machine-overlay" class="slot-machine-overlay-panel" style="display: none;">
               <div class="slot-header">
                 <div class="slot-title">🎰 CASINO 3D SLOT</div>
@@ -304,11 +311,11 @@
 
             <!-- 🎰 Slot Machine Banner Info -->
             <div id="slot-machine-banner" class="slot-machine-banner" style="display: none;">
-              <span>🎰 <b>Demo 09 Active: 3D Casino Slot Machine</b> &bull; Drag to Rotate camera &bull; Pull lever or click SPIN!</span>
+              <span>🎰 <b>Demo 04 Active: 3D Casino Slot Machine</b> &bull; Drag to Rotate camera &bull; Pull lever or click SPIN!</span>
               <span id="slot-stats-summary" style="color: #fbbf24; font-weight: bold;">Spins: 0 | Win Rate: 0%</span>
             </div>
 
-            <!-- 🟢 3D Plinko Interactive Panel (Demo 11) -->
+            <!-- 🟢 3D Plinko Interactive Panel (Demo 06) -->
             <div id="plinko-overlay" class="plinko-overlay-panel" style="display: none;">
               <div class="plinko-header">
                 <div class="plinko-header-row">
@@ -427,7 +434,7 @@
 
             <!-- 🟢 Plinko Banner Info -->
             <div id="plinko-banner" class="plinko-banner" style="display: none;">
-              <span>🟢 <b>Demo 11 Active: 3D Plinko Cascade</b> &bull; Left Drag to rotate board &bull; Click DROP BALL to test your luck!</span>
+              <span>🟢 <b>Demo 06 Active: 3D Plinko Cascade</b> &bull; Left Drag to rotate board &bull; Click DROP BALL to test your luck!</span>
               <span id="plinko-stats-summary" style="color: #34d399; font-weight: bold;">Cost: 10 | High Score: 1000</span>
             </div>
 
@@ -436,7 +443,7 @@
               <span>⚙️ PLINKO CONTROLS</span>
             </button>
 
-            <!-- 🎰 3D Real-Physics Roulette Panel (Demo 12) -->
+            <!-- 🎰 3D Real-Physics Roulette Panel (Demo 07) -->
             <div id="roulette-overlay" class="plinko-overlay-panel" style="display: none; background: rgba(9, 21, 16, 0.9); border: 1px solid rgba(16, 185, 129, 0.3); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);">
               
               <!-- Camera Choice Modal (Inside Roulette Overlay for elegant containment) -->
@@ -669,7 +676,7 @@
               <span>⚙️ ROULETTE BETS</span>
             </button>
 
-            <!-- 🎱 3D Real-Physics Bingo Panel (Demo 13) -->
+            <!-- 🎱 3D Real-Physics Bingo Panel (Demo 08) -->
             <div id="bingo-overlay" class="bingo-overlay-panel" style="display: none;">
               <div class="bingo-header">
                 <div class="bingo-header-row">
@@ -757,11 +764,11 @@
                 <!-- Header Banner -->
                 <div class="fps-menu-header">
                   <div class="fps-menu-title-group">
-                    <span class="fps-badge-tag">DEMO 07 &bull; C++ NATIVE GRAPHICS</span>
+                    <span class="fps-badge-tag">DEMO 02 &bull; C++ NATIVE GRAPHICS</span>
                     <h2 class="fps-menu-title">⚡ QUAKE ARENA FPS &amp; LOBBY</h2>
                     <p class="fps-menu-sub">Fast-Paced Arena Combat &bull; Zero-Alloc C++ Kinematics &bull; WebRTC / WS Synchronization</p>
                   </div>
-                  <button class="fps-menu-close-btn" id="btn-close-fps-menu" title="Close Menu (Return to Arena)">✕</button>
+                  <button class="fps-menu-close-btn" id="btn-close-fps-menu" title="Close Menu (Return to Arena)" onclick="if (window.hideFpsStartupMenu) window.hideFpsStartupMenu(); else if (window.app &amp;&amp; window.app.hideFpsStartupMenu) window.app.hideFpsStartupMenu();">✕</button>
                 </div>
 
                 <!-- Main Content Grid -->
@@ -853,6 +860,27 @@
                         </select>
                       </div>
 
+                      <!-- 🔥 Shoot & Fire Options -->
+                      <div class="fps-form-row" style="margin-top: 10px;">
+                        <div class="fps-form-group">
+                          <label class="fps-label">🔥 Shoot / Fire Trigger Option:</label>
+                          <select id="fps-fire-trigger-select" class="fps-select" style="border: 1px solid #f87171; font-weight: bold; color: #fca5a5; background: rgba(127, 29, 29, 0.35);">
+                            <option value="both" selected>⚡ Double-Click, Touch &amp; Single-Click (All)</option>
+                            <option value="dblclick">⚡ Double-Click &amp; Double-Tap Only</option>
+                            <option value="click">🎯 Single-Click &amp; Tap Only</option>
+                            <option value="keys_only">⌨️ Keys [E], [Enter] &amp; Touch Button Only</option>
+                          </select>
+                        </div>
+                        <div class="fps-form-group">
+                          <label class="fps-label">🔴 On-Screen Shoot Button:</label>
+                          <select id="fps-fire-button-display" class="fps-select">
+                            <option value="auto" selected>📱 Auto (Touch &amp; Mobile Only)</option>
+                            <option value="always">🔥 Always Visible (Desktop &amp; Mobile)</option>
+                            <option value="hidden">❌ Hidden</option>
+                          </select>
+                        </div>
+                      </div>
+
                       <div class="fps-form-group" style="margin-top: 10px;">
                         <label class="fps-label">Primary Weapon Loadout:</label>
                         <div class="fps-loadout-grid">
@@ -914,7 +942,7 @@
                     <span class="fps-hint-text">💡 Press <b>ESC</b> during gameplay to re-open menu or release mouse pointer.</span>
                   </div>
                   <div class="fps-footer-right">
-                    <button class="fps-start-btn" id="btn-start-fps-match">
+                    <button class="fps-start-btn" id="btn-start-fps-match" onclick="if (window.startFpsMatch) window.startFpsMatch(); else if (window.app &amp;&amp; window.app.startFpsMatch) window.app.startFpsMatch();">
                       <span class="btn-icon">⚡</span>
                       <span>ENTER ARENA &amp; START MATCH</span>
                     </button>
@@ -1054,6 +1082,7 @@
                 <span>DMG: <b id="hud-weapon-dmg">25 HP</b></span>
                 <span>VEL: <b id="hud-weapon-vel">50 m/s</b></span>
                 <span>POWERUP: <b id="hud-weapon-mult" style="color:#38bdf8;">1.0x</b></span>
+                <span>SHOOT: <b id="hud-fire-trigger" style="color:#f87171;">Click / Dbl-Tap / [E]</b></span>
               </div>
             </div>
 
@@ -1104,6 +1133,7 @@
 
               <!-- Mobile Quick Action Pad (Elevate Up/Down, Sprint, Camera Toggle, Reset) -->
               <div class="mobile-action-pad" id="mobile-action-pad">
+                <button class="btn-touch-action btn-touch-shoot" id="btn-touch-shoot" title="Shoot Weapon (Touch / Tap)">🔥 SHOOT</button>
                 <button class="btn-touch-action btn-touch-up" id="btn-touch-up" title="Jump (Space)">▲ JUMP</button>
                 <button class="btn-touch-action btn-touch-down" id="btn-touch-down" title="Descend in Free-Fly (Q)">▼ DOWN</button>
                 <button class="btn-touch-action btn-touch-sprint" id="btn-touch-sprint" title="Toggle 2.5x Sprint Boost">⚡ SPRINT</button>
@@ -1196,29 +1226,24 @@
                   <div class="select-group">
                     <label for="demo-scene-select" class="hud-label" style="color: #fca5a5; font-weight: 600;">Active Live Demo Dropdown:</label>
                     <select id="demo-scene-select" class="input-select active-demo-select-highlight">
-                      <option value="01_pbr_material_preview.cpp">Demo 01: PBR Material Preview (01_pbr_material_preview.cpp)</option>
-                      <option value="02_metallic_roughness_matrix.cpp">Demo 02: Metallic Roughness Matrix (02_metallic_roughness_matrix.cpp)</option>
-                      <option value="03_trefoil_studio.cpp">Demo 03: Trefoil Studio Lighting (03_trefoil_studio.cpp)</option>
-                      <option value="04_wasm_webgl_wrapper.cpp">Demo 04: WASM WebGL Wrapper (04_wasm_webgl_wrapper.cpp)</option>
-                      <option value="05_desktop_standalone_app.cpp">Demo 05: Desktop Standalone SDL2 App (05_desktop_standalone_app.cpp)</option>
-                      <option value="06_glb_character_collision_player.cpp">Demo 06: GLB Character, Collision &amp; Player Controller (06_glb_character_collision_player.cpp)</option>
-                      <option value="07_fps_shooter_damage_system.cpp">Demo 07: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
-                      <option value="08_all_materials_presentation.cpp">Demo 08: All Materials Presentation Showcase (08_all_materials_presentation.cpp)</option>
-                      <option value="09_slot_machine.cpp">Demo 09: 3D Casino Slot Machine &amp; Particles (09_slot_machine.cpp)</option>
-                      <option value="10_sliding_puzzle.cpp">Demo 10: Dynamic Sliding 3D Puzzle (10_sliding_puzzle.cpp)</option>
-                      <option value="11_plinko.cpp">Demo 11: 3D Plinko Cascade Showcase (11_plinko.cpp)</option>
-                      <option value="12_roulette.cpp">Demo 12: 3D Physics-Engine Roulette Wheel (12_roulette.cpp)</option>
-                      <option value="13_bingo_physics.cpp" selected>Demo 13: 3D Real-Physics Bingo &amp; Diamond Drum (13_bingo_physics.cpp)</option>
+                      <option value="06_glb_character_collision_player.cpp">Demo 01: GLB Character, Collision &amp; Player Controller (06_glb_character_collision_player.cpp)</option>
+                      <option value="07_fps_shooter_damage_system.cpp">Demo 02: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
+                      <option value="08_all_materials_presentation.cpp">Demo 03: All Materials Presentation Showcase (08_all_materials_presentation.cpp)</option>
+                      <option value="09_slot_machine.cpp">Demo 04: 3D Casino Slot Machine &amp; Particles (09_slot_machine.cpp)</option>
+                      <option value="10_sliding_puzzle.cpp">Demo 05: Dynamic Sliding 3D Puzzle (10_sliding_puzzle.cpp)</option>
+                      <option value="11_plinko.cpp">Demo 06: 3D Plinko Cascade Showcase (11_plinko.cpp)</option>
+                      <option value="12_roulette.cpp">Demo 07: 3D Physics-Engine Roulette Wheel (12_roulette.cpp)</option>
+                      <option value="13_bingo_physics.cpp" selected>Demo 08: 3D Real-Physics Bingo &amp; Diamond Drum (13_bingo_physics.cpp)</option>
                     </select>
                   </div>
                 </div>
 
-                <!-- 🎱 Demo 13: Dedicated Controls & Demos Tab Section -->
+                <!-- 🎱 Demo 08: Dedicated Controls & Demos Tab Section -->
                 <div class="panel-section" id="bingo-controls-panel" style="display: none; border: 1px solid rgba(56, 189, 248, 0.3); background: rgba(10, 18, 30, 0.65);">
                   <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <h3 class="section-title" style="margin: 0; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
                       <span>🎱</span>
-                      <span>Demo 13: 3D Real-Physics Bingo Game</span>
+                      <span>Demo 08: 3D Real-Physics Bingo Game</span>
                     </h3>
                     <span style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; font-family: monospace;">DIAMOND DRUM</span>
                   </div>
@@ -1511,19 +1536,14 @@
               <div class="select-group">
                 <label for="live-editor-file-select" class="hud-label">Select C/C++ Source File:</label>
                 <select id="live-editor-file-select" class="input-select font-mono">
-                  <option value="examples/01_pbr_material_preview.cpp">examples/01_pbr_material_preview.cpp (Demo 01: PBR Material Preview)</option>
-                  <option value="examples/02_metallic_roughness_matrix.cpp">examples/02_metallic_roughness_matrix.cpp (Demo 02: Metallic Roughness Matrix)</option>
-                  <option value="examples/03_trefoil_studio.cpp">examples/03_trefoil_studio.cpp (Demo 03: Trefoil Studio Lighting)</option>
-                  <option value="examples/04_wasm_webgl_wrapper.cpp">examples/04_wasm_webgl_wrapper.cpp (Demo 04: WASM WebGL Wrapper)</option>
-                  <option value="examples/05_desktop_standalone_app.cpp">examples/05_desktop_standalone_app.cpp (Demo 05: Desktop Standalone SDL2 App)</option>
-                  <option value="examples/06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 06: GLB Character, Collision &amp; Player Controller)</option>
-                  <option value="examples/07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
-                  <option value="examples/08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 08: All Materials Presentation Showcase)</option>
-                  <option value="examples/09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 09: 3D Casino Slot Machine &amp; Particles)</option>
-                  <option value="examples/10_sliding_puzzle.cpp">examples/10_sliding_puzzle.cpp (Demo 10: Dynamic Sliding 3D Puzzle)</option>
-                  <option value="examples/11_plinko.cpp">examples/11_plinko.cpp (Demo 11: 3D Plinko Cascade Showcase)</option>
-                  <option value="examples/12_roulette.cpp">examples/12_roulette.cpp (Demo 12: 3D Physics-Engine Roulette Wheel)</option>
-                  <option value="examples/13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 13: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
+                  <option value="examples/06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 01: GLB Character, Collision &amp; Player Controller)</option>
+                  <option value="examples/07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 02: First-Person Shooter &amp; Damage System)</option>
+                  <option value="examples/08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 03: All Materials Presentation Showcase)</option>
+                  <option value="examples/09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 04: 3D Casino Slot Machine &amp; Particles)</option>
+                  <option value="examples/10_sliding_puzzle.cpp">examples/10_sliding_puzzle.cpp (Demo 05: Dynamic Sliding 3D Puzzle)</option>
+                  <option value="examples/11_plinko.cpp">examples/11_plinko.cpp (Demo 06: 3D Plinko Cascade Showcase)</option>
+                  <option value="examples/12_roulette.cpp">examples/12_roulette.cpp (Demo 07: 3D Physics-Engine Roulette Wheel)</option>
+                  <option value="examples/13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 08: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
                   <option value="src/core/Engine.cpp">src/core/Engine.cpp (Engine Core C++)</option>
                   <option value="src/core/Renderer.cpp">src/core/Renderer.cpp (Filament GLES3 Pipeline C++)</option>
                   <option value="src/core/Bindings.cpp">src/core/Bindings.cpp (Emscripten Embind Bindings C++)</option>
@@ -1578,20 +1598,14 @@
             </div>
             <div class="source-header">
               <select id="filament-examples-select" class="input-select font-mono">
-                <option value="01_pbr_material_preview.cpp">examples/01_pbr_material_preview.cpp (Demo 01: PBR Material Preview)</option>
-                <option value="02_metallic_roughness_matrix.cpp">examples/02_metallic_roughness_matrix.cpp (Demo 02: Metallic Roughness Matrix)</option>
-                <option value="03_trefoil_studio.cpp">examples/03_trefoil_studio.cpp (Demo 03: Trefoil Studio Lighting)</option>
-                <option value="03_filament_custom_material.mat">examples/03_filament_custom_material.mat (Filament matc Material)</option>
-                <option value="04_wasm_webgl_wrapper.cpp">examples/04_wasm_webgl_wrapper.cpp (Demo 04: WASM WebGL Wrapper)</option>
-                <option value="05_desktop_standalone_app.cpp">examples/05_desktop_standalone_app.cpp (Demo 05: Desktop Standalone SDL2 App)</option>
-                <option value="06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 06: GLB Character, Collision &amp; Player Controller)</option>
-                <option value="07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 07: First-Person Shooter &amp; Damage System)</option>
-                <option value="08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 08: All Materials Presentation Showcase)</option>
-                <option value="09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 09: 3D Casino Slot Machine &amp; Particles)</option>
-                <option value="10_sliding_puzzle.cpp">examples/10_sliding_puzzle.cpp (Demo 10: Dynamic Sliding 3D Puzzle)</option>
-                <option value="11_plinko.cpp">examples/11_plinko.cpp (Demo 11: 3D Plinko Cascade Showcase)</option>
-                <option value="12_roulette.cpp">examples/12_roulette.cpp (Demo 12: 3D Physics-Engine Roulette Wheel)</option>
-                <option value="13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 13: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
+                <option value="06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 01: GLB Character, Collision &amp; Player Controller)</option>
+                <option value="07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 02: First-Person Shooter &amp; Damage System)</option>
+                <option value="08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 03: All Materials Presentation Showcase)</option>
+                <option value="09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 04: 3D Casino Slot Machine &amp; Particles)</option>
+                <option value="10_sliding_puzzle.cpp">examples/10_sliding_puzzle.cpp (Demo 05: Dynamic Sliding 3D Puzzle)</option>
+                <option value="11_plinko.cpp">examples/11_plinko.cpp (Demo 06: 3D Plinko Cascade Showcase)</option>
+                <option value="12_roulette.cpp">examples/12_roulette.cpp (Demo 07: 3D Physics-Engine Roulette Wheel)</option>
+                <option value="13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 08: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
               </select>
               <button id="btn-copy-example" class="btn-xs">Copy Example</button>
             </div>
@@ -2528,6 +2542,19 @@
                         <span class="hud-value font-mono" id="insp-light-cutoff-val" style="min-width: 42px;">35°</span>
                       </div>
                     </div>
+                    <div class="inspector-field-row" id="insp-row-spot-target" style="display: none;">
+                      <span class="hud-label" style="color: #67e8f9; font-weight: 600;">🎯 Spot Target Vector:</span>
+                      <div class="vec3-triad">
+                        <div class="axis-input-cell"><span class="axis-label x">TX</span><input type="number" step="0.1" id="insp-light-target-x" class="axis-val" value="0.0" title="Target Position X"></div>
+                        <div class="axis-input-cell"><span class="axis-label y">TY</span><input type="number" step="0.1" id="insp-light-target-y" class="axis-val" value="0.0" title="Target Position Y"></div>
+                        <div class="axis-input-cell"><span class="axis-label z">TZ</span><input type="number" step="0.1" id="insp-light-target-z" class="axis-val" value="0.0" title="Target Position Z"></div>
+                      </div>
+                    </div>
+                    <div class="inspector-field-row" id="insp-row-spot-actions" style="display: none; gap: 6px; flex-wrap: wrap;">
+                      <button type="button" id="btn-spot-aim-origin" class="btn btn-secondary font-mono" style="font-size: 11px; padding: 4px 8px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #bae6fd; border-radius: 4px;" title="Aim Spot Light directly at Center [0, 0, 0]">🎯 Aim at Origin</button>
+                      <button type="button" id="btn-spot-aim-camera" class="btn btn-secondary font-mono" style="font-size: 11px; padding: 4px 8px; background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.4); color: #e9d5ff; border-radius: 4px;" title="Position light at Camera & aim at center view">👁️ Aim from Cam</button>
+                      <button type="button" id="btn-spot-aim-selected" class="btn btn-secondary font-mono" style="font-size: 11px; padding: 4px 8px; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.4); color: #bbf7d0; border-radius: 4px;" title="Aim Spot Light at Selected Scene Entity">📦 Aim at Object</button>
+                    </div>
                     <div class="inspector-field-row" id="insp-row-spot-dir" style="display: none;">
                       <span class="hud-label">Spot Direction Vector:</span>
                       <div class="vec3-triad">
@@ -2535,6 +2562,13 @@
                         <div class="axis-input-cell"><span class="axis-label y">Y</span><input type="number" step="0.1" id="insp-light-dir-y" class="axis-val" value="-1.0"></div>
                         <div class="axis-input-cell"><span class="axis-label z">Z</span><input type="number" step="0.1" id="insp-light-dir-z" class="axis-val" value="0.0"></div>
                       </div>
+                    </div>
+                    <div class="inspector-field-row" id="insp-row-light-gizmo" style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px; border-top: 1px dashed rgba(234, 179, 8, 0.25);">
+                      <span class="hud-label">3D Light Cones & Beacons:</span>
+                      <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="checkbox" id="insp-light-gizmo-toggle" checked style="cursor: pointer; accent-color: #facc15;">
+                        <span class="font-mono text-xs" style="color: #fef08a;">Visible on Scene</span>
+                      </label>
                     </div>
                   </div>
 

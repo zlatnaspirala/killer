@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include "LOD.hpp"
 
 namespace EngineCore {
 
@@ -28,6 +29,12 @@ public:
     void SetCurrentMesh(int meshType);
     void SetCurrentShader(int shaderType);
 
+    // AAA Render Principles: Draw per material (batching) & LOD
+    void SetLODPolicy(LODPolicy policy);
+    LODPolicy GetLODPolicy() const { return m_lodSystem.GetPolicy(); }
+    void SubmitMaterialBatch(const MaterialBatchBucket& batch);
+    void FlushMaterialBatches();
+
     float* GetModelMatrixData() { return m_modelMatrix; }
     int GetDrawCalls() const { return m_drawCalls; }
     int GetVertexCount() const { return m_vertexCount; }
@@ -40,6 +47,8 @@ private:
     int m_triangleCount = 0;
     int m_drawCalls = 0;
     float m_modelMatrix[16];
+    LODSystem m_lodSystem;
+    std::vector<MaterialBatchBucket> m_batchQueue;
 };
 
 } // namespace EngineCore

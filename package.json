@@ -1,7 +1,7 @@
 {
   "name": "killer",
   "version": "1.0.0",
-  "description": "C++ & Google Filament 3D Engine Studio",
+  "description": "Source: C++, Render: Filament, Physics: custom, ammo, jolt. Killer is multiplatform game/app engine.",
   "type": "module",
   "main": "server.js",
   "scripts": {
