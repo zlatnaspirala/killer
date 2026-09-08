@@ -245,9 +245,9 @@ chmod +x build_android.sh
 
 
 
-  <img src="https://raw.githubusercontent.com/zlatnaspirala/killer/refs/heads/main/docs/sdl_logo.png" width="90" alt="SDL Logo" style="vertical-align:middle; margin-right: 15px;" onerror="this.style.display='none'" />
+<img src="https://github.com/libsdl-org/SDL/blob/main/VisualC-GDK/logos/Logo480x480.png?raw=true" alt="SDL Logo" width="120" />
 
-  <img src="https://raw.githubusercontent.com/zlatnaspirala/killer/refs/heads/main/docs/emscripten_logo.png" width="100" alt="Emscripten Logo" style="vertical-align:middle;" onerror="this.style.display='none'" />
+  <img src="https://emscripten.org/_images/emscripten_logo_full.svg" width="100" alt="Emscripten Logo" style="vertical-align:middle;" onerror="this.style.display='none'" />
 
 </div>
 
