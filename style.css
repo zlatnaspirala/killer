@@ -2693,6 +2693,7 @@ body.app-body {
 
 /* Weapon HUD in Bottom Corner */
 .fps-weapon-hud {
+  display: none !important;
   position: absolute;
   bottom: 50px;
   right: 18px;
@@ -2702,7 +2703,6 @@ body.app-body {
   border-radius: 8px;
   padding: 10px 14px;
   font-family: var(--font-mono);
-  display: flex;
   flex-direction: column;
   gap: 4px;
   z-index: 25;

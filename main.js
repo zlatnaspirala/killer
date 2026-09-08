@@ -2100,13 +2100,8 @@ void main() {
         metallic = 0.1;
     }
     else if (u_matType == 3) {
-        // 3. SLEEK AEROSPACE POLISHED TITANIUM
-        float brushLines = sin(v_worldPos.y * 150.0) * 0.5 + 0.5;
-        vec3 titaniumBase = vec3(0.85, 0.88, 0.92);
-        
-        albedo = mix(titaniumBase * 0.9, titaniumBase * 1.1, brushLines * 0.1);
-        albedo *= u_baseColor;
-        N = perturbNormal(N, v_worldPos, brushLines * 0.05, bumpScale * 0.2);
+        // 3. SLEEK AEROSPACE POLISHED TITANIUM (NOISE-FREE SOLID METAL)
+        albedo = vec3(0.85, 0.88, 0.92) * u_baseColor;
         roughness = clamp(u_roughness - 0.1, 0.05, 0.8);
         metallic = 0.98;
     }
@@ -2129,21 +2124,10 @@ void main() {
         clearCoat = 0.98;
     }
     else if (u_matType == 5) {
-        // 5. PERFECT MATHEMATICAL TWILL CARBON FIBER
-        vec2 cUv = uv * 4.0;
-        vec2 cell = fract(cUv);
-        vec2 id = floor(cUv);
-        float pattern = mod(id.x + id.y, 2.0);
-        float strand = (pattern > 0.5) ? sin(cell.x * PI) : sin(cell.y * PI);
-        strand = strand * 0.5 + 0.5;
-
-        vec3 carbonWeave = mix(vec3(0.05, 0.06, 0.08), vec3(0.18, 0.20, 0.24), strand);
-        albedo = carbonWeave * u_baseColor;
-
-        N = perturbNormal(N, v_worldPos, strand * 0.1, bumpScale * 0.8);
-        roughness = 0.15;
-        metallic = 0.7;
-        clearCoat = 0.98;
+        // 5. PERFECT MATHEMATICAL TWILL CARBON FIBER (NOISE-FREE SOLID)
+        albedo = vec3(0.06, 0.07, 0.09) * u_baseColor;
+        roughness = clamp(u_roughness, 0.04, 1.0);
+        metallic = 0.85;
     }
     else if (u_matType == 6) {
         // 6. DAMASCUS TEMPERED STEEL WITH CHROMA GLOW
@@ -2274,20 +2258,10 @@ void main() {
         clearCoat = 0.95;
     }
     else if (u_matType == 14) {
-        // 14. SCI-FI HEX-GRID METALLIC ARMOR PLATING
-        vec2 hexUv = uv * 2.5;
-        float hexLine = abs(sin(hexUv.x * 1.732 + hexUv.y) * sin(hexUv.y * 2.0));
-        float hexMask = smoothstep(0.08, 0.0, hexLine);
-
-        vec3 metalPlate = vec3(0.22, 0.24, 0.26);
-        vec3 orangeGlow = vec3(1.0, 0.4, 0.0);
-
-        albedo = mix(metalPlate * u_baseColor, orangeGlow * 0.3, hexMask);
-        emissive = orangeGlow * hexMask * (3.0 + sin(u_time * 4.0) * 1.0);
-
-        N = perturbNormal(N, v_worldPos, (1.0 - hexMask) * 0.15, bumpScale * 0.8);
-        roughness = mix(0.18, 0.08, hexMask);
-        metallic = 0.9;
+        // 14. SCI-FI HEX-GRID METALLIC ARMOR PLATING (NOISE-FREE SOLID)
+        albedo = vec3(0.08, 0.09, 0.12) * u_baseColor;
+        roughness = clamp(u_roughness, 0.04, 1.0);
+        metallic = 0.20;
     }
     else if (u_matType == 15) {
         // 15. HIGH-ENERGY GLOWING CORE / HYPER BALL
@@ -6151,6 +6125,20 @@ void main() {
 
     // Mouse Down
     canvasContainer.addEventListener('mousedown', (e) => {
+      const isFPS = (this.state.cameraMode === 3) || (this.state.demoScene && this.state.demoScene.includes('07_fps'));
+      const isLocked = document.pointerLockElement === this.canvas || document.pointerLockElement === canvasContainer;
+
+      // If in FPS and clicking left mouse button, trigger weapon fire instantly!
+      if (isFPS && e.button === 0) {
+        if (this.fpsFireOption !== 'dblclick' && this.fpsFireOption !== 'keys_only') {
+          this.fireWeaponProjectile();
+          if (isLocked) {
+            e.preventDefault();
+            return;
+          }
+        }
+      }
+
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
       if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, .plinko-overlay-panel, .plinko-mobile-fab, .slot-machine-overlay-panel, .puzzle-overlay-panel, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-overlay, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell')) return;
@@ -6160,14 +6148,6 @@ void main() {
       this.state.lastMouseX = e.clientX;
       this.state.lastMouseY = e.clientY;
       canvasContainer.focus();
-
-      // Trigger instant firing on left mouse button press (MouseDown is 100% reliable even when looking/dragging at the same time!)
-      const isFPS = (this.state.cameraMode === 3) || (this.state.demoScene && this.state.demoScene.includes('07_fps'));
-      if (isFPS && e.button === 0) {
-        if (this.fpsFireOption !== 'dblclick' && this.fpsFireOption !== 'keys_only') {
-          this.fireWeaponProjectile();
-        }
-      }
     });
 
     // Mouse Move (Orbit / Pan / FP Look / FPS Direct Look without Mouse Down)
