@@ -227,16 +227,17 @@ chmod +x build_android.sh
 ### Core Technologies
 
 <div align="left" style="margin-top: 10px; margin-bottom: 20px;">
+
   <a href="https://github.com/google/filament" target="_blank">
     <img src="https://img.shields.io/badge/Google%20Filament-PBR%20Rendering-orange?style=for-the-badge&logo=google&logoColor=white" alt="Google Filament Badge" />
   </a>
+
   <a href="https://www.libsdl.org/" target="_blank">
     <img src="https://github.com/libsdl-org/SDL/blob/main/VisualC-GDK/logos/Logo480x480.png?raw=true" alt="SDL Logo" width="120" />
+    <span>SDL2 logo © Sam Lantinga / SDL project, licensed under the zlib license.</span>
   </a>
-  `SDL2 logo © Sam Lantinga / SDL project, licensed under the zlib license.`
-
   <a href="https://emscripten.org/" target="_blank">
-    <img src="https://commons.wikimedia.org/wiki/File:Emscripten_logo.svg" alt="Emscripten Badge" />
+    <img src="https://upload.wikimedia.org/wikipedia/commons/4/47/Emscripten_logo.svg?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=original" alt="Emscripten Badge" />
   </a>
   <a href="https://isocpp.org/" target="_blank">
     <img src="https://img.shields.io/badge/C%2B%2B-17--Standard-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white" alt="C++17 Badge" />
