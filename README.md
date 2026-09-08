@@ -227,17 +227,14 @@ chmod +x build_android.sh
 ### Core Technologies
 
 <div align="left" style="margin-top: 10px; margin-bottom: 20px;">
-
   <a href="https://github.com/google/filament" target="_blank">
     <img src="https://img.shields.io/badge/Google%20Filament-PBR%20Rendering-orange?style=for-the-badge&logo=google&logoColor=white" alt="Google Filament Badge" />
   </a>
-
   <a href="https://www.libsdl.org/" target="_blank">
-    <img src="https://github.com/libsdl-org/SDL/blob/main/VisualC-GDK/logos/Logo480x480.png?raw=true" alt="SDL Logo" width="120" />
-    <span>SDL2 logo © Sam Lantinga / SDL project, licensed under the zlib license.</span>
+    <img src="https://img.shields.io/badge/SDL2-Multiplatform%20Input%20%26%20Audio-blue?style=for-the-badge&logo=SimpleDirectMediaLayer&logoColor=white" alt="SDL2 Badge" />
   </a>
   <a href="https://emscripten.org/" target="_blank">
-    <img src="https://upload.wikimedia.org/wikipedia/commons/4/47/Emscripten_logo.svg?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=original" alt="Emscripten Badge" />
+    <img src="https://img.shields.io/badge/Emscripten-WASM%20Toolchain-red?style=for-the-badge&logo=Emscripten&logoColor=white" alt="Emscripten Badge" />
   </a>
   <a href="https://isocpp.org/" target="_blank">
     <img src="https://img.shields.io/badge/C%2B%2B-17--Standard-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white" alt="C++17 Badge" />
@@ -245,8 +242,13 @@ chmod +x build_android.sh
 </div>
 
 <div align="left" style="margin-bottom: 25px;">
+
+
+
   <img src="https://raw.githubusercontent.com/zlatnaspirala/killer/refs/heads/main/docs/sdl_logo.png" width="90" alt="SDL Logo" style="vertical-align:middle; margin-right: 15px;" onerror="this.style.display='none'" />
+
   <img src="https://raw.githubusercontent.com/zlatnaspirala/killer/refs/heads/main/docs/emscripten_logo.png" width="100" alt="Emscripten Logo" style="vertical-align:middle;" onerror="this.style.display='none'" />
+
 </div>
 
 - **Google Filament**: Real-time physically based rendering (PBR) engine for mobile, web, and desktop.
