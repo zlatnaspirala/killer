@@ -257,7 +257,7 @@ chmod +x build_android.sh
 <img src="https://github.com/zlatnaspirala/killer/blob/main/screenshots/killer-roulette.png?raw=true" />
 
 #### - Killer Pong
-
+<img src="https://github.com/zlatnaspirala/killer/blob/main/screenshots/killer-pong.png?raw=true" />
 
 
 ### ⚖️ Legal Note / Trademark Notice
