@@ -457,6 +457,37 @@
                   <button id="btn-plinko-reset" class="plinko-secondary-btn">🧹 RESET BOARD</button>
                 </div>
               </div>
+
+              <!-- Camera Choice Modal (Inside Plinko Overlay for elegant containment) -->
+              <div id="plinko-camera-modal" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(9, 21, 16, 0.98); z-index: 100; flex-direction: column; justify-content: center; align-items: center; padding: 24px; border-radius: 12px; text-align: center;">
+                <div style="font-size: 40px; margin-bottom: 12px; filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.4));">🎥</div>
+                <h4 style="font-size: 16px; font-weight: bold; color: #10b981; margin-bottom: 8px; letter-spacing: 0.05em; text-transform: uppercase;">Join Plinko Multiplayer</h4>
+                <p style="font-size: 11px; color: #a7f3d0; margin-bottom: 20px; line-height: 1.5; max-width: 280px; margin-left: auto; margin-right: auto;">Do you want to share your camera and microphone for a live WebRTC video call with other players in the Plinko lobby, or use a simple avatar?</p>
+                
+                <div style="display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 250px;">
+                  <button id="btn-plinko-cam-yes" class="plinko-primary-btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); font-size: 12px; padding: 10px; font-weight: bold;">
+                    🎥 SHARE CAMERA &amp; JOIN
+                  </button>
+                  <button id="btn-plinko-cam-no" class="plinko-secondary-btn" style="font-size: 12px; padding: 10px; background: rgba(255,255,255,0.05); color: #cbd5e1; border-color: rgba(255,255,255,0.15); font-weight: bold;">
+                    👤 JOIN WITH AVATAR
+                  </button>
+                  <button id="btn-plinko-cam-cancel" style="font-size: 11px; background: none; border: none; color: #94a3b8; cursor: pointer; margin-top: 8px; text-decoration: underline; outline: none;">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+
+              <!-- Multiplayer Lobby Panel -->
+              <div id="plinko-multiplayer-panel" style="background: rgba(16, 37, 28, 0.7); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px; margin: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-weight: bold; font-size: 12px; color: #6ee7b7; display: flex; align-items: center; gap: 4px;">👥 MULTIPLAYER LOBBY</span>
+                  <span id="plinko-net-status" style="font-size: 10px; font-weight: 700; color: #ef4444; text-transform: uppercase; background: rgba(239, 68, 68, 0.1); padding: 2px 6px; border-radius: 4px;">Single Player</span>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <button id="btn-plinko-join-public" class="plinko-primary-btn" style="flex: 1; padding: 6px 10px; font-size: 11px; font-weight: bold; background: linear-gradient(135deg, #059669 0%, #047857 100%); border-color: #10b981;">🌐 JOIN PUBLIC LOBBY</button>
+                  <button id="btn-plinko-leave-public" class="plinko-effect-btn" style="display: none; flex: 1; padding: 6px 10px; font-size: 11px; font-weight: bold; background: rgba(220, 38, 38, 0.2); border-color: #ef4444; color: #fca5a5;">✕ LEAVE LOBBY</button>
+                </div>
+              </div>
             </div>
 
             <!-- 🟢 Plinko Banner Info -->

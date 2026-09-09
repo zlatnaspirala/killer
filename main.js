@@ -6256,101 +6256,45 @@ void main() {
           } catch(err) {}
         }
       } else if (this.state.demoScene.includes('10_sliding_puzzle') && this.puzzleState) {
-        // Inverse view projection matrix raycasting
         const canvasRect = this.canvas.getBoundingClientRect();
         const mouseX = e.clientX - canvasRect.left;
         const mouseY = e.clientY - canvasRect.top;
 
-        // Normalized Device Coordinates
-        const ndcX = (mouseX / canvasRect.width) * 2 - 1;
-        const ndcY = 1 - (mouseY / canvasRect.height) * 2;
+        const N = this.puzzleState.gridSize;
+        const tileW = 1.0 / N;
+        const halfSize = 0.5;
 
-        const nearPt = [ndcX, ndcY, -1.0, 1.0];
-        const farPt = [ndcX, ndcY, 1.0, 1.0];
+        let bestR = -1;
+        let bestC = -1;
+        let minD = Infinity;
 
-        // 4x4 matrix inversion
-        const invVP = new Float32Array(16);
-        const a = this.viewProjMatrix;
-        
-        let a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
-        let a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
-        let a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
-        let a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+        for (let r = 0; r < N; r++) {
+          for (let c = 0; c < N; c++) {
+            const wx = -halfSize + (c + 0.5) * tileW;
+            const wy = 1.3 + (halfSize - (r + 0.5) * tileW);
+            const wz = 0.0;
 
-        let b00 = a00 * a11 - a01 * a10;
-        let b01 = a00 * a12 - a02 * a10;
-        let b02 = a00 * a13 - a03 * a10;
-        let b03 = a01 * a12 - a02 * a11;
-        let b04 = a01 * a13 - a03 * a11;
-        let b05 = a02 * a13 - a03 * a12;
-        let b06 = a20 * a31 - a21 * a30;
-        let b07 = a20 * a32 - a22 * a30;
-        let b08 = a20 * a33 - a23 * a30;
-        let b09 = a21 * a32 - a22 * a31;
-        let b10 = a21 * a33 - a23 * a31;
-        let b11 = a22 * a33 - a23 * a32;
-
-        let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
-        if (Math.abs(det) > 0.0001) {
-          det = 1.0 / det;
-
-          invVP[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
-          invVP[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
-          invVP[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
-          invVP[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
-          invVP[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
-          invVP[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
-          invVP[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
-          invVP[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
-          invVP[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
-          invVP[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
-          invVP[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
-          invVP[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
-          invVP[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
-          invVP[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
-          invVP[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
-          invVP[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
-
-          // Unproject points
-          const unproject = (pt) => {
-            const x = pt[0], y = pt[1], z = pt[2], w = pt[3];
-            const ox = invVP[0]*x + invVP[4]*y + invVP[8]*z + invVP[12]*w;
-            const oy = invVP[1]*x + invVP[5]*y + invVP[9]*z + invVP[13]*w;
-            const oz = invVP[2]*x + invVP[6]*y + invVP[10]*z + invVP[14]*w;
-            const ow = invVP[3]*x + invVP[7]*y + invVP[11]*z + invVP[15]*w;
-            return [ox / ow, oy / ow, oz / ow];
-          };
-
-          const pNear = unproject(nearPt);
-          const pFar = unproject(farPt);
-
-          // Ray direct-vector
-          const dx = pFar[0] - pNear[0];
-          const dy = pFar[1] - pNear[1];
-          const dz = pFar[2] - pNear[2];
-
-          // Intersect with puzzle plane at Z = 0
-          if (Math.abs(dz) > 0.0001) {
-            const t = -pNear[2] / dz;
-            if (t >= 0.0) {
-              const ix = pNear[0] + t * dx;
-              const iy = pNear[1] + t * dy;
-
-              // Grid limits: [-0.5, 0.5] for X, [0.8, 1.8] for Y (centered at 1.3)
-              if (ix >= -0.5 && ix <= 0.5 && iy >= 0.8 && iy <= 1.8) {
-                const N = this.puzzleState.gridSize;
-                const tileW = 1.0 / N;
-
-                // Find cell row & col index
-                const clickC = Math.floor((ix + 0.5) / tileW);
-                const clickR = Math.floor((1.8 - iy) / tileW);
-
-                if (clickR >= 0 && clickR < N && clickC >= 0 && clickC < N) {
-                  this.handleSlidingPuzzleClick(clickR, clickC);
-                }
+            const scr = this.project3DToScreen([wx, wy, wz], this.viewProjMatrix, canvasRect.width, canvasRect.height);
+            if (scr) {
+              const d = Math.hypot(scr.x - mouseX, scr.y - mouseY);
+              if (d < minD) {
+                minD = d;
+                bestR = r;
+                bestC = c;
               }
             }
           }
+        }
+
+        let centerSpacingPixels = 80;
+        const scrCenter1 = this.project3DToScreen([0, 1.3, 0], this.viewProjMatrix, canvasRect.width, canvasRect.height);
+        const scrCenter2 = this.project3DToScreen([tileW, 1.3, 0], this.viewProjMatrix, canvasRect.width, canvasRect.height);
+        if (scrCenter1 && scrCenter2) {
+          centerSpacingPixels = Math.hypot(scrCenter1.x - scrCenter2.x, scrCenter1.y - scrCenter2.y);
+        }
+
+        if (bestR !== -1 && minD < centerSpacingPixels * 0.75) {
+          this.handleSlidingPuzzleClick(bestR, bestC);
         }
       } else if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
         this.handleRouletteClick(e.clientX, e.clientY);
@@ -6654,6 +6598,12 @@ void main() {
       demoSelect.addEventListener('change', (e) => {
         if (viewportDemoSelect && viewportDemoSelect.value !== e.target.value) {
           viewportDemoSelect.value = e.target.value;
+        }
+        if (typeof this.leaveRouletteMultiplayer === 'function') {
+          this.leaveRouletteMultiplayer();
+        }
+        if (typeof this.leavePlinkoMultiplayer === 'function') {
+          this.leavePlinkoMultiplayer();
         }
         this.state.demoScene = e.target.value;
         if (this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation')) {
@@ -11955,6 +11905,7 @@ else if (typeof define === 'function' && define['amd'])
 
     // Update UI
     this.updatePlinkoUI();
+    this.updatePlinkoMultiplayerSeatsUI();
 
     if (!ps.initializedUI) {
       ps.initializedUI = true;
@@ -12260,6 +12211,316 @@ else if (typeof define === 'function' && define['amd'])
         this.setPhysicsEngine(val);
       });
     }
+
+    this.setupPlinkoMultiplayerUI();
+  }
+
+  setupPlinkoMultiplayerUI() {
+    const btnPlinkoJoin = document.getElementById('btn-plinko-join-public');
+    const btnPlinkoLeave = document.getElementById('btn-plinko-leave-public');
+    const plinkoCamModal = document.getElementById('plinko-camera-modal');
+    const btnPlinkoCamYes = document.getElementById('btn-plinko-cam-yes');
+    const btnPlinkoCamNo = document.getElementById('btn-plinko-cam-no');
+    const btnPlinkoCamCancel = document.getElementById('btn-plinko-cam-cancel');
+
+    if (btnPlinkoJoin) {
+      btnPlinkoJoin.onclick = () => {
+        if (plinkoCamModal) plinkoCamModal.style.display = 'flex';
+        if (this.synth) this.synth.play('pickup');
+      };
+    }
+
+    if (btnPlinkoLeave) {
+      btnPlinkoLeave.onclick = () => {
+        this.leavePlinkoMultiplayer();
+        if (this.synth) this.synth.play('teleport');
+      };
+    }
+
+    if (btnPlinkoCamYes) {
+      btnPlinkoCamYes.onclick = () => {
+        if (plinkoCamModal) plinkoCamModal.style.display = 'none';
+        this.joinPlinkoMultiplayer(true);
+        if (this.synth) this.synth.play('health');
+      };
+    }
+
+    if (btnPlinkoCamNo) {
+      btnPlinkoCamNo.onclick = () => {
+        if (plinkoCamModal) plinkoCamModal.style.display = 'none';
+        this.joinPlinkoMultiplayer(false);
+        if (this.synth) this.synth.play('pickup');
+      };
+    }
+
+    if (btnPlinkoCamCancel) {
+      btnPlinkoCamCancel.onclick = () => {
+        if (plinkoCamModal) plinkoCamModal.style.display = 'none';
+        if (this.synth) this.synth.play('damage');
+      };
+    }
+  }
+
+  joinPlinkoMultiplayer(wantsCamera) {
+    if (this.plinkoMultiplayerActive) return;
+
+    this.plinkoMultiplayerActive = true;
+    this.plinkoParticipants = new Map();
+    this.plinkoPeers = new Map();
+
+    const defaultNames = ['Ares', 'Zeus', 'Hades', 'Poseidon', 'Apollo', 'Athena', 'Artemis', 'Hermes', 'Hera', 'Demeter'];
+    this.plinkoLocalName = defaultNames[Math.floor(Math.random() * defaultNames.length)] + '_' + Math.floor(Math.random() * 90 + 10);
+
+    const netStatus = document.getElementById('plinko-net-status');
+    if (netStatus) {
+      netStatus.textContent = 'Lobby Active';
+      netStatus.style.color = '#10b981';
+      netStatus.style.background = 'rgba(16, 185, 129, 0.15)';
+    }
+
+    const btnJoin = document.getElementById('btn-plinko-join-public');
+    const btnLeave = document.getElementById('btn-plinko-leave-public');
+    if (btnJoin) btnJoin.style.display = 'none';
+    if (btnLeave) btnLeave.style.display = 'block';
+
+    const handlePlinkoJoin = (stream) => {
+      this.plinkoLocalStream = stream;
+
+      // Listen to incoming Plinko multiplayer messages
+      this._unsubPlinkoMsg = this.net.on('plinko:message', (evt) => {
+        if (!evt || !evt.event) return;
+        const data = evt.payload;
+        if (evt.event === 'plinko:join') {
+          this.handlePlinkoRemoteJoin(data);
+        } else if (evt.event === 'plinko:presence') {
+          this.handlePlinkoRemotePresence(data);
+        } else if (evt.event === 'plinko:left') {
+          this.handlePlinkoRemoteLeft(data);
+        } else if (evt.event === 'plinko:drop') {
+          this.handleRemotePlinkoDrop(data);
+        }
+      });
+
+      // Send join event to other peers
+      this.broadcastPlinkoEvent('join', {
+        playerId: this.net.localPlayerId,
+        playerName: this.plinkoLocalName,
+        hasVideo: !!stream,
+        credits: this.plinkoState ? this.plinkoState.credits : 1000
+      });
+
+      this.log(`👥 Joined multiplayer Plinko Lobby as [${this.plinkoLocalName}].`, "success");
+      this.updatePlinkoMultiplayerSeatsUI();
+    };
+
+    if (wantsCamera) {
+      this.log("🎥 Requesting camera permissions for real-time video session...", "info");
+      navigator.mediaDevices.getUserMedia({
+        video: { width: 320, height: 240, frameRate: 15 },
+        audio: true
+      }).then(stream => {
+        handlePlinkoJoin(stream);
+      }).catch(err => {
+        console.warn("Camera access denied or failed:", err);
+        this.log("⚠️ Camera access denied or not available. Joining with avatar only.", "warning");
+        handlePlinkoJoin(null);
+      });
+    } else {
+      handlePlinkoJoin(null);
+    }
+  }
+
+  leavePlinkoMultiplayer() {
+    if (!this.plinkoMultiplayerActive) return;
+    this.plinkoMultiplayerActive = false;
+
+    this.broadcastPlinkoEvent('left', { playerId: this.net.localPlayerId });
+
+    if (this.plinkoLocalStream) {
+      this.plinkoLocalStream.getTracks().forEach(track => track.stop());
+      this.plinkoLocalStream = null;
+    }
+
+    if (this._unsubPlinkoMsg) {
+      this._unsubPlinkoMsg();
+      this._unsubPlinkoMsg = null;
+    }
+
+    this.plinkoParticipants = null;
+    this.plinkoPeers = null;
+
+    const netStatus = document.getElementById('plinko-net-status');
+    if (netStatus) {
+      netStatus.textContent = 'Single Player';
+      netStatus.style.color = '#ef4444';
+      netStatus.style.background = 'rgba(239, 68, 68, 0.1)';
+    }
+
+    const btnJoin = document.getElementById('btn-plinko-join-public');
+    const btnLeave = document.getElementById('btn-plinko-leave-public');
+    if (btnJoin) btnJoin.style.display = 'block';
+    if (btnLeave) btnLeave.style.display = 'none';
+
+    this.updatePlinkoMultiplayerSeatsUI();
+    this.log("🔌 Left multiplayer Plinko session.", "info");
+  }
+
+  broadcastPlinkoEvent(type, data) {
+    if (this.net && this.net.activeTransport && this.net.activeTransport.connected) {
+      this.net.activeTransport.send('plinko:message', { event: `plinko:${type}`, payload: data });
+    }
+  }
+
+  handlePlinkoRemoteJoin(data) {
+    if (!data || data.playerId === this.net.localPlayerId) return;
+    this.plinkoParticipants.set(data.playerId, {
+      playerId: data.playerId,
+      playerName: data.playerName,
+      hasVideo: data.hasVideo,
+      credits: data.credits || 1000,
+      lastPresence: Date.now()
+    });
+
+    // Send reply presence back to the newcomer
+    this.broadcastPlinkoEvent('presence', {
+      playerId: this.net.localPlayerId,
+      playerName: this.plinkoLocalName,
+      hasVideo: !!this.plinkoLocalStream,
+      credits: this.plinkoState ? this.plinkoState.credits : 1000
+    });
+
+    this.log(`👥 Player [${data.playerName}] joined the Plinko lobby.`, "info");
+    this.updatePlinkoMultiplayerSeatsUI();
+  }
+
+  handlePlinkoRemotePresence(data) {
+    if (!data || data.playerId === this.net.localPlayerId) return;
+    this.plinkoParticipants.set(data.playerId, {
+      playerId: data.playerId,
+      playerName: data.playerName,
+      hasVideo: data.hasVideo,
+      credits: data.credits || 1000,
+      lastPresence: Date.now()
+    });
+    this.updatePlinkoMultiplayerSeatsUI();
+  }
+
+  handlePlinkoRemoteLeft(data) {
+    if (!data) return;
+    if (this.plinkoParticipants && this.plinkoParticipants.has(data.playerId)) {
+      this.plinkoParticipants.delete(data.playerId);
+      this.log(`👥 Player left the Plinko lobby.`, "info");
+    }
+    this.updatePlinkoMultiplayerSeatsUI();
+  }
+
+  handleRemotePlinkoDrop(data) {
+    const ps = this.plinkoState;
+    if (!ps) return;
+
+    // Determine ruby/chrome/aesthetic properties from data
+    const ballObj = {
+      id: data.id,
+      pos: [data.startX, 2.45, 0.0],
+      vel: [data.startVx, -0.5, 0.0],
+      color: data.color || [1.0, 0.35, 0.0],
+      metal: data.ballType === 'chrome' ? 0.95 : 0.0,
+      rough: data.ballType === 'chrome' ? 0.05 : 0.1,
+      matType: data.ballType === 'ruby' ? 12 : 0,
+      radius: 0.032,
+      lastPegHitId: "",
+      trail: [],
+      payoutHandled: true, // Remote balls don't award payout to local player
+      isRemote: true,
+      ownerName: data.playerName || 'Guest'
+    };
+
+    ps.balls.push(ballObj);
+
+    if (this.physicsWorker) {
+      this.physicsWorker.postMessage({
+        type: 'dropBall',
+        id: data.id,
+        pos: ballObj.pos,
+        vel: ballObj.vel,
+        radius: ballObj.radius,
+        color: ballObj.color
+      });
+    }
+  }
+
+  updatePlinkoMultiplayerSeatsUI() {
+    const seatsWrapper = document.getElementById('roulette-multiplayer-seats-wrapper');
+    const seatsContainer = document.getElementById('roulette-multiplayer-seats');
+    if (!seatsContainer) return;
+
+    if (!this.plinkoMultiplayerActive) {
+      if (seatsWrapper) seatsWrapper.style.display = 'none';
+      seatsContainer.style.display = 'none';
+      return;
+    }
+
+    if (seatsWrapper) seatsWrapper.style.display = 'flex';
+    seatsContainer.style.display = 'flex';
+    seatsContainer.innerHTML = '';
+
+    // Set the drag handle text dynamically
+    const handleSpan = document.querySelector('#roulette-seats-drag-handle span');
+    if (handleSpan) handleSpan.textContent = '✥ GRAB TO DRAG PLINKO LOBBY PEERS';
+
+    const localSeat = document.createElement('div');
+    localSeat.className = 'roulette-seat';
+    const localColor = '#10b981';
+    const localCredits = this.plinkoState ? this.plinkoState.credits : 1000;
+    
+    localSeat.style = `pointer-events: auto; background: rgba(9, 21, 16, 0.85); border: 2px solid ${localColor}; border-radius: 12px; width: 130px; display: flex; flex-direction: column; align-items: center; padding: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); overflow: hidden; position: relative;`;
+    
+    if (this.plinkoLocalStream) {
+      localSeat.innerHTML = `
+        <div style="position: relative; width: 118px; height: 88px; background: #000; border-radius: 8px; overflow: hidden;">
+          <video id="plinko-local-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
+          <div class="roulette-chips-indicator" style="position: absolute; bottom: 4px; right: 4px; background: rgba(16,185,129,0.95); padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #fff; font-weight: bold; font-family: monospace; border: 1px solid rgba(255,255,255,0.2); text-shadow: 0 1px 1px #000;">$${localCredits}</div>
+        </div>
+        <span style="font-size: 11px; font-weight: bold; color: #6ee7b7; margin-top: 4px; text-shadow: 0 1px 2px #000; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">You (Cam)</span>
+      `;
+      seatsContainer.appendChild(localSeat);
+      setTimeout(() => {
+        const video = document.getElementById('plinko-local-video');
+        if (video && this.plinkoLocalStream) {
+          video.srcObject = this.plinkoLocalStream;
+        }
+      }, 0);
+    } else {
+      localSeat.innerHTML = `
+        <div style="position: relative; width: 118px; height: 88px; background: #1e293b; border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(16,185,129,0.15);">
+          <div style="width: 44px; height: 44px; border-radius: 50%; background: #10b981; color: #fff; font-weight: bold; font-size: 18px; display: flex; align-items: center; justify-content: center; border: 2px solid #34d399; text-shadow: 0 1px 1px #000;">ME</div>
+          <div class="roulette-chips-indicator" style="position: absolute; bottom: 4px; right: 4px; background: rgba(16,185,129,0.95); padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #fff; font-weight: bold; font-family: monospace; border: 1px solid rgba(255,255,255,0.2); text-shadow: 0 1px 1px #000;">$${localCredits}</div>
+        </div>
+        <span style="font-size: 11px; font-weight: bold; color: #6ee7b7; margin-top: 4px; text-shadow: 0 1px 2px #000; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">You</span>
+      `;
+      seatsContainer.appendChild(localSeat);
+    }
+
+    if (this.plinkoParticipants) {
+      for (const [id, p] of this.plinkoParticipants.entries()) {
+        const remoteSeat = document.createElement('div');
+        remoteSeat.className = 'roulette-seat';
+        const pColor = '#06b6d4';
+        
+        remoteSeat.style = `pointer-events: auto; background: rgba(9, 21, 16, 0.85); border: 2px solid ${pColor}; border-radius: 12px; width: 130px; display: flex; flex-direction: column; align-items: center; padding: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); overflow: hidden; position: relative;`;
+        
+        remoteSeat.innerHTML = `
+          <div style="position: relative; width: 118px; height: 88px; background: #1e293b; border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(6,182,212,0.15);">
+            <div style="width: 44px; height: 44px; border-radius: 50%; background: #06b6d4; color: #fff; font-weight: bold; font-size: 18px; display: flex; align-items: center; justify-content: center; border: 2px solid #22d3ee; text-shadow: 0 1px 1px #000;">
+              ${(p.playerName || 'PEER').substring(0, 2).toUpperCase()}
+            </div>
+            <div class="roulette-chips-indicator" style="position: absolute; bottom: 4px; right: 4px; background: rgba(6,182,212,0.95); padding: 2px 6px; border-radius: 10px; font-size: 10px; color: #fff; font-weight: bold; font-family: monospace; border: 1px solid rgba(255,255,255,0.2); text-shadow: 0 1px 1px #000;">$${p.credits || 1000}</div>
+          </div>
+          <span style="font-size: 11px; font-weight: bold; color: #22d3ee; margin-top: 4px; text-shadow: 0 1px 2px #000; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p.playerName || 'Guest'}</span>
+        `;
+        seatsContainer.appendChild(remoteSeat);
+      }
+    }
   }
 
   updatePlinkoUI() {
@@ -12283,6 +12544,16 @@ else if (typeof define === 'function' && define['amd'])
     const summaryEl = document.getElementById('plinko-stats-summary');
     if (summaryEl) {
       summaryEl.textContent = `Cost: 10 | High Score: ${ps.highScore}`;
+    }
+
+    if (this.plinkoMultiplayerActive) {
+      this.updatePlinkoMultiplayerSeatsUI();
+      this.broadcastPlinkoEvent('presence', {
+        playerId: this.net.localPlayerId,
+        playerName: this.plinkoLocalName,
+        hasVideo: !!this.plinkoLocalStream,
+        credits: ps.credits
+      });
     }
   }
 
@@ -12358,6 +12629,17 @@ else if (typeof define === 'function' && define['amd'])
         vel: ballObj.vel,
         radius: ballObj.radius,
         color: bColor
+      });
+    }
+
+    if (this.plinkoMultiplayerActive) {
+      this.broadcastPlinkoEvent('drop', {
+        id: ballId,
+        startX: startX,
+        startVx: startVx,
+        ballType: ps.ballType,
+        color: bColor,
+        playerName: this.plinkoLocalName || 'Player'
       });
     }
 
@@ -20711,88 +20993,41 @@ else if (typeof define === 'function' && define['amd'])
     const mouseX = clientX - canvasRect.left;
     const mouseY = clientY - canvasRect.top;
 
-    const ndcX = (mouseX / canvasRect.width) * 2 - 1;
-    const ndcY = 1 - (mouseY / canvasRect.height) * 2;
+    const N = this.puzzleState.gridSize;
+    const tileW = 1.0 / N;
+    const halfSize = 0.5;
 
-    const nearPt = [ndcX, ndcY, -1.0, 1.0];
-    const farPt = [ndcX, ndcY, 1.0, 1.0];
+    let bestR = -1;
+    let bestC = -1;
+    let minD = Infinity;
 
-    const invVP = new Float32Array(16);
-    const a = this.viewProjMatrix;
-    
-    let a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
-    let a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
-    let a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
-    let a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        const wx = -halfSize + (c + 0.5) * tileW;
+        const wy = 1.3 + (halfSize - (r + 0.5) * tileW);
+        const wz = 0.0;
 
-    let b00 = a00 * a11 - a01 * a10;
-    let b01 = a00 * a12 - a02 * a10;
-    let b02 = a00 * a13 - a03 * a10;
-    let b03 = a01 * a12 - a02 * a11;
-    let b04 = a01 * a13 - a03 * a11;
-    let b05 = a02 * a13 - a03 * a12;
-    let b06 = a20 * a31 - a21 * a30;
-    let b07 = a20 * a32 - a22 * a30;
-    let b08 = a20 * a33 - a23 * a30;
-    let b09 = a21 * a32 - a22 * a31;
-    let b10 = a21 * a33 - a23 * a31;
-    let b11 = a22 * a33 - a23 * a32;
-
-    let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
-    if (Math.abs(det) > 0.0001) {
-      det = 1.0 / det;
-
-      invVP[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
-      invVP[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
-      invVP[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
-      invVP[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
-      invVP[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
-      invVP[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
-      invVP[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
-      invVP[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
-      invVP[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
-      invVP[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
-      invVP[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
-      invVP[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
-      invVP[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
-      invVP[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
-      invVP[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
-      invVP[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
-
-      const unproject = (pt) => {
-        const x = pt[0], y = pt[1], z = pt[2], w = pt[3];
-        const ox = invVP[0]*x + invVP[4]*y + invVP[8]*z + invVP[12]*w;
-        const oy = invVP[1]*x + invVP[5]*y + invVP[9]*z + invVP[13]*w;
-        const oz = invVP[2]*x + invVP[6]*y + invVP[10]*z + invVP[14]*w;
-        const ow = invVP[3]*x + invVP[7]*y + invVP[11]*z + invVP[15]*w;
-        return [ox / ow, oy / ow, oz / ow];
-      };
-
-      const pNear = unproject(nearPt);
-      const pFar = unproject(farPt);
-
-      const dx = pFar[0] - pNear[0];
-      const dy = pFar[1] - pNear[1];
-      const dz = pFar[2] - pNear[2];
-
-      if (Math.abs(dz) > 0.0001) {
-        const t = -pNear[2] / dz;
-        if (t >= 0.0) {
-          const ix = pNear[0] + t * dx;
-          const iy = pNear[1] + t * dy;
-
-          if (ix >= -0.5 && ix <= 0.5 && iy >= 0.8 && iy <= 1.8) {
-            const N = this.puzzleState.gridSize;
-            const tileW = 1.0 / N;
-            const clickC = Math.floor((ix + 0.5) / tileW);
-            const clickR = Math.floor((1.8 - iy) / tileW);
-
-            if (clickR >= 0 && clickR < N && clickC >= 0 && clickC < N) {
-              this.handleSlidingPuzzleClick(clickR, clickC);
-            }
+        const scr = this.project3DToScreen([wx, wy, wz], this.viewProjMatrix, canvasRect.width, canvasRect.height);
+        if (scr) {
+          const d = Math.hypot(scr.x - mouseX, scr.y - mouseY);
+          if (d < minD) {
+            minD = d;
+            bestR = r;
+            bestC = c;
           }
         }
       }
+    }
+
+    let centerSpacingPixels = 80;
+    const scrCenter1 = this.project3DToScreen([0, 1.3, 0], this.viewProjMatrix, canvasRect.width, canvasRect.height);
+    const scrCenter2 = this.project3DToScreen([tileW, 1.3, 0], this.viewProjMatrix, canvasRect.width, canvasRect.height);
+    if (scrCenter1 && scrCenter2) {
+      centerSpacingPixels = Math.hypot(scrCenter1.x - scrCenter2.x, scrCenter1.y - scrCenter2.y);
+    }
+
+    if (bestR !== -1 && minD < centerSpacingPixels * 0.75) {
+      this.handleSlidingPuzzleClick(bestR, bestC);
     }
   }
 
