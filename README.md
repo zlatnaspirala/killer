@@ -241,13 +241,15 @@ chmod +x build_android.sh
   </a>
 </div>
 
+
 <div align="left" style="margin-bottom: 25px;">
 
+## Game templates:
 
+### - Killer Roulette
 
-<img src="https://github.com/libsdl-org/SDL/blob/main/VisualC-GDK/logos/Logo480x480.png?raw=true" alt="SDL Logo" width="120" />
+### - Killer Pong
 
-  <img src="https://emscripten.org/_images/emscripten_logo_full.svg" width="100" alt="Emscripten Logo" style="vertical-align:middle;" onerror="this.style.display='none'" />
 
 </div>
 
