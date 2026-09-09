@@ -242,16 +242,7 @@ chmod +x build_android.sh
 </div>
 
 
-<div align="left" style="margin-bottom: 25px;">
-
-## Game templates:
-
-### - Killer Roulette
-
-### - Killer Pong
-
-
-</div>
+<div align="left" style="margin-bottom: 25px;"></div>
 
 - **Google Filament**: Real-time physically based rendering (PBR) engine for mobile, web, and desktop.
 - **SDL2 (Simple DirectMedia Layer)**: Low-level hardware abstraction library for keyboard, mouse, controllers, and multi-channel audio output. Used across desktop, web (via Emscripten), and Android builds.
@@ -259,6 +250,15 @@ chmod +x build_android.sh
 - **Standards & APIs**: C++17, OpenGL ES 3.0 / WebGL 2.0, CMake, Android NDK.
 
 ---
+
+### Game templates:
+
+#### - Killer Roulette
+<img src="https://github.com/zlatnaspirala/killer/blob/main/screenshots/killer-roulette.png?raw=true" />
+
+#### - Killer Pong
+
+
 
 ### ⚖️ Legal Note / Trademark Notice
 
