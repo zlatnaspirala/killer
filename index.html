@@ -31,7 +31,8 @@
             <option value="10_sliding_puzzle.cpp">Demo 05: Dynamic 3D Sliding Puzzle</option>
             <option value="11_plinko.cpp">Demo 06: 3D Plinko Cascade Board</option>
             <option value="12_roulette.cpp">Demo 07: 3D Physics Roulette Wheel</option>
-            <option value="13_bingo_physics.cpp" selected>Demo 08: 3D Physics Bingo &amp; Diamond Drum</option>
+            <option value="13_bingo_physics.cpp">Demo 08: 3D Physics Bingo &amp; Diamond Drum</option>
+            <option value="14_pong.cpp" selected>Demo 09: Retro 3D Arcade Pong</option>
           </select>
         </div>
         <div class="header-right">
@@ -113,9 +114,33 @@
             <!-- Interactive 3D Vertex/Triangle Debug Telemetry Overlay (Controlled by DEBUG_RENDER_DATA) -->
             <div id="debug-overlay-canvas" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 120; overflow: hidden;"></div>
             
-            <!-- Roulette Multiplayer Seats Overlay -->
-            <div id="roulette-multiplayer-seats" style="display: none; position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); width: 95%; max-width: 950px; justify-content: center; gap: 12px; z-index: 10; pointer-events: none; flex-wrap: wrap;">
-              <!-- Dynamic player seats go here -->
+            <!-- Roulette Multiplayer Seats Overlay with Draggable Wrapper -->
+            <div id="roulette-multiplayer-seats-wrapper" style="display: none; position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); width: 95%; max-width: 950px; z-index: 110; pointer-events: auto; flex-direction: column; align-items: center; gap: 6px;">
+              <!-- Grab Drag Handle -->
+              <div id="roulette-seats-drag-handle" style="background: rgba(9, 21, 16, 0.9); border: 1.5px solid #10b981; color: #6ee7b7; font-size: 9px; font-weight: bold; padding: 3px 12px; border-radius: 8px; cursor: grab; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); text-transform: uppercase; letter-spacing: 0.08em; pointer-events: auto; user-select: none;">
+                <span>✥ GRAB TO DRAG CAMERA SEATS</span>
+              </div>
+              <div id="roulette-multiplayer-seats" style="display: flex; justify-content: center; gap: 12px; pointer-events: auto; flex-wrap: wrap; width: 100%;">
+                <!-- Dynamic player seats go here -->
+              </div>
+            </div>
+            
+            <!-- Roulette Multiplayer Chat Overlay -->
+            <div id="roulette-chat-box" style="display: none; position: absolute; bottom: 140px; right: 16px; width: 260px; height: 180px; z-index: 110; background: rgba(9, 21, 16, 0.85); border: 2px solid #10b981; border-radius: 12px; flex-direction: column; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; pointer-events: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.65);">
+              <!-- Chat Header -->
+              <div id="roulette-chat-header" style="background: rgba(16, 185, 129, 0.12); border-bottom: 1px solid rgba(16, 185, 129, 0.25); padding: 6px 10px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; cursor: grab; user-select: none;">
+                <span style="font-weight: bold; font-size: 10px; color: #6ee7b7; letter-spacing: 0.08em; text-transform: uppercase;">✥ TABLE CHAT (DRAG)</span>
+                <span style="width: 6px; height: 6px; background: #10b981; border-radius: 50%; box-shadow: 0 0 6px #10b981;"></span>
+              </div>
+              <!-- Message List -->
+              <div id="roulette-chat-messages" style="flex: 1; overflow-y: auto; padding: 8px; font-size: 11px; display: flex; flex-direction: column; gap: 4px; scrollbar-width: thin;">
+                <div style="color: #6ee7b7; font-style: italic; font-size: 10px; opacity: 0.85; margin-bottom: 4px;">Welcome to the multiplayer table! Chat is active.</div>
+              </div>
+              <!-- Input Form -->
+              <div style="display: flex; border-top: 1px solid rgba(16, 185, 129, 0.2); background: rgba(9, 21, 16, 0.95); padding: 5px; gap: 4px; flex-shrink: 0;">
+                <input type="text" id="roulette-chat-input" placeholder="Type a message..." style="flex: 1; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; color: #fff; font-size: 10px; padding: 4px 8px; outline: none;" />
+                <button id="btn-roulette-chat-send" style="background: #10b981; border: none; border-radius: 6px; color: #fff; font-size: 10px; padding: 4px 10px; cursor: pointer; font-weight: bold; outline: none; transition: opacity 0.1s;">SEND</button>
+              </div>
             </div>
             
             <!-- FPS Shooter Center Crosshair & Hitmarker HUD Overlay -->
@@ -360,10 +385,12 @@
                 <span class="plinko-group-label">2. Physics Engine Solver (Worker-Threaded)</span>
                 <div style="position: relative; width: 100%;">
                   <select id="select-plinko-engine" style="width: 100%; height: 32px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 0 10px; color: #e2e8f0; font-size: 11px; cursor: pointer; outline: none; transition: all 0.2s; appearance: none; -webkit-appearance: none;">
-                    <option value="classic2d" selected>⚡ High-Speed 2D Solver (Web Worker)</option>
-                    <option value="cannon">📦 Cannon.js 3D Rigid Solver (Web Worker)</option>
+                    <option value="ammo" selected>🚀 Ammo Continuous CCD Solver (Web Worker)</option>
                     <option value="jolt">🎮 Jolt 3D Constraint Solver (Web Worker)</option>
-                    <option value="ammo">🚀 Ammo Continuous CCD Solver (Web Worker)</option>
+                    <option value="cannon">📦 Cannon.js 3D Rigid Solver (Web Worker)</option>
+                    <option value="rapier">⚡ Rapier 3D SIMD WASM Solver (Web Worker)</option>
+                    <option value="physx">🌐 PhysX / NVIDIA Kinematic Core (Web Worker)</option>
+                    <option value="classic2d">⚡ High-Speed Analytical Solver (Web Worker)</option>
                   </select>
                   <div style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #10b981; font-size: 8px;">▼</div>
                 </div>
@@ -471,6 +498,21 @@
                   <button id="btn-roulette-close" class="plinko-header-btn" title="Minimize Panel" aria-label="Minimize Panel">✕</button>
                 </div>
                 <div class="plinko-subtitle" style="color: #6ee7b7;">REAL-TIME WORKER-THREADED ROTATION SOLVER</div>
+              </div>
+
+              <!-- Real Physics Engine Selector for Roulette -->
+              <div style="display: flex; align-items: center; justify-content: space-between; margin: 6px 10px 0 10px; padding: 8px 12px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 6px; font-size: 11px;">
+                <span style="color: #a7f3d0; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                  <span>⚛️</span> Physics Engine:
+                </span>
+                <select id="select-roulette-physics-engine" style="height: 28px; background: rgba(9, 21, 16, 0.95); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 5px; padding: 0 8px; color: #6ee7b7; font-size: 11px; font-weight: bold; cursor: pointer; outline: none;">
+                  <option value="ammo" selected>🚀 Ammo.js / Bullet 3D CCD</option>
+                  <option value="jolt">🎮 Jolt 3D Constraint Solver</option>
+                  <option value="cannon">📦 Cannon.js 3D Rigid Body</option>
+                  <option value="rapier">⚡ Rapier 3D WASM Solver</option>
+                  <option value="physx">🌐 PhysX Kinematic Solver</option>
+                  <option value="classic2d">⚡ Filament Native Solver</option>
+                </select>
               </div>
 
               <!-- Monaco Casino Global Synchronized Draw Status / Countdown -->
@@ -757,6 +799,137 @@
             <button id="bingo-desktop-show-btn" class="roulette-desktop-fab" style="display: none; border-color: rgba(56, 189, 248, 0.4); background: rgba(10, 18, 30, 0.85); color: #38bdf8;">
               <span>🎱 SHOW BINGO</span>
             </button>
+
+            <!-- 🏓 Pong Floating Viewport Top Banner HUD -->
+            <div id="pong-banner" class="pong-banner-hud" style="display: none;">
+              <div class="pong-score-cell">
+                <div id="pong-left-score" class="pong-score-badge cyan">0</div>
+                <div class="pong-score-divider">:</div>
+                <div id="pong-right-score" class="pong-score-badge red">0</div>
+              </div>
+              <div class="pong-hud-info">
+                <div id="pong-mode-badge" class="pong-hud-mode-tag">🤖 SOLO VS BOT</div>
+                <div id="pong-hud-status" class="pong-hud-status">Serve in 2s...</div>
+              </div>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button id="btn-pong-open-mode" class="pong-hud-btn" title="Choose Pong Game Mode">
+                  <span>⚙️ MODE</span>
+                </button>
+                <button id="btn-pong-toggle-video" class="pong-hud-btn" title="Toggle Live WebRTC Video Chat">
+                  <span>🎥 VIDEO</span>
+                </button>
+                <button id="btn-pong-reset" class="pong-hud-btn" title="Reset Match Score">
+                  <span>🔄 RESET</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 🏓 Pong Live Video Chat Seats Overlay -->
+            <div id="pong-video-seats-container" class="pong-video-seats-container" style="display: none;">
+              <!-- Left Seat: Player 1 (You / Host) -->
+              <div id="pong-seat-left" class="pong-video-seat">
+                <div class="pong-video-frame">
+                  <video id="pong-local-video" autoplay playsinline muted class="mirrored"></video>
+                  <div id="pong-local-avatar" class="pong-avatar-placeholder">
+                    <div class="pong-avatar-circle" style="background: #0284c7;">P1</div>
+                    <span style="font-size: 10px; color: #38bdf8; font-weight: bold;">YOU</span>
+                  </div>
+                </div>
+                <span id="pong-seat-left-name" class="pong-seat-name" style="color: #38bdf8;">Player 1 (You)</span>
+                <div class="pong-seat-ctrls">
+                  <button id="btn-pong-toggle-cam" class="pong-seat-ctrl-btn" title="Toggle Webcam">📹 CAM</button>
+                  <button id="btn-pong-toggle-mic" class="pong-seat-ctrl-btn" title="Mute/Unmute Mic">🎤 MIC</button>
+                </div>
+              </div>
+
+              <!-- Right Seat: Player 2 (Bot / Opponent) -->
+              <div id="pong-seat-right" class="pong-video-seat opponent">
+                <div class="pong-video-frame">
+                  <video id="pong-remote-video" autoplay playsinline style="display: none;"></video>
+                  <div id="pong-remote-avatar" class="pong-avatar-placeholder">
+                    <div class="pong-avatar-circle" style="background: #e11d48;" id="pong-remote-avatar-circle">BOT</div>
+                    <span id="pong-remote-tag" style="font-size: 10px; color: #f43f5e; font-weight: bold;">AI BOT</span>
+                  </div>
+                </div>
+                <span id="pong-seat-right-name" class="pong-seat-name" style="color: #f43f5e;">AI Opponent</span>
+                <div class="pong-seat-ctrls">
+                  <span id="pong-seat-right-status" style="font-size: 9px; color: #94a3b8; text-align: center; width: 100%;">Online Sync</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 🏓 Pong Mode Selection Ask Popup Modal -->
+            <div id="pong-mode-modal" class="pong-modal-backdrop" style="display: none;">
+              <div class="pong-modal-card">
+                <div class="pong-modal-header">
+                  <div class="pong-modal-title">🏓 RETRO 3D ARCADE PONG</div>
+                  <div class="pong-modal-subtitle">SELECT MATCH MODE &amp; REAL-TIME SETTINGS</div>
+                </div>
+
+                <div class="pong-mode-options">
+                  <!-- Mode 1: Solo vs Bot -->
+                  <div class="pong-mode-card active" id="pong-card-solo" data-mode="solo">
+                    <div class="pong-mode-icon">🤖</div>
+                    <div class="pong-mode-text">
+                      <div class="pong-mode-title">
+                        <span>I wanna play solo (bot)</span>
+                        <span class="pong-mode-badge">Single Player</span>
+                      </div>
+                      <div class="pong-mode-desc">Play arcade duel against an AI bot with predictive tracking. Controls: [W]/[S], Arrow Keys or Touch/Mouse.</div>
+                    </div>
+                  </div>
+
+                  <!-- Mode 2: Man vs Man (Two players on same keyboard) -->
+                  <div class="pong-mode-card" id="pong-card-local2p" data-mode="local_2p">
+                    <div class="pong-mode-icon">👥</div>
+                    <div class="pong-mode-text">
+                      <div class="pong-mode-title">
+                        <span>Man vs Man (two players on same keyboard)</span>
+                        <span class="pong-mode-badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3);">Local 2P</span>
+                      </div>
+                      <div class="pong-mode-desc">Same keyboard showdown! Player 1 (Left): [W] / [S] | Player 2 (Right): [▲] Up / [▼] Down.</div>
+                    </div>
+                  </div>
+
+                  <!-- Mode 3: Play Online -->
+                  <div class="pong-mode-card" id="pong-card-online" data-mode="online">
+                    <div class="pong-mode-icon">🌐</div>
+                    <div class="pong-mode-text">
+                      <div class="pong-mode-title">
+                        <span>Play online</span>
+                        <span class="pong-mode-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3);">Multiplayer</span>
+                      </div>
+                      <div class="pong-mode-desc">Real-time match with live video &amp; voice chat, synchronized paddles, and low latency!</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Solo Sub-Options (Bot Difficulty) -->
+                <div class="pong-options-subgrid" id="pong-bot-diff-row">
+                  <span class="pong-setting-label">🤖 Bot AI Difficulty:</span>
+                  <div class="pong-diff-btn-group">
+                    <button type="button" class="pong-diff-btn" data-diff="easy">Casual</button>
+                    <button type="button" class="pong-diff-btn active" data-diff="medium">Pro</button>
+                    <button type="button" class="pong-diff-btn" data-diff="hard">Master</button>
+                  </div>
+                </div>
+
+                <!-- Video Chat Feature Toggle (Similar to Roulette) -->
+                <div class="pong-options-subgrid">
+                  <label class="pong-video-toggle-container">
+                    <input type="checkbox" id="pong-enable-cam-chk">
+                    <span class="pong-setting-label">🎥 Enable WebRTC Video Chat (Webcam &amp; Mic like in Roulette)</span>
+                  </label>
+                </div>
+
+                <div class="pong-modal-footer">
+                  <button id="btn-pong-start-match" class="pong-btn-start">
+                    <span>⚡ START MATCH</span>
+                  </button>
+                  <button id="btn-pong-modal-close" class="pong-btn-cancel">Cancel</button>
+                </div>
+              </div>
+            </div>
 
             <!-- FPS Startup Menu & Multiplayer Lobby Overlay (Demo 07) -->
             <div class="fps-startup-overlay" id="fps-startup-overlay" style="display: none;">
@@ -1145,10 +1318,10 @@
             <!-- Viewport Controls Overlay -->
             <div class="viewport-toolbar">
               <span class="hint-text">&#128433; Orbit: Left Drag &bull; Pan: Right Drag &bull; FP: WASD + Space Jump &bull; Shoot: L-Click &bull; Touch: Joystick</span>
-              <div class="viewport-toolbar-right">
-                <button id="btn-toggle-joystick" class="btn-hud" title="Toggle Mobile Virtual Joystick on/off">🎮 Joystick: AUTO</button>
-                <button id="btn-toggle-console" class="btn-hud" title="Toggle Bottom Console Log">📟 Console Log</button>
-                <button id="btn-reset-cam" class="btn-hud">Reset Camera</button>
+              <div class="viewport-toolbar-right" id="viewport-toolbar-right" style="display: none;">
+                <button id="btn-toggle-joystick" class="btn-hud" title="Toggle Mobile Virtual Joystick on/off" style="display: none;">🎮 Joystick: AUTO</button>
+                <button id="btn-toggle-console" class="btn-hud" title="Toggle Bottom Console Log" style="display: none;">📟 Console Log</button>
+                <button id="btn-reset-cam" class="btn-hud" style="display: none;">Reset Camera</button>
               </div>
             </div>
           </div>
@@ -1233,7 +1406,8 @@
                       <option value="10_sliding_puzzle.cpp">Demo 05: Dynamic Sliding 3D Puzzle (10_sliding_puzzle.cpp)</option>
                       <option value="11_plinko.cpp">Demo 06: 3D Plinko Cascade Showcase (11_plinko.cpp)</option>
                       <option value="12_roulette.cpp">Demo 07: 3D Physics-Engine Roulette Wheel (12_roulette.cpp)</option>
-                      <option value="13_bingo_physics.cpp" selected>Demo 08: 3D Real-Physics Bingo &amp; Diamond Drum (13_bingo_physics.cpp)</option>
+                      <option value="13_bingo_physics.cpp">Demo 08: 3D Real-Physics Bingo &amp; Diamond Drum (13_bingo_physics.cpp)</option>
+                      <option value="14_pong.cpp" selected>Demo 09: Retro 3D Arcade Pong (14_pong.cpp)</option>
                     </select>
                   </div>
                 </div>
@@ -1544,6 +1718,7 @@
                   <option value="examples/11_plinko.cpp">examples/11_plinko.cpp (Demo 06: 3D Plinko Cascade Showcase)</option>
                   <option value="examples/12_roulette.cpp">examples/12_roulette.cpp (Demo 07: 3D Physics-Engine Roulette Wheel)</option>
                   <option value="examples/13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 08: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
+                  <option value="examples/14_pong.cpp">examples/14_pong.cpp (Demo 09: Retro 3D Arcade Pong)</option>
                   <option value="src/core/Engine.cpp">src/core/Engine.cpp (Engine Core C++)</option>
                   <option value="src/core/Renderer.cpp">src/core/Renderer.cpp (Filament GLES3 Pipeline C++)</option>
                   <option value="src/core/Bindings.cpp">src/core/Bindings.cpp (Emscripten Embind Bindings C++)</option>
@@ -1606,6 +1781,7 @@
                 <option value="11_plinko.cpp">examples/11_plinko.cpp (Demo 06: 3D Plinko Cascade Showcase)</option>
                 <option value="12_roulette.cpp">examples/12_roulette.cpp (Demo 07: 3D Physics-Engine Roulette Wheel)</option>
                 <option value="13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 08: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
+                <option value="14_pong.cpp">examples/14_pong.cpp (Demo 09: Retro 3D Arcade Pong)</option>
               </select>
               <button id="btn-copy-example" class="btn-xs">Copy Example</button>
             </div>
@@ -1930,6 +2106,21 @@
                 <div class="panel-section">
                   <h3 class="section-title">Map Environment &amp; Physics Tuning</h3>
                   <div class="controls-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                    <div class="slider-group" style="grid-column: span 2;">
+                      <div class="slider-row">
+                        <span class="slider-label">Real Physics Simulation Engine Library</span>
+                        <span class="slider-val highlight" id="val-map-physics-engine">Ammo.js / Bullet 3D CCD</span>
+                      </div>
+                      <select id="select-map-physics-lib" class="input-select" style="margin-top: 4px; width: 100%; height: 34px; font-size: 11px; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(56, 189, 248, 0.4); color: #f8fafc; border-radius: 6px; padding: 0 10px; cursor: pointer;">
+                        <option value="ammo" selected>🚀 Ammo.js / Bullet Physics 3D (Full CCD Rigid Solver)</option>
+                        <option value="jolt">🎮 Jolt Physics 3D (Constraint &amp; Restitution Solver)</option>
+                        <option value="cannon">📦 Cannon.js 3D Rigid Body (Contact Manifold Solver)</option>
+                        <option value="rapier">⚡ Rapier 3D (SIMD-Accelerated Fast Dynamics)</option>
+                        <option value="physx">🌐 PhysX / NVIDIA Kinematic Core (WASM Native Bridge)</option>
+                        <option value="classic2d">⚡ Filament Native C++ Micro-Solver (Worker Analytical)</option>
+                      </select>
+                    </div>
+
                     <div class="slider-group">
                       <div class="slider-row">
                         <span class="slider-label">Jump Pad Launch Velocity</span>
@@ -2631,6 +2822,18 @@
                     </select>
                   </div>
 
+                  <div class="select-group">
+                    <label for="select-player-physics-lib" class="hud-label">Authoritative Physics Engine Solver:</label>
+                    <select id="select-player-physics-lib" class="input-select">
+                      <option value="ammo" selected>🚀 Ammo.js / Bullet Physics 3D (Continuous Collision Sweep)</option>
+                      <option value="jolt">🎮 Jolt Physics 3D (AAA Multithreaded Constraint Solver)</option>
+                      <option value="cannon">📦 Cannon.js 3D Rigid Body (Contact Manifold Solver)</option>
+                      <option value="rapier">⚡ Rapier 3D (SIMD-Accelerated WASM Real Physics)</option>
+                      <option value="physx">🌐 PhysX / NVIDIA Kinematic Core (WASM Native Bridge)</option>
+                      <option value="classic2d">⚡ Filament Native C++ Micro-Solver (Fast Analytical)</option>
+                    </select>
+                  </div>
+
                   <div class="slider-group">
                     <div class="slider-row">
                       <span class="slider-label">Walk Velocity (m/s)</span>
@@ -2720,6 +2923,53 @@
 
             <!-- Subtab 3: Collision Register -->
             <div class="proj-subcontent" id="subtab-collision-register">
+              <!-- Real Physics Simulation Engine & Library Selector -->
+              <div class="panel-section" style="margin-bottom: 16px; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 16px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);">
+                <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 12px;">
+                  <div>
+                    <h3 class="section-title" style="color: #38bdf8; display: flex; align-items: center; gap: 8px; margin: 0 0 4px 0; font-size: 14px;">
+                      <span>⚛️</span> Real Physics Simulation Engine &amp; Library
+                    </h3>
+                    <p class="section-desc" style="color: #94a3b8; font-size: 11px; margin: 0; line-height: 1.4;">
+                      Authoritative multi-threaded physics solver library. Switch between real rigid body dynamics, continuous collision sweep (CCD), constraint solvers, or fast micro-solvers.
+                    </p>
+                  </div>
+                  <span class="status-pill" id="physics-engine-status-badge" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); color: #7dd3fc; font-weight: 700; white-space: nowrap;">
+                    <span class="status-dot" style="background: #38bdf8;"></span>
+                    <span id="active-physics-lib-label">Active: Ammo.js / Bullet 3D CCD</span>
+                  </span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: flex-end;">
+                  <div>
+                    <label for="select-project-physics-lib" class="hud-label" style="margin-bottom: 6px; display: block; color: #94a3b8; font-size: 11px;">
+                      SELECT PHYSICS ENGINE &amp; SOLVER LIBRARY:
+                    </label>
+                    <select id="select-project-physics-lib" class="input-select" style="width: 100%; height: 38px; font-size: 12px; font-weight: 600; background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; color: #f8fafc; padding: 0 12px; cursor: pointer;">
+                      <option value="ammo" selected>🚀 Ammo.js / Bullet Physics 3D (Continuous Collision Detection CCD &amp; Penetration Solver)</option>
+                      <option value="jolt">🎮 Jolt Physics 3D (AAA Multithreaded Constraint &amp; Restitution Solver)</option>
+                      <option value="cannon">📦 Cannon.js 3D Rigid Body (Contact Manifolds &amp; Friction Matrix)</option>
+                      <option value="rapier">⚡ Rapier 3D (SIMD-Accelerated Rust/WASM Real Physics Engine)</option>
+                      <option value="physx">🌐 PhysX / NVIDIA Kinematic Core (WASM Native Bridge)</option>
+                      <option value="classic2d">⚡ Filament Native C++ Micro-Solver (Worker-Threaded Fast Analytical)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <button id="btn-reinit-physics-lib" class="btn-action" style="padding: 10px 18px; font-size: 11px; white-space: nowrap; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #fff; font-weight: bold; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.4); cursor: pointer;">
+                      🔄 Reinitialize Solver
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Engine Characteristics Badges -->
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); font-size: 11px;">
+                  <span class="status-pill" style="color: #cbd5e1; background: rgba(15, 23, 42, 0.6);"><b style="color: #38bdf8;">Solver Type:</b>&nbsp;<span id="physics-detail-solver">Symplectic Euler / Semi-Implicit CCD</span></span>
+                  <span class="status-pill" style="color: #cbd5e1; background: rgba(15, 23, 42, 0.6);"><b style="color: #38bdf8;">Threading:</b>&nbsp;<span id="physics-detail-threading">Dedicated Web Worker (60 Hz)</span></span>
+                  <span class="status-pill" style="color: #cbd5e1; background: rgba(15, 23, 42, 0.6);"><b style="color: #38bdf8;">Broadphase:</b>&nbsp;<span id="physics-detail-broadphase">Dynamic AABB Tree / Sweep-and-Prune</span></span>
+                  <span class="status-pill" style="color: #cbd5e1; background: rgba(15, 23, 42, 0.6);"><b style="color: #38bdf8;">Realism:</b>&nbsp;<span id="physics-detail-realism" style="color: #10b981; font-weight: bold;">AAA Deterministic Simulation</span></span>
+                </div>
+              </div>
+
               <div class="collision-table-wrapper">
                 <div class="collision-summary-bar">
                   <div class="collision-pill-group">

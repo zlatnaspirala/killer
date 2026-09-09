@@ -153,6 +153,10 @@ function stepPhysics(dt) {
       hitPeg = stepJolt3D(b, dt);
     } else if (world.engine === 'ammo') {
       hitPeg = stepAmmoCCD(b, dt);
+    } else if (world.engine === 'rapier') {
+      hitPeg = stepRapier3D(b, dt);
+    } else if (world.engine === 'physx') {
+      hitPeg = stepPhysX3D(b, dt);
     } else {
       hitPeg = stepClassic2D(b, dt);
     }
@@ -614,6 +618,155 @@ function stepAmmoCCD(b, dt) {
 }
 
 // ----------------------------------------------------
+// SOLVER 5: Rapier 3D Physics Solver (SIMD Impulse Manifold)
+// ----------------------------------------------------
+function stepRapier3D(b, dt) {
+  // Rapier SIMD-style sub-stepping and contact manifold impulse
+  const subSteps = 2;
+  const subDt = dt / subSteps;
+  let returnedHitPeg = null;
+
+  for (let s = 0; s < subSteps; s++) {
+    b.vel[1] += world.gravity * subDt;
+    b.vel[0] *= Math.exp(-0.20 * subDt);
+    b.vel[1] *= Math.exp(-0.06 * subDt);
+    b.vel[2] *= Math.exp(-0.35 * subDt);
+
+    b.pos[0] += b.vel[0] * subDt;
+    b.pos[1] += b.vel[1] * subDt;
+    b.pos[2] += b.vel[2] * subDt;
+
+    const pegRadius = 0.024;
+    const collisionRadius = b.radius + pegRadius;
+
+    for (let j = 0; j < world.pegs.length; j++) {
+      const peg = world.pegs[j];
+      const dx = b.pos[0] - peg.x;
+      const dy = b.pos[1] - peg.y;
+      const distSq = dx * dx + dy * dy;
+
+      if (distSq < collisionRadius * collisionRadius) {
+        const dist = Math.sqrt(distSq) || 0.0001;
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        // Position projection (Baumgarte stabilization)
+        const penetration = collisionRadius - dist;
+        b.pos[0] += nx * penetration * 0.85;
+        b.pos[1] += ny * penetration * 0.85;
+
+        // Contact impulse with restitution and friction cone
+        const dot = b.vel[0] * nx + b.vel[1] * ny;
+        if (dot < 0) {
+          const restitution = world.bounciness * 1.08;
+          const impulse = -(1.0 + restitution) * dot;
+          b.vel[0] += impulse * nx;
+          b.vel[1] += impulse * ny;
+
+          // Tangential friction impulse
+          const tx = -ny, ty = nx;
+          const tangentVel = b.vel[0] * tx + b.vel[1] * ty;
+          b.vel[0] -= tx * tangentVel * 0.12;
+          b.vel[1] -= ty * tangentVel * 0.12;
+
+          b.angVel[2] += tangentVel * 1.4;
+          b.vel[2] += (Math.random() - 0.5) * 0.08;
+        }
+
+        if (b.lastPegHitId !== peg.id) {
+          b.lastPegHitId = peg.id;
+          returnedHitPeg = peg;
+        }
+      }
+    }
+  }
+
+  // Wall bounds
+  const wallLimit = 0.94 - b.radius;
+  if (b.pos[0] < -wallLimit) {
+    b.pos[0] = -wallLimit;
+    b.vel[0] = -b.vel[0] * world.bounciness;
+  } else if (b.pos[0] > wallLimit) {
+    b.pos[0] = wallLimit;
+    b.vel[0] = -b.vel[0] * world.bounciness;
+  }
+
+  b.rot[0] += b.angVel[0] * dt;
+  b.rot[1] += b.angVel[1] * dt;
+  b.rot[2] += b.angVel[2] * dt;
+
+  return returnedHitPeg;
+}
+
+// ----------------------------------------------------
+// SOLVER 6: NVIDIA PhysX Kinematic Solver (Penalty Manifold)
+// ----------------------------------------------------
+function stepPhysX3D(b, dt) {
+  // PhysX iterative penalty spring and gyro angular momentum
+  b.vel[1] += world.gravity * dt;
+  b.vel[0] *= Math.exp(-0.18 * dt);
+  b.vel[1] *= Math.exp(-0.05 * dt);
+  b.vel[2] *= Math.exp(-0.40 * dt);
+
+  b.pos[0] += b.vel[0] * dt;
+  b.pos[1] += b.vel[1] * dt;
+  b.pos[2] += b.vel[2] * dt;
+
+  const pegRadius = 0.024;
+  const collisionRadius = b.radius + pegRadius;
+  let returnedHitPeg = null;
+
+  for (let j = 0; j < world.pegs.length; j++) {
+    const peg = world.pegs[j];
+    const dx = b.pos[0] - peg.x;
+    const dy = b.pos[1] - peg.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < collisionRadius) {
+      const nx = dx / (dist || 0.0001);
+      const ny = dy / (dist || 0.0001);
+      const pen = collisionRadius - dist;
+
+      // PhysX non-linear penalty push
+      b.pos[0] += nx * pen * 0.95;
+      b.pos[1] += ny * pen * 0.95;
+
+      const dot = b.vel[0] * nx + b.vel[1] * ny;
+      if (dot < 0) {
+        const impulse = -(1.0 + world.bounciness * 1.04) * dot;
+        b.vel[0] += impulse * nx;
+        b.vel[1] += impulse * ny;
+
+        b.angVel[0] += (Math.random() - 0.5) * 3.5;
+        b.angVel[1] += (Math.random() - 0.5) * 3.5;
+        b.angVel[2] += (b.vel[0] * ny - b.vel[1] * nx) * 1.6;
+        b.vel[2] += (Math.random() - 0.5) * 0.12;
+      }
+
+      if (b.lastPegHitId !== peg.id) {
+        b.lastPegHitId = peg.id;
+        returnedHitPeg = peg;
+      }
+    }
+  }
+
+  const wallLimit = 0.94 - b.radius;
+  if (b.pos[0] < -wallLimit) {
+    b.pos[0] = -wallLimit;
+    b.vel[0] = -b.vel[0] * world.bounciness;
+  } else if (b.pos[0] > wallLimit) {
+    b.pos[0] = wallLimit;
+    b.vel[0] = -b.vel[0] * world.bounciness;
+  }
+
+  b.rot[0] += b.angVel[0] * dt;
+  b.rot[1] += b.angVel[1] * dt;
+  b.rot[2] += b.angVel[2] * dt;
+
+  return returnedHitPeg;
+}
+
+// ----------------------------------------------------
 // ROULETTE SIMULATION PHYSICS ENGINE (3D ANALYTICAL)
 // ----------------------------------------------------
 function stepRoulettePhysics(dt) {
@@ -666,8 +819,8 @@ function stepRoulettePhysics(dt) {
   let winPocket = null;
 
   if (b.trapped) {
-    // Ball sits inside pocket, locked to rotating coordinate
-    const targetAngle = r.wheelAngle - Math.PI * 0.5 + b.pocketIndex * (2 * Math.PI / 37);
+    // Ball sits inside pocket, locked to rotating coordinate (mirrored horizontally)
+    const targetAngle = r.wheelAngle - Math.PI * 0.5 - b.pocketIndex * (2 * Math.PI / 37);
     b.r = 0.68;
     b.z = 0.026;
     b.pos[0] = b.r * Math.cos(targetAngle);
@@ -736,9 +889,27 @@ function stepRoulettePhysics(dt) {
         if (dAng > Math.PI) dAng = 2 * Math.PI - dAng;
         if (dAng < 0.15 && !b._lastDefHit) {
           b._lastDefHit = true;
-          // Bounce off deflector: randomize radial velocity and kick tangential velocity
-          b.vr += 0.35 + Math.random() * 0.35;
-          b.vTheta *= 0.75;
+          // Bounce off deflector: randomize radial velocity and kick tangential velocity based on physics engine
+          if (world.engine === 'ammo') {
+            b.vr += 0.38 + Math.random() * 0.40;
+            b.vTheta *= 0.70;
+            b.rot[0] += (Math.random() - 0.5) * 12.0;
+            b.rot[1] += (Math.random() - 0.5) * 12.0;
+          } else if (world.engine === 'jolt') {
+            b.vr += 0.32 + Math.random() * 0.32;
+            b.vTheta *= 0.78;
+            b.rot[0] += (Math.random() - 0.5) * 8.0;
+          } else if (world.engine === 'cannon') {
+            b.vr += 0.35 + Math.random() * 0.35;
+            b.vTheta *= 0.74;
+            b.rot[0] += (Math.random() - 0.5) * 10.0;
+          } else if (world.engine === 'rapier') {
+            b.vr += 0.40 + Math.random() * 0.36;
+            b.vTheta *= 0.72;
+          } else {
+            b.vr += 0.35 + Math.random() * 0.35;
+            b.vTheta *= 0.75;
+          }
           hitSound = 'rim';
           break;
         }
@@ -774,7 +945,7 @@ function stepRoulettePhysics(dt) {
 
     // Smoothly align with the forced target pocket to avoid any visual teleportation/jump!
     if (r.forcedPocket !== undefined && r.forcedPocket !== null) {
-      const targetAngle = r.wheelAngle + Math.PI * 0.5 - r.forcedPocket * (2 * Math.PI / 37);
+      const targetAngle = r.wheelAngle - Math.PI * 0.5 - r.forcedPocket * (2 * Math.PI / 37);
       let diff = (targetAngle - b.theta) % (2 * Math.PI);
       if (diff > Math.PI) diff -= 2 * Math.PI;
       if (diff < -Math.PI) diff += 2 * Math.PI;
@@ -796,7 +967,7 @@ function stepRoulettePhysics(dt) {
 
     // Check if settled into a pocket
     if (Math.abs(b.vTheta - wheelTangential) < 0.28 && b.r <= 0.68) {
-      let relAngle = (b.theta - r.wheelAngle + Math.PI * 0.5) % (2 * Math.PI);
+      let relAngle = (r.wheelAngle - Math.PI * 0.5 - b.theta) % (2 * Math.PI);
       if (relAngle < 0) relAngle += 2 * Math.PI;
 
       const seg = (2 * Math.PI) / 37;

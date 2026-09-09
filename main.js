@@ -1781,6 +1781,153 @@ namespace BingoPhysics {
 }
 `,
 
+  '14_pong.cpp': `// examples/14_pong.cpp
+// Filament / Native C++ Demo 14: Retro 3D Arcade Pong
+// Implements 3D arcade table physics, dual paddle collision kinematics,
+// ball spin deflection, solo bot AI prediction, and network peer state synchronization.
+
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <algorithm>
+
+namespace PongArcade {
+
+    struct Vec3 {
+        float x, y, z;
+        Vec3(float x_ = 0, float y_ = 0, float z_ = 0) : x(x_), y(y_), z(z_) {}
+    };
+
+    struct Paddle {
+        float x;
+        float z;
+        float width;   // 0.22m
+        float length;  // 1.0m
+        float speed;   // m/s
+        int score;
+        std::string name;
+
+        Paddle(float posX, const std::string& paddleName)
+            : x(posX), z(0.0f), width(0.22f), length(1.0f), speed(6.5f), score(0), name(paddleName) {}
+
+        void move(float deltaZ, float minZ, float maxZ) {
+            z = std::max(minZ, std::min(maxZ, z + deltaZ));
+        }
+    };
+
+    struct Ball {
+        Vec3 pos;
+        Vec3 vel;
+        float radius;
+        float speedMultiplier;
+        bool inPlay;
+
+        Ball() : pos(0.0f, 0.15f, 0.0f), vel(4.5f, 0.0f, 2.0f), radius(0.14f), speedMultiplier(1.0f), inPlay(true) {}
+
+        void reset(float dirX = 1.0f) {
+            pos = Vec3(0.0f, 0.15f, 0.0f);
+            vel = Vec3(4.5f * dirX, 0.0f, ((rand() % 100) / 100.0f - 0.5f) * 4.0f);
+            speedMultiplier = 1.0f;
+            inPlay = true;
+        }
+
+        void update(float dt) {
+            if (!inPlay) return;
+            pos.x += vel.x * speedMultiplier * dt;
+            pos.z += vel.z * speedMultiplier * dt;
+        }
+    };
+
+    enum GameMode {
+        SOLO_BOT = 0,
+        MAN_VS_MAN = 1,
+        ONLINE_MULTIPLAYER = 2
+    };
+
+    class PongGameEngine {
+    public:
+        Paddle leftPaddle;
+        Paddle rightPaddle;
+        Ball ball;
+        GameMode mode;
+        int rallyCount;
+        float tableHalfWidth;
+        float tableHalfLength;
+        bool isHost;
+
+        PongGameEngine() 
+            : leftPaddle(-3.2f, "Player 1"), 
+              rightPaddle(3.2f, "Player 2 / Bot"),
+              mode(SOLO_BOT),
+              rallyCount(0),
+              tableHalfWidth(2.1f),
+              tableHalfLength(3.6f),
+              isHost(true) {}
+
+        void stepPhysics(float dt) {
+            if (mode == SOLO_BOT) {
+                updateBotAI(dt);
+            }
+
+            ball.update(dt);
+
+            if (ball.pos.z + ball.radius >= tableHalfWidth) {
+                ball.pos.z = tableHalfWidth - ball.radius;
+                ball.vel.z = -std::abs(ball.vel.z);
+            } else if (ball.pos.z - ball.radius <= -tableHalfWidth) {
+                ball.pos.z = -tableHalfWidth + ball.radius;
+                ball.vel.z = std::abs(ball.vel.z);
+            }
+
+            float leftPaddleEdge = leftPaddle.x + leftPaddle.width * 0.5f;
+            if (ball.pos.x - ball.radius <= leftPaddleEdge && ball.pos.x >= leftPaddle.x - 0.3f && ball.vel.x < 0) {
+                if (std::abs(ball.pos.z - leftPaddle.z) <= (leftPaddle.length * 0.5f + ball.radius)) {
+                    ball.pos.x = leftPaddleEdge + ball.radius;
+                    ball.vel.x = std::abs(ball.vel.x) * 1.05f;
+                    float offset = (ball.pos.z - leftPaddle.z) / (leftPaddle.length * 0.5f);
+                    ball.vel.z = offset * std::abs(ball.vel.x) * 0.9f;
+                    ball.speedMultiplier = std::min(2.4f, ball.speedMultiplier + 0.05f);
+                    rallyCount++;
+                }
+            }
+
+            float rightPaddleEdge = rightPaddle.x - rightPaddle.width * 0.5f;
+            if (ball.pos.x + ball.radius >= rightPaddleEdge && ball.pos.x <= rightPaddle.x + 0.3f && ball.vel.x > 0) {
+                if (std::abs(ball.pos.z - rightPaddle.z) <= (rightPaddle.length * 0.5f + ball.radius)) {
+                    ball.pos.x = rightPaddleEdge - ball.radius;
+                    ball.vel.x = -std::abs(ball.vel.x) * 1.05f;
+                    float offset = (ball.pos.z - rightPaddle.z) / (rightPaddle.length * 0.5f);
+                    ball.vel.z = offset * std::abs(ball.vel.x) * 0.9f;
+                    ball.speedMultiplier = std::min(2.4f, ball.speedMultiplier + 0.05f);
+                    rallyCount++;
+                }
+            }
+
+            if (ball.pos.x < -tableHalfLength - 0.2f) {
+                rightPaddle.score++;
+                ball.reset(1.0f);
+                rallyCount = 0;
+            } else if (ball.pos.x > tableHalfLength + 0.2f) {
+                leftPaddle.score++;
+                ball.reset(-1.0f);
+                rallyCount = 0;
+            }
+        }
+
+    private:
+        void updateBotAI(float dt) {
+            float targetZ = ball.pos.z;
+            float diff = targetZ - rightPaddle.z;
+            float botSpeed = 5.5f;
+            if (std::abs(diff) > 0.1f) {
+                float moveStep = (diff > 0 ? 1.0f : -1.0f) * std::min(std::abs(diff), botSpeed * dt);
+                rightPaddle.move(moveStep, -1.65f, 1.65f);
+            }
+        }
+    };
+}
+`,
+
   'CMakeLists.txt': `cmake_minimum_required(VERSION 3.15)
 project(NativeCppEngine CXX)
 
@@ -3342,6 +3489,7 @@ EMSCRIPTEN_BINDINGS(EngineModule) {
   'examples/11_plinko.cpp': SOURCE_FILES['11_plinko.cpp'],
   'examples/12_roulette.cpp': SOURCE_FILES['12_roulette.cpp'],
   'examples/13_bingo_physics.cpp': SOURCE_FILES['13_bingo_physics.cpp'],
+  'examples/14_pong.cpp': SOURCE_FILES['14_pong.cpp'],
   'include/engine/Engine.hpp': SOURCE_FILES['Engine.hpp'],
   'include/engine/Camera.hpp': SOURCE_FILES['Camera.hpp'],
   'include/engine/GLBLoader.hpp': SOURCE_FILES['GLBLoader.hpp'],
@@ -3488,20 +3636,62 @@ const Mat4 = {
     out[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
     out[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
     return out;
+  },
+  identity(out) {
+    out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0;
+    out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;
+    out[8] = 0; out[9] = 0; out[10] = 1; out[11] = 0;
+    out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+    return out;
   }
 };
 
+function mat4_identity(out) {
+  return Mat4.identity(out);
+}
+function mat4_fromTranslation(out, v) {
+  Mat4.identity(out);
+  out[12] = v[0]; out[13] = v[1]; out[14] = v[2];
+  return out;
+}
+function mat4_scale(out, a, v) {
+  const x = v[0], y = v[1], z = v[2];
+  out[0] = a[0] * x; out[1] = a[1] * x; out[2] = a[2] * x; out[3] = a[3] * x;
+  out[4] = a[4] * y; out[5] = a[5] * y; out[6] = a[6] * y; out[7] = a[7] * y;
+  out[8] = a[8] * z; out[9] = a[9] * z; out[10] = a[10] * z; out[11] = a[11] * z;
+  out[12] = a[12]; out[13] = a[13]; out[14] = a[14]; out[15] = a[15];
+  return out;
+}
+function mat3_normalFromMat4(out, a) {
+  return Mat4.normalFromMat4(out, a);
+}
+
 // Procedural Geometry Generators (Generated once on initialization)
-function createTorus(rTube = 0.45, rTorus = 1.1, segU = 48, segV = 24) {
+function createTorus(rTube = 0.28, rTorus = 1.1, segU = 96, segV = 48) {
   const positions = [], normals = [], uvs = [], barys = [], indices = [];
   for (let i = 0; i <= segU; i++) {
     const u = (i / segU) * Math.PI * 2;
-    const cu = Math.cos(u), su = Math.sin(u);
+    let cu = Math.cos(u);
+    let su = Math.sin(u);
+    // Numerical quadrant clamping to ensure 100% perfect mathematical symmetry
+    if (i === 0 || i === segU) { cu = 1.0; su = 0.0; }
+    else if (i === segU / 4) { cu = 0.0; su = 1.0; }
+    else if (i === segU / 2) { cu = -1.0; su = 0.0; }
+    else if (i === (3 * segU) / 4) { cu = 0.0; su = -1.0; }
+
     for (let j = 0; j <= segV; j++) {
       const v = (j / segV) * Math.PI * 2;
-      const cv = Math.cos(v), sv = Math.sin(v);
-      positions.push((rTorus + rTube * cv) * cu, rTube * sv, (rTorus + rTube * cv) * su);
-      normals.push(cv * cu, sv, cv * su);
+      let cv = Math.cos(v);
+      let sv = Math.sin(v);
+      if (j === 0 || j === segV) { cv = 1.0; sv = 0.0; }
+      else if (j === segV / 4) { cv = 0.0; sv = 1.0; }
+      else if (j === segV / 2) { cv = -1.0; sv = 0.0; }
+      else if (j === (3 * segV) / 4) { cv = 0.0; sv = -1.0; }
+
+      const rad = rTorus + rTube * cv;
+      // Lie horizontally in X-Y plane; height/thickness along Z
+      positions.push(rad * cu, rad * su, rTube * sv);
+      normals.push(cv * cu, cv * su, sv);
       uvs.push(i / segU, j / segV);
       barys.push(j % 3 === 0 ? 1 : 0, j % 3 === 1 ? 1 : 0, j % 3 === 2 ? 1 : 0);
     }
@@ -3512,7 +3702,8 @@ function createTorus(rTube = 0.45, rTorus = 1.1, segU = 48, segV = 24) {
       const b = (i + 1) * (segV + 1) + j;
       const c = (i + 1) * (segV + 1) + (j + 1);
       const d = i * (segV + 1) + (j + 1);
-      indices.push(a, b, c, a, c, d);
+      // Correct CCW outward winding matching outward normal
+      indices.push(a, c, b, a, d, c);
     }
   }
   return { name: "Torus", positions, normals, uvs, barys, indices };
@@ -4047,7 +4238,7 @@ class NativeApp {
       DEBUG_RENDER_DATA: false,
       lodPolicy: initialLODPolicy,
       lodTier: detectedTier,
-      demoScene: '12_roulette.cpp', // Default to Demo 12 3D Physics-Engine Roulette Wheel
+      demoScene: '14_pong.cpp', // Default to Demo 09 Retro 3D Arcade Pong
       activeMesh: 0,
       activeShader: 0, // Default to Full PBR Filament Shader
       fpsCheapMaterial: false,
@@ -4058,6 +4249,8 @@ class NativeApp {
       depthTest: true,
       cullFace: true,
       baseColor: [0.28, 0.12, 0.06],
+      physicsEngine: 'ammo',
+      materialOverrides: {},
       
       // Showroom state
       showroomLayout: 'circular', // 'circular', 'linear', 'grid'
@@ -4071,10 +4264,10 @@ class NativeApp {
       invertMouseX: true,
       invertMouseY: false,
       camYaw: 0.0,
-      camPitch: 0.76,
-      camRadius: 5.0,
-      camPos: new Float32Array([0.0, -3.8, 4.0]),
-      camTarget: new Float32Array([0.20, 0.0, 0.05]),
+      camPitch: 0.88,
+      camRadius: 7.2,
+      camPos: new Float32Array([0.0, 4.5, 5.5]),
+      camTarget: new Float32Array([0.0, 0.15, 0.0]),
       camFront: new Float32Array([0.0, 0.0, -1.0]),
       camRight: new Float32Array([1.0, 0.0, 0.0]),
       moveSpeed: 6.5,
@@ -4352,7 +4545,9 @@ class NativeApp {
     this.initShowroomUI();
     this.initNetworkSystem();
     this.initFpsStartupMenu();
-    if (this.state.demoScene && this.state.demoScene.includes('13_bingo')) {
+    if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
+      this.initPongDemo();
+    } else if (this.state.demoScene && this.state.demoScene.includes('13_bingo')) {
       this.initBingoDemo();
     } else if (this.state.demoScene && this.state.demoScene.includes('12_roulette')) {
       this.initRouletteDemo();
@@ -4636,10 +4831,20 @@ precision highp float;
 in vec2 v_uv;
 uniform sampler2D u_feltTexture;
 uniform float u_brightness;
+uniform int u_mirrorUv;
 out vec4 fragColor;
 void main() {
-  vec4 tex = texture(u_feltTexture, v_uv);
-  vec2 cUv = v_uv - vec2(0.5, 0.5);
+  vec2 uv = v_uv;
+  if (u_mirrorUv == 1) {
+    uv.x = 1.0 - uv.x;
+  } else if (u_mirrorUv == 2) {
+    uv.y = 1.0 - uv.y;
+  } else if (u_mirrorUv == 3) {
+    uv.x = 1.0 - uv.x;
+    uv.y = 1.0 - uv.y;
+  }
+  vec4 tex = texture(u_feltTexture, uv);
+  vec2 cUv = uv - vec2(0.5, 0.5);
   float vignette = 1.0 - dot(cUv, cUv) * 0.12;
   fragColor = vec4(tex.rgb * vignette * u_brightness, 1.0);
 }
@@ -4655,7 +4860,8 @@ void main() {
       uModel: gl.getUniformLocation(progFelt, "u_model"),
       uViewProj: gl.getUniformLocation(progFelt, "u_viewProj"),
       uFeltTexture: gl.getUniformLocation(progFelt, "u_feltTexture"),
-      uBrightness: gl.getUniformLocation(progFelt, "u_brightness")
+      uBrightness: gl.getUniformLocation(progFelt, "u_brightness"),
+      uMirrorUv: gl.getUniformLocation(progFelt, "u_mirrorUv")
     };
 
     this.initPostProcessing();
@@ -4847,7 +5053,7 @@ void main() {
       createCube(1.0),
       createIcosahedron(1.4),
       createTrefoilKnot(120, 20, 0.28),
-      createTorus(0.45, 1.1, 48, 24),
+      createTorus(0.28, 1.1, 96, 48),
       createQuad(1.0),
       createRing(0.82, 1.0, 48),
       createDisk(1.0, 48),
@@ -5516,6 +5722,29 @@ void main() {
     return meshBytes + fboBytes + textureBytes;
   }
 
+  updateDebugFooterUIVisibility() {
+    const isDebug = !!(window.DEBUG_RENDER_DATA || (this.state && this.state.DEBUG_RENDER_DATA));
+    this._lastDebugState = isDebug;
+
+    const btnJoy = document.getElementById('btn-toggle-joystick');
+    const btnConsole = document.getElementById('btn-toggle-console');
+    const btnResetCam = document.getElementById('btn-reset-cam');
+    const toolbarRight = document.getElementById('viewport-toolbar-right');
+    const consoleCard = document.getElementById('viewport-console-card');
+
+    const displayVal = isDebug ? '' : 'none';
+
+    if (btnJoy) btnJoy.style.display = displayVal;
+    if (btnConsole) btnConsole.style.display = displayVal;
+    if (btnResetCam) btnResetCam.style.display = displayVal;
+    if (toolbarRight) toolbarRight.style.display = isDebug ? 'flex' : 'none';
+
+    // If debug is turned OFF, ensure bottom console log panel is closed/minimized
+    if (!isDebug && consoleCard) {
+      consoleCard.classList.add('minimized');
+    }
+  }
+
   updateDebugOverlay() {
     const overlay = document.getElementById('debug-overlay-canvas');
     const hud = document.getElementById('viewport-stats-hud');
@@ -5523,6 +5752,10 @@ void main() {
 
     // Check both local state and global flag
     const isDebug = !!(window.DEBUG_RENDER_DATA || this.state.DEBUG_RENDER_DATA);
+
+    if (this._lastDebugState !== isDebug) {
+      this.updateDebugFooterUIVisibility();
+    }
 
     if (!isDebug) {
       overlay.style.display = 'none';
@@ -5907,7 +6140,7 @@ void main() {
         }
       }
       if (weaponHudEl) weaponHudEl.style.display = 'none';
-      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo) ? 'block' : 'none';
+      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong) ? 'block' : 'none';
 
       if (showroomTopEl) showroomTopEl.style.display = isShowroom ? 'flex' : 'none';
       if (showroomCardEl) showroomCardEl.style.display = isShowroom ? 'block' : 'none';
@@ -5954,7 +6187,17 @@ void main() {
       if (bingoDesktopBtnEl && !isBingo) bingoDesktopBtnEl.style.display = 'none';
       if (bingoControlsPanel) bingoControlsPanel.style.display = isBingo ? 'block' : 'none';
 
-      if (isSlotMachine || isSlidingPuzzle || isPlinko || isRoulette || isBingo) {
+      const isPong = this.state.demoScene && this.state.demoScene.includes('14_pong');
+      const pongBannerEl = document.getElementById('pong-banner');
+      const pongSeatsEl = document.getElementById('pong-video-seats-container');
+      const pongModalEl = document.getElementById('pong-mode-modal');
+      if (pongBannerEl) pongBannerEl.style.display = isPong ? 'flex' : 'none';
+      if (!isPong) {
+        if (pongSeatsEl) pongSeatsEl.style.display = 'none';
+        if (pongModalEl) pongModalEl.style.display = 'none';
+      }
+
+      if (isSlotMachine || isSlidingPuzzle || isPlinko || isRoulette || isBingo || isPong) {
         const startupOverlay = document.getElementById('fps-startup-overlay');
         if (startupOverlay) startupOverlay.style.display = 'none';
       }
@@ -6176,10 +6419,15 @@ void main() {
       }
 
       if (!this.state.isDragging) {
-        if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
+        if (this.state.demoScene.includes('14_pong')) {
+          this.updatePongPointerMove(e);
+        } else if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
           this.updateRouletteHover(e.clientX, e.clientY);
         }
         return;
+      }
+      if (this.state.demoScene.includes('14_pong')) {
+        this.updatePongPointerMove(e);
       }
       const dx = e.clientX - this.state.lastMouseX;
       const dy = e.clientY - this.state.lastMouseY;
@@ -6188,6 +6436,12 @@ void main() {
 
       if (this.state.cameraMode === 0) {
         // Orbit Arc Mode
+        if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
+          if (this.state.mouseButton === 0) {
+            this.updatePongPointerMove(e);
+            return;
+          }
+        }
         if (this.state.mouseButton === 0 && !e.shiftKey) {
           // Left click: Orbit
           this.state.camYaw += dx * 0.006 * invX;
@@ -6248,6 +6502,14 @@ void main() {
       if (isTyping || isOverlayOpen) return;
 
       const k = e.key.toLowerCase();
+      if (e.key === 'ArrowUp') {
+        this.state.keys.arrowUp = true;
+        if (this.state.demoScene && this.state.demoScene.includes('14_pong')) e.preventDefault();
+      }
+      if (e.key === 'ArrowDown') {
+        this.state.keys.arrowDown = true;
+        if (this.state.demoScene && this.state.demoScene.includes('14_pong')) e.preventDefault();
+      }
       if (k === 'w') this.state.keys.w = true;
       if (k === 'a') this.state.keys.a = true;
       if (k === 's') this.state.keys.s = true;
@@ -6290,6 +6552,8 @@ void main() {
       }
 
       const k = e.key.toLowerCase();
+      if (e.key === 'ArrowUp') this.state.keys.arrowUp = false;
+      if (e.key === 'ArrowDown') this.state.keys.arrowDown = false;
       if (k === 'w') this.state.keys.w = false;
       if (k === 'a') this.state.keys.a = false;
       if (k === 's') this.state.keys.s = false;
@@ -6327,8 +6591,12 @@ void main() {
             this.log("🐞 Telemetry HUD hidden.", "info");
           }
         }
+        this.updateDebugFooterUIVisibility();
       };
     }
+
+    // Ensure footer debug UI is hidden by default
+    this.updateDebugFooterUIVisibility();
 
     // Killer Engine LOD Policy Toggle Pill
     const lodPill = document.getElementById('lod-toggle-pill');
@@ -6522,6 +6790,20 @@ void main() {
           updateFPSOverlays();
           this.log("Loaded Demo 08: 3D Real-Physics Bingo & Diamond Drum Showcase", "cpp");
           this.initBingoDemo();
+        } else if (this.state.demoScene.includes('14_pong')) {
+          this.state.cameraMode = 0;
+          const camSelect = document.getElementById('camera-mode-select');
+          if (camSelect) camSelect.value = "0";
+          const isMobile = this.isMobileDevice();
+          this.state.camRadius = isMobile ? 8.4 : 7.2;
+          this.state.camPitch = 0.88;
+          this.state.camYaw = 0.0;
+          this.state.camTarget[0] = 0.0;
+          this.state.camTarget[1] = 0.15;
+          this.state.camTarget[2] = 0.0;
+          updateFPSOverlays();
+          this.log("Loaded Demo 09: Retro 3D Arcade Pong Showcase", "cpp");
+          this.initPongDemo();
         } else {
           this.log(`Loaded Demo: ${this.state.demoScene}`, "cpp");
         }
@@ -7475,6 +7757,16 @@ void main() {
           }
           this.pinchZoomState.lastTapTime = now;
 
+          if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+              const t = e.changedTouches[i];
+              if (t.identifier !== this.joystickState.touchId) {
+                this.updatePongPointerMove(t);
+              }
+            }
+            return;
+          }
+
           if (touch.identifier !== this.joystickState.touchId && !this.touchLookState.active) {
             this.touchLookState.active = true;
             this.touchLookState.touchId = touch.identifier;
@@ -7566,6 +7858,17 @@ void main() {
               this.state.camRadius = Math.max(0.5, Math.min(26.0, this.state.camRadius - deltaDist * zoomSens));
             } else {
               this.state.moveSpeed = Math.max(0.5, Math.min(30.0, this.state.moveSpeed + deltaDist * 0.02));
+            }
+          }
+          return;
+        }
+
+        // In Pong demo, touch dragging moves the player paddle ("player pin") directly, NOT the camera orbit!
+        if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (touch.identifier !== this.joystickState.touchId) {
+              this.updatePongPointerMove(touch);
             }
           }
           return;
@@ -7873,6 +8176,7 @@ void main() {
       { value: "11_plinko.cpp", path: "examples/11_plinko.cpp", name: "Demo 06: 3D Plinko Cascade Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
       { value: "12_roulette.cpp", path: "examples/12_roulette.cpp", name: "Demo 07: 3D Physics-Engine Roulette Wheel", isDemoScene: true, isLiveFile: true, isExampleTab: true },
       { value: "13_bingo_physics.cpp", path: "examples/13_bingo_physics.cpp", name: "Demo 08: 3D Real-Physics Bingo & Diamond Drum", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "14_pong.cpp", path: "examples/14_pong.cpp", name: "Demo 09: Retro 3D Arcade Pong", isDemoScene: true, isLiveFile: true, isExampleTab: true },
 
       // Engine Internals
       { value: "src/core/Engine.cpp", path: "src/core/Engine.cpp", name: "Engine Core C++", isDemoScene: false, isLiveFile: true, isExampleTab: false },
@@ -8398,6 +8702,7 @@ else if (typeof define === 'function' && define['amd'])
     this.renderHierarchyTree();
     this.bindInspectorControls();
     this.bindPlayerControllerUI();
+    this.initPhysicsEngineUI();
     this.renderCollisionRegister();
     this.updateCppBridge();
     this.initFpsDamageWorkspace();
@@ -8458,6 +8763,15 @@ else if (typeof define === 'function' && define['amd'])
         const val = parseFloat(e.target.value);
         const valLabel = document.getElementById('val-jumppad-force');
         if (valLabel) valLabel.textContent = `${val.toFixed(1)} m/s`;
+      });
+    }
+
+    // 5b. Map Real Physics Engine Solver Selector
+    const selectMapPhysics = document.getElementById('select-map-physics-lib');
+    if (selectMapPhysics) {
+      selectMapPhysics.value = this.state.physicsEngine || 'ammo';
+      selectMapPhysics.addEventListener('change', (e) => {
+        this.setPhysicsEngine(e.target.value);
       });
     }
 
@@ -11939,18 +12253,11 @@ else if (typeof define === 'function' && define['amd'])
 
     const engineSelect = document.getElementById('select-plinko-engine');
     if (engineSelect) {
-      engineSelect.value = ps.physicsEngine || 'classic2d';
+      engineSelect.value = this.state.physicsEngine || 'ammo';
       engineSelect.addEventListener('change', (e) => {
         const val = e.target.value;
-        ps.physicsEngine = val;
         ps.balls = []; // Clear local active balls
-        this.log(`Plinko physics engine updated to: [${val.toUpperCase()} (Web Worker)]`, "info");
-        
-        if (this.physicsWorker) {
-          this.physicsWorker.postMessage({ type: 'reset' });
-          this.physicsWorker.postMessage({ type: 'setEngine', engine: val });
-        }
-        if (this.synth) this.synth.play('armor');
+        this.setPhysicsEngine(val);
       });
     }
   }
@@ -12165,9 +12472,35 @@ else if (typeof define === 'function' && define['amd'])
           rs.ball = data.roulette.ball;
           if (data.roulette.winPocket !== null && !rs.payoutHandled) {
             rs.payoutHandled = true;
-            rs.spinning = false;
-            rs.lastOutcomePocket = data.roulette.winPocket;
-            this.computeRoulettePayout(data.roulette.winPocket);
+            rs.spinning = true; // Lock betting while waiting 2 seconds
+            this.log("Ball dropped and settled! Resolving round in 2 seconds...", "info");
+
+            setTimeout(() => {
+              rs.spinning = false; // Open betting!
+              rs.lastOutcomePocket = data.roulette.winPocket;
+
+              // 1. Calculate win and add to balance
+              this.computeRoulettePayout(data.roulette.winPocket);
+
+              // 2. Record current active chips for REPEAT (before clearing them)
+              if (this.rouletteChips && this.rouletteChips.length > 0) {
+                rs.lastRoundBets = this.rouletteChips.map(c => ({
+                  actorId: c.actorId,
+                  value: c.value,
+                  actorName: c.actorName
+                }));
+              }
+
+              // 3. Clear all active bets from the table
+              this.rouletteChips = [];
+              if (this.rouletteActors) {
+                this.rouletteActors.forEach(a => { a.betTotal = 0; });
+              }
+
+              // 4. Force state UI redraw
+              this.updateRouletteUI();
+              this.log("Betting is now OPEN again!", "success");
+            }, 2000);
           }
         } else {
           rs.ball = null;
@@ -12633,6 +12966,7 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   updateRouletteTimerDisplay(secondsLeft) {
+    this.rouletteCurrentTimeLeft = secondsLeft;
     const timerEl = document.getElementById('roulette-countdown-timer');
     if (!timerEl) return;
 
@@ -12642,7 +12976,7 @@ else if (typeof define === 'function' && define['amd'])
     const formatSecs = secs.toString().padStart(2, '0');
     timerEl.innerText = `${formatMins}:${formatSecs}`;
 
-    if (secondsLeft <= 10) {
+    if (secondsLeft <= 1) {
       timerEl.style.color = '#ef4444';
     } else {
       timerEl.style.color = '#fbbf24';
@@ -13785,6 +14119,18 @@ else if (typeof define === 'function' && define['amd'])
     const rs = this.rouletteState;
     if (!rs) return;
 
+    if (rs.spinning) {
+      this.log("Wheel is spinning! Betting is CLOSED.", "error");
+      if (this.synth) this.synth.play('damage');
+      return;
+    }
+
+    if (this.rouletteCurrentTimeLeft !== undefined && this.rouletteCurrentTimeLeft <= 1) {
+      this.log("⚠️ RED COUNTDOWN! Betting is CLOSED for the final second of the round.", "error");
+      if (this.synth) this.synth.play('damage');
+      return;
+    }
+
     const betAmt = rs.betAmount || 10;
     if (rs.credits < betAmt) {
       this.log(`Insufficient credits ($${rs.credits}) for $${betAmt} bet.`, "error");
@@ -13867,6 +14213,12 @@ else if (typeof define === 'function' && define['amd'])
     const rs = this.rouletteState;
     if (!rs || rs.spinning) return;
 
+    if (this.rouletteCurrentTimeLeft !== undefined && this.rouletteCurrentTimeLeft <= 1) {
+      this.log("⚠️ RED COUNTDOWN! Cannot clear bets in the final second.", "error");
+      if (this.synth) this.synth.play('damage');
+      return;
+    }
+
     if (this.rouletteChips && this.rouletteChips.length > 0) {
       // Stash cleared chips so REPEAT can restore them
       rs.lastClearedBets = this.rouletteChips.map(c => ({
@@ -13898,6 +14250,12 @@ else if (typeof define === 'function' && define['amd'])
     const rs = this.rouletteState;
     if (!rs || rs.spinning) return;
 
+    if (this.rouletteCurrentTimeLeft !== undefined && this.rouletteCurrentTimeLeft <= 1) {
+      this.log("⚠️ RED COUNTDOWN! Cannot clear last bet in the final second.", "error");
+      if (this.synth) this.synth.play('damage');
+      return;
+    }
+
     if (this.rouletteChips && this.rouletteChips.length > 0) {
       const lastChip = this.rouletteChips.pop();
       rs.credits += lastChip.value;
@@ -13921,6 +14279,12 @@ else if (typeof define === 'function' && define['amd'])
   repeatRouletteBets() {
     const rs = this.rouletteState;
     if (!rs || rs.spinning) return;
+
+    if (this.rouletteCurrentTimeLeft !== undefined && this.rouletteCurrentTimeLeft <= 1) {
+      this.log("⚠️ RED COUNTDOWN! Cannot repeat bets in the final second.", "error");
+      if (this.synth) this.synth.play('damage');
+      return;
+    }
 
     const betsToRepeat = (rs.lastRoundBets && rs.lastRoundBets.length > 0)
       ? rs.lastRoundBets
@@ -14139,6 +14503,15 @@ else if (typeof define === 'function' && define['amd'])
       });
     }
 
+    // Real Physics Engine selector for Roulette
+    const rEngineSelect = document.getElementById('select-roulette-physics-engine');
+    if (rEngineSelect) {
+      rEngineSelect.value = this.state.physicsEngine || 'ammo';
+      rEngineSelect.addEventListener('change', (e) => {
+        this.setPhysicsEngine(e.target.value);
+      });
+    }
+
     // Interactive spin trigger button
     const spinBtn = document.getElementById('btn-roulette-spin');
     if (spinBtn) {
@@ -14325,6 +14698,117 @@ else if (typeof define === 'function' && define['amd'])
         if (this.synth) this.synth.play('pickup');
       };
     }
+
+    // Setup Chat UI bindings inside setupRouletteUI
+    const chatInput = document.getElementById('roulette-chat-input');
+    const chatSendBtn = document.getElementById('btn-roulette-chat-send');
+    const chatBox = document.getElementById('roulette-chat-box');
+
+    if (chatBox) {
+      const stopProp = (e) => {
+        e.stopPropagation();
+      };
+      ['mousedown', 'mousemove', 'mouseup', 'click', 'keydown', 'keypress', 'keyup'].forEach(evt => {
+        chatBox.addEventListener(evt, stopProp);
+      });
+    }
+
+    const sendChatMessage = () => {
+      if (!chatInput) return;
+      const text = chatInput.value.trim();
+      if (!text) return;
+
+      chatInput.value = '';
+      
+      this.broadcastRouletteEvent('chat', {
+        playerId: this.net.localPlayerId,
+        playerName: this.rouletteLocalName || 'You',
+        text: text
+      });
+
+      this.appendRouletteChatMessage('You', text, true, this.net.localPlayerId);
+    };
+
+    if (chatSendBtn) {
+      chatSendBtn.onclick = () => sendChatMessage();
+    }
+
+    if (chatInput) {
+      chatInput.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          sendChatMessage();
+        }
+      };
+    }
+
+    // Draggable feature implementation for Camera View UI & Table Chat UI using Pointer Events
+    const makeDraggable = (elmnt, handle) => {
+      if (!elmnt || !handle) return;
+      let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+
+      const onPointerDown = (e) => {
+        // Exclude interactive elements
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+          return;
+        }
+        e.preventDefault();
+        
+        // Capture the pointer stream to this specific drag handle
+        handle.setPointerCapture(e.pointerId);
+
+        const rect = elmnt.getBoundingClientRect();
+        const parentRect = elmnt.offsetParent ? elmnt.offsetParent.getBoundingClientRect() : { left: 0, top: 0 };
+        
+        elmnt.style.transform = 'none';
+        elmnt.style.bottom = 'auto';
+        elmnt.style.right = 'auto';
+        elmnt.style.left = (rect.left - parentRect.left) + 'px';
+        elmnt.style.top = (rect.top - parentRect.top) + 'px';
+
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+
+        handle.addEventListener('pointermove', onPointerMove);
+        handle.addEventListener('pointerup', onPointerUp);
+        handle.addEventListener('pointercancel', onPointerUp);
+        handle.style.cursor = 'grabbing';
+      };
+
+      const onPointerMove = (e) => {
+        pos1 = pos3 - e.clientX;
+        pos2 = pos4 - e.clientY;
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+        elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+      };
+
+      const onPointerUp = (e) => {
+        handle.releasePointerCapture(e.pointerId);
+        handle.removeEventListener('pointermove', onPointerMove);
+        handle.removeEventListener('pointerup', onPointerUp);
+        handle.removeEventListener('pointercancel', onPointerUp);
+        handle.style.cursor = 'grab';
+      };
+
+      handle.addEventListener('pointerdown', onPointerDown);
+      handle.style.touchAction = 'none'; // Avoid browser scrolling gestures overriding drags on mobile
+      handle.style.cursor = 'grab';
+    };
+
+    // Attach dragging to Camera seats wrapper
+    const seatsWrapper = document.getElementById('roulette-multiplayer-seats-wrapper');
+    const seatsHandle = document.getElementById('roulette-seats-drag-handle');
+    if (seatsWrapper && seatsHandle) {
+      makeDraggable(seatsWrapper, seatsHandle);
+    }
+
+    // Attach dragging to Chat Box
+    const chatHeader = document.getElementById('roulette-chat-header');
+    if (chatBox && chatHeader) {
+      makeDraggable(chatBox, chatHeader);
+    }
   }
 
   updateRouletteUI() {
@@ -14441,13 +14925,18 @@ else if (typeof define === 'function' && define['amd'])
       if (btnJoin) btnJoin.style.display = 'none';
       if (btnLeave) btnLeave.style.display = 'block';
 
+      // Show the Roulette Table Chat Box Overlay
+      const chatBox = document.getElementById('roulette-chat-box');
+      if (chatBox) chatBox.style.display = 'flex';
+
       this._netRouletteListeners = {
         'roulette:join': (data) => this.handleRemotePlayerJoined(data),
         'roulette:presence': (data) => this.handleRemotePlayerPresence(data),
         'roulette:signal': (data) => this.handleRemoteSignal(data),
         'roulette:bet': (data) => this.handleRemoteBet(data),
         'roulette:spin': (data) => this.handleRemoteSpin(data),
-        'roulette:left': (data) => this.handleRemotePlayerLeft(data)
+        'roulette:left': (data) => this.handleRemotePlayerLeft(data),
+        'roulette:chat': (data) => this.handleRemoteChat(data)
       };
 
       for (const [evt, cb] of Object.entries(this._netRouletteListeners)) {
@@ -14520,8 +15009,20 @@ else if (typeof define === 'function' && define['amd'])
     if (btnJoin) btnJoin.style.display = 'block';
     if (btnLeave) btnLeave.style.display = 'none';
 
+    const seatsWrapper = document.getElementById('roulette-multiplayer-seats-wrapper');
+    if (seatsWrapper) seatsWrapper.style.display = 'none';
     const seatsContainer = document.getElementById('roulette-multiplayer-seats');
     if (seatsContainer) seatsContainer.style.display = 'none';
+
+    // Hide the Roulette Table Chat Box Overlay and reset it
+    const chatBox = document.getElementById('roulette-chat-box');
+    if (chatBox) {
+      chatBox.style.display = 'none';
+      const messagesContainer = document.getElementById('roulette-chat-messages');
+      if (messagesContainer) {
+        messagesContainer.innerHTML = '<div style="color: #6ee7b7; font-style: italic; font-size: 10px; opacity: 0.85; margin-bottom: 4px;">Welcome to the multiplayer table! Chat is active.</div>';
+      }
+    }
 
     this.log("Disconnected from public table. Switched to single-player mode.", "info");
   }
@@ -14529,6 +15030,41 @@ else if (typeof define === 'function' && define['amd'])
   broadcastRouletteEvent(type, data) {
     if (this.net && this.net.activeTransport && this.net.activeTransport.connected) {
       this.net.activeTransport.send(`roulette:${type}`, data);
+    }
+  }
+
+  handleRemoteChat(data) {
+    if (!data || data.playerId === this.net.localPlayerId) return;
+    this.appendRouletteChatMessage(data.playerName || 'Player', data.text, false, data.playerId);
+  }
+
+  appendRouletteChatMessage(senderName, text, isSelf = false, playerId = null) {
+    const messagesContainer = document.getElementById('roulette-chat-messages');
+    if (!messagesContainer) return;
+
+    const messageEl = document.createElement('div');
+    messageEl.style = "margin-bottom: 4px; line-height: 1.35; font-size: 11px;";
+
+    let nameColor = "#10b981"; // Self color
+    if (!isSelf && playerId) {
+      const colFloat = this.getNetworkPlayerColor(playerId);
+      nameColor = `rgb(${Math.round(colFloat[0]*255)}, ${Math.round(colFloat[1]*255)}, ${Math.round(colFloat[2]*255)})`;
+    }
+
+    const escapeHTML = (str) => {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    };
+
+    messageEl.innerHTML = `
+      <span style="font-weight: bold; color: ${nameColor};">${senderName}:</span>
+      <span style="color: #cbd5e1; word-break: break-all;">${escapeHTML(text)}</span>
+    `;
+
+    messagesContainer.appendChild(messageEl);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    if (!isSelf && this.synth) {
+      this.synth.play('pickup');
     }
   }
 
@@ -14743,14 +15279,17 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   updateRouletteMultiplayerSeatsUI() {
+    const seatsWrapper = document.getElementById('roulette-multiplayer-seats-wrapper');
     const seatsContainer = document.getElementById('roulette-multiplayer-seats');
     if (!seatsContainer) return;
 
     if (!this.rouletteMultiplayerActive) {
+      if (seatsWrapper) seatsWrapper.style.display = 'none';
       seatsContainer.style.display = 'none';
       return;
     }
 
+    if (seatsWrapper) seatsWrapper.style.display = 'flex';
     seatsContainer.style.display = 'flex';
     seatsContainer.innerHTML = '';
 
@@ -14914,7 +15453,7 @@ else if (typeof define === 'function' && define['amd'])
           const winAmt = chip.value * (actor.payout + 1);
           chip.isWinner = true;
 
-          const isLocal = !chip.ownerId || chip.ownerId === this.net.localPlayerId;
+          const isLocal = !chip.ownerId || (this.net && chip.ownerId === this.net.localPlayerId);
           if (isLocal) {
             localWon += winAmt;
             localWinningChipsCount++;
@@ -14985,6 +15524,15 @@ else if (typeof define === 'function' && define['amd'])
     }
 
     this.updateRouletteUI();
+
+    if (this.rouletteMultiplayerActive) {
+      this.broadcastRouletteEvent('presence', {
+        playerId: this.net.localPlayerId,
+        playerName: this.rouletteLocalName,
+        hasVideo: !!this.localStream,
+        credits: rs.credits
+      });
+    }
   }
 
   updateRoulettePhysics(dt) {
@@ -15024,7 +15572,7 @@ else if (typeof define === 'function' && define['amd'])
     const tableH = 1.86;
 
     // Helper: draw rotated cube with yaw angle rotZ (rigid rotation with scale)
-    const drawRotatedCube = (px, py, pz, sx, sy, sz, rotZ, color, rough = 0.25, metal = 0.85, matType = 0) => {
+    const drawRotatedCube = (px, py, pz, sx, sy, sz, rotZ, color, rough = 0.25, metal = 0.85, matType = 0, clearCoat = 0.1) => {
       gl.bindVertexArray(cubeMesh.vao);
       const c = Math.cos(rotZ), s = Math.sin(rotZ);
       // Column 0: X axis rotated and scaled by sx
@@ -15054,14 +15602,15 @@ else if (typeof define === 'function' && define['amd'])
       if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
       if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
       if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
       gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     };
 
-    const drawCube = (px, py, pz, sx, sy, sz, color, rough = 0.25, metal = 0.85, matType = 0) => {
-      drawRotatedCube(px, py, pz, sx, sy, sz, 0, color, rough, metal, matType);
+    const drawCube = (px, py, pz, sx, sy, sz, color, rough = 0.25, metal = 0.85, matType = 0, clearCoat = 0.1) => {
+      drawRotatedCube(px, py, pz, sx, sy, sz, 0, color, rough, metal, matType, clearCoat);
     };
 
-    const drawSphere = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0, rot = [0, 0, 0]) => {
+    const drawSphere = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0, rot = [0, 0, 0], clearCoat = 0.1) => {
       gl.bindVertexArray(sphereMesh.vao);
       const cx = Math.cos(rot[0]), sx_ = Math.sin(rot[0]);
       const cy = Math.cos(rot[1]), sy_ = Math.sin(rot[1]);
@@ -15089,16 +15638,17 @@ else if (typeof define === 'function' && define['amd'])
       if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
       if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
       if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
       gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     };
 
     // Helper: draw horizontal torus laying flat in X-Y plane (normal pointing up Z)
-    const drawHorizontalTorus = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0) => {
+    const drawHorizontalTorus = (px, py, pz, sx, sy, sz, color, rough = 0.15, metal = 0.95, matType = 0, clearCoat = 0.1) => {
       gl.bindVertexArray(torusMesh.vao);
-      this.modelMatrix[0] = sx;  this.modelMatrix[1] = 0;    this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
-      this.modelMatrix[4] = 0;   this.modelMatrix[5] = 0;    this.modelMatrix[6] = sz;  this.modelMatrix[7] = 0;
-      this.modelMatrix[8] = 0;   this.modelMatrix[9] = -sy;  this.modelMatrix[10] = 0;  this.modelMatrix[11] = 0;
-      this.modelMatrix[12] = px; this.modelMatrix[13] = py;  this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      this.modelMatrix[0] = sx;  this.modelMatrix[1] = 0;   this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0;   this.modelMatrix[5] = sy;  this.modelMatrix[6] = 0;   this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0;   this.modelMatrix[9] = 0;   this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
       Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
       gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
       if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
@@ -15106,10 +15656,11 @@ else if (typeof define === 'function' && define['amd'])
       if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
       if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
       if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
       gl.drawElements(gl.TRIANGLES, torusMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     };
 
-    const drawDisk = (px, py, pz, sx, sy, sz, color, rough = 0.2, metal = 0.0, matType = 0) => {
+    const drawDisk = (px, py, pz, sx, sy, sz, color, rough = 0.2, metal = 0.0, matType = 0, clearCoat = 0.1) => {
       if (!diskMesh) return;
       gl.bindVertexArray(diskMesh.vao);
       this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
@@ -15123,10 +15674,11 @@ else if (typeof define === 'function' && define['amd'])
       if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
       if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
       if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
       gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     };
 
-    const drawRing = (px, py, pz, sx, sy, sz, color, rough = 0.2, metal = 0.0, matType = 0) => {
+    const drawRing = (px, py, pz, sx, sy, sz, color, rough = 0.2, metal = 0.0, matType = 0, clearCoat = 0.1) => {
       if (!ringMesh) return;
       gl.bindVertexArray(ringMesh.vao);
       this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
@@ -15140,6 +15692,7 @@ else if (typeof define === 'function' && define['amd'])
       if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
       if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
       if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
       gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     };
 
@@ -15153,6 +15706,7 @@ else if (typeof define === 'function' && define['amd'])
     if (quadMesh && this.casinoFloorTexture && this.rouletteFeltProg) {
       gl.useProgram(this.rouletteFeltProg.prog);
       gl.uniformMatrix4fv(this.rouletteFeltProg.uViewProj, false, this.viewProjMatrix);
+      gl.uniform1i(this.rouletteFeltProg.uMirrorUv, 0);
       this.modelMatrix[0] = 16.0; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
       this.modelMatrix[4] = 0; this.modelMatrix[5] = 10.0; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
       this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = 1.0; this.modelMatrix[11] = 0;
@@ -15192,6 +15746,7 @@ else if (typeof define === 'function' && define['amd'])
     const spindleEnt = this.sceneEntities ? this.sceneEntities.find(e => e.id === 0) : null;
     const wheelEnt = this.sceneEntities ? this.sceneEntities.find(e => e.id === 1) : null;
     const rimEnt = this.sceneEntities ? this.sceneEntities.find(e => e.id === 2) : null;
+    const torusEnt = this.sceneEntities ? this.sceneEntities.find(e => e.id === 3) : null;
 
     // Resolve materials
     const spindleColor = spindleEnt ? spindleEnt.color : [0.96, 0.78, 0.30];
@@ -15205,6 +15760,13 @@ else if (typeof define === 'function' && define['amd'])
     const rimColor = rimEnt ? rimEnt.color : [0.28, 0.10, 0.05];
     const rimRough = rimEnt ? rimEnt.roughness : 0.25;
     const rimMetal = rimEnt ? rimEnt.metallic : 0.08;
+
+    const torusColor = torusEnt ? torusEnt.color : [0.04, 0.04, 0.05];
+    const torusRough = torusEnt ? torusEnt.roughness : 0.03;
+    const torusMetal = torusEnt ? torusEnt.metallic : 0.85;
+    const torusMatKey = torusEnt ? torusEnt.materialKey : "obsidian";
+    const torusMat = torusMatKey && FILAMENT_MATERIALS_CATALOG[torusMatKey];
+    const torusMatType = torusMat ? torusMat.matTypeId : 0;
 
     // ==========================================
     // 2. BETTING TABLE SURFACE (SIDE-BY-SIDE)
@@ -15230,6 +15792,7 @@ else if (typeof define === 'function' && define['amd'])
     if (quadMesh && this.rouletteTableTexture && this.rouletteFeltProg) {
       gl.useProgram(this.rouletteFeltProg.prog);
       gl.uniformMatrix4fv(this.rouletteFeltProg.uViewProj, false, this.viewProjMatrix);
+      gl.uniform1i(this.rouletteFeltProg.uMirrorUv, 0);
 
       this.modelMatrix[0] = tableW; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
       this.modelMatrix[4] = 0; this.modelMatrix[5] = tableH; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
@@ -15259,11 +15822,11 @@ else if (typeof define === 'function' && define['amd'])
     // Outer mahogany housing cabinet base
     drawDisk(wheelX, wheelY, 0.002, 2.00, 2.00, 1.0, rimColor, rimRough, rimMetal, 1);
 
-    // Ball track Torus
-    drawHorizontalTorus(wheelX, wheelY, 0.040, 1.46, 1.46, 0.12, rimColor, rimRough, rimMetal, 1);
+    // Ball track Torus (Polished Dark Obsidian with Ray Reflections)
+    drawHorizontalTorus(wheelX, wheelY, 0.040, 1.46, 1.46, 0.16, torusColor, torusRough, torusMetal, torusMatType, 1.0);
 
     // Safety Ring Torus in 24k Gold
-    drawHorizontalTorus(wheelX, wheelY, 0.076, 1.42, 1.42, 0.05, [0.96, 0.82, 0.36], 0.08, 0.98, 0);
+    drawHorizontalTorus(wheelX, wheelY, 0.076, 1.42, 1.42, 0.07, [0.96, 0.82, 0.36], 0.08, 0.98, 0);
 
     // Inner concave wood bowl slope
     drawDisk(wheelX, wheelY, 0.012, 1.40, 1.40, 1.0, rimColor, rimRough, rimMetal, 1);
@@ -15279,6 +15842,7 @@ else if (typeof define === 'function' && define['amd'])
     if (diskMesh && this.rouletteWheelTexture && this.rouletteFeltProg) {
       gl.useProgram(this.rouletteFeltProg.prog);
       gl.uniformMatrix4fv(this.rouletteFeltProg.uViewProj, false, this.viewProjMatrix);
+      gl.uniform1i(this.rouletteFeltProg.uMirrorUv, 1);
 
       const cW = Math.cos(wheelAngle), sW = Math.sin(wheelAngle);
       this.modelMatrix[0] = 1.05 * cW;  this.modelMatrix[1] = 1.05 * sW;  this.modelMatrix[2] = 0;   this.modelMatrix[3] = 0;
@@ -15481,7 +16045,7 @@ else if (typeof define === 'function' && define['amd'])
     }
 
     // -------------------------------------------------------------------------
-    // PASS 5: Physical Rolling Ivory Ball & Trail
+    // PASS 5: Physical Rolling Ivory Ball (No glowing trails, strong opaque solid)
     // -------------------------------------------------------------------------
     const b = rs.ball;
     if (b) {
@@ -15489,24 +16053,8 @@ else if (typeof define === 'function' && define['amd'])
       const rx = b.pos[0] * ballScale;
       const ry = b.pos[1] * ballScale;
 
-      drawSphere(wheelX + rx, wheelY + ry, b.pos[2], 0.047, 0.047, 0.047, [0.97, 0.97, 0.95], 0.06, 0.12, 15, b.rot || [0, 0, 0]);
-
-      if (!b.trapped) {
-        rs.trail.push({ x: rx, y: ry, z: b.pos[2] });
-        const maxTrailLength = this.isMobileDevice() ? 6 : 14;
-        if (rs.trail.length > maxTrailLength) rs.trail.shift();
-
-        // Trail batch: bind holderSphere VAO and material once
-        gl.bindVertexArray(holderSphereMesh.vao);
-        bindMaterialParams([1.0, 1.0, 1.0], 0.05, 0.10, 0);
-        for (let idx = 0; idx < rs.trail.length; idx++) {
-          const t = rs.trail[idx];
-          const ratio = idx / rs.trail.length;
-          const rSize = 0.047 * ratio * 0.7;
-          applyRotatedModel(wheelX + t.x, wheelY + t.y, t.z, rSize, rSize, rSize);
-          gl.drawElements(gl.TRIANGLES, holderSphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-        }
-      }
+      // Draw standard solid PBR ivory sphere (matType = 0, no glowing core pulse, clearCoat = 1.0)
+      drawSphere(wheelX + rx, wheelY + ry, b.pos[2], 0.047, 0.047, 0.047, [0.97, 0.97, 0.95], 0.10, 0.01, 0, b.rot || [0, 0, 0], 1.0);
     }
 
     // ==========================================
@@ -16868,6 +17416,1094 @@ else if (typeof define === 'function' && define['amd'])
     }
   }
 
+  // =========================================================================
+  // DEMO 09: RETRO 3D ARCADE PONG (SOLO BOT, LOCAL 2P, ONLINE MULTIPLAYER)
+  // =========================================================================
+  initPongDemo() {
+    // Hide other HUDs and overlays
+    const bingoHUD = document.getElementById('bingo-banner');
+    if (bingoHUD) bingoHUD.style.display = 'none';
+    const bingoCard = document.getElementById('bingo-overlay');
+    if (bingoCard) bingoCard.style.display = 'none';
+    const rouletteHUD = document.getElementById('roulette-banner');
+    if (rouletteHUD) rouletteHUD.style.display = 'none';
+    const plinkoHUD = document.getElementById('plinko-banner');
+    if (plinkoHUD) plinkoHUD.style.display = 'none';
+
+    // Show Pong banner HUD
+    const pongBanner = document.getElementById('pong-banner');
+    if (pongBanner) pongBanner.style.display = 'flex';
+
+    if (!this.pongState) {
+      this.pongState = {
+        active: true,
+        mode: 'solo', // 'solo', 'local_2p', 'online'
+        botDifficulty: 'medium', // 'easy', 'medium', 'hard'
+        soundEnabled: true,
+        isHost: true,
+        serving: true,
+        serveTimer: 1.8,
+        serveDirection: 1, // 1: towards right, -1: towards left
+        rallyCount: 0,
+        highScore: 0,
+        winner: null,
+        paddles: {
+          left: {
+            x: -3.2,
+            z: 0.0,
+            targetZ: 0.0,
+            width: 0.22,
+            length: 1.0,
+            speed: 10.5,
+            score: 0,
+            name: "Player 1",
+            hitFlash: 0
+          },
+          right: {
+            x: 3.2,
+            z: 0.0,
+            targetZ: 0.0,
+            width: 0.22,
+            length: 1.0,
+            speed: 10.5,
+            score: 0,
+            name: "AI Bot",
+            hitFlash: 0
+          }
+        },
+        ball: {
+          x: 0.0,
+          y: 0.15,
+          z: 0.0,
+          vx: 4.8,
+          vy: 0.0,
+          vz: 1.5,
+          radius: 0.14,
+          speedMult: 1.0,
+          maxSpeed: 14.0,
+          trail: [],
+          wallBounceFlash: 0
+        },
+        particles: [],
+        online: {
+          connected: false,
+          roomId: 'pong-main',
+          playerId: 'p_' + Math.random().toString(36).substr(2, 6),
+          remotePlayerId: null,
+          remotePlayerName: 'Opponent',
+          hasVideo: false,
+          remoteHasVideo: false
+        }
+      };
+
+      this.initPongDOMEvents();
+    } else {
+      this.pongState.active = true;
+    }
+
+    // Always pop up the Mode Selection modal when entering the demo
+    this.openPongModeModal();
+    this.updatePongHUD();
+    this.updateMobileActionButtonsVisibility();
+  }
+
+  initPongDOMEvents() {
+    // Mode card clicks in modal
+    const modeCards = document.querySelectorAll('.pong-mode-card');
+    const diffRow = document.getElementById('pong-bot-diff-row');
+
+    modeCards.forEach(card => {
+      card.addEventListener('click', () => {
+        modeCards.forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        const mode = card.dataset.mode;
+        if (diffRow) {
+          diffRow.style.display = mode === 'solo' ? 'flex' : 'none';
+        }
+      });
+    });
+
+    // Bot difficulty button clicks
+    const diffButtons = document.querySelectorAll('.pong-diff-btn');
+    diffButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        diffButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (this.pongState) {
+          this.pongState.botDifficulty = btn.dataset.diff;
+        }
+      });
+    });
+
+    // Modal START MATCH button
+    const startBtn = document.getElementById('btn-pong-start-match');
+    if (startBtn) {
+      startBtn.addEventListener('click', () => {
+        const activeCard = document.querySelector('.pong-mode-card.active');
+        const mode = activeCard ? activeCard.dataset.mode : 'solo';
+        const camChk = document.getElementById('pong-enable-cam-chk');
+        const wantsCam = camChk ? camChk.checked : false;
+        const activeDiffBtn = document.querySelector('.pong-diff-btn.active');
+        const diff = activeDiffBtn ? activeDiffBtn.dataset.diff : 'medium';
+
+        this.selectPongMode(mode, wantsCam, diff);
+      });
+    }
+
+    // Modal Close button
+    const closeBtn = document.getElementById('btn-pong-modal-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        this.closePongModeModal();
+      });
+    }
+
+    // Banner HUD Buttons
+    const btnOpenMode = document.getElementById('btn-pong-open-mode');
+    if (btnOpenMode) {
+      btnOpenMode.addEventListener('click', () => {
+        this.openPongModeModal();
+      });
+    }
+
+    const btnToggleVideo = document.getElementById('btn-pong-toggle-video');
+    if (btnToggleVideo) {
+      btnToggleVideo.addEventListener('click', () => {
+        const seatsContainer = document.getElementById('pong-video-seats-container');
+        if (seatsContainer) {
+          const isVisible = seatsContainer.style.display !== 'none';
+          seatsContainer.style.display = isVisible ? 'none' : 'flex';
+          if (!isVisible && !this.pongLocalStream) {
+            this.startPongLocalMedia();
+          }
+        }
+      });
+    }
+
+    const btnReset = document.getElementById('btn-pong-reset');
+    if (btnReset) {
+      btnReset.addEventListener('click', () => {
+        this.resetPongMatch();
+        this.log("Pong match scores reset.", "info");
+      });
+    }
+
+    // Video Seat Controls (Cam / Mic toggle)
+    const btnCam = document.getElementById('btn-pong-toggle-cam');
+    if (btnCam) {
+      btnCam.addEventListener('click', () => {
+        if (this.pongLocalStream) {
+          const vTrack = this.pongLocalStream.getVideoTracks()[0];
+          if (vTrack) {
+            vTrack.enabled = !vTrack.enabled;
+            btnCam.classList.toggle('off', !vTrack.enabled);
+            btnCam.textContent = vTrack.enabled ? '📹 CAM' : '🚫 CAM';
+          }
+        } else {
+          this.startPongLocalMedia();
+        }
+      });
+    }
+
+    const btnMic = document.getElementById('btn-pong-toggle-mic');
+    if (btnMic) {
+      btnMic.addEventListener('click', () => {
+        if (this.pongLocalStream) {
+          const aTrack = this.pongLocalStream.getAudioTracks()[0];
+          if (aTrack) {
+            aTrack.enabled = !aTrack.enabled;
+            btnMic.classList.toggle('off', !aTrack.enabled);
+            btnMic.textContent = aTrack.enabled ? '🎤 MIC' : '🔇 MUTE';
+          }
+        }
+      });
+    }
+  }
+
+  openPongModeModal() {
+    const modal = document.getElementById('pong-mode-modal');
+    if (modal) {
+      modal.style.display = 'flex';
+      const curMode = this.pongState ? this.pongState.mode : 'solo';
+      document.querySelectorAll('.pong-mode-card').forEach(card => {
+        card.classList.toggle('active', card.dataset.mode === curMode);
+      });
+      const diffRow = document.getElementById('pong-bot-diff-row');
+      if (diffRow) {
+        diffRow.style.display = curMode === 'solo' ? 'flex' : 'none';
+      }
+      const curDiff = this.pongState ? this.pongState.botDifficulty : 'medium';
+      document.querySelectorAll('.pong-diff-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.diff === curDiff);
+      });
+    }
+  }
+
+  closePongModeModal() {
+    const modal = document.getElementById('pong-mode-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  selectPongMode(mode, wantsCamera, diff) {
+    if (!this.pongState) return;
+    this.pongState.mode = mode;
+    if (diff) this.pongState.botDifficulty = diff;
+
+    this.resetPongMatch();
+
+    const seatRightTag = document.getElementById('pong-remote-tag');
+    const seatRightName = document.getElementById('pong-seat-right-name');
+    const seatCircle = document.getElementById('pong-remote-avatar-circle');
+
+    if (mode === 'solo') {
+      this.pongState.paddles.left.name = "Player 1 (You)";
+      this.pongState.paddles.right.name = `AI Bot (${this.pongState.botDifficulty.toUpperCase()})`;
+      if (seatRightTag) seatRightTag.textContent = "AI BOT";
+      if (seatRightName) seatRightName.textContent = this.pongState.paddles.right.name;
+      if (seatCircle) seatCircle.textContent = "BOT";
+      this.leavePongMultiplayer();
+    } else if (mode === 'local_2p') {
+      this.pongState.paddles.left.name = "Player 1 [W/S]";
+      this.pongState.paddles.right.name = "Player 2 [▲/▼]";
+      if (seatRightTag) seatRightTag.textContent = "LOCAL P2";
+      if (seatRightName) seatRightName.textContent = "Player 2 [▲/▼]";
+      if (seatCircle) seatCircle.textContent = "P2";
+      this.leavePongMultiplayer();
+    } else if (mode === 'online') {
+      this.pongState.paddles.left.name = "Host (You)";
+      this.pongState.paddles.right.name = "Online Opponent";
+      if (seatRightTag) seatRightTag.textContent = "PEER";
+      if (seatRightName) seatRightName.textContent = "Online Opponent";
+      if (seatCircle) seatCircle.textContent = "NET";
+      this.joinPongMultiplayer(wantsCamera);
+    }
+
+    const seatsContainer = document.getElementById('pong-video-seats-container');
+    if (seatsContainer) {
+      seatsContainer.style.display = (mode === 'online' || wantsCamera) ? 'flex' : 'none';
+    }
+
+    if (wantsCamera && !this.pongLocalStream) {
+      this.startPongLocalMedia();
+    }
+
+    this.closePongModeModal();
+    this.updatePongHUD();
+    this.log(`Pong Match Started: [${mode.toUpperCase()}]`, "success");
+  }
+
+  resetPongMatch() {
+    if (!this.pongState) return;
+    this.pongState.paddles.left.score = 0;
+    this.pongState.paddles.right.score = 0;
+    this.pongState.rallyCount = 0;
+    this.pongState.winner = null;
+    this.pongState.paddles.left.z = 0;
+    this.pongState.paddles.right.z = 0;
+
+    this.resetPongBall(1.0);
+    this.updatePongHUD();
+  }
+
+  resetPongBall(dirX = 1.0) {
+    if (!this.pongState) return;
+    const b = this.pongState.ball;
+    b.x = 0.0;
+    b.y = 0.15;
+    b.z = 0.0;
+    b.speedMult = 1.0;
+    b.vx = 4.8 * dirX;
+    b.vz = ((Math.random() - 0.5) * 3.2);
+    b.trail = [];
+    this.pongState.serving = true;
+    this.pongState.serveTimer = 1.5;
+    this.pongState.serveDirection = dirX;
+    this.updatePongHUD();
+  }
+
+  updatePongHUD() {
+    if (!this.pongState) return;
+    const leftEl = document.getElementById('pong-left-score');
+    const rightEl = document.getElementById('pong-right-score');
+    const badgeEl = document.getElementById('pong-mode-badge');
+    const statusEl = document.getElementById('pong-hud-status');
+
+    if (leftEl) leftEl.textContent = this.pongState.paddles.left.score;
+    if (rightEl) rightEl.textContent = this.pongState.paddles.right.score;
+
+    if (badgeEl) {
+      if (this.pongState.mode === 'solo') {
+        badgeEl.textContent = `🤖 SOLO BOT (${this.pongState.botDifficulty.toUpperCase()})`;
+        badgeEl.style.color = "#38bdf8";
+      } else if (this.pongState.mode === 'local_2p') {
+        badgeEl.textContent = `👥 LOCAL 2-PLAYERS`;
+        badgeEl.style.color = "#c084fc";
+      } else {
+        badgeEl.textContent = `🌐 ONLINE MULTIPLAYER`;
+        badgeEl.style.color = "#34d399";
+      }
+    }
+
+    if (statusEl) {
+      if (this.pongState.winner) {
+        statusEl.textContent = `🏆 ${this.pongState.winner} WINS!`;
+        statusEl.style.color = "#fbbf24";
+      } else if (this.pongState.serving) {
+        statusEl.textContent = `Serve in ${this.pongState.serveTimer.toFixed(1)}s...`;
+        statusEl.style.color = "#94a3b8";
+      } else {
+        statusEl.textContent = `Rally: ${this.pongState.rallyCount} hits`;
+        statusEl.style.color = "#f8fafc";
+      }
+    }
+  }
+
+  playPongTone(type) {
+    if (!this.pongState || !this.pongState.soundEnabled) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      if (!this._pongAudioCtx) this._pongAudioCtx = new AudioCtx();
+      if (this._pongAudioCtx.state === 'suspended') this._pongAudioCtx.resume();
+
+      const ctx = this._pongAudioCtx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      const now = ctx.currentTime;
+      if (type === 'hit') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(460, now);
+        osc.frequency.exponentialRampToValueAtTime(580, now + 0.05);
+        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+        osc.start(now);
+        osc.stop(now + 0.06);
+      } else if (type === 'wall') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(230, now);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+        osc.start(now);
+        osc.stop(now + 0.05);
+      } else if (type === 'score') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.setValueAtTime(659.25, now + 0.07);
+        osc.frequency.setValueAtTime(783.99, now + 0.14);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+        osc.start(now);
+        osc.stop(now + 0.32);
+      } else if (type === 'win') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(587.33, now);
+        osc.frequency.setValueAtTime(880.00, now + 0.10);
+        osc.frequency.setValueAtTime(1174.66, now + 0.20);
+        gain.gain.setValueAtTime(0.24, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+        osc.start(now);
+        osc.stop(now + 0.45);
+      }
+    } catch (e) {
+      // Ignore autoplay policies
+    }
+  }
+
+  startPongLocalMedia() {
+    if (this.pongLocalStream) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+
+    this.log("🎥 Initializing webcam & microphone for Pong match...", "info");
+    navigator.mediaDevices.getUserMedia({
+      video: { width: 320, height: 240, frameRate: 15 },
+      audio: true
+    }).then(stream => {
+      this.pongLocalStream = stream;
+      const vEl = document.getElementById('pong-local-video');
+      const avatarEl = document.getElementById('pong-local-avatar');
+      if (vEl) {
+        vEl.srcObject = stream;
+        vEl.style.display = 'block';
+      }
+      if (avatarEl) avatarEl.style.display = 'none';
+
+      // Attach tracks to active WebRTC peers if online
+      if (this.pongPeerConnection) {
+        stream.getTracks().forEach(track => {
+          this.pongPeerConnection.addTrack(track, stream);
+        });
+      }
+      this.log("🎥 Webcam & Audio connected for Pong match.", "success");
+    }).catch(err => {
+      this.log(`Webcam preview unavailable: ${err.message}`, "info");
+    });
+  }
+
+  joinPongMultiplayer(wantsCamera) {
+    if (wantsCamera) this.startPongLocalMedia();
+
+    if (!this.net) return;
+    this.pongMultiplayerActive = true;
+
+    // Set up WebRTC peer connection
+    this.setupPongPeerConnection();
+
+    // Register net listeners
+    this._netPongListeners = {
+      'pong:join': (data) => this.handleRemotePongJoin(data),
+      'pong:presence': (data) => this.handleRemotePongPresence(data),
+      'pong:paddle': (data) => this.handleRemotePongPaddle(data),
+      'pong:state': (data) => this.handleRemotePongState(data),
+      'pong:signal': (data) => this.handleRemotePongSignal(data),
+      'pong:left': (data) => this.handleRemotePongLeft(data)
+    };
+
+    for (const [evt, cb] of Object.entries(this._netPongListeners)) {
+      this.net.on(evt, cb);
+    }
+
+    // Broadcast join event
+    this.broadcastPongEvent('join', {
+      playerId: this.net.localPlayerId || this.pongState.online.playerId,
+      playerName: "Online Player",
+      hasVideo: !!this.pongLocalStream
+    });
+
+    this.log("🌐 Connected to Pong multiplayer network lobby.", "success");
+  }
+
+  broadcastPongEvent(eventName, payload) {
+    if (!this.net || !this.net.activeTransport || !this.net.activeTransport.send) return;
+    try {
+      this.net.activeTransport.send(JSON.stringify({
+        event: `pong:${eventName}`,
+        payload: payload,
+        timestamp: performance.now()
+      }));
+    } catch (e) {
+      // Ignore send errors
+    }
+  }
+
+  setupPongPeerConnection() {
+    if (this.pongPeerConnection) return;
+    const pcConfig = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+
+    try {
+      const pc = new RTCPeerConnection(pcConfig);
+      this.pongPeerConnection = pc;
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          this.broadcastPongEvent('signal', {
+            type: 'candidate',
+            candidate: event.candidate,
+            targetId: this.pongState.online.remotePlayerId
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        const remoteVideo = document.getElementById('pong-remote-video');
+        const remoteAvatar = document.getElementById('pong-remote-avatar');
+        if (remoteVideo && event.streams && event.streams[0]) {
+          remoteVideo.srcObject = event.streams[0];
+          remoteVideo.style.display = 'block';
+          if (remoteAvatar) remoteAvatar.style.display = 'none';
+        }
+      };
+
+      if (this.pongLocalStream) {
+        this.pongLocalStream.getTracks().forEach(track => {
+          pc.addTrack(track, this.pongLocalStream);
+        });
+      }
+    } catch (e) {
+      console.warn("RTCPeerConnection init error:", e);
+    }
+  }
+
+  handleRemotePongJoin(data) {
+    if (!this.pongState || !data || data.playerId === this.net.localPlayerId) return;
+    this.pongState.online.remotePlayerId = data.playerId;
+    this.pongState.online.remotePlayerName = data.playerName || 'Opponent';
+    this.pongState.paddles.right.name = this.pongState.online.remotePlayerName;
+    this.pongState.isHost = true;
+
+    // Send presence back
+    this.broadcastPongEvent('presence', {
+      playerId: this.net.localPlayerId || this.pongState.online.playerId,
+      playerName: "Host",
+      hasVideo: !!this.pongLocalStream
+    });
+
+    // Create WebRTC Offer
+    if (this.pongPeerConnection) {
+      this.pongPeerConnection.createOffer().then(offer => {
+        return this.pongPeerConnection.setLocalDescription(offer);
+      }).then(() => {
+        this.broadcastPongEvent('signal', {
+          type: 'offer',
+          sdp: this.pongPeerConnection.localDescription,
+          targetId: data.playerId
+        });
+      }).catch(e => console.warn(e));
+    }
+
+    const statusEl = document.getElementById('pong-seat-right-status');
+    if (statusEl) statusEl.textContent = "Peer Connected";
+    this.log(`👤 Remote peer joined Pong match: [${this.pongState.online.remotePlayerName}]`, "success");
+  }
+
+  handleRemotePongPresence(data) {
+    if (!this.pongState || !data || data.playerId === this.net.localPlayerId) return;
+    this.pongState.online.remotePlayerId = data.playerId;
+    this.pongState.online.remotePlayerName = data.playerName || 'Opponent';
+    this.pongState.paddles.right.name = this.pongState.online.remotePlayerName;
+    this.pongState.isHost = false;
+
+    const statusEl = document.getElementById('pong-seat-right-status');
+    if (statusEl) statusEl.textContent = "Connected to Host";
+  }
+
+  handleRemotePongPaddle(data) {
+    if (!this.pongState || !data) return;
+    if (data.side === 'right') {
+      this.pongState.paddles.right.z = data.z;
+    } else if (data.side === 'left' && !this.pongState.isHost) {
+      this.pongState.paddles.left.z = data.z;
+    }
+  }
+
+  handleRemotePongState(data) {
+    if (!this.pongState || !data || this.pongState.isHost) return;
+    // Guest client syncs from host
+    const b = this.pongState.ball;
+    b.x = data.bx;
+    b.z = data.bz;
+    b.vx = data.bvx;
+    b.vz = data.bvz;
+    this.pongState.paddles.left.score = data.ls;
+    this.pongState.paddles.right.score = data.rs;
+    this.pongState.rallyCount = data.rally;
+    this.pongState.serving = data.serving;
+    this.pongState.serveTimer = data.timer;
+    this.updatePongHUD();
+  }
+
+  handleRemotePongSignal(data) {
+    if (!this.pongPeerConnection || !data) return;
+    const pc = this.pongPeerConnection;
+
+    if (data.type === 'offer' && data.sdp) {
+      pc.setRemoteDescription(new RTCSessionDescription(data.sdp)).then(() => {
+        return pc.createAnswer();
+      }).then(answer => {
+        return pc.setLocalDescription(answer);
+      }).then(() => {
+        this.broadcastPongEvent('signal', {
+          type: 'answer',
+          sdp: pc.localDescription,
+          targetId: data.targetId
+        });
+      }).catch(e => console.warn(e));
+    } else if (data.type === 'answer' && data.sdp) {
+      pc.setRemoteDescription(new RTCSessionDescription(data.sdp)).catch(e => console.warn(e));
+    } else if (data.type === 'candidate' && data.candidate) {
+      pc.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.warn(e));
+    }
+  }
+
+  handleRemotePongLeft(data) {
+    if (!this.pongState) return;
+    this.pongState.online.remotePlayerId = null;
+    const statusEl = document.getElementById('pong-seat-right-status');
+    if (statusEl) statusEl.textContent = "Waiting for Player";
+    const remoteVideo = document.getElementById('pong-remote-video');
+    const remoteAvatar = document.getElementById('pong-remote-avatar');
+    if (remoteVideo) remoteVideo.style.display = 'none';
+    if (remoteAvatar) remoteAvatar.style.display = 'flex';
+  }
+
+  leavePongMultiplayer() {
+    if (!this.pongMultiplayerActive) return;
+    this.pongMultiplayerActive = false;
+
+    if (this._netPongListeners && this.net) {
+      for (const [evt, cb] of Object.entries(this._netPongListeners)) {
+        if (this.net.off) this.net.off(evt, cb);
+      }
+      this._netPongListeners = null;
+    }
+
+    if (this.pongPeerConnection) {
+      this.pongPeerConnection.close();
+      this.pongPeerConnection = null;
+    }
+  }
+
+  updatePongPointerMove(e) {
+    if (!this.pongState) return;
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.height <= 0) return;
+
+    // Normalizing cursor/pointer Y position (top = -Z, bottom = +Z)
+    // Stronger sensitivity range (4.6) for effortless full-reach paddle control
+    const normY = (e.clientY - rect.top) / rect.height;
+    const targetZ = Math.max(-1.65, Math.min(1.65, (normY - 0.5) * 4.6));
+
+    if (this.pongState.mode === 'online' && !this.pongState.isHost) {
+      this.pongState.paddles.right.targetZ = targetZ;
+    } else if (this.pongState.mode === 'local_2p') {
+      const isRightSide = (e.clientX - rect.left) > (rect.width * 0.5);
+      if (isRightSide) {
+        this.pongState.paddles.right.targetZ = targetZ;
+      } else {
+        this.pongState.paddles.left.targetZ = targetZ;
+      }
+    } else {
+      this.pongState.paddles.left.targetZ = targetZ;
+    }
+  }
+
+  updatePongPhysics(dt) {
+    const ps = this.pongState;
+    if (!ps || !ps.active) return;
+
+    const boundedDt = Math.min(0.04, Math.max(0.001, dt));
+
+    // 1. Move Player 1 (Left Paddle / Pin)
+    const leftPad = ps.paddles.left;
+    const playerSpeed = leftPad.speed || 10.5;
+    let moveLeft = 0;
+    if (this.state.keys.w) moveLeft -= 1;
+    if (this.state.keys.s) moveLeft += 1;
+    if (ps.mode === 'solo' && (this.state.keys.arrowUp || this.state.keys.arrowDown)) {
+      if (this.state.keys.arrowUp) moveLeft -= 1;
+      if (this.state.keys.arrowDown) moveLeft += 1;
+    }
+
+    // Virtual Joystick controls Player Pin with enhanced sensitivity & power curve
+    const isPlayer1Local = (ps.mode !== 'online' || ps.isHost);
+    if (isPlayer1Local && this.joystickState && this.joystickState.active) {
+      let joyVal = 0;
+      if (Math.abs(this.joystickState.dirY) > 0.025) {
+        const y = this.joystickState.dirY;
+        // Stronger, snappy response curve (1.5x multiplier)
+        joyVal = Math.sign(y) * Math.min(1.0, Math.pow(Math.abs(y), 1.05) * 1.5);
+      } else if (Math.abs(this.joystickState.dirX) > 0.10) {
+        const x = this.joystickState.dirX;
+        joyVal = Math.sign(x) * Math.min(1.0, Math.pow(Math.abs(x), 1.05) * 1.5);
+      }
+      if (joyVal !== 0) {
+        moveLeft = joyVal;
+      }
+    }
+
+    // Initialize targetZ if undefined
+    if (leftPad.targetZ === undefined) leftPad.targetZ = leftPad.z;
+
+    // Apply movement to targetZ
+    if (moveLeft !== 0) {
+      leftPad.targetZ = Math.max(-1.65, Math.min(1.65, leftPad.targetZ + moveLeft * playerSpeed * boundedDt));
+    }
+
+    // Smooth LERP (linear interpolation) towards targetZ for organic, fluid paddle momentum
+    const lerpRate = 22.0; // Responsive, snappy, silky-smooth lerp
+    const lerpAlpha = 1.0 - Math.exp(-lerpRate * boundedDt);
+    leftPad.z += (leftPad.targetZ - leftPad.z) * lerpAlpha;
+    leftPad.z = Math.max(-1.65, Math.min(1.65, leftPad.z));
+
+    // Broadcast left paddle if online
+    if (ps.mode === 'online' && ps.isHost) {
+      this.broadcastPongEvent('paddle', { side: 'left', z: leftPad.z });
+    }
+
+    // 2. Move Player 2 (Right Paddle / Pin)
+    const rightPad = ps.paddles.right;
+    const rightSpeed = rightPad.speed || 10.5;
+
+    if (rightPad.targetZ === undefined) rightPad.targetZ = rightPad.z;
+
+    if (ps.mode === 'solo') {
+      // Bot AI with difficulty tuning and smooth lerp tracking
+      let botTargetZ = ps.ball.z;
+      let botLerpRate = 16.0;
+
+      if (ps.botDifficulty === 'easy') {
+        botLerpRate = 9.0;
+        // React slower and add slight tracking error
+        botTargetZ = ps.ball.z + Math.sin(performance.now() * 0.003) * 0.38;
+      } else if (ps.botDifficulty === 'hard') {
+        botLerpRate = 24.0;
+        // Predictive tracking: intercept where ball is traveling towards X = 3.2
+        if (ps.ball.vx > 0) {
+          const timeToIntercept = Math.max(0, (3.2 - ps.ball.x) / ps.ball.vx);
+          botTargetZ = ps.ball.z + ps.ball.vz * timeToIntercept;
+          // Account for bumper reflections
+          while (botTargetZ > 2.1 || botTargetZ < -2.1) {
+            if (botTargetZ > 2.1) botTargetZ = 4.2 - botTargetZ;
+            if (botTargetZ < -2.1) botTargetZ = -4.2 - botTargetZ;
+          }
+        }
+      }
+
+      rightPad.targetZ = Math.max(-1.65, Math.min(1.65, botTargetZ));
+      const botAlpha = 1.0 - Math.exp(-botLerpRate * boundedDt);
+      rightPad.z += (rightPad.targetZ - rightPad.z) * botAlpha;
+      rightPad.z = Math.max(-1.65, Math.min(1.65, rightPad.z));
+
+    } else if (ps.mode === 'local_2p') {
+      let moveRight = 0;
+      if (this.state.keys.arrowUp) moveRight -= 1;
+      if (this.state.keys.arrowDown) moveRight += 1;
+      if (moveRight !== 0) {
+        rightPad.targetZ = Math.max(-1.65, Math.min(1.65, rightPad.targetZ + moveRight * rightSpeed * boundedDt));
+      }
+      const p2Alpha = 1.0 - Math.exp(-lerpRate * boundedDt);
+      rightPad.z += (rightPad.targetZ - rightPad.z) * p2Alpha;
+      rightPad.z = Math.max(-1.65, Math.min(1.65, rightPad.z));
+
+    } else if (ps.mode === 'online' && !ps.isHost) {
+      let moveRight = 0;
+      if (this.state.keys.w || this.state.keys.arrowUp) moveRight -= 1;
+      if (this.state.keys.s || this.state.keys.arrowDown) moveRight += 1;
+      if (this.joystickState && this.joystickState.active) {
+        let joyVal = 0;
+        if (Math.abs(this.joystickState.dirY) > 0.025) {
+          const y = this.joystickState.dirY;
+          joyVal = Math.sign(y) * Math.min(1.0, Math.pow(Math.abs(y), 1.05) * 1.5);
+        } else if (Math.abs(this.joystickState.dirX) > 0.10) {
+          const x = this.joystickState.dirX;
+          joyVal = Math.sign(x) * Math.min(1.0, Math.pow(Math.abs(x), 1.05) * 1.5);
+        }
+        if (joyVal !== 0) moveRight = joyVal;
+      }
+
+      if (moveRight !== 0) {
+        rightPad.targetZ = Math.max(-1.65, Math.min(1.65, rightPad.targetZ + moveRight * rightSpeed * boundedDt));
+      }
+      const p2Alpha = 1.0 - Math.exp(-lerpRate * boundedDt);
+      rightPad.z += (rightPad.targetZ - rightPad.z) * p2Alpha;
+      rightPad.z = Math.max(-1.65, Math.min(1.65, rightPad.z));
+
+      this.broadcastPongEvent('paddle', { side: 'right', z: rightPad.z });
+    }
+
+    // Flash decay for hit highlights
+    if (leftPad.hitFlash > 0) leftPad.hitFlash = Math.max(0, leftPad.hitFlash - boundedDt * 4);
+    if (rightPad.hitFlash > 0) rightPad.hitFlash = Math.max(0, rightPad.hitFlash - boundedDt * 4);
+    if (ps.ball.wallBounceFlash > 0) ps.ball.wallBounceFlash = Math.max(0, ps.ball.wallBounceFlash - boundedDt * 4);
+
+    // 3. Authoritative Ball Simulation (Simulated by Host or Solo Player)
+    const isAuthoritative = (ps.mode !== 'online') || ps.isHost;
+    if (isAuthoritative) {
+      const b = ps.ball;
+
+      if (ps.serving) {
+        ps.serveTimer -= boundedDt;
+        b.x = 0;
+        b.z = 0;
+        if (ps.serveTimer <= 0) {
+          ps.serving = false;
+          b.vx = 4.8 * ps.serveDirection;
+          b.vz = (Math.random() - 0.5) * 3.2;
+          this.playPongTone('wall');
+        }
+        this.updatePongHUD();
+      } else {
+        // Integrate ball position
+        b.x += b.vx * b.speedMult * boundedDt;
+        b.z += b.vz * b.speedMult * boundedDt;
+
+        // Top and Bottom bumper collisions
+        const tableHalfW = 2.1;
+        if (b.z + b.radius >= tableHalfW) {
+          b.z = tableHalfW - b.radius;
+          b.vz = -Math.abs(b.vz);
+          b.wallBounceFlash = 1.0;
+          this.playPongTone('wall');
+          this.spawnPongSparks(b.x, 2.1, [0.3, 0.9, 1.0]);
+        } else if (b.z - b.radius <= -tableHalfW) {
+          b.z = -tableHalfW + b.radius;
+          b.vz = Math.abs(b.vz);
+          b.wallBounceFlash = 1.0;
+          this.playPongTone('wall');
+          this.spawnPongSparks(b.x, -2.1, [0.3, 0.9, 1.0]);
+        }
+
+        // Left Paddle Collision (Player 1)
+        const leftEdge = leftPad.x + leftPad.width * 0.5;
+        if (b.x - b.radius <= leftEdge && b.x >= leftPad.x - 0.35 && b.vx < 0) {
+          const halfLen = leftPad.length * 0.5;
+          if (Math.abs(b.z - leftPad.z) <= halfLen + b.radius) {
+            b.x = leftEdge + b.radius;
+            b.vx = Math.abs(b.vx) * 1.04;
+            // Angular deflection
+            const offset = (b.z - leftPad.z) / halfLen;
+            b.vz = offset * Math.abs(b.vx) * 0.85;
+            b.speedMult = Math.min(2.5, b.speedMult + 0.05);
+            leftPad.hitFlash = 1.0;
+            ps.rallyCount++;
+            this.playPongTone('hit');
+            this.spawnPongSparks(leftEdge, b.z, [0.1, 0.8, 1.0]);
+            this.updatePongHUD();
+          }
+        }
+
+        // Right Paddle Collision (Player 2 / Bot)
+        const rightEdge = rightPad.x - rightPad.width * 0.5;
+        if (b.x + b.radius >= rightEdge && b.x <= rightPad.x + 0.35 && b.vx > 0) {
+          const halfLen = rightPad.length * 0.5;
+          if (Math.abs(b.z - rightPad.z) <= halfLen + b.radius) {
+            b.x = rightEdge - b.radius;
+            b.vx = -Math.abs(b.vx) * 1.04;
+            const offset = (b.z - rightPad.z) / halfLen;
+            b.vz = offset * Math.abs(b.vx) * 0.85;
+            b.speedMult = Math.min(2.5, b.speedMult + 0.05);
+            rightPad.hitFlash = 1.0;
+            ps.rallyCount++;
+            this.playPongTone('hit');
+            this.spawnPongSparks(rightEdge, b.z, [1.0, 0.3, 0.4]);
+            this.updatePongHUD();
+          }
+        }
+
+        // Goals / Scoring
+        if (b.x < -3.65) {
+          // Right player scores!
+          rightPad.score++;
+          this.playPongTone('score');
+          this.spawnPongSparks(-3.6, b.z, [1.0, 0.2, 0.3], 24);
+          if (rightPad.score >= 7) {
+            ps.winner = rightPad.name;
+            this.playPongTone('win');
+          }
+          this.resetPongBall(1.0);
+        } else if (b.x > 3.65) {
+          // Left player scores!
+          leftPad.score++;
+          this.playPongTone('score');
+          this.spawnPongSparks(3.6, b.z, [0.2, 0.8, 1.0], 24);
+          if (leftPad.score >= 7) {
+            ps.winner = leftPad.name;
+            this.playPongTone('win');
+          }
+          this.resetPongBall(-1.0);
+        }
+      }
+
+      // Broadcast state if online host
+      if (ps.mode === 'online' && ps.isHost) {
+        this.broadcastPongEvent('state', {
+          bx: b.x,
+          bz: b.z,
+          bvx: b.vx,
+          bvz: b.vz,
+          ls: leftPad.score,
+          rs: rightPad.score,
+          rally: ps.rallyCount,
+          serving: ps.serving,
+          timer: ps.serveTimer
+        });
+      }
+    }
+
+    // Ball motion trail
+    if (!ps.serving) {
+      ps.ball.trail.push({ x: ps.ball.x, z: ps.ball.z, life: 0.18 });
+    }
+    for (let i = ps.ball.trail.length - 1; i >= 0; i--) {
+      ps.ball.trail[i].life -= boundedDt;
+      if (ps.ball.trail[i].life <= 0) ps.ball.trail.splice(i, 1);
+    }
+
+    // Update Spark Particles
+    for (let i = ps.particles.length - 1; i >= 0; i--) {
+      const p = ps.particles[i];
+      p.x += p.vx * boundedDt;
+      p.y += p.vy * boundedDt;
+      p.z += p.vz * boundedDt;
+      p.vy -= 9.8 * boundedDt;
+      p.life -= boundedDt;
+      if (p.y < 0.12) {
+        p.y = 0.12;
+        p.vy = -p.vy * 0.45;
+      }
+      if (p.life <= 0) ps.particles.splice(i, 1);
+    }
+  }
+
+  spawnPongSparks(px, pz, color, count = 12) {
+    if (!this.pongState) return;
+    for (let i = 0; i < count; i++) {
+      this.pongState.particles.push({
+        x: px,
+        y: 0.15,
+        z: pz,
+        vx: (Math.random() - 0.5) * 5.0,
+        vy: 1.5 + Math.random() * 3.5,
+        vz: (Math.random() - 0.5) * 5.0,
+        life: 0.35 + Math.random() * 0.25,
+        maxLife: 0.6,
+        color: color
+      });
+    }
+  }
+
+  render3DPong(progInfo, timestamp) {
+    const gl = this.gl;
+    const ps = this.pongState;
+    if (!ps) return;
+
+    const cubeMesh = this.meshBuffers[1];
+    const sphereMesh = this.meshBuffers[0];
+    if (!cubeMesh || !sphereMesh) return;
+
+    // Zero-allocation helpers
+    const drawCube = (px, py, pz, sx, sy, sz, color, rough = 0.25, metal = 0.85, matType = 0) => {
+      gl.bindVertexArray(cubeMesh.vao);
+      this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+
+      const uModel = progInfo.uModel || progInfo.uModelMatrix;
+      if (uModel) gl.uniformMatrix4fv(uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.4);
+      if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+      if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+      if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    const drawSphere = (px, py, pz, rx, ry, rz, color, rough = 0.15, metal = 0.90, emissive = false) => {
+      gl.bindVertexArray(sphereMesh.vao);
+      this.modelMatrix[0] = rx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = 0; this.modelMatrix[5] = ry; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = rz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+
+      const uModel = progInfo.uModel || progInfo.uModelMatrix;
+      if (uModel) gl.uniformMatrix4fv(uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, emissive ? 3 : 0);
+      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.5);
+      if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+      if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+      if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+      gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    // 1. Table Platform (Futuristic Obsidian with Beveled Outer Frame)
+    drawCube(0.0, 0.0, 0.0, 7.2, 0.20, 4.4, [0.06, 0.09, 0.15], 0.28, 0.82); // Main Playing Field
+    drawCube(0.0, -0.06, 0.0, 7.55, 0.24, 4.75, [0.02, 0.03, 0.06], 0.45, 0.95); // Beveled Outer Frame
+    
+    // 4 High-Tech Corner Pillars
+    [[-3.65, -2.25], [3.65, -2.25], [-3.65, 2.25], [3.65, 2.25]].forEach(([cx, cz]) => {
+      drawCube(cx, 0.12, cz, 0.28, 0.38, 0.28, [0.15, 0.20, 0.32], 0.18, 0.92);
+      drawSphere(cx, 0.28, cz, 0.10, 0.06, 0.10, [0.38, 0.75, 1.0], 0.10, 0.95, true);
+    });
+
+    // 2. Center Dividing Net (Glowing Dashed Neon Strip)
+    for (let z = -2.0; z <= 2.0; z += 0.40) {
+      drawCube(0.0, 0.11, z, 0.07, 0.02, 0.22, [0.65, 0.85, 1.0], 0.15, 0.30);
+    }
+
+    // 3. Top and Bottom Bumper Rails (Pulsing Neon Guides)
+    const topFlash = ps.ball.wallBounceFlash > 0;
+    const bumperColor = topFlash ? [0.6, 0.95, 1.0] : [0.18, 0.45, 0.85];
+    drawCube(0.0, 0.16, 2.22, 7.3, 0.26, 0.18, bumperColor, 0.12, 0.95);
+    drawCube(0.0, 0.16, -2.22, 7.3, 0.26, 0.18, bumperColor, 0.12, 0.95);
+
+    // Neon Glow Runners on rails
+    drawCube(0.0, 0.28, 2.22, 7.1, 0.03, 0.06, [0.38, 0.85, 1.0], 0.08, 0.20);
+    drawCube(0.0, 0.28, -2.22, 7.1, 0.03, 0.06, [0.38, 0.85, 1.0], 0.08, 0.20);
+
+    // 4. 3D Digital Holographic Scores on Table Floor (7-Segment)
+    const SEG_DEFS = [
+      [1, 1, 1, 0, 1, 1, 1], // 0
+      [0, 0, 1, 0, 0, 1, 0], // 1
+      [1, 0, 1, 1, 1, 0, 1], // 2
+      [1, 0, 1, 1, 0, 1, 1], // 3
+      [0, 1, 1, 1, 0, 1, 0], // 4
+      [1, 1, 0, 1, 0, 1, 1], // 5
+      [1, 1, 0, 1, 1, 1, 1], // 6
+      [1, 0, 1, 0, 0, 1, 0], // 7
+      [1, 1, 1, 1, 1, 1, 1], // 8
+      [1, 1, 1, 1, 0, 1, 1], // 9
+    ];
+
+    const draw3DDigit = (digit, posX, posZ, col) => {
+      const d = Math.max(0, Math.min(9, Math.floor(digit)));
+      const s = SEG_DEFS[d];
+      const thick = 0.04;
+      const len = 0.28;
+      const half = len * 0.5;
+      const y = 0.108;
+
+      if (s[0]) drawCube(posX, y, posZ - len, len, 0.012, thick, col, 0.1, 0.7);
+      if (s[1]) drawCube(posX - half, y, posZ - half, thick, 0.012, half, col, 0.1, 0.7);
+      if (s[2]) drawCube(posX + half, y, posZ - half, thick, 0.012, half, col, 0.1, 0.7);
+      if (s[3]) drawCube(posX, y, posZ, len, 0.012, thick, col, 0.1, 0.7);
+      if (s[4]) drawCube(posX - half, y, posZ + half, thick, 0.012, half, col, 0.1, 0.7);
+      if (s[5]) drawCube(posX + half, y, posZ + half, thick, 0.012, half, col, 0.1, 0.7);
+      if (s[6]) drawCube(posX, y, posZ + len, len, 0.012, thick, col, 0.1, 0.7);
+    };
+
+    draw3DDigit(ps.paddles.left.score, -1.8, 0.0, [0.15, 0.75, 1.0]);
+    draw3DDigit(ps.paddles.right.score, 1.8, 0.0, [1.0, 0.25, 0.35]);
+
+    // 5. Left Paddle (Electric Cyan)
+    const leftPad = ps.paddles.left;
+    const leftCol = leftPad.hitFlash > 0 ? [0.75, 0.98, 1.0] : [0.10, 0.75, 1.0];
+    drawCube(leftPad.x, 0.16, leftPad.z, leftPad.width, 0.28, leftPad.length, leftCol, 0.12, 0.88);
+    drawCube(leftPad.x, 0.30, leftPad.z, leftPad.width * 0.7, 0.03, leftPad.length * 0.85, [0.65, 0.95, 1.0], 0.08, 0.20); // Top light bar
+
+    // 6. Right Paddle (Electric Crimson)
+    const rightPad = ps.paddles.right;
+    const rightCol = rightPad.hitFlash > 0 ? [1.0, 0.85, 0.90] : [1.0, 0.25, 0.32];
+    drawCube(rightPad.x, 0.16, rightPad.z, rightPad.width, 0.28, rightPad.length, rightCol, 0.12, 0.88);
+    drawCube(rightPad.x, 0.30, rightPad.z, rightPad.width * 0.7, 0.03, rightPad.length * 0.85, [1.0, 0.70, 0.75], 0.08, 0.20); // Top light bar
+
+    // 7. Motion Trail for Pong Ball
+    for (let i = 0; i < ps.ball.trail.length; i++) {
+      const t = ps.ball.trail[i];
+      const scale = (t.life / 0.18) * 0.09;
+      drawSphere(t.x, 0.14, t.z, scale, scale, scale, [1.0, 0.75, 0.15], 0.2, 0.8, true);
+    }
+
+    // 8. Ball Shadow & Active Ball Sphere (Vibrant Golden Orb)
+    const b = ps.ball;
+    drawCube(b.x, 0.104, b.z, b.radius * 1.8, 0.008, b.radius * 1.8, [0.02, 0.03, 0.05], 0.9, 0.0);
+    drawSphere(b.x, b.y, b.z, b.radius, b.radius, b.radius, [1.0, 0.92, 0.25], 0.06, 0.95, true);
+
+    // 9. Sparks / Collision Particles
+    for (let i = 0; i < ps.particles.length; i++) {
+      const p = ps.particles[i];
+      const pScale = (p.life / p.maxLife) * 0.035;
+      drawCube(p.x, p.y, p.z, pScale, pScale, pScale, p.color, 0.1, 0.6);
+    }
+  }
+
   render3DPlinko(progInfo, timestamp) {
     const gl = this.gl;
     const ps = this.plinkoState;
@@ -17855,6 +19491,37 @@ else if (typeof define === 'function' && define['amd'])
     entity.metallic = mat.metallic;
     entity.color = [...mat.color];
 
+    // Persist material override on a per-scene, per-entity-id basis
+    const ds = this.state.demoScene || '';
+    const overrideKey = `${ds}:${entity.id}`;
+    if (!this.state.materialOverrides) {
+      this.state.materialOverrides = {};
+    }
+    this.state.materialOverrides[overrideKey] = matKey;
+
+    // If this is the active inspectable mesh in Demo 1 / Demo 3 (where id is 0)
+    if (entity.id === 0 || entity.layer === 'PBR Inspect Target') {
+      this.activeTunedMaterial = matKey;
+      this.state.roughness = mat.roughness;
+      this.state.metallic = mat.metallic;
+      this.state.baseColor = [...mat.color];
+      
+      // Update the sliders in Materials catalog UI if they exist
+      const sliderRough = document.getElementById('slider-material-roughness');
+      const valRough = document.getElementById('val-material-roughness');
+      if (sliderRough) {
+        sliderRough.value = mat.roughness;
+        if (valRough) valRough.textContent = mat.roughness.toFixed(2);
+      }
+      const sliderMetal = document.getElementById('slider-material-metallic');
+      const valMetal = document.getElementById('val-material-metallic');
+      if (sliderMetal) {
+        sliderMetal.value = mat.metallic;
+        if (valMetal) valMetal.textContent = mat.metallic.toFixed(2);
+      }
+    }
+
+    this.renderHierarchyTree();
     this.populateInspector(entity);
     this.updateCppBridge();
     this.showPickupToast(mat.name, `Applied to ${entity.name} (MAT COST: ${mat.matCost.rating})`, 'ammo');
@@ -18332,6 +19999,7 @@ else if (typeof define === 'function' && define['amd'])
         { id: 0, name: "Roulette_Central_Gold_Spindle", type: "Faceted Gold Hub Spindle", materialKey: "gold", pos: [0, 0, 0.09], scale: [0.15, 0.15, 0.18], roughness: 0.08, metallic: 0.98, color: [0.96, 0.78, 0.30], collider: "Faceted Hub Cylinder", layer: "Layer_Interactive", badge: "Central Spindle", trigger: false },
         { id: 1, name: "Mahogany_Turntable_Wheel", type: "Segmented Number Turntable Wheel", materialKey: "wood", pos: [0, 0, 0], scale: [1.1, 1.1, 0.08], roughness: 0.22, metallic: 0.12, color: [0.32, 0.12, 0.06], collider: "Rotating Cylinder Wheel", layer: "Layer_Interactive", badge: "Spindle Wheel", trigger: false },
         { id: 2, name: "Polished_Mahogany_Rim", type: "Outer Static Mahogany Guide Rim", materialKey: "wood", pos: [0, 0, -0.04], scale: [1.3, 1.3, 0.08], roughness: 0.25, metallic: 0.08, color: [0.28, 0.10, 0.05], collider: "Static Outer Ring Rim", layer: "Layer_Static", badge: "Outer Rim", trigger: false },
+        { id: 3, name: "Ball_Track_Torus", type: "Polished Dark Guide Track Torus", materialKey: "obsidian", pos: [0, 0, 0.04], scale: [1.46, 1.46, 0.16], roughness: 0.03, metallic: 0.85, color: [0.04, 0.04, 0.05], collider: "Static Torus Track", layer: "Layer_Static", badge: "Track Torus", trigger: false },
         { id: 101, name: "Wheel_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [-2.10, 0.0, 3.2], target: [-2.10, 0.0, 0.0], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.94, 0.82], intensity: 36.0, spotCutoffAngle: 42, spotCutoff: 0.74, outerCutoff: 0.55, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
         { id: 102, name: "Table_Chandelier_Spotlight", type: "Chandelier Spot Light", isLight: true, lightType: "spot", pos: [2.50, 0.0, 3.2], target: [2.50, 0.0, 0.0], lightDir: [0.0, 0.0, -1.0], scale: [1.0, 1.0, 1.0], color: [1.0, 0.96, 0.88], intensity: 36.0, spotCutoffAngle: 42, spotCutoff: 0.74, outerCutoff: 0.55, roughness: 0.1, metallic: 0.9, collider: "Spot Light Cone", layer: "Layer_Light", trigger: false, badge: "Spot Light", contact: false },
         { id: 103, name: "Casino_Hall_Ambient_Fill", type: "Warm Ambient Chandelier Fill", isLight: true, lightType: "point", pos: [0.0, -2.0, 2.5], scale: [1.0, 1.0, 1.0], color: [1.0, 0.88, 0.70], intensity: 16.0, radius: 14.0, roughness: 0.1, metallic: 0.9, collider: "Point Light Sphere", layer: "Layer_Light", trigger: false, badge: "Ambient Fill", contact: false }
@@ -18390,6 +20058,23 @@ else if (typeof define === 'function' && define['amd'])
     }
 
     if (entities.length > 0) {
+      // Apply persistent material overrides
+      if (this.state.materialOverrides) {
+        entities.forEach(ent => {
+          const overrideKey = `${ds}:${ent.id}`;
+          const overriddenMatKey = this.state.materialOverrides[overrideKey];
+          if (overriddenMatKey) {
+            const mat = FILAMENT_MATERIALS_CATALOG[overriddenMatKey];
+            if (mat) {
+              ent.materialKey = overriddenMatKey;
+              ent.roughness = mat.roughness;
+              ent.metallic = mat.metallic;
+              ent.color = [...mat.color];
+            }
+          }
+        });
+      }
+
       this.sceneEntities = entities;
       this.selectedEntityIndex = 0;
       this.renderHierarchyTree();
@@ -18973,6 +20658,7 @@ else if (typeof define === 'function' && define['amd'])
   updateMobileActionButtonsVisibility() {
     const ds = this.state.demoScene || '';
     const isFPS = ds.includes('07_fps') || this.state.cameraMode === 3;
+    const isPong = ds.includes('14_pong');
 
     const btnUp = document.getElementById('btn-touch-up');
     const btnDown = document.getElementById('btn-touch-down');
@@ -18980,6 +20666,28 @@ else if (typeof define === 'function' && define['amd'])
     const btnCam = document.getElementById('btn-touch-cam');
     const btnReset = document.getElementById('btn-touch-reset');
     const pad = document.getElementById('mobile-action-pad');
+
+    // Adapt Joystick Label and Screen Touch Hint for Pong Paddle Control
+    const joyLabel = document.querySelector('.joystick-label');
+    const lookHintText = document.querySelector('.touch-look-text');
+    if (joyLabel) {
+      if (isPong) {
+        joyLabel.textContent = '🕹️ PLAYER PIN (UP/DOWN)';
+      } else if (isFPS) {
+        joyLabel.textContent = 'JOYSTICK (WASD)';
+      } else {
+        joyLabel.textContent = 'JOYSTICK (ORBIT)';
+      }
+    }
+    if (lookHintText) {
+      if (isPong) {
+        lookHintText.textContent = '🏓 USE JOYSTICK OR TOUCH TO CONTROL PADDLE';
+      } else if (isFPS) {
+        lookHintText.textContent = '👆 SWIPE CANVAS TO LOOK / ROTATE';
+      } else {
+        lookHintText.textContent = '👆 SWIPE CANVAS TO LOOK / ROTATE';
+      }
+    }
 
     if (isFPS) {
       if (btnUp) btnUp.style.display = 'block';
@@ -19164,6 +20872,110 @@ else if (typeof define === 'function' && define['amd'])
         this.playerController.debugColliders = e.target.checked;
         this.log(`Collision Geometry Wireframes: ${e.target.checked ? 'ENABLED' : 'DISABLED'}`, "info");
       });
+    }
+
+    const playerPhysicsSelect = document.getElementById('select-player-physics-lib');
+    if (playerPhysicsSelect) {
+      playerPhysicsSelect.value = this.state.physicsEngine || 'ammo';
+      playerPhysicsSelect.addEventListener('change', (e) => {
+        this.setPhysicsEngine(e.target.value);
+      });
+    }
+  }
+
+  initPhysicsEngineUI() {
+    const projectSelect = document.getElementById('select-project-physics-lib');
+    if (projectSelect) {
+      projectSelect.value = this.state.physicsEngine || 'ammo';
+      projectSelect.addEventListener('change', (e) => {
+        this.setPhysicsEngine(e.target.value);
+      });
+    }
+
+    const reinitBtn = document.getElementById('btn-reinit-physics-lib');
+    if (reinitBtn) {
+      reinitBtn.addEventListener('click', () => {
+        this.setPhysicsEngine(this.state.physicsEngine || 'ammo');
+        this.log("Physics Simulation Engine reinitialized & worker cache reset.", "cpp");
+      });
+    }
+
+    this.setPhysicsEngine(this.state.physicsEngine || 'ammo', true);
+  }
+
+  setPhysicsEngine(engine, silent = false) {
+    if (!engine) return;
+    this.state.physicsEngine = engine;
+    if (this.plinkoState) this.plinkoState.physicsEngine = engine;
+
+    // Ensure background physics worker is initialized
+    if (!this.physicsWorker) {
+      this.physicsWorker = new Worker('./physics-worker.js');
+      this.physicsWorker.onmessage = (e) => {
+        const data = e.data;
+        if (data && data.type === 'tickResult') {
+          this.handlePhysicsWorkerTickResult(data);
+        }
+      };
+    }
+
+    if (this.physicsWorker) {
+      this.physicsWorker.postMessage({ type: 'reset' });
+      this.physicsWorker.postMessage({ type: 'setEngine', engine: engine });
+    }
+
+    // Sync all dropdowns across all tabs and demo overlays
+    const dropdownIds = [
+      'select-project-physics-lib',
+      'select-map-physics-lib',
+      'select-player-physics-lib',
+      'select-plinko-engine',
+      'select-roulette-physics-engine'
+    ];
+    dropdownIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.value !== engine) {
+        el.value = engine;
+      }
+    });
+
+    const labels = {
+      ammo: 'Ammo.js / Bullet 3D CCD',
+      jolt: 'Jolt Physics 3D Constraint',
+      cannon: 'Cannon.js 3D Rigid Body',
+      rapier: 'Rapier 3D SIMD WASM',
+      physx: 'PhysX / NVIDIA Kinematic Core',
+      classic2d: 'Filament Native C++ Micro-Solver'
+    };
+    const engineLabel = labels[engine] || engine.toUpperCase();
+
+    const activeBadge = document.getElementById('active-physics-lib-label');
+    if (activeBadge) activeBadge.textContent = `Active: ${engineLabel}`;
+
+    const mapVal = document.getElementById('val-map-physics-engine');
+    if (mapVal) mapVal.textContent = engineLabel;
+
+    const solverDetail = document.getElementById('physics-detail-solver');
+    if (solverDetail) {
+      const solvers = {
+        ammo: 'Symplectic Euler / Continuous Collision Sweep',
+        jolt: 'Projected Gauss-Seidel Constraint Solver',
+        cannon: 'Semi-Implicit Euler & Friction Impulse Matrix',
+        rapier: 'SIMD-Optimized Contact Manifold Dynamics',
+        physx: 'NVIDIA Kinematic Multi-Body Pipeline',
+        classic2d: 'Microsecond Analytical Trajectory Integrator'
+      };
+      solverDetail.textContent = solvers[engine] || 'Real-time Rigid Body Solver';
+    }
+
+    const realismDetail = document.getElementById('physics-detail-realism');
+    if (realismDetail) {
+      realismDetail.textContent = engine === 'classic2d' ? 'Analytical C++ Solver' : 'AAA Deterministic Real Physics';
+    }
+
+    if (!silent) {
+      this.log(`Authoritative Physics Engine switched to: [${engineLabel}] (Web Worker)`, 'cpp');
+      if (this.synth) this.synth.play('armor');
     }
   }
 
@@ -19796,7 +21608,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     } else if (this.state.cameraMode === 0) {
       // Standard Orbit Camera for other demos
-      if (this.joystickState && this.joystickState.active) {
+      const isTableGame = this.state.demoScene && (
+        this.state.demoScene.includes('14_pong') ||
+        this.state.demoScene.includes('13_bingo') ||
+        this.state.demoScene.includes('12_roulette') ||
+        this.state.demoScene.includes('11_plinko') ||
+        this.state.demoScene.includes('10_sliding_puzzle') ||
+        this.state.demoScene.includes('09_slot_machine')
+      );
+
+      if (this.joystickState && this.joystickState.active && !isTableGame) {
         this.state.camYaw += this.joystickState.dirX * dt * 2.0;
         this.state.camPitch = Math.max(-1.45, Math.min(1.45, this.state.camPitch + this.joystickState.dirY * dt * 2.0));
       }
@@ -20820,6 +22641,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // -------------------------------------------------------------
       this.updateBingoPhysics(dt);
       this.render3DBingo(progInfo, timestamp);
+    } else if (this.state.demoScene.includes('14_pong')) {
+      // -------------------------------------------------------------
+      // DEMO 14: RETRO 3D ARCADE PONG (SOLO BOT, LOCAL 2P, ONLINE)
+      // -------------------------------------------------------------
+      this.updatePongPhysics(dt);
+      this.render3DPong(progInfo, timestamp);
     } else {
       // DEMO 1 & DEMO 3: SINGLE OBJECT PBR / STUDIO
       const mesh = this.meshBuffers[this.state.activeMesh];
