@@ -1,12 +1,5 @@
 # Killer
-
-## C++17 & Filament render
-
-## Physics support
-
-## Multiplayer backend support
-
-## Multiplatform build
+## C++17 Filament Render, Physics, Multiplayer Backend, Multiplatform build
 
 **High-performance C++17 / WebAssembly 3D graphics & gameplay workbench**
 Built on **Google Filament** physically-based rendering, zero-allocation frame loops, kinematic player locomotion, continuous collision detection (CCD), and a modular FPS damage system.
