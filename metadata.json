@@ -1,6 +1,6 @@
 {
   "name": "Killer",
-  "description": "High-performance C++ & WebAssembly 3D engine sandbox with custom physics, FPS arena, dynamic sliding puzzle, 3D Plinko, Roulette wheel, and 3D real-physics Bingo with diamond drum.",
+  "description": "High-performance C++ & WebAssembly 3D engine sandbox with custom physics, FPS arena, dynamic sliding puzzle, 3D Plinko, Roulette wheel, 3D real-physics Bingo with diamond drum, and Retro 3D Arcade Pong with video chat.",
   "requestFramePermissions": [
     "camera",
     "microphone",
