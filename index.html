@@ -172,6 +172,7 @@
               <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 8px;">
                 <span id="fps-banner-text">🎯 <b>FPS Shooter Active</b>: Click / Double-Click / Touch / Tap to Shoot &bull; [E] or [Enter] &bull; Press <b>ESC</b> for Menu</span>
                 <div style="display: flex; gap: 8px; align-items: center;">
+                  <button id="btn-fps-sky-fx-toggle" class="btn-action" style="background: rgba(14, 165, 233, 0.25); border: 1px solid #0ea5e9; color: #38bdf8; padding: 4px 10px; font-weight: bold; border-radius: 6px; cursor: pointer; white-space: nowrap;" title="Cycle Sky Atmosphere &amp; Crazy FX">🌌 Sky FX: Crazy</button>
                   <button id="btn-fps-cheap-mat-toggle" class="btn-action" style="background: rgba(16, 185, 129, 0.25); border: 1px solid #10b981; color: #34d399; padding: 4px 10px; font-weight: bold; border-radius: 6px; cursor: pointer; white-space: nowrap;" title="Toggle Cheap Low-Cost Material for Mobile 60-120 FPS">⚡ Cheap Mat: ON (Mobile 60+ FPS)</button>
                   <button id="btn-open-fps-menu" class="btn-action" style="background: rgba(6, 182, 212, 0.25); border: 1px solid #06b6d4; color: #38bdf8; padding: 4px 10px; font-weight: bold; border-radius: 6px; cursor: pointer; white-space: nowrap;" onclick="if (window.showFpsStartupMenu) window.showFpsStartupMenu(); else if (window.app &amp;&amp; window.app.showFpsStartupMenu) window.app.showFpsStartupMenu();">🎮 Arena Menu</button>
                 </div>
@@ -214,9 +215,30 @@
                 <button id="btn-puzzle-reset" class="puzzle-secondary-btn" style="margin-top: 6px;">🔄 RESET TO SOLVED</button>
               </div>
 
+              <!-- 📹 Live Player Web Camera Direct in Puzzle (User Feature) -->
+              <div class="puzzle-control-group">
+                <span class="puzzle-group-label">3. Live Player Web Camera</span>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <button id="btn-puzzle-webcam-toggle" class="puzzle-primary-btn" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.35), rgba(6, 182, 212, 0.45)); border: 1.5px solid #10b981; color: #a7f3d0; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span>📹</span> <span id="puzzle-webcam-btn-text">START LIVE CAMERA PUZZLE</span>
+                  </button>
+                  <div id="puzzle-webcam-preview-container" style="display: none; position: relative; border-radius: 8px; overflow: hidden; border: 1.5px solid rgba(16, 185, 129, 0.45); background: #050a14;">
+                    <video id="puzzle-webcam-video" playsinline muted autoplay style="width: 100%; height: 130px; object-fit: cover; transform: scaleX(-1); display: block;"></video>
+                    <div id="puzzle-webcam-live-badge" style="position: absolute; top: 6px; left: 8px; background: rgba(0,0,0,0.75); padding: 3px 8px; border-radius: 4px; font-size: 9px; color: #34d399; font-weight: bold; display: flex; align-items: center; gap: 5px; border: 1px solid rgba(16,185,129,0.3);">
+                      <span id="puzzle-webcam-dot" style="display:inline-block; width:7px; height:7px; background:#10b981; border-radius:50%;"></span>
+                      <span id="puzzle-webcam-status-label">LIVE STREAMING TO PUZZLE</span>
+                    </div>
+                    <div style="display: flex; gap: 6px; padding: 6px; background: rgba(10, 15, 30, 0.9);">
+                      <button id="btn-puzzle-webcam-snap" class="puzzle-secondary-btn" style="flex: 1; font-size: 10px; padding: 5px 6px; cursor: pointer;">📸 FREEZE SELFIE</button>
+                      <button id="btn-puzzle-webcam-live" class="puzzle-secondary-btn" style="flex: 1; font-size: 10px; padding: 5px 6px; border-color: #10b981; color: #6ee7b7; cursor: pointer;">▶ LIVE VIDEO</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Custom Image Upload -->
               <div class="puzzle-control-group">
-                <span class="puzzle-group-label">3. Custom Texture Image</span>
+                <span class="puzzle-group-label">4. Custom Texture Image</span>
                 <div class="puzzle-upload-zone" id="puzzle-drop-zone">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom:6px; color:#06b6d4;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
                   <span style="font-size:11px; text-align:center;">Drag &amp; Drop or Click here to upload custom image</span>
@@ -226,7 +248,7 @@
 
               <!-- Predefined Textures Gallery -->
               <div class="puzzle-control-group">
-                <span class="puzzle-group-label">4. Preset Materials</span>
+                <span class="puzzle-group-label">5. Preset Materials</span>
                 <div class="puzzle-preset-grid" id="puzzle-preset-grid">
                   <div class="puzzle-preset-card active" data-texture="assets/textures/tex01.webp" style="background-image: url('assets/textures/tex01.webp');" title="Default Abstract">
                     <span class="preset-label">Abstract</span>
@@ -1012,7 +1034,8 @@
                         <div class="fps-form-group">
                           <label class="fps-label">Champion Skin:</label>
                           <select id="fps-player-skin" class="fps-select">
-                            <option value="Phantam" selected>Phantam Cyber-Suit</option>
+                            <option value="Mutant" selected>👹 Mutant Monster (character2/monster.glb)</option>
+                            <option value="Phantam">Phantam Cyber-Suit</option>
                             <option value="Visor">Visor Cyber-Gladiator</option>
                             <option value="Sarge">Sarge Veteran</option>
                             <option value="Doom">Doom Slayer Alpha</option>
@@ -1055,12 +1078,31 @@
                         </div>
                       </div>
 
+                      <!-- 👾 3D GLB Character & Combat Bot Mesh -->
+                      <div class="fps-form-group" style="margin-top: 10px;">
+                        <label class="fps-label">👾 3D GLB Combat Model &amp; Dynamic Skeletal Rig:</label>
+                        <select id="fps-model-glb-select" class="fps-select" style="border: 1px solid #c084fc; font-weight: bold; color: #f3e8ff; background: rgba(88, 28, 135, 0.45);">
+                          <option value="assets/models/character2/monster.glb" selected>👹 Mutant Monster (character2/monster.glb) • 5 Dynamic Skeletal Animations</option>
+                          <option value="assets/models/character1/soldier.glb">🎖️ Mixamo Soldier (character1/soldier.glb) • Classic Combat Rig</option>
+                        </select>
+                      </div>
+
                       <!-- 🚀 Performance & Material Profile Settings -->
                       <div class="fps-form-group" style="margin-top: 10px;">
                         <label class="fps-label">🚀 Mobile Performance &amp; Material Engine:</label>
                         <select id="fps-material-profile-select" class="fps-select" style="border: 1px solid #10b981; font-weight: bold; color: #10b981; background: rgba(6, 78, 59, 0.4);">
                           <option value="cheap" selected>⚡ Cheap Mobile Material (Zero Noise ALU • 60-120 FPS Max Smoothness)</option>
                           <option value="filament_pbr">✨ Filament Studio PBR (Cook-Torrance GGX &amp; Procedural Synthesizers)</option>
+                        </select>
+                      </div>
+
+                      <!-- 🌌 Sky Dome Atmosphere & Material Effects -->
+                      <div class="fps-form-group" style="margin-top: 10px;">
+                        <label class="fps-label">🌌 Cosmic Sky Atmosphere &amp; Material FX:</label>
+                        <select id="fps-sky-fx-select" class="fps-select" style="border: 1px solid #38bdf8; font-weight: bold; color: #38bdf8; background: rgba(14, 116, 144, 0.4);">
+                          <option value="crazy" selected>🔥 Crazy Cyber Shield &amp; Cosmic Nebula (Full FX)</option>
+                          <option value="cosmic">🌌 Cosmic Nebula &amp; Twinkling Starfield</option>
+                          <option value="pristine">✨ Pristine Seamless Celestial Sky (Clean)</option>
                         </select>
                       </div>
 

@@ -1979,6 +1979,198 @@ void main() {
 }
 `;
 
+// Dedicated Ultra-High Quality Seamless Sky Dome Shaders with Crazy Cosmic FX
+const VS_SKY = `#version 300 es
+layout(location = 0) in vec3 a_position;
+layout(location = 1) in vec3 a_normal;
+layout(location = 2) in vec2 a_uv;
+
+uniform mat4 u_model;
+uniform mat4 u_viewProj;
+
+out vec3 v_worldPos;
+out vec3 v_localDir;
+out vec2 v_uv;
+
+void main() {
+    v_localDir = a_position;
+    v_uv = a_uv;
+    vec4 worldPos = u_model * vec4(a_position, 1.0);
+    v_worldPos = worldPos.xyz;
+    vec4 clipPos = u_viewProj * worldPos;
+    // Push depth to far plane so sky renders behind all scene geometry
+    gl_Position = vec4(clipPos.xy, clipPos.w * 0.99999, clipPos.w);
+}
+`;
+
+const FS_SKY = `#version 300 es
+precision highp float;
+
+#define PI 3.14159265358979323846
+
+in vec3 v_worldPos;
+in vec3 v_localDir;
+in vec2 v_uv;
+
+uniform vec3 u_camPos;
+uniform float u_time;
+uniform float u_skyPulse;
+uniform int u_skyMode; // 0 = pristine clean, 1 = cosmic nebula, 2 = crazy cyber shield
+uniform sampler2D u_skyTex;
+
+out vec4 fragColor;
+
+void main() {
+    vec3 dir = normalize(v_localDir);
+
+    // 1. Continuous equirectangular spherical coordinates computed directly from 3D direction
+    // Eliminates all geometric triangle seam artifacts across the sphere!
+    float phi = atan(dir.z, dir.x); // [-PI, PI]
+    float u = phi * (0.5 / PI) + 0.5; // [0.0, 1.0]
+    // Zenith (+Y) is at top of dome (v = 1.0); Nadir (-Y) is at bottom (v = 0.0)
+    float v = asin(clamp(dir.y, -1.0, 1.0)) * (1.0 / PI) + 0.5;
+
+    // Seam-wrap gradient correction for derivative calculation to prevent mipmap seam lines:
+    vec2 uv = vec2(u, v);
+    vec2 dx = dFdx(uv);
+    vec2 dy = dFdy(uv);
+    if (dx.x > 0.5) dx.x -= 1.0;
+    else if (dx.x < -0.5) dx.x += 1.0;
+    if (dy.x > 0.5) dy.x -= 1.0;
+    else if (dy.x < -0.5) dy.x += 1.0;
+
+    // Sample panorama texture with corrected gradients
+    vec4 baseSky = textureGrad(u_skyTex, uv, dx, dy);
+
+    // Seamless boundary blending: Cross-fade boundary zone near u=0 and u=1
+    // to guarantee 100% mathematical continuity even with non-seamless source photos
+    float seamDist = min(uv.x, 1.0 - uv.x);
+    if (seamDist < 0.035) {
+        float blend = smoothstep(0.0, 0.035, seamDist);
+        vec4 leftSample = textureGrad(u_skyTex, vec2(0.001, uv.y), dx, dy);
+        vec4 rightSample = textureGrad(u_skyTex, vec2(0.999, uv.y), dx, dy);
+        vec4 avgSample = mix(leftSample, rightSample, 0.5);
+        baseSky = mix(avgSample, baseSky, blend);
+    }
+
+    // 2. Hide bottom imperfections completely under the arena floor
+    // Arena platforms sit at y >= 0. Looking down towards the bottom abyss (dir.y < 0):
+    // Smoothly blend the lower hemisphere into a deep cosmic abyss void
+    float horizonFade = smoothstep(-0.25, 0.12, dir.y);
+    vec3 abyssalVoid = vec3(0.003, 0.001, 0.003); // Deep dark interstellar void
+    vec3 skyColor = mix(abyssalVoid, baseSky.rgb * vec3(0.24, 0.04, 0.06), horizonFade);
+
+    if (u_skyMode > 0) {
+        // 3. Cosmic Atmosphere: Soft Muted Dark Red Nebula Clouds (Darker & Subdued)
+        vec3 pNebula = dir * 2.4;
+        float tNebula = u_time * 0.06;
+        float n1 = sin(pNebula.x * 2.0 + pNebula.y * 2.8 + tNebula * 1.5) * cos(pNebula.z * 1.8 - tNebula * 1.1);
+        float n2 = sin(pNebula.y * 3.0 - pNebula.z * 2.2 + tNebula * 0.9) * cos(pNebula.x * 2.6 + tNebula * 0.8);
+        float n3 = sin((pNebula.x + pNebula.z) * 2.4 + tNebula * 1.7) * sin(pNebula.y * 2.0 - tNebula * 1.3);
+        float nebulaCurl = (n1 + n2 + n3) / 3.0;
+        float nebulaWave = smoothstep(-0.10, 0.80, nebulaCurl);
+
+        vec3 colDarkRed = vec3(0.24, 0.02, 0.035);
+        vec3 colDeepCrimson = vec3(0.34, 0.035, 0.06);
+        vec3 colWine = vec3(0.12, 0.01, 0.02);
+        vec3 nebulaColor = mix(colWine, mix(colDarkRed, colDeepCrimson, sin(tNebula + dir.x * 1.8) * 0.5 + 0.5), nebulaWave);
+        skyColor += nebulaColor * pow(nebulaWave, 2.0) * 0.24 * smoothstep(-0.05, 0.40, dir.y);
+
+        // 4. Simple Blurred Points: Subtle, Soft Cosmic Embers (Subdued, Darker Red)
+        // True Euclidean distance produces round blurred discs without harsh brightness
+        vec2 pGrid = vec2(phi * 26.0, (dir.y + 1.0) * 18.0);
+        vec2 cellId = floor(pGrid);
+        vec2 cellUV = fract(pGrid) - 0.5; // [-0.5, 0.5] from point center
+        float pHash = fract(sin(dot(cellId, vec2(127.1, 311.7))) * 43758.5453);
+
+        if (pHash > 0.76 && dir.y > -0.05) {
+            vec2 pOffset = vec2(
+                sin(pHash * 23.4 + u_time * 0.16) * 0.22,
+                cos(pHash * 19.8 + u_time * 0.14) * 0.22
+            );
+            float d = length(cellUV - pOffset);
+
+            // Soft blurred falloff curve - gentle core plus diffuse Gaussian halo
+            float ptRadius = 0.09 + 0.11 * fract(pHash * 13.7);
+            float coreGlow = smoothstep(ptRadius, 0.0, d);
+            float diffuseHalo = exp(-d * 7.2) * 0.35;
+            float pointIntensity = coreGlow + diffuseHalo;
+
+            float pulse = sin(u_time * (1.1 + pHash * 1.8) + pHash * 28.0) * 0.5 + 0.5;
+            pointIntensity *= (0.35 + 0.65 * pulse);
+
+            // Darker, subdued garnet & wine red (toned down, not harsh)
+            vec3 darkRedTint = vec3(0.26, 0.02, 0.038);
+            vec3 deepRubyTint = vec3(0.38, 0.035, 0.065);
+            vec3 warmEmberTint = vec3(0.48, 0.06, 0.08);
+            vec3 ptCol = mix(darkRedTint, mix(deepRubyTint, warmEmberTint, fract(pHash * 5.3)), pulse);
+
+            skyColor += ptCol * pointIntensity * 0.45 * smoothstep(-0.05, 0.28, dir.y);
+        }
+
+        // Secondary layer: Out-of-focus subtle dark dust motes
+        vec2 pGrid2 = vec2(phi * 13.0 + 4.2, (dir.y + 1.0) * 9.0 + 2.1);
+        vec2 cellId2 = floor(pGrid2);
+        vec2 cellUV2 = fract(pGrid2) - 0.5;
+        float pHash2 = fract(sin(dot(cellId2, vec2(269.5, 183.3))) * 28371.123);
+
+        if (pHash2 > 0.78 && dir.y > 0.0) {
+            vec2 pOff2 = vec2(sin(pHash2 * 17.0 + u_time * 0.1) * 0.2, cos(pHash2 * 23.0 + u_time * 0.1) * 0.2);
+            float d2 = length(cellUV2 - pOff2);
+            float softBlur = exp(-d2 * 5.6);
+            vec3 dustCol = vec3(0.18, 0.015, 0.025);
+            skyColor += dustCol * softBlur * 0.25 * smoothstep(0.0, 0.35, dir.y);
+        }
+    }
+
+    if (u_skyMode > 1) {
+        // 5. Soft Blurred Cybernetic Shield in Subdued Dark Crimson & Ruby
+        if (dir.y > 0.05) {
+            vec2 hexUV = vec2(phi * 6.0, (dir.y + 0.05) * 12.0);
+            vec2 r = vec2(1.0, 1.7320508);
+            vec2 h = r * 0.5;
+            vec2 a = mod(hexUV, r) - h;
+            vec2 b = mod(hexUV - h, r) - h;
+            vec2 gv = dot(a, a) < dot(b, b) ? a : b;
+            float hexEdge = max(abs(gv.x), abs(gv.x) * 0.5 + abs(gv.y) * 0.8660254);
+            
+            // Soft blurred edges instead of sharp lines
+            float hexGlow = smoothstep(0.34, 0.50, hexEdge) * (1.0 - smoothstep(0.49, 0.53, hexEdge));
+
+            // Traveling energy scan waves across the dome in deep dark red
+            float scanWave = sin(dir.y * 14.0 - u_time * 1.8);
+            float pulseFlash = smoothstep(0.65, 0.98, scanWave);
+            vec3 hexDarkRed = vec3(0.18, 0.012, 0.025);
+            vec3 hexRuby = vec3(0.32, 0.03, 0.055);
+            vec3 hexColor = mix(hexDarkRed, hexRuby, pulseFlash);
+
+            // Weapon fire combat shockwave with soft blurred edge
+            float combatShock = sin(length(dir.xz) * 10.0 - u_time * 5.0) * u_skyPulse;
+            float hexIntensity = (hexGlow * 0.16 + pulseFlash * 0.15 + max(0.0, combatShock) * 0.30) * smoothstep(0.05, 0.55, dir.y);
+            skyColor += hexColor * hexIntensity;
+        }
+
+        // 6. Swirling Zenith Singularity / Warp Accretion in Deep Crimson & Ruby (Muted & Darker)
+        float zenithDist = 1.0 - clamp(dir.y, 0.0, 1.0); // 0 at zenith, 1 at horizon
+        if (zenithDist < 0.42) {
+            float vortexAngle = atan(dir.z, dir.x) + u_time * 0.28;
+            float vortexR = zenithDist * 3.0;
+            float vortexSpiral = sin(vortexAngle * 3.0 - vortexR * 10.0);
+            float vortexGlow = exp(-vortexR * 2.8) * (0.60 + 0.40 * vortexSpiral);
+            vec3 vortexColor = mix(vec3(0.26, 0.02, 0.04), vec3(0.38, 0.04, 0.07), sin(vortexR * 6.0 - u_time * 1.0) * 0.5 + 0.5);
+            skyColor += vortexColor * vortexGlow * 0.35;
+        }
+
+        // 7. Radiant Horizon Aurora Ring (Subtle dark crimson barrier)
+        float horizonRing = exp(-pow((dir.y - 0.02) * 12.0, 2.0));
+        vec3 horizonGlow = vec3(0.28, 0.025, 0.045) * 0.60 + vec3(0.16, 0.01, 0.02) * 0.30;
+        skyColor += horizonGlow * horizonRing;
+    }
+
+    fragColor = vec4(skyColor, 1.0);
+}
+`;
+
 const VS_COMMON = `#version 300 es
 layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_normal;
@@ -3816,6 +4008,46 @@ function createQuad(size = 1.0) {
   return { name: "BillboardQuad", positions, normals, uvs, barys, indices };
 }
 
+function createPyramid(size = 1.0, height = 1.0) {
+  const hs = size * 0.5;
+  const p0 = [-hs, 0,  hs];
+  const p1 = [ hs, 0,  hs];
+  const p2 = [ hs, 0, -hs];
+  const p3 = [-hs, 0, -hs];
+  const apex = [0, height, 0];
+
+  const positions = [];
+  const normals = [];
+  const uvs = [];
+  const barys = [];
+  const indices = [];
+
+  const addTri = (a, b, c) => {
+    const idx = positions.length / 3;
+    positions.push(...a, ...b, ...c);
+    const ab = [b[0]-a[0], b[1]-a[1], b[2]-a[2]];
+    const ac = [c[0]-a[0], c[1]-a[1], c[2]-a[2]];
+    let nx = ab[1]*ac[2] - ab[2]*ac[1];
+    let ny = ab[2]*ac[0] - ab[0]*ac[2];
+    let nz = ab[0]*ac[1] - ab[1]*ac[0];
+    const len = Math.hypot(nx, ny, nz) || 1;
+    nx /= len; ny /= len; nz /= len;
+    normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+    uvs.push(0, 0, 1, 0, 0.5, 1);
+    barys.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
+    indices.push(idx, idx + 1, idx + 2);
+  };
+
+  addTri(p0, p1, apex);
+  addTri(p1, p2, apex);
+  addTri(p2, p3, apex);
+  addTri(p3, p0, apex);
+  addTri(p3, p2, p1);
+  addTri(p3, p1, p0);
+
+  return { name: "Pyramid", positions, normals, uvs, barys, indices };
+}
+
 function createIcosahedron(radius = 1.3) {
   const t = (1.0 + Math.sqrt(5.0)) / 2.0;
   const verts = [
@@ -3873,6 +4105,42 @@ function createSphere(radius = 1.0, latBands = 24, longBands = 24) {
     }
   }
   return { name: "Sphere", positions, normals, uvs, barys, indices };
+}
+
+function createSkyDome(radius = 1.0, latBands = 64, longBands = 64) {
+  const positions = [], normals = [], uvs = [], barys = [], indices = [];
+  for (let lat = 0; lat <= latBands; lat++) {
+    const theta = (lat * Math.PI) / latBands;
+    const sinTheta = Math.sin(theta);
+    const cosTheta = Math.cos(theta);
+
+    for (let lon = 0; lon <= longBands; lon++) {
+      const phi = (lon * 2 * Math.PI) / longBands;
+      const sinPhi = Math.sin(phi);
+      const cosPhi = Math.cos(phi);
+
+      const x = cosPhi * sinTheta;
+      const y = cosTheta;
+      const z = sinPhi * sinTheta;
+
+      positions.push(radius * x, radius * y, radius * z);
+      // Inward-facing normal vector for sky dome observation
+      normals.push(-x, -y, -z);
+      uvs.push(lon / longBands, 1.0 - (lat / latBands));
+      barys.push((lat + lon) % 3 === 0 ? 1 : 0, (lat + lon) % 3 === 1 ? 1 : 0, (lat + lon) % 3 === 2 ? 1 : 0);
+    }
+  }
+
+  for (let lat = 0; lat < latBands; lat++) {
+    for (let lon = 0; lon < longBands; lon++) {
+      const first = lat * (longBands + 1) + lon;
+      const second = first + longBands + 1;
+      // Inward winding for triangles so inside of dome is front-facing
+      indices.push(first, first + 1, second);
+      indices.push(second, first + 1, second + 1);
+    }
+  }
+  return { name: "SkyDome", positions, normals, uvs, barys, indices };
 }
 
 function createRing(innerR = 0.82, outerR = 1.0, segments = 64) {
@@ -4210,7 +4478,9 @@ class NativeApp {
     window.hideFpsStartupMenu = () => this.hideFpsStartupMenu();
     window.showFpsStartupMenu = () => this.showFpsStartupMenu();
     window.fireWeaponProjectile = () => this.fireWeaponProjectile();
+    window.toggleSkyFX = (mode) => this.toggleSkyFX(mode);
 
+    this.skyPulseTimer = 0.0;
     this.fpsFireOption = 'both'; // 'both' | 'dblclick' | 'click' | 'keys_only'
     this.fpsFireBtnMode = 'auto'; // 'auto' | 'always' | 'hidden'
     this.lastFpsTapTime = 0;
@@ -4242,6 +4512,7 @@ class NativeApp {
       activeMesh: 0,
       activeShader: 0, // Default to Full PBR Filament Shader
       fpsCheapMaterial: false,
+      fpsSkyFX: 'crazy',
       roughness: 0.25,
       metallic: 0.15,
       speed: 0.8,
@@ -4611,7 +4882,8 @@ class NativeApp {
       pushBtn: '/assets/textures/pushBtn.webp',
       darkRock: '/assets/textures/dark-rock.webp',
       floor1: '/assets/textures/floor1.webp',
-      gold2: '/assets/textures/gold-2.webp'
+      gold2: '/assets/textures/gold-2.webp',
+      sky1: '/assets/images/env-maps/sky1.webp'
     };
 
     Object.keys(texturesToLoad).forEach(key => {
@@ -4767,6 +5039,24 @@ class NativeApp {
       uModel: gl.getUniformLocation(progB, "u_model"),
       uViewProj: gl.getUniformLocation(progB, "u_viewProj"),
       uTextTexture: gl.getUniformLocation(progB, "u_textTexture")
+    };
+
+    // Compile dedicated Sky Dome Program with seamless filtering and crazy effects
+    const vsSky = this.compileShader(gl.VERTEX_SHADER, VS_SKY);
+    const fsSky = this.compileShader(gl.FRAGMENT_SHADER, FS_SKY);
+    const progSky = gl.createProgram();
+    gl.attachShader(progSky, vsSky);
+    gl.attachShader(progSky, fsSky);
+    gl.linkProgram(progSky);
+    this.skyProg = {
+      prog: progSky,
+      uModel: gl.getUniformLocation(progSky, "u_model"),
+      uViewProj: gl.getUniformLocation(progSky, "u_viewProj"),
+      uCamPos: gl.getUniformLocation(progSky, "u_camPos"),
+      uTime: gl.getUniformLocation(progSky, "u_time"),
+      uSkyPulse: gl.getUniformLocation(progSky, "u_skyPulse"),
+      uSkyMode: gl.getUniformLocation(progSky, "u_skyMode"),
+      uSkyTex: gl.getUniformLocation(progSky, "u_skyTex")
     };
 
     // Compile transparent solid-color roulette actor program for 3D betting hit areas
@@ -5022,6 +5312,7 @@ void main() {
       vao,
       vboPos,
       vboNorm,
+      ibo,
       name: data.name,
       indexCount: data.indices.length,
       vertexCount: data.positions.length / 3,
@@ -5057,14 +5348,19 @@ void main() {
       createQuad(1.0),
       createRing(0.82, 1.0, 48),
       createDisk(1.0, 48),
-      sphereLOD2Data
+      sphereLOD2Data,
+      createPyramid(1.0, 1.0)
     ];
 
     this.meshBuffers = this.rawMeshes.map(data => this.buildMeshBuffer(data));
     this.meshBuffers[0] = this.sphereLODs[0]; // Primary mesh points to LOD0
 
+    // Dedicated high-resolution seamless sky dome (64x64 bands)
+    this.skyDomeData = createSkyDome(1.0, 64, 64);
+    this.skyMesh = this.buildMeshBuffer(this.skyDomeData);
+
     this.updateHUDStats();
-    this.loadSoldierGLB();
+    this.loadSoldierGLB('assets/models/character2/monster.glb');
   }
 
   slerpQuat(out, q0, q1, t) {
@@ -5085,15 +5381,21 @@ void main() {
     }
   }
 
-  evaluateSoldierSkeleton(animTime) {
+  evaluateSoldierSkeleton(animTime, preferredAnim = 'walk') {
     if (!this.soldierSkeletonData) return null;
     const { nodes, animations, jointsNodeIndices, inverseBindMatrices } = this.soldierSkeletonData;
     if (animations.length === 0) return null;
 
-    // Use first animation (usually Walk or Locomotion in character1/soldier.glb)
-    const anim = animations[0];
+    // Pick requested animation (attack, dead, idle, walk, salute) or fallback
+    let anim = null;
+    if (preferredAnim) {
+      anim = animations.find(a => a.name.toLowerCase().includes(preferredAnim.toLowerCase()));
+    }
+    if (!anim) {
+      anim = animations.find(a => a.name.toLowerCase().includes('walk')) || animations[0];
+    }
     const duration = anim.duration;
-    const time = animTime % (duration || 1.0);
+    const time = (duration && duration > 0) ? (animTime % duration) : 0;
 
     const fromRotationTranslationScale = (out, q, v, s) => {
       const x = q[0], y = q[1], z = q[2], w = q[3];
@@ -5348,14 +5650,22 @@ void main() {
         }
       }
 
-      pos[i3] = spx;
-      pos[i3 + 1] = spy;
-      pos[i3 + 2] = spz;
-
-      const nlen = Math.hypot(snx, sny, snz) || 1;
-      norm[i3] = snx / nlen;
-      norm[i3 + 1] = sny / nlen;
-      norm[i3 + 2] = snz / nlen;
+      if (isNaN(spx) || isNaN(spy) || isNaN(spz) || (spx === 0 && spy === 0 && spz === 0 && (px !== 0 || py !== 0 || pz !== 0))) {
+        pos[i3] = px;
+        pos[i3 + 1] = py;
+        pos[i3 + 2] = pz;
+        norm[i3] = nx;
+        norm[i3 + 1] = ny;
+        norm[i3 + 2] = nz;
+      } else {
+        pos[i3] = spx;
+        pos[i3 + 1] = spy;
+        pos[i3 + 2] = spz;
+        const nlen = Math.hypot(snx, sny, snz) || 1;
+        norm[i3] = snx / nlen;
+        norm[i3 + 1] = sny / nlen;
+        norm[i3 + 2] = snz / nlen;
+      }
     }
 
     const gl = this.gl;
@@ -5368,11 +5678,12 @@ void main() {
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
 
-  async loadSoldierGLB() {
+  async loadSoldierGLB(customUrl = 'assets/models/character2/monster.glb') {
     try {
-      const url = 'assets/models/character1/soldier.glb';
+      const url = customUrl || 'assets/models/character2/monster.glb';
+      this.currentGlbModel = url;
       const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to fetch soldier.glb');
+      if (!response.ok) throw new Error(`Failed to fetch ${url}`);
       const arrayBuffer = await response.arrayBuffer();
 
       const header = new DataView(arrayBuffer, 0, 12);
@@ -5423,7 +5734,16 @@ void main() {
           else if (accessor.componentType === 5125) { typedArrayConstructor = Uint32Array; elementBytes = 4; }
           else if (accessor.componentType === 5121) { typedArrayConstructor = Uint8Array; elementBytes = 1; }
 
-          const numComp = accessor.type === 'SCALAR' ? 1 : (accessor.type === 'VEC2' ? 2 : (accessor.type === 'VEC3' ? 3 : (accessor.type === 'VEC4' ? 4 : 1)));
+          const TYPE_COMPONENTS = {
+            'SCALAR': 1,
+            'VEC2': 2,
+            'VEC3': 3,
+            'VEC4': 4,
+            'MAT2': 4,
+            'MAT3': 9,
+            'MAT4': 16
+          };
+          const numComp = TYPE_COMPONENTS[accessor.type] || 1;
           const totalElements = accessor.count * numComp;
 
           if (byteOffset % elementBytes !== 0) {
@@ -5598,8 +5918,42 @@ void main() {
         barys.push(i % 3 === 0 ? 1 : 0, i % 3 === 1 ? 1 : 0, i % 3 === 2 ? 1 : 0);
       }
 
+      // Extract embedded texture if present in GLB (e.g. Mutant_diffuse)
+      if (jsonChunk.images && jsonChunk.images.length > 0 && binChunk) {
+        try {
+          const imgDef = jsonChunk.images[0];
+          if (imgDef.bufferView !== undefined) {
+            const bv = jsonChunk.bufferViews[imgDef.bufferView];
+            const bOffset = (bv.byteOffset || 0);
+            const bLength = bv.byteLength;
+            const imgSlice = binChunk.slice(bOffset, bOffset + bLength);
+            const mime = imgDef.mimeType || 'image/png';
+            const blob = new Blob([imgSlice], { type: mime });
+            const imgUrl = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+              const gl = this.gl;
+              const tex = gl.createTexture();
+              gl.bindTexture(gl.TEXTURE_2D, tex);
+              gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+              gl.generateMipmap(gl.TEXTURE_2D);
+              gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+              gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+              this.characterTexture = tex;
+              if (this.soldierMesh) this.soldierMesh.texture = tex;
+              console.log("[GLB Loader] Successfully created WebGL texture for character model:", imgDef.name || mime);
+            };
+            img.src = imgUrl;
+          }
+        } catch (texErr) {
+          console.warn("[GLB Loader] Error loading embedded texture:", texErr);
+        }
+      } else {
+        this.characterTexture = null;
+      }
+
       const meshData = {
-        name: "Soldier_GLB",
+        name: url.includes('monster') ? "Monster_GLB" : "Soldier_GLB",
         positions: allPos,
         normals: allNorm,
         uvs: allUV,
@@ -5607,10 +5961,27 @@ void main() {
         indices: allIdx
       };
 
+      if (this.soldierMesh) {
+        const gl = this.gl;
+        if (this.soldierMesh.vao) gl.deleteVertexArray(this.soldierMesh.vao);
+        if (this.soldierMesh.vboPos) gl.deleteBuffer(this.soldierMesh.vboPos);
+        if (this.soldierMesh.vboNorm) gl.deleteBuffer(this.soldierMesh.vboNorm);
+        if (this.soldierMesh.ibo) gl.deleteBuffer(this.soldierMesh.ibo);
+      }
+      this.skinnedPosArray = null;
+      this.skinnedNormArray = null;
+
       this.soldierMesh = this.buildMeshBuffer(meshData, true);
-      console.log("[GLB Loader] Successfully loaded soldier.glb with dynamic skeleton skinning. Vertices:", allPos.length / 3, "Animations loaded:", animations.length);
+      this.characterMesh = this.soldierMesh;
+      this.monsterMesh = this.soldierMesh;
+      if (this.characterTexture) this.soldierMesh.texture = this.characterTexture;
+
+      const animNames = animations.map(a => a.name).join(', ');
+      console.log(`[GLB Loader] Successfully loaded ${url} with dynamic skeleton skinning. Vertices:`, allPos.length / 3, "Animations:", animNames);
+      this.log(`👹 3D Combat Character Loaded: [${url.includes('monster') ? 'MUTANT MONSTER (character2/monster.glb)' : 'SOLDIER (character1/soldier.glb)'}] (${animations.length} animations: ${animNames})`, "success");
     } catch(err) {
-      console.error("[GLB Loader] Failed to load soldier.glb:", err);
+      console.error(`[GLB Loader] Failed to load ${url}:`, err);
+      this.log(`⚠️ Failed to load GLB model: ${err.message}`, "error");
     }
   }
 
@@ -6092,13 +6463,14 @@ void main() {
     };
 
     const updateFPSOverlays = () => {
-       const isShowroom = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
+      const isShowroom = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
       const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
       const isSlidingPuzzle = this.state.demoScene.includes('10_sliding_puzzle');
       const isPlinko = this.state.demoScene.includes('11_plinko');
       const isRoulette = this.state.demoScene.includes('12_roulette');
       const isBingo = this.state.demoScene.includes('13_bingo');
-      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo;
+      const isPong = Boolean(this.state.demoScene && this.state.demoScene.includes('14_pong'));
+      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong;
       const crosshairEl = document.getElementById('fps-crosshair-overlay');
       const bannerEl = document.getElementById('fps-pointerlock-banner');
       const weaponHudEl = document.getElementById('fps-weapon-hud');
@@ -6187,7 +6559,6 @@ void main() {
       if (bingoDesktopBtnEl && !isBingo) bingoDesktopBtnEl.style.display = 'none';
       if (bingoControlsPanel) bingoControlsPanel.style.display = isBingo ? 'block' : 'none';
 
-      const isPong = this.state.demoScene && this.state.demoScene.includes('14_pong');
       const pongBannerEl = document.getElementById('pong-banner');
       const pongSeatsEl = document.getElementById('pong-video-seats-container');
       const pongModalEl = document.getElementById('pong-mode-modal');
@@ -6256,45 +6627,9 @@ void main() {
           } catch(err) {}
         }
       } else if (this.state.demoScene.includes('10_sliding_puzzle') && this.puzzleState) {
-        const canvasRect = this.canvas.getBoundingClientRect();
-        const mouseX = e.clientX - canvasRect.left;
-        const mouseY = e.clientY - canvasRect.top;
-
-        const N = this.puzzleState.gridSize;
-        const tileW = 1.0 / N;
-        const halfSize = 0.5;
-
-        let bestR = -1;
-        let bestC = -1;
-        let minD = Infinity;
-
-        for (let r = 0; r < N; r++) {
-          for (let c = 0; c < N; c++) {
-            const wx = -halfSize + (c + 0.5) * tileW;
-            const wy = 1.3 + (halfSize - (r + 0.5) * tileW);
-            const wz = 0.0;
-
-            const scr = this.project3DToScreen([wx, wy, wz], this.viewProjMatrix, canvasRect.width, canvasRect.height);
-            if (scr) {
-              const d = Math.hypot(scr.x - mouseX, scr.y - mouseY);
-              if (d < minD) {
-                minD = d;
-                bestR = r;
-                bestC = c;
-              }
-            }
-          }
-        }
-
-        let centerSpacingPixels = 80;
-        const scrCenter1 = this.project3DToScreen([0, 1.3, 0], this.viewProjMatrix, canvasRect.width, canvasRect.height);
-        const scrCenter2 = this.project3DToScreen([tileW, 1.3, 0], this.viewProjMatrix, canvasRect.width, canvasRect.height);
-        if (scrCenter1 && scrCenter2) {
-          centerSpacingPixels = Math.hypot(scrCenter1.x - scrCenter2.x, scrCenter1.y - scrCenter2.y);
-        }
-
-        if (bestR !== -1 && minD < centerSpacingPixels * 0.75) {
-          this.handleSlidingPuzzleClick(bestR, bestC);
+        const hit = this.raycastSlidingPuzzle(e.clientX, e.clientY);
+        if (hit) {
+          this.handleSlidingPuzzleClick(hit.r, hit.c);
         }
       } else if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
         this.handleRouletteClick(e.clientX, e.clientY);
@@ -6308,7 +6643,7 @@ void main() {
       if (e.target.closest && e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab, #bingo-overlay, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell, .fps-floating-fire-btn, .btn-touch-shoot')) return;
 
       const isFPS = (this.state.cameraMode === 3) || (this.state.demoScene && this.state.demoScene.includes('07_fps'));
-      if (isFPS) {
+      if (isFPS && this.fpsFireOption === 'dblclick') {
         e.preventDefault();
         this.fireWeaponProjectile();
       }
@@ -6367,6 +6702,8 @@ void main() {
           this.updatePongPointerMove(e);
         } else if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
           this.updateRouletteHover(e.clientX, e.clientY);
+        } else if (this.state.demoScene.includes('10_sliding_puzzle') && this.puzzleState) {
+          this.updatePuzzleHover(e.clientX, e.clientY);
         }
         return;
       }
@@ -9659,10 +9996,11 @@ else if (typeof define === 'function' && define['amd'])
     this.isMatchActive = true;
     window.isMatchActive = true;
 
-    // Debounce rapid duplicate event triggers (50ms)
+    // Rate-of-fire cadence: 320ms cooldown between shots for deliberate, tactical firing
     const now = performance.now();
-    if (this.lastFpsFireTime && (now - this.lastFpsFireTime < 50)) return;
+    if (this.lastFpsFireTime && (now - this.lastFpsFireTime < 320)) return;
     this.lastFpsFireTime = now;
+    this.skyPulseTimer = 1.0; // Trigger cybernetic sky forcefield shockwave
 
     let proj = this.projectilePool.find(p => !p.active);
     if (!proj) {
@@ -9983,7 +10321,11 @@ else if (typeof define === 'function' && define['amd'])
         radius: 0.65,
         height: 1.8,
         kills: 0,
-        deaths: 0
+        deaths: 0,
+        elevatorState: 'IDLE',
+        elevatorCooldown: 2.0,
+        ridingElevatorId: null,
+        elevatorAttemptTimer: 0.0
       },
       {
         id: 102,
@@ -10005,7 +10347,11 @@ else if (typeof define === 'function' && define['amd'])
         radius: 0.65,
         height: 1.8,
         kills: 0,
-        deaths: 0
+        deaths: 0,
+        elevatorState: 'IDLE',
+        elevatorCooldown: 5.0,
+        ridingElevatorId: null,
+        elevatorAttemptTimer: 0.0
       },
       {
         id: 103,
@@ -10027,7 +10373,11 @@ else if (typeof define === 'function' && define['amd'])
         radius: 0.65,
         height: 1.8,
         kills: 0,
-        deaths: 0
+        deaths: 0,
+        elevatorState: 'IDLE',
+        elevatorCooldown: 8.0,
+        ridingElevatorId: null,
+        elevatorAttemptTimer: 0.0
       }
     ];
 
@@ -10218,6 +10568,8 @@ else if (typeof define === 'function' && define['amd'])
       }
 
       if (!bot.alive) {
+        bot.ridingElevatorId = null;
+        bot.elevatorState = 'IDLE';
         bot.respawnTimer -= dt;
         if (bot.respawnTimer <= 0) {
           bot.alive = true;
@@ -10232,6 +10584,9 @@ else if (typeof define === 'function' && define['amd'])
           bot.velocity[2] = 0;
           bot.isGrounded = false;
           bot.fireTimer = 1.0 + Math.random();
+          bot.elevatorState = 'IDLE';
+          bot.elevatorCooldown = 4.0;
+          bot.ridingElevatorId = null;
           this.log(`🤖 [BOT RESPAWNED] ${bot.alias} re-entered the arena!`, "info");
         }
         continue;
@@ -10244,6 +10599,26 @@ else if (typeof define === 'function' && define['amd'])
         }
       }
 
+      // Locate closest elevator for tactical routing
+      let targetElevator = null;
+      let minElDistSq = Infinity;
+      if (this.elevators && this.elevators.length > 0) {
+        for (let ei = 0; ei < this.elevators.length; ei++) {
+          const e = this.elevators[ei];
+          const edx = e.pos[0] - bot.pos[0];
+          const edz = e.pos[2] - bot.pos[2];
+          const dSq = edx * edx + edz * edz;
+          if (dSq < minElDistSq) {
+            minElDistSq = dSq;
+            targetElevator = e;
+          }
+        }
+      }
+
+      if (bot.elevatorCooldown > 0) {
+        bot.elevatorCooldown -= dt;
+      }
+
       // AI Movement & Aiming Towards Player
       const dx = this._pEye[0] - bot.pos[0];
       const dy = this._pEye[1] - (bot.pos[1] + 1.2);
@@ -10251,19 +10626,189 @@ else if (typeof define === 'function' && define['amd'])
       const distToPlayer = Math.hypot(dx, dz);
       const totalDist = Math.hypot(dx, dy, dz);
 
-      if (distToPlayer > 0.1) {
-        bot.yaw = Math.atan2(dx, dz);
+      // Continuously and accurately orient bot towards the player (yaw + pitch)
+      if (distToPlayer > 0.05) {
+        const targetYaw = Math.atan2(dx, dz);
+        let diffYaw = targetYaw - (bot.yaw || 0);
+        while (diffYaw < -Math.PI) diffYaw += Math.PI * 2;
+        while (diffYaw > Math.PI) diffYaw -= Math.PI * 2;
+        bot.yaw = (bot.yaw || 0) + diffYaw * Math.min(1.0, 16.0 * dt);
+
+        const targetPitch = Math.max(-0.6, Math.min(0.6, Math.atan2(-dy, distToPlayer)));
+        bot.pitch = (bot.pitch || 0) + (targetPitch - (bot.pitch || 0)) * Math.min(1.0, 16.0 * dt);
       }
 
-      // 1. Gravity & Vertical Position Integration for Bot
+      // 1. Elevator AI State Machine: Learn bots to get up on elevator!
+      let handlingElevatorMovement = false;
+      if (targetElevator && isFpsMode && this.isMatchActive) {
+        const el = targetElevator;
+        const elCenterX = el.pos[0];
+        const elCenterZ = el.pos[2];
+        const halfW = el.scale[0] * 0.5;
+        const halfD = el.scale[2] * 0.5;
+        const distToEl = Math.hypot(elCenterX - bot.pos[0], elCenterZ - bot.pos[2]);
+        const isElDown = (el.pos[1] <= el.startY + 0.65);
+        const isElUp = (el.pos[1] >= el.endY - 0.50);
+
+        // State Transition: Decide to take elevator
+        if (!bot.elevatorState || bot.elevatorState === 'IDLE') {
+          const playerIsHigh = (this._pEye[1] > 2.5);
+          const botIsLow = (bot.pos[1] < 1.8);
+          const playerIsLow = (this._pEye[1] < 1.8);
+          const botIsHigh = (bot.pos[1] > 2.5);
+
+          // Bots seek the elevator if player is on the upper floor, or periodically for tactical high ground!
+          if ((playerIsHigh && botIsLow) || (botIsLow && (bot.elevatorCooldown || 0) <= 0 && distToEl < 32.0)) {
+            bot.elevatorState = 'APPROACH_BOTTOM';
+            bot.elevatorAttemptTimer = 0;
+            this.log(`🤖 [BOT TACTICS] ${bot.alias} is moving to take the elevator to Floor 2!`, "info");
+          } else if (playerIsLow && botIsHigh && (bot.elevatorCooldown || 0) <= 0 && distToEl < 32.0) {
+            bot.elevatorState = 'APPROACH_TOP';
+            bot.elevatorAttemptTimer = 0;
+          }
+        }
+
+        if (bot.elevatorState && bot.elevatorState !== 'IDLE') {
+          bot.elevatorAttemptTimer = (bot.elevatorAttemptTimer || 0) + dt;
+          if (bot.elevatorAttemptTimer > 28.0) {
+            // Safety timeout if navigation gets blocked
+            bot.elevatorState = 'IDLE';
+            bot.elevatorCooldown = 8.0;
+            bot.ridingElevatorId = null;
+          }
+        }
+
+        if (bot.elevatorState === 'APPROACH_BOTTOM') {
+          handlingElevatorMovement = true;
+          let targetX = elCenterX;
+          let targetZ = elCenterZ;
+
+          if (!isElDown) {
+            // Elevator is currently elevated; wait at the approach threshold on the bridge
+            const waitSideZ = (bot.pos[2] >= elCenterZ) ? (halfD + 1.6) : (-halfD - 1.6);
+            targetX = elCenterX;
+            targetZ = elCenterZ + waitSideZ;
+          }
+
+          const toTgtX = targetX - bot.pos[0];
+          const toTgtZ = targetZ - bot.pos[2];
+          const distToTgt = Math.hypot(toTgtX, toTgtZ);
+
+          if (isElDown && distToEl <= halfW * 0.70) {
+            // Successfully stepped onto elevator!
+            bot.elevatorState = 'RIDING_UP';
+            bot.ridingElevatorId = el.id;
+            this.log(`🤖 [BOT AI] ${bot.alias} boarded the elevator to Floor 2!`, "info");
+          } else if (distToTgt > 0.25) {
+            const moveSpeed = 3.6;
+            bot.velocity[0] = (toTgtX / distToTgt) * moveSpeed;
+            bot.velocity[2] = (toTgtZ / distToTgt) * moveSpeed;
+          } else {
+            bot.velocity[0] *= 0.3;
+            bot.velocity[2] *= 0.3;
+          }
+        } else if (bot.elevatorState === 'RIDING_UP') {
+          handlingElevatorMovement = true;
+          bot.ridingElevatorId = el.id;
+          // Hold position securely at platform center while moving upward
+          bot.velocity[0] = (elCenterX - bot.pos[0]) * 3.0;
+          bot.velocity[2] = (elCenterZ - bot.pos[2]) * 3.0;
+          bot.velocity[1] = 0;
+          bot.isGrounded = true;
+
+          // Arrived at Floor 2!
+          if (el.pos[1] >= el.endY - 0.25) {
+            bot.elevatorState = 'EXITING_TOP';
+            bot.exitTimer = 1.4;
+            this.log(`🚀 [BOT AI] ${bot.alias} reached Floor 2 via elevator!`, "success");
+          }
+        } else if (bot.elevatorState === 'EXITING_TOP') {
+          handlingElevatorMovement = true;
+          bot.exitTimer = (bot.exitTimer || 1.4) - dt;
+          // Exit onto the Floor 2 deck towards the player's direction or sky bridge
+          const exitDirZ = (this._pEye[2] >= elCenterZ) ? 1.0 : -1.0;
+          const exitSpeed = 4.2;
+          bot.velocity[0] = (elCenterX - bot.pos[0]) * 1.5;
+          bot.velocity[2] = exitDirZ * exitSpeed;
+
+          if (distToEl > halfD + 1.2 || bot.exitTimer <= 0) {
+            bot.elevatorState = 'IDLE';
+            bot.elevatorCooldown = 15.0 + Math.random() * 8.0;
+            bot.ridingElevatorId = null;
+          }
+        } else if (bot.elevatorState === 'APPROACH_TOP') {
+          handlingElevatorMovement = true;
+          let targetX = elCenterX;
+          let targetZ = elCenterZ;
+
+          if (!isElUp) {
+            const waitSideZ = (bot.pos[2] >= elCenterZ) ? (halfD + 1.6) : (-halfD - 1.6);
+            targetX = elCenterX;
+            targetZ = elCenterZ + waitSideZ;
+          }
+
+          const toTgtX = targetX - bot.pos[0];
+          const toTgtZ = targetZ - bot.pos[2];
+          const distToTgt = Math.hypot(toTgtX, toTgtZ);
+
+          if (isElUp && distToEl <= halfW * 0.70) {
+            bot.elevatorState = 'RIDING_DOWN';
+            bot.ridingElevatorId = el.id;
+            this.log(`🤖 [BOT AI] ${bot.alias} boarded elevator to descend!`, "info");
+          } else if (distToTgt > 0.25) {
+            const moveSpeed = 3.6;
+            bot.velocity[0] = (toTgtX / distToTgt) * moveSpeed;
+            bot.velocity[2] = (toTgtZ / distToTgt) * moveSpeed;
+          } else {
+            bot.velocity[0] *= 0.3;
+            bot.velocity[2] *= 0.3;
+          }
+        } else if (bot.elevatorState === 'RIDING_DOWN') {
+          handlingElevatorMovement = true;
+          bot.ridingElevatorId = el.id;
+          bot.velocity[0] = (elCenterX - bot.pos[0]) * 3.0;
+          bot.velocity[2] = (elCenterZ - bot.pos[2]) * 3.0;
+          bot.velocity[1] = 0;
+          bot.isGrounded = true;
+
+          if (el.pos[1] <= el.startY + 0.25) {
+            bot.elevatorState = 'EXITING_BOTTOM';
+            bot.exitTimer = 1.4;
+            this.log(`🚀 [BOT AI] ${bot.alias} arrived at Floor 1 via elevator!`, "info");
+          }
+        } else if (bot.elevatorState === 'EXITING_BOTTOM') {
+          handlingElevatorMovement = true;
+          bot.exitTimer = (bot.exitTimer || 1.4) - dt;
+          const exitDirZ = (this._pEye[2] >= elCenterZ) ? 1.0 : -1.0;
+          const exitSpeed = 4.2;
+          bot.velocity[0] = (elCenterX - bot.pos[0]) * 1.5;
+          bot.velocity[2] = exitDirZ * exitSpeed;
+
+          if (distToEl > halfD + 1.2 || bot.exitTimer <= 0) {
+            bot.elevatorState = 'IDLE';
+            bot.elevatorCooldown = 15.0 + Math.random() * 8.0;
+            bot.ridingElevatorId = null;
+          }
+        }
+      }
+
+      // 2. Gravity & Vertical Position Integration for Bot
       const botGravity = -22.0;
-      if (!bot.isGrounded) {
-        bot.velocity[1] += botGravity * dt;
+      if (bot.ridingElevatorId) {
+        bot.velocity[1] = 0;
+        bot.isGrounded = true;
+      } else {
+        if (!bot.isGrounded) {
+          bot.velocity[1] += botGravity * dt;
+        }
+        bot.pos[1] += bot.velocity[1] * dt;
       }
-      bot.pos[1] += bot.velocity[1] * dt;
 
-      // 2. Strafe / Patrol movement when player is in arena
-      if (distToPlayer > 3.0 && distToPlayer < 35.0 && isFpsMode && this.isMatchActive) {
+      // 3. Horizontal Locomotion & Collision
+      if (handlingElevatorMovement) {
+        bot.pos[0] += bot.velocity[0] * dt;
+        bot.pos[2] += bot.velocity[2] * dt;
+      } else if (distToPlayer > 3.0 && distToPlayer < 35.0 && isFpsMode && this.isMatchActive) {
         const moveSpeed = 3.2;
         const strafe = Math.sin(timestamp * 0.003 + bot.id) * 2.5;
         const dirX = dx / distToPlayer;
@@ -10279,9 +10824,14 @@ else if (typeof define === 'function' && define['amd'])
         bot.velocity[2] *= Math.max(0, 1.0 - 8.0 * dt);
       }
 
-      // 3. Resolve Kinematic World Collision & Grounding for Bot (Stairs, Platforms, Ground)
+      // 4. Resolve Kinematic World Collision & Grounding for Bot (Stairs, Platforms, Ground)
       const botColRes = this.resolvePlayerCollision(bot.pos, bot.velocity, bot.radius || 0.65, bot.height || 1.8);
-      bot.isGrounded = botColRes.isGrounded;
+      if (botColRes) {
+        bot.isGrounded = botColRes.isGrounded;
+      }
+      if (bot.ridingElevatorId) {
+        bot.isGrounded = true;
+      }
 
       // AI Shooting Logic: Bot shoots at player ONLY if line of sight is clear!
       bot.fireTimer -= dt;
@@ -10311,6 +10861,7 @@ else if (typeof define === 'function' && define['amd'])
 
             proj.active = true;
             proj.attackerName = bot.alias;
+            this.skyPulseTimer = Math.max(this.skyPulseTimer || 0, 0.45);
             proj.pos[0] = this._botEye[0];
             proj.pos[1] = this._botEye[1];
             proj.pos[2] = this._botEye[2];
@@ -10577,6 +11128,30 @@ else if (typeof define === 'function' && define['amd'])
           this.state.camPos[1] += deltaY;
         }
       }
+
+      // Check if any active 3D AI Combat Bots are standing on this elevator platform
+      if (this.active3DBots && Math.abs(deltaY) > 0.0001) {
+        const halfW = el.scale[0] * 0.5 + 0.35;
+        const halfD = el.scale[2] * 0.5 + 0.35;
+        const topY = el.pos[1] + el.scale[1] * 0.5;
+
+        for (let bi = 0; bi < this.active3DBots.length; bi++) {
+          const bot = this.active3DBots[bi];
+          if (!bot.alive) continue;
+          const onX = Math.abs(bot.pos[0] - el.pos[0]) <= halfW;
+          const onZ = Math.abs(bot.pos[2] - el.pos[2]) <= halfD;
+          const onY = bot.pos[1] >= topY - 0.55 && bot.pos[1] <= topY + 1.20;
+
+          if (onX && onZ && onY) {
+            bot.pos[1] += deltaY;
+            bot.velocity[1] = 0;
+            bot.isGrounded = true;
+            bot.ridingElevatorId = el.id;
+          } else if (bot.ridingElevatorId === el.id && (!onX || !onZ)) {
+            bot.ridingElevatorId = null;
+          }
+        }
+      }
     });
   }
 
@@ -10616,7 +11191,16 @@ else if (typeof define === 'function' && define['amd'])
         this.state.camPos[2] = target[2];
         this.state.fpsVelocityY = 0.0;
 
-        tp.cooldown = 1.2;
+        tp.cooldown = 1.5;
+        // Suppress destination teleporters within 3.5m so player isn't immediately bounced back
+        this.teleporters.forEach(otherTp => {
+          const tdx = otherTp.pos[0] - target[0];
+          const tdy = otherTp.pos[1] - target[1];
+          const tdz = otherTp.pos[2] - target[2];
+          if (tdx * tdx + tdy * tdy + tdz * tdz < 16.0) {
+            otherTp.cooldown = 1.5;
+          }
+        });
 
         if (this.synth) this.synth.play('teleport');
         this.showPickupToast("⚡ QUANTUM TELEPORT", `Warped to: [${target.map(v=>v.toFixed(1)).join(', ')}]`, "powerup");
@@ -10879,6 +11463,30 @@ else if (typeof define === 'function' && define['amd'])
     if (sfxToggle) sfxToggle.addEventListener('change', updateAudioSettings);
     if (zombieDensitySelect) zombieDensitySelect.addEventListener('change', updateAudioSettings);
 
+    // 3D GLB Combat Model Select (Monster / Soldier)
+    const glbModelSelect = document.getElementById('fps-model-glb-select');
+    if (glbModelSelect) {
+      glbModelSelect.value = this.currentGlbModel || 'assets/models/character2/monster.glb';
+      glbModelSelect.addEventListener('change', (e) => {
+        const selectedPath = e.target.value;
+        this.loadSoldierGLB(selectedPath);
+        this.log(`Switched 3D GLB Combat Model to: [${selectedPath}]`, "info");
+      });
+    }
+
+    if (playerSkinSelect) {
+      playerSkinSelect.addEventListener('change', () => {
+        const val = playerSkinSelect.value;
+        if (val === 'soldier') {
+          if (glbModelSelect) glbModelSelect.value = 'assets/models/character1/soldier.glb';
+          this.loadSoldierGLB('assets/models/character1/soldier.glb');
+        } else if (val === 'Mutant') {
+          if (glbModelSelect) glbModelSelect.value = 'assets/models/character2/monster.glb';
+          this.loadSoldierGLB('assets/models/character2/monster.glb');
+        }
+      });
+    }
+
     // Mobile Performance & Material Profile Select
     const matProfileSelect = document.getElementById('fps-material-profile-select');
     if (matProfileSelect) {
@@ -10886,6 +11494,23 @@ else if (typeof define === 'function' && define['amd'])
       matProfileSelect.addEventListener('change', (e) => {
         const isCheap = e.target.value === 'cheap';
         this.toggleCheapMaterial(isCheap);
+      });
+    }
+
+    // Sky Dome Atmosphere & Crazy FX Select
+    const skyFxSelect = document.getElementById('fps-sky-fx-select');
+    if (skyFxSelect) {
+      skyFxSelect.value = this.state.fpsSkyFX || 'crazy';
+      skyFxSelect.addEventListener('change', (e) => {
+        this.toggleSkyFX(e.target.value);
+      });
+    }
+
+    // Top HUD Quick Sky FX Toggle Button
+    const btnSkyToggle = document.getElementById('btn-fps-sky-fx-toggle');
+    if (btnSkyToggle) {
+      btnSkyToggle.addEventListener('click', () => {
+        this.toggleSkyFX();
       });
     }
 
@@ -11031,6 +11656,78 @@ else if (typeof define === 'function' && define['amd'])
     this.log(`Material Engine: ${this.state.fpsCheapMaterial ? '⚡ Ultra-Fast Cheap Material (Optimized for Mobile 60-120 FPS)' : '✨ Filament Studio PBR'}`, 'info');
   }
 
+  toggleSkyFX(mode) {
+    if (mode) {
+      this.state.fpsSkyFX = mode;
+    } else {
+      if (this.state.fpsSkyFX === 'crazy') this.state.fpsSkyFX = 'cosmic';
+      else if (this.state.fpsSkyFX === 'cosmic') this.state.fpsSkyFX = 'pristine';
+      else this.state.fpsSkyFX = 'crazy';
+    }
+
+    const btnSky = document.getElementById('btn-fps-sky-fx-toggle');
+    if (btnSky) {
+      if (this.state.fpsSkyFX === 'crazy') {
+        btnSky.textContent = "🌌 Sky FX: Crazy";
+        btnSky.style.background = "rgba(14, 165, 233, 0.25)";
+        btnSky.style.borderColor = "#0ea5e9";
+        btnSky.style.color = "#38bdf8";
+      } else if (this.state.fpsSkyFX === 'cosmic') {
+        btnSky.textContent = "✨ Sky FX: Cosmic";
+        btnSky.style.background = "rgba(168, 85, 247, 0.25)";
+        btnSky.style.borderColor = "#a855f7";
+        btnSky.style.color = "#c084fc";
+      } else {
+        btnSky.textContent = "🌤️ Sky FX: Pristine";
+        btnSky.style.background = "rgba(52, 211, 153, 0.25)";
+        btnSky.style.borderColor = "#34d399";
+        btnSky.style.color = "#6ee7b7";
+      }
+    }
+
+    const skyFxSelect = document.getElementById('fps-sky-fx-select');
+    if (skyFxSelect) skyFxSelect.value = this.state.fpsSkyFX;
+
+    this.log(`🌌 Sky Atmosphere & Material FX set to: [${this.state.fpsSkyFX.toUpperCase()}]`, "info");
+  }
+
+  renderSkyDome(gl, viewProjMatrix, camPos, timestamp) {
+    const skyTex = this.textureCatalog['sky1'];
+    if (!skyTex || !this.skyMesh || !this.skyProg) return;
+
+    gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
+
+    gl.useProgram(this.skyProg.prog);
+    gl.bindVertexArray(this.skyMesh.vao);
+
+    const skyScale = 160.0;
+    this.instanceMatrix[0] = skyScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+    this.instanceMatrix[4] = 0; this.instanceMatrix[5] = skyScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+    this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = skyScale; this.instanceMatrix[11] = 0;
+    this.instanceMatrix[12] = camPos[0];
+    this.instanceMatrix[13] = camPos[1];
+    this.instanceMatrix[14] = camPos[2];
+    this.instanceMatrix[15] = 1;
+
+    gl.uniformMatrix4fv(this.skyProg.uModel, false, this.instanceMatrix);
+    gl.uniformMatrix4fv(this.skyProg.uViewProj, false, viewProjMatrix);
+    if (this.skyProg.uCamPos) gl.uniform3fv(this.skyProg.uCamPos, camPos);
+    if (this.skyProg.uTime) gl.uniform1f(this.skyProg.uTime, timestamp * 0.001);
+    if (this.skyProg.uSkyPulse) gl.uniform1f(this.skyProg.uSkyPulse, this.skyPulseTimer || 0.0);
+    const skyMode = (this.state.fpsSkyFX === 'pristine') ? 0 : (this.state.fpsSkyFX === 'cosmic' ? 1 : 2);
+    if (this.skyProg.uSkyMode) gl.uniform1i(this.skyProg.uSkyMode, skyMode);
+
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, skyTex);
+    if (this.skyProg.uSkyTex) gl.uniform1i(this.skyProg.uSkyTex, 2);
+
+    gl.drawElements(gl.TRIANGLES, this.skyMesh.indexCount, this.skyMesh.indexType || gl.UNSIGNED_SHORT, 0);
+
+    gl.depthMask(true);
+    if (this.state.cullFace) gl.enable(gl.CULL_FACE);
+  }
+
   drawGunPart(progInfo, mesh, pPos, cF, cR, cU, fOffset, rOffset, uOffset, sx, sy, sz, col, rough, metal, wMatType = 0, wNoise = 1.0, wClearCoat = 0.0, wBump = 0.0) {
     if (!mesh) return;
     const gl = this.gl;
@@ -11075,33 +11772,40 @@ else if (typeof define === 'function' && define['amd'])
     gl.drawElements(gl.TRIANGLES, mesh.indexCount, idxType, 0);
   }
 
-  drawBotMeshPart(progInfo, mesh, charPos, charYaw, offsetX, offsetY, offsetZ, sizeX, sizeY, sizeZ, color, rough = 0.25, metal = 0.85, pMatType = 0, pClearCoat = 0.15) {
+  drawBotMeshPart(progInfo, mesh, charPos, charYaw, offsetX, offsetY, offsetZ, sizeX, sizeY, sizeZ, color, rough = 0.25, metal = 0.85, pMatType = 0, pClearCoat = 0.15, charPitch = 0) {
     if (!mesh) return;
     const gl = this.gl;
     gl.bindVertexArray(mesh.vao);
 
     const cy = Math.cos(charYaw);
     const sy = Math.sin(charYaw);
+    const cp = Math.cos(charPitch);
+    const sp = Math.sin(charPitch);
 
-    const wx = charPos[0] + (offsetX * cy + offsetZ * sy);
-    const wy = charPos[1] + offsetY;
-    const wz = charPos[2] + (-offsetX * sy + offsetZ * cy);
+    // World position offset correctly rotated by yaw and pitch
+    const wx = charPos[0] + (offsetX * cy + offsetZ * sy * cp + offsetY * sy * sp);
+    const wy = charPos[1] + (offsetY * cp - offsetZ * sp);
+    const wz = charPos[2] + (-offsetX * sy + offsetZ * cy * cp + offsetY * cy * sp);
 
+    // Column 0: Local Right vector in world space
     this.instanceMatrix[0] = cy * sizeX;
     this.instanceMatrix[1] = 0;
-    this.instanceMatrix[2] = sy * sizeX;
+    this.instanceMatrix[2] = -sy * sizeX;
     this.instanceMatrix[3] = 0;
 
-    this.instanceMatrix[4] = 0;
-    this.instanceMatrix[5] = sizeY;
-    this.instanceMatrix[6] = 0;
+    // Column 1: Local Up vector in world space
+    this.instanceMatrix[4] = sy * sp * sizeY;
+    this.instanceMatrix[5] = cp * sizeY;
+    this.instanceMatrix[6] = cy * sp * sizeY;
     this.instanceMatrix[7] = 0;
 
-    this.instanceMatrix[8] = -sy * sizeZ;
-    this.instanceMatrix[9] = 0;
-    this.instanceMatrix[10] = cy * sizeZ;
+    // Column 2: Local Forward vector in world space (aiming towards player)
+    this.instanceMatrix[8] = sy * cp * sizeZ;
+    this.instanceMatrix[9] = -sp * sizeZ;
+    this.instanceMatrix[10] = cy * cp * sizeZ;
     this.instanceMatrix[11] = 0;
 
+    // Column 3: Translation in world space
     this.instanceMatrix[12] = wx;
     this.instanceMatrix[13] = wy;
     this.instanceMatrix[14] = wz;
@@ -11119,8 +11823,20 @@ else if (typeof define === 'function' && define['amd'])
     if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, pClearCoat);
     if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
+    const activeTex = (mesh && mesh.texture) || this.characterTexture || null;
+    if (activeTex && progInfo.uAlbedoMap && progInfo.uUseTexMaps) {
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, activeTex);
+      gl.uniform1i(progInfo.uAlbedoMap, 2);
+      gl.uniform1i(progInfo.uUseTexMaps, 1);
+    }
+
     const idxType = mesh.indexType || gl.UNSIGNED_SHORT;
     gl.drawElements(gl.TRIANGLES, mesh.indexCount, idxType, 0);
+
+    if (activeTex && progInfo.uUseTexMaps) {
+      gl.uniform1i(progInfo.uUseTexMaps, 0);
+    }
   }
 
   initSlotMachineDemo() {
@@ -11527,10 +12243,15 @@ else if (typeof define === 'function' && define['amd'])
         uploadedImage: null,
         activeTexturePath: 'assets/textures/tex01.webp',
         texture: null,
+        useWebcam: false,
+        snapshotFrozen: false,
+        webcamTexture: null,
         moves: 0,
         shuffled: false,
         solved: true,
-        tilePositions: {}, // Smooth slide positions
+        tilePositions: {},
+        hoverR: -1,
+        hoverC: -1
       };
       
       this.bindPuzzleUI();
@@ -11567,6 +12288,32 @@ else if (typeof define === 'function' && define['amd'])
     if (btnReset) {
       btnReset.addEventListener('click', () => {
         this.resetPuzzleBoard();
+      });
+    }
+
+    // Web Camera UI Controls for Live Puzzle Texture
+    const btnWebcamToggle = document.getElementById('btn-puzzle-webcam-toggle');
+    if (btnWebcamToggle) {
+      btnWebcamToggle.addEventListener('click', () => {
+        if (this.puzzleState.useWebcam) {
+          this.stopPuzzleWebcam();
+        } else {
+          this.startPuzzleWebcam();
+        }
+      });
+    }
+
+    const btnWebcamSnap = document.getElementById('btn-puzzle-webcam-snap');
+    if (btnWebcamSnap) {
+      btnWebcamSnap.addEventListener('click', () => {
+        this.freezePuzzleSnapshot();
+      });
+    }
+
+    const btnWebcamLive = document.getElementById('btn-puzzle-webcam-live');
+    if (btnWebcamLive) {
+      btnWebcamLive.addEventListener('click', () => {
+        this.resumePuzzleLive();
       });
     }
 
@@ -11608,6 +12355,10 @@ else if (typeof define === 'function' && define['amd'])
         const card = e.target.closest('.puzzle-preset-card');
         if (!card) return;
 
+        if (this.puzzleState.useWebcam) {
+          this.stopPuzzleWebcam();
+        }
+
         presetGrid.querySelectorAll('.puzzle-preset-card').forEach(c => c.classList.remove('active'));
         card.classList.add('active');
 
@@ -11616,6 +12367,151 @@ else if (typeof define === 'function' && define['amd'])
         this.puzzleState.uploadedImage = null;
         this.log(`Puzzle texture changed to preset: ${card.title || 'Preset Material'}`, "success");
       });
+    }
+  }
+
+  startPuzzleWebcam() {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 640 }, facingMode: 'user' },
+        audio: false
+      }).then((stream) => {
+        this.puzzleWebcamStream = stream;
+        const video = document.getElementById('puzzle-webcam-video');
+        if (video) {
+          video.srcObject = stream;
+          video.play();
+          this.puzzleWebcamVideo = video;
+        }
+        this.puzzleState.useWebcam = true;
+        this.puzzleState.snapshotFrozen = false;
+        this.puzzleState.uploadedImage = null;
+
+        const previewContainer = document.getElementById('puzzle-webcam-preview-container');
+        if (previewContainer) previewContainer.style.display = 'block';
+
+        const btnText = document.getElementById('puzzle-webcam-btn-text');
+        if (btnText) btnText.textContent = "STOP LIVE CAMERA PUZZLE";
+
+        const btnToggle = document.getElementById('btn-puzzle-webcam-toggle');
+        if (btnToggle) {
+          btnToggle.style.borderColor = "#ef4444";
+          btnToggle.style.color = "#fca5a5";
+        }
+
+        const statusLabel = document.getElementById('puzzle-webcam-status-label');
+        if (statusLabel) statusLabel.textContent = "LIVE STREAMING TO PUZZLE";
+
+        const dot = document.getElementById('puzzle-webcam-dot');
+        if (dot) dot.style.background = "#10b981";
+
+        this.log("📹 Player Web Camera stream linked directly to 3D Puzzle GPU tiles!", "success");
+      }).catch((err) => {
+        this.log(`Web Camera access: ${err.message}`, "error");
+      });
+    } else {
+      this.log("getUserMedia is not supported by your browser environment.", "error");
+    }
+  }
+
+  stopPuzzleWebcam() {
+    if (this.puzzleWebcamStream) {
+      this.puzzleWebcamStream.getTracks().forEach(t => t.stop());
+      this.puzzleWebcamStream = null;
+    }
+    this.puzzleState.useWebcam = false;
+    this.puzzleState.snapshotFrozen = false;
+
+    const previewContainer = document.getElementById('puzzle-webcam-preview-container');
+    if (previewContainer) previewContainer.style.display = 'none';
+
+    const btnText = document.getElementById('puzzle-webcam-btn-text');
+    if (btnText) btnText.textContent = "START LIVE CAMERA PUZZLE";
+
+    const btnToggle = document.getElementById('btn-puzzle-webcam-toggle');
+    if (btnToggle) {
+      btnToggle.style.borderColor = "#10b981";
+      btnToggle.style.color = "#a7f3d0";
+    }
+
+    this.log("Web Camera disconnected from puzzle. Reverted to standard texture.", "info");
+  }
+
+  freezePuzzleSnapshot() {
+    if (!this.puzzleState || !this.puzzleState.useWebcam) return;
+    this.puzzleState.snapshotFrozen = true;
+    const statusLabel = document.getElementById('puzzle-webcam-status-label');
+    if (statusLabel) statusLabel.textContent = "SNAPSHOT FROZEN ON PUZZLE";
+    const dot = document.getElementById('puzzle-webcam-dot');
+    if (dot) dot.style.background = "#f59e0b";
+    this.log("📸 Web Camera frame frozen as custom puzzle selfie!", "success");
+  }
+
+  resumePuzzleLive() {
+    if (!this.puzzleState || !this.puzzleState.useWebcam) return;
+    this.puzzleState.snapshotFrozen = false;
+    const statusLabel = document.getElementById('puzzle-webcam-status-label');
+    if (statusLabel) statusLabel.textContent = "LIVE STREAMING TO PUZZLE";
+    const dot = document.getElementById('puzzle-webcam-dot');
+    if (dot) dot.style.background = "#10b981";
+    this.log("▶ Resumed live video feed streaming directly into puzzle!", "info");
+  }
+
+  raycastSlidingPuzzle(clientX, clientY) {
+    if (!this.puzzleState) return null;
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const mouseX = clientX - canvasRect.left;
+    const mouseY = clientY - canvasRect.top;
+
+    const N = this.puzzleState.gridSize;
+    const tileW = 1.0 / N;
+    const halfSize = 0.5;
+
+    let bestR = -1;
+    let bestC = -1;
+    let minD = Infinity;
+
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        const wx = -halfSize + (c + 0.5) * tileW;
+        const wy = 1.3 + (halfSize - (r + 0.5) * tileW);
+        const wz = 0.0;
+
+        const scr = this.project3DToScreen([wx, wy, wz]);
+        if (scr) {
+          const d = Math.hypot(scr.x - mouseX, scr.y - mouseY);
+          if (d < minD) {
+            minD = d;
+            bestR = r;
+            bestC = c;
+          }
+        }
+      }
+    }
+
+    const scrCenter1 = this.project3DToScreen([0, 1.3, 0]);
+    const scrCenter2 = this.project3DToScreen([tileW, 1.3, 0]);
+    let threshold = 80;
+    if (scrCenter1 && scrCenter2) {
+      threshold = Math.hypot(scrCenter1.x - scrCenter2.x, scrCenter1.y - scrCenter2.y) * 0.72;
+    }
+
+    if (bestR !== -1 && minD <= Math.max(threshold, 30)) {
+      return { r: bestR, c: bestC };
+    }
+    return null;
+  }
+
+  updatePuzzleHover(clientX, clientY) {
+    const hit = this.raycastSlidingPuzzle(clientX, clientY);
+    if (hit) {
+      this.puzzleState.hoverR = hit.r;
+      this.puzzleState.hoverC = hit.c;
+      this.canvas.style.cursor = 'pointer';
+    } else {
+      this.puzzleState.hoverR = -1;
+      this.puzzleState.hoverC = -1;
+      this.canvas.style.cursor = 'default';
     }
   }
 
@@ -11665,7 +12561,10 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   getTextureForPath(path) {
-    if (this.puzzleState.uploadedImage && this.puzzleState.texture) {
+    if (this.puzzleState && this.puzzleState.useWebcam && this.puzzleState.webcamTexture) {
+      return this.puzzleState.webcamTexture;
+    }
+    if (this.puzzleState && this.puzzleState.uploadedImage && this.puzzleState.texture) {
       return this.puzzleState.texture;
     }
     if (path.includes('tex01')) return this.textureCatalog['tex01'];
@@ -11752,7 +12651,7 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   handleSlidingPuzzleClick(clickR, clickC) {
-    if (this.puzzleState.solved && !this.puzzleState.shuffled) return;
+    if (!this.puzzleState) return;
 
     const size = this.puzzleState.gridSize;
     if (clickR < 0 || clickR >= size || clickC < 0 || clickC >= size) return;
@@ -11771,12 +12670,31 @@ else if (typeof define === 'function' && define['amd'])
       if (emptyR !== -1) break;
     }
 
-    const dist = Math.abs(clickR - emptyR) + Math.abs(clickC - emptyC);
-    if (dist === 1) {
-      // Swap tiles in core grid!
-      this.puzzleState.grid[emptyR][emptyC] = this.puzzleState.grid[clickR][clickC];
-      this.puzzleState.grid[clickR][clickC] = -1;
+    if (emptyR === -1) return;
+
+    let moved = false;
+    // Multi-tile sliding along column
+    if (clickC === emptyC) {
+      const step = clickR < emptyR ? 1 : -1;
+      for (let r = emptyR; r !== clickR; r -= step) {
+        this.puzzleState.grid[r][emptyC] = this.puzzleState.grid[r - step][emptyC];
+      }
+      this.puzzleState.grid[clickR][emptyC] = -1;
+      moved = true;
+    } 
+    // Multi-tile sliding along row
+    else if (clickR === emptyR) {
+      const step = clickC < emptyC ? 1 : -1;
+      for (let c = emptyC; c !== clickC; c -= step) {
+        this.puzzleState.grid[emptyR][c] = this.puzzleState.grid[emptyR][c - step];
+      }
+      this.puzzleState.grid[emptyR][clickC] = -1;
+      moved = true;
+    }
+
+    if (moved) {
       this.puzzleState.moves++;
+      this.puzzleState.shuffled = true;
       
       const solved = this.checkPuzzleSolved();
       this.puzzleState.solved = solved;
@@ -19139,6 +20057,21 @@ else if (typeof define === 'function' && define['amd'])
     const tileScaleX = tileW;
     const tileScaleY = tileW;
 
+    // Update live Web Camera texture if active and streaming
+    if (ps.useWebcam && this.puzzleWebcamVideo && this.puzzleWebcamVideo.readyState >= 2 && !ps.snapshotFrozen) {
+      if (!ps.webcamTexture) {
+        ps.webcamTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, ps.webcamTexture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      }
+      gl.bindTexture(gl.TEXTURE_2D, ps.webcamTexture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.puzzleWebcamVideo);
+    }
+
     // Bind texture
     const activeTex = this.getTextureForPath(ps.activeTexturePath);
     if (activeTex && progInfo.uUseTexMaps) {
@@ -19174,14 +20107,18 @@ else if (typeof define === 'function' && define['amd'])
         const worldX = -halfSize + (pos.cx + 0.5) * tileW;
         const worldY = 1.3 + (halfSize - (pos.cy + 0.5) * tileW);
 
-        // Bind custom scale and offset for texture slices
+        // Bind custom scale and offset for texture slices (mirror horizontally if user webcam)
         const uScale = [1.0 / N, 1.0 / N];
-        const uOffset = [origC / N, (N - 1 - origR) / N];
+        const uOffset = ps.useWebcam ? [(N - 1 - origC) / N, (N - 1 - origR) / N] : [origC / N, (N - 1 - origR) / N];
         if (progInfo.uUvScale) gl.uniform2fv(progInfo.uUvScale, uScale);
         if (progInfo.uUvOffset) gl.uniform2fv(progInfo.uUvOffset, uOffset);
 
-        // Render flat quad sliced tile block with pristine PBR finish
-        drawQuad(worldX, worldY, 0.0, tileScaleX, tileScaleY, [1.0, 1.0, 1.0], 0.15, 0.05, 0);
+        const isHovered = (ps.hoverR === r && ps.hoverC === c);
+        const tileColor = isHovered ? [1.15, 1.15, 1.15] : [1.0, 1.0, 1.0];
+        const tileZ = isHovered ? 0.012 : 0.0;
+
+        // Render flat quad sliced tile block with pristine finish
+        drawQuad(worldX, worldY, tileZ, tileScaleX, tileScaleY, tileColor, 0.15, 0.05, 0);
       }
     }
 
@@ -20989,45 +21926,9 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   handleSlidingPuzzleTouch(clientX, clientY) {
-    const canvasRect = this.canvas.getBoundingClientRect();
-    const mouseX = clientX - canvasRect.left;
-    const mouseY = clientY - canvasRect.top;
-
-    const N = this.puzzleState.gridSize;
-    const tileW = 1.0 / N;
-    const halfSize = 0.5;
-
-    let bestR = -1;
-    let bestC = -1;
-    let minD = Infinity;
-
-    for (let r = 0; r < N; r++) {
-      for (let c = 0; c < N; c++) {
-        const wx = -halfSize + (c + 0.5) * tileW;
-        const wy = 1.3 + (halfSize - (r + 0.5) * tileW);
-        const wz = 0.0;
-
-        const scr = this.project3DToScreen([wx, wy, wz], this.viewProjMatrix, canvasRect.width, canvasRect.height);
-        if (scr) {
-          const d = Math.hypot(scr.x - mouseX, scr.y - mouseY);
-          if (d < minD) {
-            minD = d;
-            bestR = r;
-            bestC = c;
-          }
-        }
-      }
-    }
-
-    let centerSpacingPixels = 80;
-    const scrCenter1 = this.project3DToScreen([0, 1.3, 0], this.viewProjMatrix, canvasRect.width, canvasRect.height);
-    const scrCenter2 = this.project3DToScreen([tileW, 1.3, 0], this.viewProjMatrix, canvasRect.width, canvasRect.height);
-    if (scrCenter1 && scrCenter2) {
-      centerSpacingPixels = Math.hypot(scrCenter1.x - scrCenter2.x, scrCenter1.y - scrCenter2.y);
-    }
-
-    if (bestR !== -1 && minD < centerSpacingPixels * 0.75) {
-      this.handleSlidingPuzzleClick(bestR, bestC);
+    const hit = this.raycastSlidingPuzzle(clientX, clientY);
+    if (hit) {
+      this.handleSlidingPuzzleClick(hit.r, hit.c);
     }
   }
 
@@ -21618,6 +22519,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const dt = Math.min((timestamp - this.lastTime) * 0.001, 0.1);
     this.lastTime = timestamp;
 
+    if (this.skyPulseTimer > 0) {
+      this.skyPulseTimer = Math.max(0, this.skyPulseTimer - dt * 2.0);
+    }
+
     // FPS Meter
     this.frameCount++;
     if (timestamp - this.lastFpsUpdate >= 500) {
@@ -22073,13 +22978,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const cubeMesh = this.meshBuffers[1]; // Cube
       const sphereMesh = this.meshBuffers[0]; // Sphere
       const icosaMesh = this.meshBuffers[4]; // Gem
+      const pyramidMesh = this.meshBuffers[9]; // Sharp Pyramid
 
-      // 1. Render Scene Entities (Floor, Pillars, Platforms, Boulders, Gems)
+      // 🌌 Render Cosmic Sky Dome with high-resolution seamless mesh and crazy special effects
+      this.renderSkyDome(gl, this.viewProjMatrix, this.state.camPos, timestamp);
+      gl.useProgram(progInfo.prog);
+
+      // 1. Render Scene Entities (Floor, Pillars, Platforms, Boulders, Gems, Pyramids)
       this.sceneEntities.forEach(ent => {
         if (ent.id === 0) return; // Player character drawn with skeletal limbs
 
         let meshToDraw = cubeMesh;
-        if (ent.collider.includes('Sphere')) meshToDraw = sphereMesh;
+        if (ent.collider && ent.collider.includes('Sphere')) meshToDraw = sphereMesh;
+        else if (ent.meshType === 'pyramid' || (ent.collider && ent.collider.includes('Pyramid'))) meshToDraw = pyramidMesh;
         else if (ent.trigger) meshToDraw = icosaMesh;
 
         if (!meshToDraw) return;
@@ -22211,18 +23122,30 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
         };
 
-        // Torso
-        drawPart(cubeMesh, 0, 1.1, 0, 0.45, 0.6, 0.25, [0.15, 0.45, 0.95], 0.25, 0.85, 0, 3, 0.5);
-        // Head
-        drawPart(sphereMesh, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.95, 0.75, 0.60], 0.35, 0.10, 0, 0, 0.0);
-        // Visor
-        drawPart(cubeMesh, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95, 0, 11, 0.9);
-        // Left Arm & Right Arm (Swinging)
-        drawPart(cubeMesh, -0.32, 1.05 + Math.sin(swingAngle)*0.1, Math.sin(swingAngle) * 0.3, 0.15, 0.5, 0.15, [0.15, 0.45, 0.95], 0.25, 0.85, swingAngle, 3, 0.3);
-        drawPart(cubeMesh, 0.32, 1.05 - Math.sin(swingAngle)*0.1, -Math.sin(swingAngle) * 0.3, 0.15, 0.5, 0.15, [0.15, 0.45, 0.95], 0.25, 0.85, -swingAngle, 3, 0.3);
-        // Left Leg & Right Leg (Swinging opposite)
-        drawPart(cubeMesh, -0.16, 0.45 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle) * 0.35, 0.18, 0.6, 0.18, [0.12, 0.15, 0.20], 0.45, 0.30, -swingAngle * 0.8, 5, 0.8);
-        drawPart(cubeMesh, 0.16, 0.45 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle) * 0.35, 0.18, 0.6, 0.18, [0.12, 0.15, 0.20], 0.45, 0.30, swingAngle * 0.8, 5, 0.8);
+        if (this.soldierMesh) {
+          if (this.soldierSkeletonData) {
+            const isMoving = Math.hypot(pc.velocity[0], pc.velocity[2]) > 0.25;
+            const animName = isMoving ? 'walk' : 'idle';
+            const skinMatrices = this.evaluateSoldierSkeleton(pc.animTime || timestamp * 0.002, animName);
+            if (skinMatrices) {
+              this.updateSoldierMeshBuffer(skinMatrices);
+            }
+          }
+          this.drawBotMeshPart(progInfo, this.soldierMesh, charPos, charYaw, 0, 0, 0, 1.0, 1.0, 1.0, [0.95, 0.95, 0.98], 0.35, 0.2, 0, 0.1);
+        } else {
+          // Torso
+          drawPart(cubeMesh, 0, 1.1, 0, 0.45, 0.6, 0.25, [0.15, 0.45, 0.95], 0.25, 0.85, 0, 3, 0.5);
+          // Head
+          drawPart(sphereMesh, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.95, 0.75, 0.60], 0.35, 0.10, 0, 0, 0.0);
+          // Visor
+          drawPart(cubeMesh, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95, 0, 11, 0.9);
+          // Left Arm & Right Arm (Swinging)
+          drawPart(cubeMesh, -0.32, 1.05 + Math.sin(swingAngle)*0.1, Math.sin(swingAngle) * 0.3, 0.15, 0.5, 0.15, [0.15, 0.45, 0.95], 0.25, 0.85, swingAngle, 3, 0.3);
+          drawPart(cubeMesh, 0.32, 1.05 - Math.sin(swingAngle)*0.1, -Math.sin(swingAngle) * 0.3, 0.15, 0.5, 0.15, [0.15, 0.45, 0.95], 0.25, 0.85, -swingAngle, 3, 0.3);
+          // Left Leg & Right Leg (Swinging opposite)
+          drawPart(cubeMesh, -0.16, 0.45 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle) * 0.35, 0.18, 0.6, 0.18, [0.12, 0.15, 0.20], 0.45, 0.30, -swingAngle * 0.8, 5, 0.8);
+          drawPart(cubeMesh, 0.16, 0.45 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle) * 0.35, 0.18, 0.6, 0.18, [0.12, 0.15, 0.20], 0.45, 0.30, swingAngle * 0.8, 5, 0.8);
+        }
       }
 
     } else if (isFpsDemo) {
@@ -22232,8 +23155,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const cubeMesh = this.meshBuffers[1]; // Cube
       const sphereMesh = this.meshBuffers[0]; // Sphere
       const icosaMesh = this.meshBuffers[4]; // Gem / Kinetic Core
+      const pyramidMesh = this.meshBuffers[9]; // Sharp Pyramid
 
-      // 1. Render Environment (Ground, Obstacle Pillars, Boulders)
+      // 🌌 Render Cosmic Sky Dome with high-resolution seamless mesh and crazy special effects
+      this.renderSkyDome(gl, this.viewProjMatrix, this.state.camPos, timestamp);
+      gl.useProgram(progInfo.prog);
+
+      // 1. Render Environment (Ground, Obstacle Pillars, Boulders, Pyramids)
       const numSceneEnts = this.sceneEntities ? this.sceneEntities.length : 0;
       for (let i = 0; i < numSceneEnts; i++) {
         const ent = this.sceneEntities[i];
@@ -22241,6 +23169,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
         let meshToDraw = cubeMesh;
         if (ent.collider && ent.collider.includes('Sphere')) meshToDraw = sphereMesh;
+        else if (ent.meshType === 'pyramid' || (ent.collider && ent.collider.includes('Pyramid'))) meshToDraw = pyramidMesh;
         else if (ent.trigger) meshToDraw = icosaMesh;
 
         if (!meshToDraw) continue;
@@ -22437,46 +23366,73 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       }
 
-      // 3b. Render Active 3D AI Combat Bots (Mixamo Soldier Character Model with Walk Bobbing)
+      // 3b. Render Active 3D AI Combat Bots (Monster / Soldier Model with Dynamic Animations)
       if (this.active3DBots && cubeMesh && sphereMesh) {
         const numBots = this.active3DBots.length;
         for (let bi = 0; bi < numBots; bi++) {
           const bot = this.active3DBots[bi];
-          if (!bot.alive) continue;
+          // If destroyed, display death collapse animation for 2.8s before hiding until respawn
+          if (!bot.alive && bot.respawnTimer < 1.2) continue;
+
+          // Real-time tracking: ensure bot faces player directly even between physics ticks
+          if (bot.alive) {
+            const dx = this.state.camPos[0] - bot.pos[0];
+            const dy = (this.state.camPos[1] - 0.2) - (bot.pos[1] + 1.2);
+            const dz = this.state.camPos[2] - bot.pos[2];
+            const dist = Math.hypot(dx, dz);
+            if (dist > 0.05) {
+              const targetYaw = Math.atan2(dx, dz);
+              let diff = targetYaw - (bot.yaw || 0);
+              while (diff < -Math.PI) diff += Math.PI * 2;
+              while (diff > Math.PI) diff -= Math.PI * 2;
+              bot.yaw = (bot.yaw || 0) + diff * 0.25;
+              const targetPitch = Math.max(-0.6, Math.min(0.6, Math.atan2(-dy, dist)));
+              bot.pitch = (bot.pitch || 0) + (targetPitch - (bot.pitch || 0)) * 0.25;
+            }
+          }
 
           const charYaw = bot.yaw || 0;
+          const charPitch = bot.pitch || 0;
           const charPos = bot.pos;
           const swingAngle = Math.sin(timestamp * 0.008 + bot.id) * 0.45;
-          const drawCol = bot.hitFlashTimer > 0 ? [1.0, 0.3, 0.3] : bot.color;
+          const drawCol = bot.hitFlashTimer > 0 ? [1.0, 0.3, 0.3] : (bot.alive ? bot.color : [0.6, 0.2, 0.2]);
 
           if (this.soldierMesh) {
             if (this.soldierSkeletonData) {
-              // Individualized walking locomotion per bot based on timestamp and bot.id
-              const animTime = timestamp * 0.0012 + bot.id * 1.35;
-              const skinMatrices = this.evaluateSoldierSkeleton(animTime);
+              let skinMatrices = null;
+              if (!bot.alive) {
+                // Death collapse animation
+                const deathTime = Math.min(2.35, Math.max(0, 4.0 - bot.respawnTimer));
+                skinMatrices = this.evaluateSoldierSkeleton(deathTime, 'dead');
+              } else {
+                const animTime = timestamp * 0.0012 + bot.id * 1.35;
+                const isMoving = Math.hypot(bot.velocity[0], bot.velocity[2]) > 0.25;
+                const isAttacking = bot.fireTimer < 0.35;
+                const animToPlay = isAttacking ? 'attack' : (isMoving ? 'walk' : 'idle');
+                skinMatrices = this.evaluateSoldierSkeleton(animTime, animToPlay);
+              }
               if (skinMatrices) {
                 this.updateSoldierMeshBuffer(skinMatrices);
               }
             }
-            // Mixamo soldier characters are standing upright at y=0.
-            // Add a natural locomotion bobbing up and down based on speed / movement phase:
-            const bob = Math.abs(Math.sin(timestamp * 0.008 + bot.id)) * 0.08;
-            this.drawBotMeshPart(progInfo, this.soldierMesh, charPos, charYaw, 0, bob, 0, 1.0, 1.0, 1.0, drawCol, 0.3, 0.1, 3, 0.1);
+            const isMoving = bot.alive && Math.hypot(bot.velocity[0], bot.velocity[2]) > 0.25;
+            const bob = isMoving ? Math.abs(Math.sin(timestamp * 0.008 + bot.id)) * 0.08 : 0;
+            this.drawBotMeshPart(progInfo, this.soldierMesh, charPos, charYaw, 0, bob, 0, 1.0, 1.0, 1.0, drawCol, 0.3, 0.1, 3, 0.1, charPitch);
           } else {
             // Fallback: Bot Torso Body
-            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0, 1.1, 0, 0.45, 0.6, 0.25, drawCol, 0.25, 0.85, 3, 0.5);
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0, 1.1, 0, 0.45, 0.6, 0.25, drawCol, 0.25, 0.85, 3, 0.5, charPitch);
             // Fallback: Bot Head
-            this.drawBotMeshPart(progInfo, sphereMesh, charPos, charYaw, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.85, 0.85, 0.88], 0.35, 0.10, 0, 0.0);
+            this.drawBotMeshPart(progInfo, sphereMesh, charPos, charYaw, 0, 1.65, 0, 0.28, 0.28, 0.28, [0.85, 0.85, 0.88], 0.35, 0.10, 0, 0.0, charPitch);
             // Fallback: Bot Neon Visor
-            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95, 12, 0.9);
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0, 1.68, 0.2, 0.24, 0.12, 0.1, [0.06, 0.85, 0.95], 0.05, 0.95, 12, 0.9, charPitch);
             // Fallback: Bot Left & Right Arms (Swinging)
-            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, -0.32, 1.05 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, drawCol, 0.25, 0.85, 3, 0.3);
-            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.32, 1.05 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, drawCol, 0.25, 0.85, 3, 0.3);
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, -0.32, 1.05 + Math.sin(swingAngle)*0.08, Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, drawCol, 0.25, 0.85, 3, 0.3, charPitch);
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.32, 1.05 - Math.sin(swingAngle)*0.08, -Math.sin(swingAngle)*0.2, 0.15, 0.5, 0.15, drawCol, 0.25, 0.85, 3, 0.3, charPitch);
             // Fallback: Bot Left & Right Legs
-            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, -0.16, 0.45 - Math.sin(swingAngle)*0.06, -Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
-            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.16, 0.45 + Math.sin(swingAngle)*0.06, Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8);
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, -0.16, 0.45 - Math.sin(swingAngle)*0.06, -Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8, 0);
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.16, 0.45 + Math.sin(swingAngle)*0.06, Math.sin(swingAngle)*0.25, 0.18, 0.6, 0.18, [0.15, 0.18, 0.22], 0.45, 0.30, 5, 0.8, 0);
             // Fallback: Bot Weapon
-            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.35, 1.1, 0.35, 0.12, 0.15, 0.60, [0.2, 0.2, 0.25], 0.15, 0.9, 3, 0.2);
+            this.drawBotMeshPart(progInfo, cubeMesh, charPos, charYaw, 0.35, 1.1, 0.35, 0.12, 0.15, 0.60, [0.2, 0.2, 0.25], 0.15, 0.9, 3, 0.2, charPitch);
           }
         }
       }
