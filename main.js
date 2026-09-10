@@ -4652,6 +4652,20 @@ class NativeApp {
       });
     }
 
+    // Blood Spray Particles Pool (256 fixed size pool, zero allocation during combat)
+    this.bloodParticlePool = [];
+    for (let i = 0; i < 256; i++) {
+      this.bloodParticlePool.push({
+        active: false,
+        pos: [0, 0, 0],
+        velocity: [0, 0, 0],
+        color: [0.65, 0.02, 0.04],
+        size: 0.1,
+        lifetime: 0.6,
+        age: 0.0
+      });
+    }
+
     // Active Weapon Configuration
     this.weaponConfig = {
       type: 'plasma',
@@ -10297,6 +10311,32 @@ else if (typeof define === 'function' && define['amd'])
 
     // 5. Tick Active 3D AI Combat Bots & Bot Projectiles Shooting Player
     this.updateBotsAndProjectiles(dt, timestamp);
+
+    // 6. Update Blood Spray Particles
+    this.updateBloodParticles(dt);
+  }
+
+  updateBloodParticles(dt) {
+    if (!this.bloodParticlePool) return;
+    const count = this.bloodParticlePool.length;
+    for (let i = 0; i < count; i++) {
+      const p = this.bloodParticlePool[i];
+      if (!p.active) continue;
+
+      p.pos[0] += p.velocity[0] * dt;
+      p.pos[1] += p.velocity[1] * dt;
+      p.pos[2] += p.velocity[2] * dt;
+
+      p.velocity[1] -= 9.8 * dt; // Gravity
+      p.velocity[0] *= Math.exp(-0.8 * dt); // Drag
+      p.velocity[1] *= Math.exp(-0.8 * dt);
+      p.velocity[2] *= Math.exp(-0.8 * dt);
+
+      p.age += dt;
+      if (p.age >= p.lifetime) {
+        p.active = false;
+      }
+    }
   }
 
   init3DBots() {
@@ -10965,7 +11005,7 @@ else if (typeof define === 'function' && define['amd'])
             this._hitPos[0] = p.pos[0];
             this._hitPos[1] = p.pos[1];
             this._hitPos[2] = p.pos[2];
-            this.applyDamageToBot(bot, p.damage, this._hitPos);
+            this.applyDamageToBot(bot, p.damage, this._hitPos, p.velocity);
             p.active = false;
             break;
           }
@@ -10974,11 +11014,60 @@ else if (typeof define === 'function' && define['amd'])
     }
   }
 
-  applyDamageToBot(bot, damageAmount, hitPos) {
+  spawnBloodSpray(pos, incomingVelocity, count = 20) {
+    if (!this.bloodParticlePool) return;
+    
+    let dx = incomingVelocity ? incomingVelocity[0] : 0;
+    let dy = incomingVelocity ? incomingVelocity[1] : 0;
+    let dz = incomingVelocity ? incomingVelocity[2] : 0;
+    const len = Math.hypot(dx, dy, dz);
+    if (len > 0.0001) {
+      dx /= len;
+      dy /= len;
+      dz /= len;
+    } else {
+      dy = 1.0;
+    }
+
+    let spawned = 0;
+    for (let i = 0; i < this.bloodParticlePool.length; i++) {
+      const p = this.bloodParticlePool[i];
+      if (p.active) continue;
+
+      p.active = true;
+      p.pos[0] = pos[0] + (Math.random() - 0.5) * 0.15;
+      p.pos[1] = pos[1] + (Math.random() - 0.5) * 0.15;
+      p.pos[2] = pos[2] + (Math.random() - 0.5) * 0.15;
+
+      const speed = 3.0 + Math.random() * 8.0;
+      const spread = 0.6;
+      p.velocity[0] = (-dx * 0.4 + (Math.random() - 0.5) * spread) * speed;
+      p.velocity[1] = (-dy * 0.4 + (Math.random() - 0.5) * spread + 0.3) * speed;
+      p.velocity[2] = (-dz * 0.4 + (Math.random() - 0.5) * spread) * speed;
+
+      p.size = 0.05 + Math.random() * 0.14;
+      p.lifetime = 0.35 + Math.random() * 0.45;
+      p.age = 0.0;
+      
+      const r = 0.45 + Math.random() * 0.25;
+      const g = Math.random() * 0.04;
+      const b = 0.02 + Math.random() * 0.05;
+      p.color[0] = r;
+      p.color[1] = g;
+      p.color[2] = b;
+
+      spawned++;
+      if (spawned >= count) break;
+    }
+  }
+
+  applyDamageToBot(bot, damageAmount, hitPos, projVel) {
     if (!bot.alive) return;
     bot.health = Math.max(0, bot.health - damageAmount);
     bot.hitFlashTimer = 0.3;
     const isDestroyed = bot.health <= 0;
+
+    this.spawnBloodSpray(hitPos, projVel, isDestroyed ? 35 : 18);
 
     if (isDestroyed) {
       bot.alive = false;
@@ -23475,6 +23564,59 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12); // emissive neon
           if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
           if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
+          if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
+
+          gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+      }
+
+      // 3d. Render Active Blood Spray Particles (Small crimson sphere instances)
+      if (this.bloodParticlePool && sphereMesh) {
+        gl.bindVertexArray(sphereMesh.vao);
+        const numP = this.bloodParticlePool.length;
+        for (let pi = 0; pi < numP; pi++) {
+          const bp = this.bloodParticlePool[pi];
+          if (!bp.active) continue;
+
+          const lifeFrac = Math.max(0.01, 1.0 - (bp.age / bp.lifetime));
+          const r = bp.size * lifeFrac;
+          
+          this.instanceMatrix[0] = r;
+          this.instanceMatrix[1] = 0;
+          this.instanceMatrix[2] = 0;
+          this.instanceMatrix[3] = 0;
+
+          this.instanceMatrix[4] = 0;
+          this.instanceMatrix[5] = r;
+          this.instanceMatrix[6] = 0;
+          this.instanceMatrix[7] = 0;
+
+          this.instanceMatrix[8] = 0;
+          this.instanceMatrix[9] = 0;
+          this.instanceMatrix[10] = r;
+          this.instanceMatrix[11] = 0;
+
+          this.instanceMatrix[12] = bp.pos[0];
+          this.instanceMatrix[13] = bp.pos[1];
+          this.instanceMatrix[14] = bp.pos[2];
+          this.instanceMatrix[15] = 1;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          
+          const col = [
+            bp.color[0] * lifeFrac,
+            bp.color[1] * lifeFrac,
+            bp.color[2] * lifeFrac
+          ];
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, col);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.15);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.45);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 3);
+          if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
+          if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.5);
           if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
           gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
