@@ -4470,6 +4470,26 @@ export const KillerEngine = {
 };
 
 
+// =========================================================================
+// 🩸 MOBA Hero Definition Class
+// =========================================================================
+class Hero {
+  constructor(name, speed, strength, agility, intelligence, energy, mana, desc, role, longDesc, index) {
+    this.name = name;
+    this.speed = speed;
+    this.strength = strength;
+    this.agility = agility;
+    this.intelligence = intelligence;
+    this.energy = energy; // representing Max HP
+    this.mana = mana;     // representing Max MP
+    this.desc = desc;
+    this.role = role;
+    this.longDesc = longDesc;
+    this.index = index;
+  }
+}
+
+
 /// Application State Controller
 class NativeApp {
   constructor() {
@@ -4830,7 +4850,9 @@ class NativeApp {
     this.initShowroomUI();
     this.initNetworkSystem();
     this.initFpsStartupMenu();
-    if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
+    if (this.state.demoScene && this.state.demoScene.includes('15_moba')) {
+      this.initMobaDemo();
+    } else if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
       this.initPongDemo();
     } else if (this.state.demoScene && this.state.demoScene.includes('13_bingo')) {
       this.initBingoDemo();
@@ -6484,7 +6506,8 @@ void main() {
       const isRoulette = this.state.demoScene.includes('12_roulette');
       const isBingo = this.state.demoScene.includes('13_bingo');
       const isPong = Boolean(this.state.demoScene && this.state.demoScene.includes('14_pong'));
-      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong;
+      const isMoba = Boolean(this.state.demoScene && this.state.demoScene.includes('15_moba'));
+      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong && !isMoba;
       const crosshairEl = document.getElementById('fps-crosshair-overlay');
       const bannerEl = document.getElementById('fps-pointerlock-banner');
       const weaponHudEl = document.getElementById('fps-weapon-hud');
@@ -6597,6 +6620,24 @@ void main() {
       }
       if (touchShootBtn) {
         touchShootBtn.style.display = isFPS ? 'flex' : 'none';
+      }
+
+      // MOBA Overlay visibility control
+      const mobaOverlay = document.getElementById('moba-overlay');
+      const mobaStartupMenu = document.getElementById('moba-startup-menu');
+      if (isMoba) {
+        const startupOverlay = document.getElementById('fps-startup-overlay');
+        if (startupOverlay) startupOverlay.style.display = 'none';
+        
+        const isPlaying = this.mobaState && this.mobaState.playing;
+        if (mobaOverlay) mobaOverlay.style.display = isPlaying ? 'block' : 'none';
+        if (mobaStartupMenu) mobaStartupMenu.style.display = isPlaying ? 'none' : 'block';
+      } else {
+        if (mobaOverlay) mobaOverlay.style.display = 'none';
+        if (mobaStartupMenu) mobaStartupMenu.style.display = 'none';
+        if (this.mobaState && this.mobaState.activePartyId) {
+          this.leaveMobaParty();
+        }
       }
     };
 
@@ -7091,6 +7132,19 @@ void main() {
           updateFPSOverlays();
           this.log("Loaded Demo 08: 3D Real-Physics Bingo & Diamond Drum Showcase", "cpp");
           this.initBingoDemo();
+        } else if (this.state.demoScene.includes('15_moba')) {
+          this.state.cameraMode = 0;
+          const camSelect = document.getElementById('camera-mode-select');
+          if (camSelect) camSelect.value = "0";
+          this.state.camRadius = 16.0;
+          this.state.camPitch = 1.05;
+          this.state.camYaw = 0.0;
+          this.state.camTarget[0] = 0.0;
+          this.state.camTarget[1] = 0.0;
+          this.state.camTarget[2] = 0.0;
+          updateFPSOverlays();
+          this.log("Loaded Demo 10: MOBA Forest of Hollow Blood", "cpp");
+          this.initMobaDemo();
         } else if (this.state.demoScene.includes('14_pong')) {
           this.state.cameraMode = 0;
           const camSelect = document.getElementById('camera-mode-select');
@@ -8478,6 +8532,7 @@ void main() {
       { value: "12_roulette.cpp", path: "examples/12_roulette.cpp", name: "Demo 07: 3D Physics-Engine Roulette Wheel", isDemoScene: true, isLiveFile: true, isExampleTab: true },
       { value: "13_bingo_physics.cpp", path: "examples/13_bingo_physics.cpp", name: "Demo 08: 3D Real-Physics Bingo & Diamond Drum", isDemoScene: true, isLiveFile: true, isExampleTab: true },
       { value: "14_pong.cpp", path: "examples/14_pong.cpp", name: "Demo 09: Retro 3D Arcade Pong", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "15_moba.cpp", path: "examples/15_moba.cpp", name: "Demo 10: MOBA Forest of Hollow Blood", isDemoScene: true, isLiveFile: true, isExampleTab: true },
 
       // Engine Internals
       { value: "src/core/Engine.cpp", path: "src/core/Engine.cpp", name: "Engine Core C++", isDemoScene: false, isLiveFile: true, isExampleTab: false },
@@ -23980,6 +24035,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // -------------------------------------------------------------
       this.updatePongPhysics(dt);
       this.render3DPong(progInfo, timestamp);
+    } else if (this.state.demoScene.includes('15_moba')) {
+      this.updateMobaGame(dt);
+      this.renderMobaScene(progInfo, timestamp);
     } else {
       // DEMO 1 & DEMO 3: SINGLE OBJECT PBR / STUDIO
       const mesh = this.meshBuffers[this.state.activeMesh];
@@ -24491,6 +24549,1358 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       p *= 2;
     }
     return p;
+  }
+
+  // =========================================================================
+  // DEMO 10: MOBA FOREST OF HOLLOW BLOOD - CORE SYSTEM
+  // =========================================================================
+
+  initMobaDemo() {
+    this.log("🎮 Initializing MOBA Forest of Hollow Blood Simulation Layer...", "info");
+
+    // Initialize/Reset MOBA Local State
+    this.mobaState = {
+      activePartyId: null,
+      party: null,
+      partiesList: [],
+      selectedHero: 'Arissa',
+      lockedHero: null,
+      playing: false,
+      gold: 150,
+      goldTimer: 0.0,
+      inventory: [null, null, null, null, null, null], // 3x2 grid = 6 items max
+      heroStats: {
+        hp: 550, maxHp: 550,
+        mp: 240, maxMp: 240,
+        speed: 6.5, strength: 18, agility: 28, intelligence: 14,
+        attackRange: 5.0, damage: 45
+      },
+      currentPos: [0.0, 0.0, 0.0],
+      targetPos: [0.0, 0.0, 0.0],
+      isWalking: false,
+      team: 'RED', // Assigned by lobby joining
+      spellsCooldown: [0, 0, 0, 0], // Q, W, E, R
+      projectiles: [],
+      creeps: [],
+      towers: [
+        { id: 'red_tower', team: 'RED', pos: [-7.0, 0, -7.0], hp: 1200, maxHp: 1200 },
+        { id: 'black_tower', team: 'BLACK', pos: [7.0, 0, 7.0], hp: 1200, maxHp: 1200 }
+      ],
+      trons: {
+        RED: { hp: 2500, maxHp: 2500, pos: [-15.0, 0, -15.0] },
+        BLACK: { hp: 2500, maxHp: 2500, pos: [15.0, 0, 15.0] }
+      },
+      spawnTimer: 0.0,
+      lobbyHeroes: [
+        new Hero('Arissa', 6.5, 18, 28, 14, 550, 240, 'Ranged Agility Bowmaster', 'Agility Assassin / Ranger', 'Devastates targets from range with deadly arrow streams and blinking maneuvers.', 0),
+        new Hero('Erika', 5.0, 15, 16, 30, 450, 500, 'Sustained Magical Sorceress', 'Magical Mage / Support', 'Weaves elemental spell cascades to control territory and support allies from afar.', 1),
+        new Hero('Maria Sword', 5.5, 26, 18, 16, 680, 200, 'Nimble Swift Blade', 'Melee Swift Gladiator', 'Dashes through enemy ranks with dual sabers and executes high-damage physical sweeps.', 2),
+        new Hero('Slayzer', 5.8, 24, 22, 14, 640, 180, 'Heavy Chaos Dual-Axes', 'Bruiser Melee Fighter', 'Thrives in chaotic close-range teamfights, gaining strength as battle grows bloodier.', 3),
+        new Hero('Warrok', 6.2, 20, 25, 15, 580, 220, 'Feral Savage Clawfighter', 'Savage Melee Skirmisher', 'Rips through target armor with razor claw strikes and increases base attack speed over time.', 4),
+        new Hero('Steelborn', 4.8, 28, 14, 18, 750, 250, 'Heavy Colossus Paladin', 'Defensive Tank / Initiator', 'Shields allies, absorbs immense damage, and forces fights with a heavy ground-slam.', 5)
+      ],
+      clickRipples: [],
+      vfxBursts: [],
+      winner: null
+    };
+
+    // Set up PREVIOUS & NEXT champion select buttons
+    const btnPrev = document.getElementById('moba-btn-prev-hero');
+    if (btnPrev) {
+      btnPrev.onclick = () => {
+        this.cycleMobaHero(-1);
+      };
+    }
+
+    const btnNext = document.getElementById('moba-btn-next-hero');
+    if (btnNext) {
+      btnNext.onclick = () => {
+        this.cycleMobaHero(1);
+      };
+    }
+
+    // Set up Lobby UI Interconnection
+    const btnCreate = document.getElementById('moba-btn-create-party');
+    if (btnCreate) {
+      btnCreate.onclick = () => {
+        this.net.send('moba:create_party', {});
+        this.mobaPlaySound('select');
+      };
+    }
+
+    const btnLeave = document.getElementById('moba-btn-leave-party');
+    if (btnLeave) {
+      btnLeave.onclick = () => {
+        this.leaveMobaParty();
+        this.mobaPlaySound('back');
+      };
+    }
+
+    const btnLock = document.getElementById('moba-btn-lock');
+    if (btnLock) {
+      btnLock.onclick = () => {
+        this.lockInMobaHero();
+        this.mobaPlaySound('confirm');
+      };
+    }
+
+    const btnAddBot = document.getElementById('moba-btn-add-bot');
+    if (btnAddBot) {
+      btnAddBot.onclick = () => {
+        if (this.mobaState.activePartyId) {
+          this.net.send('moba:add_bot', { partyId: this.mobaState.activePartyId });
+          this.mobaPlaySound('select');
+        }
+      };
+    }
+
+    const btnClearBots = document.getElementById('moba-btn-clear-bots');
+    if (btnClearBots) {
+      btnClearBots.onclick = () => {
+        if (this.mobaState.activePartyId) {
+          this.net.send('moba:clear_bots', { partyId: this.mobaState.activePartyId });
+          this.mobaPlaySound('back');
+        }
+      };
+    }
+
+    const btnStart = document.getElementById('moba-btn-start-game');
+    if (btnStart) {
+      btnStart.onclick = () => {
+        if (this.mobaState.activePartyId) {
+          this.net.send('moba:start_game', { partyId: this.mobaState.activePartyId });
+          this.mobaPlaySound('victory');
+        }
+      };
+    }
+
+    // Set up Shop Modal toggle buttons
+    const btnShop = document.getElementById('moba-btn-shop');
+    const modalShop = document.getElementById('moba-shop-modal');
+    if (btnShop && modalShop) {
+      btnShop.onclick = () => {
+        modalShop.classList.remove('hidden');
+        modalShop.style.display = 'flex';
+        this.mobaPlaySound('select');
+      };
+    }
+
+    const btnCloseShop = document.getElementById('moba-btn-close-shop');
+    if (btnCloseShop && modalShop) {
+      btnCloseShop.onclick = () => {
+        modalShop.classList.add('hidden');
+        modalShop.style.display = 'none';
+        this.mobaPlaySound('back');
+      };
+    }
+
+    const btnCloseGameover = document.getElementById('moba-btn-gameover-close');
+    const modalGameover = document.getElementById('moba-gameover-modal');
+    if (btnCloseGameover && modalGameover) {
+      btnCloseGameover.onclick = () => {
+        modalGameover.classList.add('hidden');
+        modalGameover.style.display = 'none';
+        this.mobaState.playing = false;
+        if (this.updateFPSOverlays) this.updateFPSOverlays();
+      };
+    }
+
+    // Bind purchase hooks inside the Shop grid
+    const shopContainer = document.getElementById('moba-shop-items-grid');
+    if (shopContainer) {
+      shopContainer.innerHTML = '';
+      const shopItems = [
+        { key: 'blade', name: 'Blade of Blood', price: 100, desc: '+25 Strength / Damage', color: 'border-red-600/50' },
+        { key: 'boots', name: 'Boots of Speed', price: 80, desc: '+2.5 Speed Boost', color: 'border-emerald-600/50' },
+        { key: 'heart', name: 'Heart of Titan', price: 150, desc: '+400 Max Health', color: 'border-cyan-600/50' },
+        { key: 'scepter', name: 'Archmage Scepter', price: 120, desc: '+300 Max Mana', color: 'border-purple-600/50' },
+        { key: 'shield', name: 'Aegis Shield', price: 110, desc: '+15 Health Regen / Armor', color: 'border-amber-600/50' }
+      ];
+
+      shopItems.forEach(item => {
+        const card = document.createElement('div');
+        card.className = `p-3 border rounded-lg bg-slate-900/90 hover:bg-slate-800 transition-all ${item.color} flex flex-col justify-between`;
+        card.innerHTML = `
+          <div>
+            <div class="font-bold text-slate-100 text-xs">${item.name}</div>
+            <div class="text-[10px] text-slate-400 mt-1">${item.desc}</div>
+          </div>
+          <div class="flex items-center justify-between mt-3">
+            <span class="text-[11px] text-amber-400 font-bold">🪙 ${item.price} Gold</span>
+            <button class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] py-1 px-2 rounded-md active:scale-95 transition-all" onclick="app.buyMobaItem('${item.key}')">BUY</button>
+          </div>
+        `;
+        shopContainer.appendChild(card);
+      });
+    }
+
+    // Connect Keyboard input listener hooks for abilities Q, W, E, R
+    this._mobaKeyHandler = (e) => {
+      if (!this.mobaState || !this.mobaState.playing) return;
+      const key = e.key.toLowerCase();
+      if (key === 'q') this.castMobaSpell(0);
+      else if (key === 'w') this.castMobaSpell(1);
+      else if (key === 'e') this.castMobaSpell(2);
+      else if (key === 'r') this.castMobaSpell(3);
+    };
+    window.addEventListener('keydown', this._mobaKeyHandler);
+
+    // Setup direct mouse right-click listener on Canvas for terrain right-click movement/attacks
+    this._mobaCtxMenuHandler = (e) => {
+      if (this.state.demoScene.includes('15_moba')) {
+        e.preventDefault();
+      }
+    };
+    this.canvas.addEventListener('contextmenu', this._mobaCtxMenuHandler);
+
+    this._mobaMouseDownHandler = (e) => {
+      if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
+      if (e.button === 2) { // Right Click
+        const rect = this.canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const ray = this.mobaRaycastGround(mx, my);
+        const intersect = this.mobaIntersectGroundPlane(ray);
+        if (intersect) {
+          // Check if right click hit an enemy target (creeps or opposing tower/tron)
+          let targetId = null;
+          this.mobaState.creeps.forEach(creep => {
+            if (creep.team !== this.mobaState.team && creep.hp > 0) {
+              const dx = creep.pos[0] - intersect[0];
+              const dz = creep.pos[2] - intersect[2];
+              if (dx*dx + dz*dz < 1.4) {
+                targetId = creep.id;
+              }
+            }
+          });
+
+          // Draw fading green click marker
+          this.mobaState.clickRipples.push({
+            x: intersect[0],
+            z: intersect[2],
+            timer: 0.5,
+            color: targetId ? [1.0, 0.1, 0.1] : [0.1, 1.0, 0.2]
+          });
+
+          // Play right-click ping sound
+          this.mobaPlaySound('ping');
+
+          // Send move or attack command to the server
+          this.net.send('moba:action', {
+            partyId: this.mobaState.activePartyId,
+            action: {
+              type: targetId ? 'attack' : 'move',
+              x: intersect[0],
+              z: intersect[2],
+              targetId: targetId
+            }
+          });
+        }
+      }
+    };
+    this.canvas.addEventListener('mousedown', this._mobaMouseDownHandler);
+
+    // Register WebSockets event listeners
+    if (this._unsubMobaList) this._unsubMobaList();
+    if (this._unsubMobaState) this._unsubMobaState();
+    if (this._unsubMobaAction) this._unsubMobaAction();
+    if (this._unsubMobaCreateSuccess) this._unsubMobaCreateSuccess();
+
+    this._unsubMobaCreateSuccess = this.net.on('moba:create_success', (partyId) => {
+      this.joinMobaParty(partyId);
+    });
+
+    this._unsubMobaList = this.net.on('moba:parties_list', (data) => {
+      this.mobaState.partiesList = data.parties || [];
+      this.mobaRenderPartiesListUI();
+    });
+
+    this._unsubMobaState = this.net.on('moba:party_state', (party) => {
+      this.mobaState.party = party;
+      this.mobaState.activePartyId = party.id;
+      
+      // Determine our local team
+      const meInRed = party.teams.RED.find(p => p.id === this.net.localPlayerId);
+      const meInBlack = party.teams.BLACK.find(p => p.id === this.net.localPlayerId);
+      if (meInRed) this.mobaState.team = 'RED';
+      else if (meInBlack) this.mobaState.team = 'BLACK';
+
+      // Lock-in state sync
+      const me = meInRed || meInBlack;
+      if (me && me.hero) {
+        this.mobaState.lockedHero = me.hero;
+      }
+
+      // Check if match transition happened
+      if (party.status === 'playing' && !this.mobaState.playing) {
+        this.log("⚔️ MOBA Forest of Hollow Blood has BEGUN! Protect your TRON!", "success");
+        this.mobaState.playing = true;
+        this.mobaState.gold = 150;
+        this.mobaState.inventory = [null, null, null, null, null, null];
+        this.mobaState.winner = null;
+        this.mobaState.spellsCooldown = [0, 0, 0, 0];
+        this.mobaState.clickRipples = [];
+        this.mobaState.vfxBursts = [];
+        
+        // Hide startup and show main HUD
+        if (this.updateFPSOverlays) this.updateFPSOverlays();
+
+        // Update spells UI on HUD
+        this.mobaUpdateAbilitiesUI();
+      }
+
+      this.mobaRenderLobbyUI(party);
+    });
+
+    this._unsubMobaAction = this.net.on('moba:action', (data) => {
+      // Receive state sync update from the authoritative server
+      if (data && data.state) {
+        this.mobaSyncGameState(data.state);
+      }
+    });
+
+    // Query active games
+    this.net.send('moba:get_parties', {});
+
+    this.selectMobaHero('Arissa');
+
+    const placeholder = document.getElementById('moba-lobby-placeholder');
+    const activePanel = document.getElementById('moba-lobby-active-panel');
+    if (placeholder && activePanel) {
+      placeholder.style.display = 'flex';
+      activePanel.style.display = 'none';
+    }
+
+    if (this.updateFPSOverlays) {
+      this.updateFPSOverlays();
+    }
+  }
+
+  joinMobaParty(partyId) {
+    this.net.send('moba:join_party', { partyId });
+    this.mobaPlaySound('select');
+  }
+
+  leaveMobaParty() {
+    if (this.mobaState.activePartyId) {
+      this.net.send('moba:leave_party', { partyId: this.mobaState.activePartyId });
+    }
+    this.mobaState.activePartyId = null;
+    this.mobaState.party = null;
+    this.mobaState.playing = false;
+    this.mobaState.lockedHero = null;
+    
+    const placeholder = document.getElementById('moba-lobby-placeholder');
+    const activePanel = document.getElementById('moba-lobby-active-panel');
+    if (placeholder && activePanel) {
+      placeholder.style.display = 'flex';
+      activePanel.style.display = 'none';
+    }
+
+    if (this.updateFPSOverlays) this.updateFPSOverlays();
+
+    // Query active games list
+    this.net.send('moba:get_parties', {});
+  }
+
+  selectMobaHero(heroName) {
+    if (this.mobaState.lockedHero) return; // Cannot change selection after locking in
+    this.mobaState.selectedHero = heroName;
+    
+    // Automatically swap the background 3D GLB character model
+    this.mobaLoadHeroModel(heroName);
+
+    // Update detail blocks dynamically using Hero class properties
+    const activeHero = this.mobaState.lobbyHeroes.find(h => h.name === heroName);
+    if (activeHero) {
+      const nameEl = document.getElementById('moba-detail-name');
+      const roleEl = document.getElementById('moba-detail-role');
+      const descEl = document.getElementById('moba-detail-desc');
+      const speedEl = document.getElementById('moba-detail-speed');
+      const strengthEl = document.getElementById('moba-detail-streng');
+      const agilityEl = document.getElementById('moba-detail-agil');
+      const intelligenceEl = document.getElementById('moba-detail-intel');
+      const hpEl = document.getElementById('moba-detail-hp');
+      const mpEl = document.getElementById('moba-detail-mp');
+
+      if (nameEl) nameEl.textContent = activeHero.name;
+      if (roleEl) roleEl.textContent = activeHero.role;
+      if (descEl) descEl.textContent = activeHero.longDesc || activeHero.desc;
+      if (speedEl) speedEl.textContent = activeHero.speed;
+      if (strengthEl) strengthEl.textContent = activeHero.strength;
+      if (agilityEl) agilityEl.textContent = activeHero.agility;
+      if (intelligenceEl) intelligenceEl.textContent = activeHero.intelligence;
+      if (hpEl) hpEl.textContent = activeHero.energy;
+      if (mpEl) mpEl.textContent = activeHero.mana;
+    }
+
+    // Play selection sound
+    this.mobaPlaySound('select');
+
+    // Sync preview selection to remote players
+    if (this.mobaState.activePartyId) {
+      this.net.send('moba:select_hero', {
+        partyId: this.mobaState.activePartyId,
+        hero: heroName
+      });
+    }
+  }
+
+  mobaLoadHeroModel(heroName) {
+    const glbPath = {
+      Arissa: 'assets/models/character1/soldier.glb',
+      Erika: 'assets/models/character2/monster.glb',
+      'Maria Sword': 'assets/models/zombie/zombie-cap.glb',
+      Slayzer: 'assets/models/zombie/zombi-crawl1.glb',
+      Warrok: 'assets/models/character2/monster.glb',
+      Steelborn: 'assets/models/character1/soldier.glb'
+    }[heroName] || 'assets/models/character1/soldier.glb';
+
+    if (this.currentGlbModel !== glbPath) {
+      this.loadSoldierGLB(glbPath);
+    }
+  }
+
+  cycleMobaHero(dir) {
+    if (this.mobaState.lockedHero) return;
+    const list = ['Arissa', 'Erika', 'Maria Sword', 'Slayzer', 'Warrok', 'Steelborn'];
+    let idx = list.indexOf(this.mobaState.selectedHero);
+    if (idx === -1) idx = 0;
+    idx = (idx + dir + list.length) % list.length;
+    this.selectMobaHero(list[idx]);
+  }
+
+  lockInMobaHero() {
+    if (!this.mobaState.activePartyId) return;
+    this.mobaState.lockedHero = this.mobaState.selectedHero;
+    
+    const lockBtn = document.getElementById('moba-btn-lock');
+    if (lockBtn) {
+      lockBtn.disabled = true;
+      lockBtn.textContent = 'LOCKED-IN';
+      lockBtn.className = 'w-full py-2 bg-emerald-600 font-bold text-xs text-slate-100 rounded-lg cursor-not-allowed';
+    }
+
+    // Apply the active base hero stats to local state
+    const baseStats = {
+      Arissa: { hp: 550, mp: 240, speed: 6.5, strength: 18, agility: 28, intelligence: 14, range: 5.0, damage: 45 },
+      Erika: { hp: 450, mp: 500, speed: 5.0, strength: 15, agility: 16, intelligence: 30, range: 6.0, damage: 38 },
+      'Maria Sword': { hp: 680, mp: 200, speed: 5.5, strength: 26, agility: 18, intelligence: 16, range: 1.5, damage: 52 },
+      Slayzer: { hp: 640, mp: 180, speed: 5.8, strength: 24, agility: 22, intelligence: 14, range: 1.5, damage: 50 },
+      Warrok: { hp: 580, mp: 220, speed: 6.2, strength: 20, agility: 25, intelligence: 15, range: 1.5, damage: 48 },
+      Steelborn: { hp: 750, mp: 250, speed: 4.8, strength: 28, agility: 14, intelligence: 18, range: 1.5, damage: 42 }
+    }[this.mobaState.selectedHero];
+
+    if (baseStats) {
+      this.mobaState.heroStats = {
+        hp: baseStats.hp, maxHp: baseStats.hp,
+        mp: baseStats.mp, maxMp: baseStats.mp,
+        speed: baseStats.speed, strength: baseStats.strength, agility: baseStats.agility, intelligence: baseStats.intelligence,
+        attackRange: baseStats.range, damage: baseStats.damage
+      };
+    }
+  }
+
+  buyMobaItem(itemKey) {
+    if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
+
+    const itemDetails = {
+      blade: { name: 'Blade of Blood', price: 100, strength: 25, desc: '+25 Strength / Damage' },
+      boots: { name: 'Boots of Speed', price: 80, speed: 2.5, desc: '+2.5 Speed' },
+      heart: { name: 'Heart of Titan', price: 150, hp: 400, desc: '+400 Max HP' },
+      scepter: { name: 'Archmage Scepter', price: 120, mp: 300, desc: '+300 Max Mana' },
+      shield: { name: 'Aegis Shield', price: 110, armor: 15, desc: '+15 HP Regen / Armor' }
+    }[itemKey];
+
+    if (!itemDetails) return;
+
+    if (this.mobaState.gold < itemDetails.price) {
+      this.log("🪙 Insufficient Gold!", "error");
+      this.mobaPlaySound('back');
+      return;
+    }
+
+    // Find empty slot in 3x2 grid inventory
+    const freeIndex = this.mobaState.inventory.findIndex(slot => slot === null);
+    if (freeIndex === -1) {
+      this.log("🎒 Inventory is Full! Max 6 items.", "error");
+      this.mobaPlaySound('back');
+      return;
+    }
+
+    // Deduct gold and add item
+    this.mobaState.gold -= itemDetails.price;
+    this.mobaState.inventory[freeIndex] = { ...itemDetails, key: itemKey };
+
+    // Apply stats boost
+    if (itemDetails.strength) this.mobaState.heroStats.damage += itemDetails.strength;
+    if (itemDetails.speed) this.mobaState.heroStats.speed += itemDetails.speed;
+    if (itemDetails.hp) {
+      this.mobaState.heroStats.maxHp += itemDetails.hp;
+      this.mobaState.heroStats.hp += itemDetails.hp;
+    }
+    if (itemDetails.mp) {
+      this.mobaState.heroStats.maxMp += itemDetails.mp;
+      this.mobaState.heroStats.mp += itemDetails.mp;
+    }
+
+    this.log(`🎒 Purchased ${itemDetails.name}!`, "success");
+    this.mobaPlaySound('confirm');
+
+    // Update HUD Stats and Inventory visually
+    this.mobaUpdateInventoryUI();
+  }
+
+  sellMobaItem(index) {
+    if (!this.mobaState || !this.mobaState.playing || index < 0 || index >= 6) return;
+    const item = this.mobaState.inventory[index];
+    if (!item) return;
+
+    // Refund 60% of original price
+    const refund = Math.floor(item.price * 0.6);
+    this.mobaState.gold += refund;
+
+    // Remove stats boost
+    if (item.strength) this.mobaState.heroStats.damage -= item.strength;
+    if (item.speed) this.mobaState.heroStats.speed -= item.speed;
+    if (item.hp) {
+      this.mobaState.heroStats.maxHp -= item.hp;
+      this.mobaState.heroStats.hp = Math.min(this.mobaState.heroStats.hp, this.mobaState.heroStats.maxHp);
+    }
+    if (item.mp) {
+      this.mobaState.heroStats.maxMp -= item.mp;
+      this.mobaState.heroStats.mp = Math.min(this.mobaState.heroStats.mp, this.mobaState.heroStats.maxMp);
+    }
+
+    this.mobaState.inventory[index] = null;
+    this.log(`🎒 Sold ${item.name} for 🪙 ${refund} Gold!`, "info");
+    this.mobaPlaySound('back');
+
+    this.mobaUpdateInventoryUI();
+  }
+
+  castMobaSpell(index) {
+    if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
+
+    const spellNames = ['Area Blast', 'Blink Dash', 'Barrier Field', 'Hollow Eclipse Ultimate'];
+    const manaCosts = [40, 50, 60, 110];
+    const cooldowns = [4.0, 7.0, 10.0, 24.0];
+
+    const cost = manaCosts[index];
+    if (this.mobaState.heroStats.mp < cost) {
+      this.log("🔮 Insufficient Mana!", "error");
+      this.mobaPlaySound('back');
+      return;
+    }
+
+    if (this.mobaState.spellsCooldown[index] > 0) {
+      this.log("⏳ Ability is on Cooldown!", "error");
+      this.mobaPlaySound('back');
+      return;
+    }
+
+    // Spend Mana and trigger cooldown
+    this.mobaState.heroStats.mp -= cost;
+    this.mobaState.spellsCooldown[index] = cooldowns[index];
+
+    // Play spell sound
+    this.mobaPlaySound('spell');
+
+    // Trigger local visuals and dispatch networked action
+    this.log(`🔮 Cast ${spellNames[index]}!`, "info");
+
+    const playerPos = this.mobaState.currentPos;
+    if (index === 0) { // AOE Circle
+      this.mobaState.vfxBursts.push({
+        type: 'blast',
+        x: playerPos[0],
+        z: playerPos[2],
+        radius: 4.5,
+        timer: 0.6,
+        color: [0.06, 0.85, 0.95]
+      });
+    } else if (index === 1) { // Blink Dash
+      const forwardAngle = this.state.camYaw || 0.0;
+      const dx = -Math.sin(forwardAngle) * 5.0;
+      const dz = -Math.cos(forwardAngle) * 5.0;
+      this.mobaState.vfxBursts.push({
+        type: 'blink',
+        x: playerPos[0],
+        z: playerPos[2],
+        targetX: playerPos[0] + dx,
+        targetZ: playerPos[2] + dz,
+        timer: 0.3,
+        color: [0.95, 0.2, 0.8]
+      });
+      playerPos[0] += dx;
+      playerPos[2] += dz;
+      this.mobaState.targetPos = [...playerPos];
+    } else if (index === 2) { // Shield Barrier
+      this.mobaState.vfxBursts.push({
+        type: 'shield',
+        x: playerPos[0],
+        z: playerPos[2],
+        radius: 2.0,
+        timer: 5.0,
+        color: [0.1, 0.9, 0.3]
+      });
+    } else if (index === 3) { // Hollow Eclipse Nova (Ultimate)
+      this.mobaState.vfxBursts.push({
+        type: 'nova',
+        x: playerPos[0],
+        z: playerPos[2],
+        radius: 8.0,
+        timer: 1.0,
+        color: [0.9, 0.05, 0.1]
+      });
+    }
+
+    // Broadcast cast spell to remote peers
+    this.net.send('moba:action', {
+      partyId: this.mobaState.activePartyId,
+      action: {
+        type: 'spell',
+        index: index,
+        x: playerPos[0],
+        z: playerPos[2]
+      }
+    });
+  }
+
+  mobaSyncGameState(serverState) {
+    if (!this.mobaState || !this.mobaState.playing) return;
+
+    // Sync tower healths
+    if (serverState.towers) {
+      serverState.towers.forEach(t => {
+        const found = this.mobaState.towers.find(localT => localT.id === t.id);
+        if (found) found.hp = t.hp;
+      });
+    }
+
+    // Sync bases/trons healths
+    if (serverState.trons) {
+      this.mobaState.trons.RED.hp = serverState.trons.RED;
+      this.mobaState.trons.BLACK.hp = serverState.trons.BLACK;
+    }
+
+    // Sync active creeps list
+    if (serverState.creeps) {
+      this.mobaState.creeps = serverState.creeps.map(c => ({
+        id: c.id,
+        team: c.team,
+        pos: [c.pos[0], 0, c.pos[2]],
+        hp: c.hp,
+        maxHp: 100,
+        type: c.type || 'melee'
+      }));
+    }
+
+    // Sync other players / bot positions
+    if (serverState.players) {
+      this.mobaState.players = serverState.players;
+      
+      // Update local copy of our own health/mana if pushed by server rules
+      const me = serverState.players.find(p => p.id === this.net.localPlayerId);
+      if (me) {
+        this.mobaState.heroStats.hp = me.hp;
+        this.mobaState.heroStats.mp = Math.min(this.mobaState.heroStats.mp, this.mobaState.heroStats.maxMp);
+        this.mobaState.currentPos = [me.pos[0], 0, me.pos[2]];
+      }
+    }
+
+    // Check game over triggers
+    if (serverState.winner && !this.mobaState.winner) {
+      this.mobaState.winner = serverState.winner;
+      this.mobaPlaySound('victory');
+      
+      const modalGameover = document.getElementById('moba-gameover-modal');
+      const textWinner = document.getElementById('moba-gameover-title');
+      const textStats = document.getElementById('moba-gameover-stats');
+      
+      if (modalGameover && textWinner) {
+        textWinner.textContent = `${serverState.winner.toUpperCase()} TEAM WINS!`;
+        if (textStats) {
+          textStats.innerHTML = `
+            <div class="flex justify-between border-b border-slate-700/50 pb-2">
+              <span>Final Hero Level</span>
+              <span class="text-cyan-400 font-bold">LVL 12 Maxed</span>
+            </div>
+            <div class="flex justify-between border-b border-slate-700/50 pb-2 mt-2">
+              <span>Acquired Gold Pile</span>
+              <span class="text-amber-400 font-bold">🪙 ${this.mobaState.gold} Gold</span>
+            </div>
+            <div class="flex justify-between border-b border-slate-700/50 pb-2 mt-2">
+              <span>Endgame Inventory Slots</span>
+              <span class="text-slate-200 font-bold">${this.mobaState.inventory.filter(i => i !== null).length} / 6 Loaded</span>
+            </div>
+          `;
+        }
+        modalGameover.classList.remove('hidden');
+        modalGameover.style.display = 'flex';
+      }
+    }
+  }
+
+  updateMobaGame(dt) {
+    if (!this.mobaState) return;
+
+    // Lobby preview character bone evaluation / camera interpolation
+    if (!this.mobaState.playing) {
+      // Focus camera directly at origin [0.0, 0.5, 0.0] for showroom close-up!
+      this.state.camTarget[0] = 0.0;
+      this.state.camTarget[1] = 0.5;
+      this.state.camTarget[2] = 0.0;
+
+      this.state.camRadius = 4.5;  // beautiful close-up zoom
+      this.state.camPitch = 0.18;   // beautiful sight-level angle
+      this.state.camYaw = 0.0;
+      return;
+    }
+
+    // =========================================================================
+    // ACTIVE GAME STATE UPDATE (dt ticks)
+    // =========================================================================
+
+    // Smoothly track camera target to follow the local player's hero position
+    const playerPos = this.mobaState.currentPos;
+    this.state.camTarget[0] += (playerPos[0] - this.state.camTarget[0]) * dt * 6.0;
+    this.state.camTarget[1] = 0.0;
+    this.state.camTarget[2] += (playerPos[2] - this.state.camTarget[2]) * dt * 6.0;
+
+    // Top-down steep perspective camera values
+    this.state.camRadius = 17.0;
+    this.state.camPitch = 1.02; // Steep top-down feel
+    this.state.camYaw = 0.0;
+
+    // Cooldown management
+    for (let i = 0; i < 4; i++) {
+      if (this.mobaState.spellsCooldown[i] > 0) {
+        this.mobaState.spellsCooldown[i] = Math.max(0, this.mobaState.spellsCooldown[i] - dt);
+      }
+    }
+    this.mobaUpdateAbilitiesCooldownUI();
+
+    // Passively generate Gold (+3 gold per second)
+    this.mobaState.goldTimer += dt;
+    if (this.mobaState.goldTimer >= 1.0) {
+      this.mobaState.goldTimer = 0.0;
+      this.mobaState.gold += 3;
+      
+      const textGold = document.getElementById('moba-hud-gold-text');
+      if (textGold) textGold.textContent = `🪙 ${this.mobaState.gold}`;
+
+      // Mana passive regeneration (+5 per second)
+      this.mobaState.heroStats.mp = Math.min(this.mobaState.heroStats.maxMp, this.mobaState.heroStats.mp + 5);
+    }
+
+    // Click ripples countdown
+    this.mobaState.clickRipples = this.mobaState.clickRipples.filter(ripple => {
+      ripple.timer -= dt;
+      return ripple.timer > 0;
+    });
+
+    // VFX bursts countdown
+    this.mobaState.vfxBursts = this.mobaState.vfxBursts.filter(burst => {
+      burst.timer -= dt;
+      return burst.timer > 0;
+    });
+
+    // Redraw HUD floating elements
+    this.mobaUpdateInGameHUD();
+  }
+
+  mobaUpdateInGameHUD() {
+    // Sync HUD status bars (HP and MP) at the bottom
+    const progressHp = document.getElementById('moba-hud-hp-progress');
+    const progressMp = document.getElementById('moba-hud-mp-progress');
+    const textHpVal = document.getElementById('moba-hud-hp-val');
+    const textMpVal = document.getElementById('moba-hud-mp-val');
+
+    const s = this.mobaState.heroStats;
+    if (progressHp) progressHp.style.width = `${Math.max(0, (s.hp / s.maxHp) * 100)}%`;
+    if (progressMp) progressMp.style.width = `${Math.max(0, (s.mp / s.maxMp) * 100)}%`;
+    if (textHpVal) textHpVal.textContent = `${Math.round(s.hp)} / ${s.maxHp}`;
+    if (textMpVal) textMpVal.textContent = `${Math.round(s.mp)} / ${s.maxMp}`;
+
+    // Update bottom HUD Stats details
+    const textStatsLvl = document.getElementById('moba-hud-stats-lvl');
+    if (textStatsLvl) {
+      textStatsLvl.innerHTML = `
+        <span class="text-sky-300 font-bold">Arissa</span> (Level 12 Max)<br>
+        ⚔️ DMG: <span class="text-amber-300 font-bold">${s.damage}</span> | ⚡ SPD: <span class="text-amber-300 font-bold">${s.speed.toFixed(1)}</span>
+      `;
+    }
+
+    // Update Base Tron healths on top-bar
+    const hpRedBase = document.getElementById('moba-hud-red-base-hp');
+    const hpBlackBase = document.getElementById('moba-hud-black-base-hp');
+    if (hpRedBase) hpRedBase.style.width = `${Math.max(0, (this.mobaState.trons.RED.hp / 2500) * 100)}%`;
+    if (hpBlackBase) hpBlackBase.style.width = `${Math.max(0, (this.mobaState.trons.BLACK.hp / 2500) * 100)}%`;
+  }
+
+  mobaUpdateInventoryUI() {
+    const grid = document.getElementById('moba-inventory-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    for (let i = 0; i < 6; i++) {
+      const item = this.mobaState.inventory[i];
+      const slot = document.createElement('div');
+      slot.className = 'w-10 h-10 border border-slate-700 bg-slate-950/80 rounded flex items-center justify-center text-center text-[10px] text-slate-400 select-none relative cursor-pointer hover:border-red-500';
+      if (item) {
+        slot.innerHTML = `
+          <span class="font-bold text-slate-100 text-[9px] leading-tight">${item.name.split(' ').pop()}</span>
+          <div class="absolute -top-1 -right-1 bg-red-600 hover:bg-red-500 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold text-[8px]" onclick="event.stopPropagation(); app.sellMobaItem(${i})">×</div>
+        `;
+        slot.title = `${item.name}: ${item.desc} (Click top cross to SELL)`;
+      } else {
+        slot.innerHTML = `<span class="opacity-30">Empty</span>`;
+      }
+      grid.appendChild(slot);
+    }
+  }
+
+  mobaUpdateAbilitiesUI() {
+    const spellKeys = ['Q', 'W', 'E', 'R'];
+    const spellNames = ['Area Blast', 'Blink Dash', 'Barrier Field', 'Hollow Eclipse Ultimate'];
+    const icons = ['🔥', '✨', '🛡️', '💀'];
+
+    for (let i = 0; i < 4; i++) {
+      const btn = document.getElementById(`moba-ability-${spellKeys[i]}`);
+      if (btn) {
+        btn.innerHTML = `
+          <div class="text-sm">${icons[i]}</div>
+          <div class="text-[9px] font-bold text-slate-400 mt-1">${spellNames[i]} [${spellKeys[i]}]</div>
+          <div id="moba-cooldown-text-${spellKeys[i]}" class="absolute inset-0 bg-slate-950/80 font-bold text-slate-100 flex items-center justify-center text-xs hidden rounded-lg">⏳ 4.0s</div>
+        `;
+        btn.onclick = () => this.castMobaSpell(i);
+      }
+    }
+  }
+
+  mobaUpdateAbilitiesCooldownUI() {
+    const spellKeys = ['Q', 'W', 'E', 'R'];
+    for (let i = 0; i < 4; i++) {
+      const cdText = document.getElementById(`moba-cooldown-text-${spellKeys[i]}`);
+      if (cdText) {
+        const cd = this.mobaState.spellsCooldown[i];
+        if (cd > 0) {
+          cdText.classList.remove('hidden');
+          cdText.textContent = `${cd.toFixed(1)}s`;
+        } else {
+          cdText.classList.add('hidden');
+        }
+      }
+    }
+  }
+
+  mobaRenderPartiesListUI() {
+    const listEl = document.getElementById('moba-party-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    if (this.mobaState.partiesList.length === 0) {
+      listEl.innerHTML = `
+        <div class="text-xs text-slate-400 text-center py-4">No active battle lobbies. Create one above!</div>
+      `;
+      return;
+    }
+
+    this.mobaState.partiesList.forEach(party => {
+      const card = document.createElement('div');
+      card.className = 'p-3 border border-slate-800/80 bg-slate-900/60 rounded-xl flex items-center justify-between mb-2';
+      
+      const redCount = party.teams.RED.length;
+      const blackCount = party.teams.BLACK.length;
+      const totalCount = redCount + blackCount;
+
+      card.innerHTML = `
+        <div>
+          <div class="font-bold text-slate-100 text-xs">Battle Arena #${party.id.slice(0, 5)}</div>
+          <div class="text-[10px] text-slate-400 mt-1">Lobby Status: <span class="text-cyan-400 capitalize">${party.status}</span> | Players: ${totalCount} / 6</div>
+        </div>
+        <button class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs py-1.5 px-3 rounded-lg active:scale-95 transition-all" onclick="app.joinMobaParty('${party.id}')">JOIN</button>
+      `;
+      listEl.appendChild(card);
+    });
+  }
+
+  mobaRenderLobbyUI(party) {
+    // Show matchmaking room panels
+    const viewLobby = document.getElementById('moba-lobby-view');
+    const viewJoin = document.getElementById('moba-join-view');
+    if (viewLobby && viewJoin) {
+      viewJoin.classList.add('hidden');
+      viewLobby.classList.remove('hidden');
+    }
+
+    const placeholder = document.getElementById('moba-lobby-placeholder');
+    const activePanel = document.getElementById('moba-lobby-active-panel');
+    if (placeholder && activePanel) {
+      placeholder.style.display = 'none';
+      activePanel.style.display = 'flex';
+    }
+
+    // Render team roster details
+    const redContainer = document.getElementById('moba-lobby-red');
+    const blackContainer = document.getElementById('moba-lobby-black');
+
+    if (redContainer) {
+      redContainer.innerHTML = '';
+      party.teams.RED.forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'text-xs py-1.5 px-2 bg-slate-950/40 rounded border border-red-950/40 flex justify-between';
+        row.innerHTML = `
+          <span class="text-red-400 font-bold">${p.name.slice(0, 10)}</span>
+          <span class="text-slate-300 font-bold">${p.hero ? p.hero.toUpperCase() : 'Selecting...'}</span>
+        `;
+        redContainer.appendChild(row);
+      });
+      // Pad empty slots
+      for (let i = party.teams.RED.length; i < 3; i++) {
+        const row = document.createElement('div');
+        row.className = 'text-xs py-1.5 px-2 bg-slate-950/20 rounded border border-dashed border-slate-800 text-slate-500 text-center';
+        row.textContent = 'Waiting for player...';
+        redContainer.appendChild(row);
+      }
+    }
+
+    if (blackContainer) {
+      blackContainer.innerHTML = '';
+      party.teams.BLACK.forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'text-xs py-1.5 px-2 bg-slate-950/40 rounded border border-slate-950/40 flex justify-between';
+        row.innerHTML = `
+          <span class="text-cyan-400 font-bold">${p.name.slice(0, 10)}</span>
+          <span class="text-slate-300 font-bold">${p.hero ? p.hero.toUpperCase() : 'Selecting...'}</span>
+        `;
+        blackContainer.appendChild(row);
+      });
+      // Pad empty slots
+      for (let i = party.teams.BLACK.length; i < 3; i++) {
+        const row = document.createElement('div');
+        row.className = 'text-xs py-1.5 px-2 bg-slate-950/20 rounded border border-dashed border-slate-800 text-slate-500 text-center';
+        row.textContent = 'Waiting for player...';
+        blackContainer.appendChild(row);
+      }
+    }
+
+    // Toggle start game button for lobby owner
+    const btnStart = document.getElementById('moba-btn-start-game');
+    if (btnStart) {
+      const isOwner = party.teams.RED[0] && party.teams.RED[0].id === this.net.localPlayerId;
+      btnStart.style.display = isOwner ? 'block' : 'none';
+    }
+  }
+
+  renderMobaScene(progInfo, timestamp) {
+    const gl = this.gl;
+    if (!this.mobaState || !progInfo) return;
+
+    // Reset standard opaque 3D states to avoid stale translucent blending
+    gl.disable(gl.BLEND);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.depthFunc(gl.LEQUAL);
+    gl.disable(gl.CULL_FACE);
+
+    // Set clear parameters suitable for deep forest
+    gl.clearColor(0.01, 0.02, 0.015, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // Render Ground plate
+    const groundMesh = this.meshBuffers[1]; // Use cube scaled wide for terrain
+    if (groundMesh) {
+      gl.bindVertexArray(groundMesh.vao);
+      
+      // Scale to cover 50x50 forest plateau
+      this.instanceMatrix[0] = 50.0; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 50.0; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[12] = 0; this.instanceMatrix[13] = -0.05; this.instanceMatrix[14] = 0; this.instanceMatrix[15] = 1.0;
+
+      Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.95);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.08, 0.18, 0.1])); // Forest deep green rock base
+
+      gl.drawElements(gl.TRIANGLES, groundMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // Render Lobby Setup view Lineup
+    if (!this.mobaState.playing) {
+      const charPos = [0.0, 0.0, 0.0];
+      const charYaw = timestamp * 0.0015; // rotate slowly!
+
+      if (this.soldierMesh) {
+        if (this.soldierSkeletonData) {
+          const skinMatrices = this.evaluateSoldierSkeleton(timestamp * 0.002, 'idle');
+          if (skinMatrices) {
+            this.updateSoldierMeshBuffer(skinMatrices);
+          }
+        }
+        
+        const baseColor = {
+          Arissa: [0.1, 0.85, 0.35],
+          Erika: [0.06, 0.85, 0.95],
+          'Maria Sword': [0.9, 0.08, 0.15],
+          Slayzer: [0.95, 0.45, 0.05],
+          Warrok: [0.65, 0.15, 0.95],
+          Steelborn: [0.72, 0.76, 0.82]
+        }[this.mobaState.selectedHero] || [1, 1, 1];
+
+        this.drawBotMeshPart(progInfo, this.soldierMesh, charPos, charYaw, 0, 0, 0, 1.25, 1.25, 1.25, baseColor, 0.3, 0.2, 0, 0.1);
+      } else {
+        // Fallback placeholder rotating glowing sphere if GLB model is still loading
+        const sphereMesh = this.meshBuffers[0];
+        if (sphereMesh) {
+          gl.bindVertexArray(sphereMesh.vao);
+          const size = 1.0;
+          const rotateSpeed = 1.5;
+          const angle = timestamp * 0.001 * rotateSpeed;
+          const cosY = Math.cos(angle), sinY = Math.sin(angle);
+
+          this.instanceMatrix[0] = cosY * size; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinY * size; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = size; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sinY * size; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosY * size; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = 0.0; this.instanceMatrix[13] = 0.5 * size; this.instanceMatrix[14] = 0.0; this.instanceMatrix[15] = 1.0;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.2);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.9);
+
+          const baseColor = {
+            Arissa: new Float32Array([0.1, 0.85, 0.35]),
+            Erika: new Float32Array([0.06, 0.85, 0.95]),
+            'Maria Sword': new Float32Array([0.9, 0.08, 0.15]),
+            Slayzer: new Float32Array([0.95, 0.45, 0.05]),
+            Warrok: new Float32Array([0.65, 0.15, 0.95]),
+            Steelborn: new Float32Array([0.72, 0.76, 0.82])
+          }[this.mobaState.selectedHero] || new Float32Array([1,1,1]);
+
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, baseColor);
+          gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+      }
+
+      // Draw a small decorative hovering halo disk above selected character
+      const diskMesh = this.meshBuffers[7];
+      if (diskMesh) {
+        gl.bindVertexArray(diskMesh.vao);
+        this.instanceMatrix[0] = 1.0; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 1.0; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = 0.0; this.instanceMatrix[13] = 1.8 + Math.sin(timestamp * 0.005) * 0.15; this.instanceMatrix[14] = 0.0; this.instanceMatrix[15] = 1.0;
+        
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+
+        const haloColor = {
+          Arissa: new Float32Array([0.1, 0.85, 0.35]),
+          Erika: new Float32Array([0.06, 0.85, 0.95]),
+          'Maria Sword': new Float32Array([0.9, 0.08, 0.15]),
+          Slayzer: new Float32Array([0.95, 0.45, 0.05]),
+          Warrok: new Float32Array([0.65, 0.15, 0.95]),
+          Steelborn: new Float32Array([0.72, 0.76, 0.82])
+        }[this.mobaState.selectedHero] || new Float32Array([1,1,1]);
+
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, haloColor);
+        gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
+      return;
+    }
+
+    // =========================================================================
+    // RENDER IN-GAME PLAYING MOBA WORLD ELEMENTS (Forest / Trons / Creeps)
+    // =========================================================================
+
+    // 1. Draw RED and BLACK Base Trons and Base circular fields
+    const baseSphere = this.meshBuffers[0];
+    const baseCube = this.meshBuffers[1];
+
+    if (baseSphere && baseCube) {
+      // Draw Red Base Tron (At [-15, 0, -15])
+      gl.bindVertexArray(baseSphere.vao);
+      let sizeRed = 1.6 + Math.sin(timestamp * 0.003) * 0.15;
+      const redHpFactor = this.mobaState.trons.RED.hp / 2500;
+      if (redHpFactor <= 0) sizeRed = 0.0; // Destroyed
+
+      this.instanceMatrix[0] = sizeRed; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sizeRed; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sizeRed; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[12] = -15.0; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = -15.0; this.instanceMatrix[15] = 1.0;
+
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.1);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.9, 0.1 * redHpFactor, 0.1 * redHpFactor])); // Shuts down when dying
+      gl.drawElements(gl.TRIANGLES, baseSphere.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      // Draw spinning decorative base columns for RED
+      gl.bindVertexArray(baseCube.vao);
+      const redRot = timestamp * 0.001;
+      this.instanceMatrix[0] = Math.cos(redRot) * 0.5; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -Math.sin(redRot) * 0.5; this.instanceMatrix[3] = 0;
+      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 2.5; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+      this.instanceMatrix[8] = Math.sin(redRot) * 0.5; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = Math.cos(redRot) * 0.5; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[12] = -15.0; this.instanceMatrix[13] = 1.25; this.instanceMatrix[14] = -15.0; this.instanceMatrix[15] = 1.0;
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+      gl.drawElements(gl.TRIANGLES, baseCube.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      // Draw Black Base Tron (At [15, 0, 15])
+      gl.bindVertexArray(baseSphere.vao);
+      let sizeBlack = 1.6 + Math.sin(timestamp * 0.003 + 2.0) * 0.15;
+      const blackHpFactor = this.mobaState.trons.BLACK.hp / 2500;
+      if (blackHpFactor <= 0) sizeBlack = 0.0;
+
+      this.instanceMatrix[0] = sizeBlack; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sizeBlack; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sizeBlack; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[12] = 15.0; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = 15.0; this.instanceMatrix[15] = 1.0;
+
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.15 * blackHpFactor, 0.05 * blackHpFactor, 0.9 * blackHpFactor])); // Violet/Black energy core
+      gl.drawElements(gl.TRIANGLES, baseSphere.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      // Draw spinning columns for BLACK
+      gl.bindVertexArray(baseCube.vao);
+      const blackRot = -timestamp * 0.001;
+      this.instanceMatrix[0] = Math.cos(blackRot) * 0.5; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -Math.sin(blackRot) * 0.5; this.instanceMatrix[3] = 0;
+      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 2.5; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+      this.instanceMatrix[8] = Math.sin(blackRot) * 0.5; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = Math.cos(blackRot) * 0.5; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[12] = 15.0; this.instanceMatrix[13] = 1.25; this.instanceMatrix[14] = 15.0; this.instanceMatrix[15] = 1.0;
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+      gl.drawElements(gl.TRIANGLES, baseCube.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // 2. Draw towers along lanes
+    const towerMesh = this.meshBuffers[1];
+    if (towerMesh) {
+      gl.bindVertexArray(towerMesh.vao);
+      this.mobaState.towers.forEach(t => {
+        if (t.hp <= 0) return; // Destroyed
+
+        const factor = t.hp / 1200;
+        this.instanceMatrix[0] = 0.7; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 2.0; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.7; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = t.pos[0]; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = t.pos[2]; this.instanceMatrix[15] = 1.0;
+
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uBaseColor) {
+          gl.uniform3fv(progInfo.uBaseColor, t.team === 'RED' 
+            ? new Float32Array([0.8 * factor, 0.2 * factor, 0.1 * factor]) 
+            : new Float32Array([0.15 * factor, 0.2 * factor, 0.8 * factor]));
+        }
+        gl.drawElements(gl.TRIANGLES, towerMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      });
+    }
+
+    // 3. Draw active Creeps
+    const creepMesh = this.meshBuffers[4]; // Torus / robot bot style creep
+    if (creepMesh) {
+      gl.bindVertexArray(creepMesh.vao);
+      this.mobaState.creeps.forEach(creep => {
+        if (creep.hp <= 0) return;
+
+        const size = 0.55;
+        this.instanceMatrix[0] = size; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = size; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = size; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = creep.pos[0]; this.instanceMatrix[13] = 0.35; this.instanceMatrix[14] = creep.pos[2]; this.instanceMatrix[15] = 1.0;
+
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uBaseColor) {
+          gl.uniform3fv(progInfo.uBaseColor, creep.team === 'RED' 
+            ? new Float32Array([0.95, 0.25, 0.25]) 
+            : new Float32Array([0.25, 0.35, 0.95]));
+        }
+        gl.drawElements(gl.TRIANGLES, creepMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      });
+    }
+
+    // 4. Draw other active players & bot heroes
+    const charMesh = this.meshBuffers[0]; // Use sphere as base representation for heroes
+    if (charMesh && this.mobaState.players) {
+      gl.bindVertexArray(charMesh.vao);
+      this.mobaState.players.forEach(p => {
+        if (p.hp <= 0) return; // Dead
+        if (p.id === this.net.localPlayerId) return; // Drawn separately next
+
+        this.instanceMatrix[0] = 0.85; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.85; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.85; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = p.pos[0]; this.instanceMatrix[13] = 0.42; this.instanceMatrix[14] = p.pos[2]; this.instanceMatrix[15] = 1.0;
+
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        
+        // Sync aesthetic theme
+        const color = p.team === 'RED' ? new Float32Array([0.9, 0.2, 0.2]) : new Float32Array([0.2, 0.4, 0.9]);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+        gl.drawElements(gl.TRIANGLES, charMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      });
+    }
+
+    // 5. Draw Local Player Hero
+    if (charMesh && !this.mobaState.winner) {
+      gl.bindVertexArray(charMesh.vao);
+      const playerPos = this.mobaState.currentPos;
+      
+      this.instanceMatrix[0] = 0.85; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.85; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.85; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[12] = playerPos[0]; this.instanceMatrix[13] = 0.42; this.instanceMatrix[14] = playerPos[2]; this.instanceMatrix[15] = 1.0;
+
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+      const myColor = this.mobaState.team === 'RED' ? new Float32Array([0.9, 0.25, 0.25]) : new Float32Array([0.25, 0.35, 0.95]);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, myColor);
+      gl.drawElements(gl.TRIANGLES, charMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+
+    // 6. Draw dynamic VFX bursts & spells circles
+    const ringMesh = this.meshBuffers[6];
+    if (ringMesh) {
+      gl.bindVertexArray(ringMesh.vao);
+      this.mobaState.vfxBursts.forEach(vfx => {
+        const factor = vfx.timer / 1.0;
+        const scale = vfx.radius * (2.0 - factor);
+        
+        this.instanceMatrix[0] = scale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = scale; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.04; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
+        gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      });
+
+      // Render movement green/red clicks ripples
+      this.mobaState.clickRipples.forEach(ripple => {
+        const t = (0.5 - ripple.timer) / 0.5;
+        const scale = 1.2 * t;
+
+        this.instanceMatrix[0] = scale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.05; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = scale; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = ripple.x; this.instanceMatrix[13] = 0.02; this.instanceMatrix[14] = ripple.z; this.instanceMatrix[15] = 1.0;
+
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(ripple.color));
+        gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      });
+    }
+  }
+
+  mobaPlaySound(type) {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === 'select') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.15);
+      } else if (type === 'confirm') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, ctx.currentTime);
+        osc.frequency.setValueAtTime(1200, ctx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+      } else if (type === 'spell') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.4);
+      } else if (type === 'ping') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(980, ctx.currentTime);
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.08);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.08);
+      } else if (type === 'victory') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.12); // E5
+        osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.24); // G5
+        osc.frequency.setValueAtTime(1046.50, ctx.currentTime + 0.36); // C6
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.6);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.6);
+      } else if (type === 'back') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(380, ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(220, ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.15);
+      }
+    } catch (err) {
+      // Audio context block by browser gesture
+    }
+  }
+
+  mobaRaycastGround(mouseX, mouseY) {
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const ndcX = (mouseX / canvasRect.width) * 2 - 1;
+    const ndcY = 1 - (mouseY / canvasRect.height) * 2;
+
+    const invVP = new Float32Array(16);
+    if (!Mat4.invert(invVP, this.viewProjMatrix)) return null;
+
+    const unproject = (x, y, z) => {
+      const ox = invVP[0]*x + invVP[4]*y + invVP[8]*z + invVP[12];
+      const oy = invVP[1]*x + invVP[5]*y + invVP[9]*z + invVP[13];
+      const oz = invVP[2]*x + invVP[6]*y + invVP[10]*z + invVP[14];
+      const ow = invVP[3]*x + invVP[7]*y + invVP[11]*z + invVP[15];
+      if (Math.abs(ow) < 1e-6) return null;
+      return [ox / ow, oy / ow, oz / ow];
+    };
+
+    const pNear = unproject(ndcX, ndcY, -1.0);
+    const pFar = unproject(ndcX, ndcY, 1.0);
+    if (!pNear || !pFar) return null;
+
+    return {
+      origin: pNear,
+      dir: [pFar[0] - pNear[0], pFar[1] - pNear[1], pFar[2] - pNear[2]]
+    };
+  }
+
+  mobaIntersectGroundPlane(ray) {
+    if (!ray || Math.abs(ray.dir[1]) < 1e-5) return null;
+    const t = -ray.origin[1] / ray.dir[1];
+    if (t < 0) return null;
+    return [
+      ray.origin[0] + ray.dir[0] * t,
+      0.0,
+      ray.origin[2] + ray.dir[2] * t
+    ];
   }
 }
 

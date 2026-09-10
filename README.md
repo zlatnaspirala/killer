@@ -284,3 +284,7 @@ Built with Google Filament PBR principles and modern C++17.
 - **Mixamo (mixamo.com)**: The 3D Soldier character model (`soldier.glb`) and animations used for the FPS combat bots are provided courtesy of [Mixamo](https://www.mixamo.com).
   - **Permitted Use**: Royalty-free use in commercial, personal, and educational 3D game projects.
   - **Restrictions**: Stand-alone redistribution or resale of raw Mixamo source assets is strictly prohibited.
+
+- **Djinn Bestiary — Ancient Oddities – Vol. 1 (13 Free Potions)**: Used for high-fidelity inventory item designs and MOBA potion layouts. Licensed for royalty-free use in commercial and personal game development projects.
+
+- **BLACK FLY by Audionautix** (http://audionautix.com): Audio background track used for MOBA battle environments. Licensed under Creative Commons Attribution-ShareAlike 3.0 Unported.

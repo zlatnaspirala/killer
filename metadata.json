@@ -1,6 +1,6 @@
 {
   "name": "Killer",
-  "description": "High-performance C++ & WebAssembly 3D engine sandbox with custom physics, FPS arena, dynamic sliding puzzle, 3D Plinko, Roulette wheel, 3D real-physics Bingo with diamond drum, and Retro 3D Arcade Pong with video chat.",
+  "description": "High-performance C++ & WebAssembly 3D engine sandbox with custom physics, FPS arena, dynamic sliding puzzle, 3D Plinko, Roulette wheel, 3D real-physics Bingo, Retro 3D Arcade Pong, and MOBA Forest of Hollow Blood with multiplayer lobby, creep AI, and custom hero classes.",
   "requestFramePermissions": [
     "camera",
     "microphone",

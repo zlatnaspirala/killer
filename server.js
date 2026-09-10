@@ -656,6 +656,48 @@ const gameplayRegistry = {
 const rouletteBackend = new RouletteBackend();
 gameplayRegistry.register('roulette', rouletteBackend);
 
+// MOBA Parties State System (MAX 2 active parties on server)
+const mobaParties = {};
+
+function broadcastMobaParties() {
+  const payload = JSON.stringify({
+    event: 'moba:parties_list',
+    payload: Object.values(mobaParties).map(p => ({
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      playerCount: p.players.length,
+      players: p.players.map(pl => ({ id: pl.id, name: pl.name, team: pl.team, selectedHero: pl.selectedHero, isBot: pl.isBot }))
+    }))
+  });
+  for (const client of connectedClients) {
+    if (client.readyState === 1) {
+      client.send(payload);
+    }
+  }
+}
+
+function broadcastMobaPartyState(roomId) {
+  const party = mobaParties[roomId];
+  if (!party) return;
+  const payload = JSON.stringify({
+    event: 'moba:party_state',
+    payload: {
+      id: party.id,
+      name: party.name,
+      status: party.status,
+      players: party.players
+    }
+  });
+  for (const client of connectedClients) {
+    if (client.readyState === 1 && client.mobaRoomId === roomId) {
+      client.send(payload);
+    }
+  }
+  // Also update global parties list for lobby screens
+  broadcastMobaParties();
+}
+
 // Create WebSocket server for classic WS transport and WebRTC fallback
 const wss = new WebSocketServer({ server, path: '/ws' });
 const connectedClients = new Set();
@@ -696,6 +738,187 @@ wss.on('connection', (ws) => {
     } catch (e) {}
 
     if (parsed && parsed.event) {
+      if (parsed.event === 'moba:get_parties') {
+        ws.send(JSON.stringify({
+          event: 'moba:parties_list',
+          payload: Object.values(mobaParties).map(p => ({
+            id: p.id,
+            name: p.name,
+            status: p.status,
+            playerCount: p.players.length,
+            players: p.players.map(pl => ({ id: pl.id, name: pl.name, team: pl.team, selectedHero: pl.selectedHero, isBot: pl.isBot }))
+          }))
+        }));
+        return;
+      } else if (parsed.event === 'moba:create_party') {
+        const payload = parsed.payload || {};
+        const partyCount = Object.keys(mobaParties).length;
+        if (partyCount >= 2) {
+          ws.send(JSON.stringify({ event: 'moba:error', payload: 'Only 2 parties can be active on the server at the same time.' }));
+          return;
+        }
+        const partyId = 'party_' + Math.random().toString(36).substr(2, 5);
+        mobaParties[partyId] = {
+          id: partyId,
+          name: payload.name || `Forest Battle #${partyCount + 1}`,
+          status: 'lobby',
+          players: [],
+          lastActive: Date.now()
+        };
+        ws.send(JSON.stringify({ event: 'moba:create_success', payload: partyId }));
+        broadcastMobaParties();
+        return;
+      } else if (parsed.event === 'moba:join_party') {
+        const payload = parsed.payload || {};
+        const roomId = payload.partyId;
+        const party = mobaParties[roomId];
+        if (!party) {
+          ws.send(JSON.stringify({ event: 'moba:error', payload: 'Party not found.' }));
+          return;
+        }
+        if (party.players.length >= 6) {
+          ws.send(JSON.stringify({ event: 'moba:error', payload: 'Party is full (MAX 6 players).' }));
+          return;
+        }
+        const playerId = payload.playerId || 'pl_' + Math.random().toString(36).substr(2, 5);
+        const playerName = payload.playerName || `HeroPlayer_${party.players.length + 1}`;
+        
+        // Remove from previous rooms if any
+        if (ws.mobaRoomId && mobaParties[ws.mobaRoomId]) {
+          mobaParties[ws.mobaRoomId].players = mobaParties[ws.mobaRoomId].players.filter(p => p.id !== ws.mobaPlayerId);
+          if (mobaParties[ws.mobaRoomId].players.length === 0) {
+            delete mobaParties[ws.mobaRoomId];
+          } else {
+            broadcastMobaPartyState(ws.mobaRoomId);
+          }
+        }
+
+        ws.mobaRoomId = roomId;
+        ws.mobaPlayerId = playerId;
+
+        // Auto assign team based on current counts (RED vs BLACK)
+        const redCount = party.players.filter(p => p.team === 'RED').length;
+        const blackCount = party.players.filter(p => p.team === 'BLACK').length;
+        const team = redCount <= blackCount ? 'RED' : 'BLACK';
+
+        const existingPlayer = party.players.find(p => p.id === playerId);
+        if (!existingPlayer) {
+          party.players.push({
+            id: playerId,
+            name: playerName,
+            team: team,
+            selectedHero: null,
+            isBot: false,
+            ready: true
+          });
+        }
+
+        broadcastMobaPartyState(roomId);
+        return;
+      } else if (parsed.event === 'moba:select_hero') {
+        const payload = parsed.payload || {};
+        const roomId = ws.mobaRoomId;
+        const hero = payload.hero;
+        const party = mobaParties[roomId];
+        if (party) {
+          // Rule check: TWO players cannot select the same hero!
+          const alreadySelected = party.players.some(p => p.id !== ws.mobaPlayerId && p.selectedHero === hero);
+          if (alreadySelected) {
+            ws.send(JSON.stringify({ event: 'moba:error', payload: `Hero ${hero} is already selected by another player.` }));
+            return;
+          }
+          const pl = party.players.find(p => p.id === ws.mobaPlayerId);
+          if (pl) {
+            pl.selectedHero = hero;
+          }
+          broadcastMobaPartyState(roomId);
+        }
+        return;
+      } else if (parsed.event === 'moba:add_bot') {
+        const roomId = ws.mobaRoomId;
+        const party = mobaParties[roomId];
+        if (party) {
+          if (party.players.length >= 6) {
+            ws.send(JSON.stringify({ event: 'moba:error', payload: 'Party is full.' }));
+            return;
+          }
+          // Choose bot name
+          const botNames = ['ArissaBot', 'ErikaBot', 'MariaBot', 'SlayzerBot', 'WarrokBot', 'SteelbornBot'];
+          const unusedName = botNames.find(n => !party.players.some(p => p.name === n)) || `Bot_${party.players.length + 1}`;
+          
+          // Auto assign team
+          const redCount = party.players.filter(p => p.team === 'RED').length;
+          const blackCount = party.players.filter(p => p.team === 'BLACK').length;
+          const team = redCount <= blackCount ? 'RED' : 'BLACK';
+
+          // Assign unused hero for the bot
+          const heroes = ['Arissa', 'Erika', 'Maria Sword', 'Slayzer', 'Warrok', 'Steelborn'];
+          const selectedHero = heroes.find(h => !party.players.some(p => p.selectedHero === h)) || 'Arissa';
+
+          party.players.push({
+            id: 'bot_' + Math.random().toString(36).substr(2, 5),
+            name: unusedName,
+            team: team,
+            selectedHero: selectedHero,
+            isBot: true,
+            ready: true
+          });
+
+          broadcastMobaPartyState(roomId);
+        }
+        return;
+      } else if (parsed.event === 'moba:clear_bots') {
+        const roomId = ws.mobaRoomId;
+        const party = mobaParties[roomId];
+        if (party) {
+          party.players = party.players.filter(p => !p.isBot);
+          broadcastMobaPartyState(roomId);
+        }
+        return;
+      } else if (parsed.event === 'moba:start_game') {
+        const roomId = ws.mobaRoomId;
+        const party = mobaParties[roomId];
+        if (party) {
+          // Check count of active playing parties
+          const playingCount = Object.values(mobaParties).filter(p => p.status === 'playing').length;
+          if (playingCount >= 2 && party.status !== 'playing') {
+            ws.send(JSON.stringify({ event: 'moba:error', payload: 'Maximum of 2 playing parties can be played concurrently.' }));
+            return;
+          }
+          party.status = 'playing';
+          broadcastMobaPartyState(roomId);
+        }
+        return;
+      } else if (parsed.event === 'moba:leave_party') {
+        if (ws.mobaRoomId && mobaParties[ws.mobaRoomId]) {
+          const rId = ws.mobaRoomId;
+          mobaParties[rId].players = mobaParties[rId].players.filter(p => p.id !== ws.mobaPlayerId);
+          ws.mobaRoomId = null;
+          ws.mobaPlayerId = null;
+          if (mobaParties[rId].players.length === 0) {
+            delete mobaParties[rId];
+          } else {
+            broadcastMobaPartyState(rId);
+          }
+          broadcastMobaParties();
+        }
+        return;
+      } else if (parsed.event === 'moba:action') {
+        // Broadcast action to all other clients in same party
+        const roomId = ws.mobaRoomId;
+        if (roomId) {
+          for (const client of connectedClients) {
+            if (client !== ws && client.readyState === 1 && client.mobaRoomId === roomId) {
+              client.send(JSON.stringify({
+                event: 'moba:action',
+                payload: parsed.payload
+              }));
+            }
+          }
+        }
+        return;
+      }
+
       if (parsed.event === 'lobby:join') {
         const p = parsed.payload || {};
         const existing = matchLobbyState.players.find(item => item.id === p.id);
@@ -762,6 +985,19 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     connectedClients.delete(ws);
     rouletteBackend.unsubscribe(ws);
+    
+    // Clean up MOBA party on disconnect
+    if (ws.mobaRoomId && mobaParties[ws.mobaRoomId]) {
+      const rId = ws.mobaRoomId;
+      mobaParties[rId].players = mobaParties[rId].players.filter(p => p.id !== ws.mobaPlayerId);
+      if (mobaParties[rId].players.length === 0) {
+        delete mobaParties[rId];
+      } else {
+        broadcastMobaPartyState(rId);
+      }
+      broadcastMobaParties();
+    }
+    
     console.log(`[WS] Client disconnected. Remaining: ${connectedClients.size}`);
   });
 });
