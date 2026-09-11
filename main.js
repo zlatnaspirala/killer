@@ -5417,6 +5417,163 @@ void main() {
     }
   }
 
+  evaluateSpecificSkeleton(skeletonData, animTime, preferredAnim = 'walk') {
+    if (!skeletonData) return null;
+    const { nodes, animations, jointsNodeIndices, inverseBindMatrices } = skeletonData;
+    if (animations.length === 0) return null;
+
+    let anim = null;
+    if (preferredAnim) {
+      anim = animations.find(a => a.name.toLowerCase().includes(preferredAnim.toLowerCase()));
+    }
+    if (!anim) {
+      anim = animations.find(a => a.name.toLowerCase().includes('walk')) || animations[0];
+    }
+    const duration = anim.duration;
+    const time = (duration && duration > 0) ? (animTime % duration) : 0;
+
+    const fromRotationTranslationScale = (out, q, v, s) => {
+      const x = q[0], y = q[1], z = q[2], w = q[3];
+      const x2 = x + x, y2 = y + y, z2 = z + z;
+      const xx = x * x2, xy = x * y2, xz = x * z2;
+      const yy = y * y2, yz = y * z2, zz = z * z2;
+      const wx = w * x2, wy = w * y2, wz = w * z2;
+      const sx = s[0], sy = s[1], sz = s[2];
+
+      out[0] = (1 - (yy + zz)) * sx;
+      out[1] = (xy + wz) * sx;
+      out[2] = (xz - wy) * sx;
+      out[3] = 0;
+
+      out[4] = (xy - wz) * sy;
+      out[5] = (1 - (xx + zz)) * sy;
+      out[6] = (yz + wx) * sy;
+      out[7] = 0;
+
+      out[8] = (xz + wy) * sz;
+      out[9] = (yz - wx) * sz;
+      out[10] = (1 - (xx + yy)) * sz;
+      out[11] = 0;
+
+      out[12] = v[0];
+      out[13] = v[1];
+      out[14] = v[2];
+      out[15] = 1;
+      return out;
+    };
+
+    nodes.forEach(node => {
+      node.currTranslation = [node.translation[0], node.translation[1], node.translation[2]];
+      node.currRotation = [node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3]];
+      node.currScale = [node.scale[0], node.scale[1], node.scale[2]];
+      node.hasAnimation = false;
+    });
+
+    anim.channels.forEach(chan => {
+      const node = nodes[chan.targetNode];
+      if (!node) return;
+
+      node.hasAnimation = true;
+
+      const ts = chan.timestamps;
+      const vals = chan.values;
+      const path = chan.targetPath;
+
+      if (ts.length === 0) return;
+
+      let k0 = 0;
+      if (time <= ts[0]) {
+        if (path === 'translation') node.currTranslation = vals.slice(0, 3);
+        else if (path === 'rotation') node.currRotation = vals.slice(0, 4);
+        else if (path === 'scale') node.currScale = vals.slice(0, 3);
+        return;
+      }
+      if (time >= ts[ts.length - 1]) {
+        k0 = ts.length - 1;
+        const stride = path === 'rotation' ? 4 : 3;
+        const start = k0 * stride;
+        if (path === 'translation') node.currTranslation = vals.slice(start, start + 3);
+        else if (path === 'rotation') node.currRotation = vals.slice(start, start + 4);
+        else if (path === 'scale') node.currScale = vals.slice(start, start + 3);
+        return;
+      }
+
+      for (let i = 0; i < ts.length - 1; i++) {
+        if (time >= ts[i] && time <= ts[i+1]) {
+          k0 = i;
+          break;
+        }
+      }
+      const k1 = k0 + 1;
+      const t0 = ts[k0];
+      const t1 = ts[k1];
+      const factor = (time - t0) / ((t1 - t0) || 1);
+
+      if (path === 'translation') {
+        const v0 = k0 * 3, v1 = k1 * 3;
+        node.currTranslation = [
+          vals[v0] + factor * (vals[v1] - vals[v0]),
+          vals[v0+1] + factor * (vals[v1+1] - vals[v0+1]),
+          vals[v0+2] + factor * (vals[v1+2] - vals[v0+2])
+        ];
+      } else if (path === 'scale') {
+        const v0 = k0 * 3, v1 = k1 * 3;
+        node.currScale = [
+          vals[v0] + factor * (vals[v1] - vals[v0]),
+          vals[v0+1] + factor * (vals[v1+1] - vals[v0+1]),
+          vals[v0+2] + factor * (vals[v1+2] - vals[v0+2])
+        ];
+      } else if (path === 'rotation') {
+        const r0 = k0 * 4, r1 = k1 * 4;
+        const q0 = [vals[r0], vals[r0+1], vals[r0+2], vals[r0+3]];
+        const q1 = [vals[r1], vals[r1+1], vals[r1+2], vals[r1+3]];
+        node.currRotation = [0,0,0,1];
+        this.slerpQuat(node.currRotation, q0, q1, factor);
+      }
+    });
+
+    nodes.forEach(node => {
+      if (node.hasAnimation) {
+        fromRotationTranslationScale(node.localMatrix, node.currRotation, node.currTranslation, node.currScale);
+      } else if (node.matrix) {
+        for (let i = 0; i < 16; i++) node.localMatrix[i] = node.matrix[i];
+      } else {
+        fromRotationTranslationScale(node.localMatrix, node.currRotation, node.currTranslation, node.currScale);
+      }
+    });
+
+    const computeWorldMatrix = (nodeIdx, parentWorldMatrix) => {
+      const node = nodes[nodeIdx];
+      if (!node) return;
+      if (parentWorldMatrix) {
+        Mat4.multiply(node.worldMatrix, parentWorldMatrix, node.localMatrix);
+      } else {
+        for (let i = 0; i < 16; i++) node.worldMatrix[i] = node.localMatrix[i];
+      }
+      node.children.forEach(childIdx => {
+        computeWorldMatrix(childIdx, node.worldMatrix);
+      });
+    };
+
+    nodes.forEach(node => {
+      if (node.parent === -1) {
+        computeWorldMatrix(node.index, null);
+      }
+    });
+
+    const skinMatrices = [];
+    for (let i = 0; i < jointsNodeIndices.length; i++) {
+      const jointNode = nodes[jointsNodeIndices[i]];
+      const ibm = inverseBindMatrices[i];
+      const skinMat = Mat4.create();
+      if (jointNode && ibm) {
+        Mat4.multiply(skinMat, jointNode.worldMatrix, ibm);
+      }
+      skinMatrices.push(skinMat);
+    }
+    return skinMatrices;
+  }
+
   evaluateSoldierSkeleton(animTime, preferredAnim = 'walk') {
     if (!this.soldierSkeletonData) return null;
     const { nodes, animations, jointsNodeIndices, inverseBindMatrices } = this.soldierSkeletonData;
@@ -5714,10 +5871,483 @@ void main() {
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
 
+  updateGenericMeshBuffer(mesh, skeletonData, skinMatrices) {
+    if (!mesh || !skeletonData || !skinMatrices) return;
+    const { originalPos, originalNorm, joints, weights } = skeletonData;
+    const count = originalPos.length / 3;
+
+    if (!mesh.skinnedPos || mesh.skinnedPos.length !== originalPos.length) {
+      mesh.skinnedPos = new Float32Array(originalPos.length);
+      mesh.skinnedNorm = new Float32Array(originalNorm.length);
+    }
+
+    const pos = mesh.skinnedPos;
+    const norm = mesh.skinnedNorm;
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const i4 = i * 4;
+
+      const px = originalPos[i3];
+      const py = originalPos[i3 + 1];
+      const pz = originalPos[i3 + 2];
+
+      const nx = originalNorm[i3];
+      const ny = originalNorm[i3 + 1];
+      const nz = originalNorm[i3 + 2];
+
+      const j0 = joints[i4];
+      const j1 = joints[i4 + 1];
+      const j2 = joints[i4 + 2];
+      const j3 = joints[i4 + 3];
+
+      const w0 = weights[i4];
+      const w1 = weights[i4 + 1];
+      const w2 = weights[i4 + 2];
+      const w3 = weights[i4 + 3];
+
+      const wsum = w0 + w1 + w2 + w3;
+      if (wsum < 0.01) {
+        pos[i3] = px; pos[i3 + 1] = py; pos[i3 + 2] = pz;
+        norm[i3] = nx; norm[i3 + 1] = ny; norm[i3 + 2] = nz;
+        continue;
+      }
+
+      const invW = 1.0 / wsum;
+      const nw0 = w0 * invW;
+      const nw1 = w1 * invW;
+      const nw2 = w2 * invW;
+      const nw3 = w3 * invW;
+
+      let spx = 0, spy = 0, spz = 0;
+      let snx = 0, sny = 0, snz = 0;
+
+      if (nw0 > 0 && j0 >= 0 && j0 < skinMatrices.length) {
+        const m = skinMatrices[j0];
+        if (m) {
+          spx += (m[0]*px + m[4]*py + m[8]*pz + m[12]) * nw0;
+          spy += (m[1]*px + m[5]*py + m[9]*pz + m[13]) * nw0;
+          spz += (m[2]*px + m[6]*py + m[10]*pz + m[14]) * nw0;
+          snx += (m[0]*nx + m[4]*ny + m[8]*nz) * nw0;
+          sny += (m[1]*nx + m[5]*ny + m[9]*nz) * nw0;
+          snz += (m[2]*nx + m[6]*ny + m[10]*nz) * nw0;
+        }
+      }
+      if (nw1 > 0 && j1 >= 0 && j1 < skinMatrices.length) {
+        const m = skinMatrices[j1];
+        if (m) {
+          spx += (m[0]*px + m[4]*py + m[8]*pz + m[12]) * nw1;
+          spy += (m[1]*px + m[5]*py + m[9]*pz + m[13]) * nw1;
+          spz += (m[2]*px + m[6]*py + m[10]*pz + m[14]) * nw1;
+          snx += (m[0]*nx + m[4]*ny + m[8]*nz) * nw1;
+          sny += (m[1]*nx + m[5]*ny + m[9]*nz) * nw1;
+          snz += (m[2]*nx + m[6]*ny + m[10]*nz) * nw1;
+        }
+      }
+      if (nw2 > 0 && j2 >= 0 && j2 < skinMatrices.length) {
+        const m = skinMatrices[j2];
+        if (m) {
+          spx += (m[0]*px + m[4]*py + m[8]*pz + m[12]) * nw2;
+          spy += (m[1]*px + m[5]*py + m[9]*pz + m[13]) * nw2;
+          spz += (m[2]*px + m[6]*py + m[10]*pz + m[14]) * nw2;
+          snx += (m[0]*nx + m[4]*ny + m[8]*nz) * nw2;
+          sny += (m[1]*nx + m[5]*ny + m[9]*nz) * nw2;
+          snz += (m[2]*nx + m[6]*ny + m[10]*nz) * nw2;
+        }
+      }
+      if (nw3 > 0 && j3 >= 0 && j3 < skinMatrices.length) {
+        const m = skinMatrices[j3];
+        if (m) {
+          spx += (m[0]*px + m[4]*py + m[8]*pz + m[12]) * nw3;
+          spy += (m[1]*px + m[5]*py + m[9]*pz + m[13]) * nw3;
+          spz += (m[2]*px + m[6]*py + m[10]*pz + m[14]) * nw3;
+          snx += (m[0]*nx + m[4]*ny + m[8]*nz) * nw3;
+          sny += (m[1]*nx + m[5]*ny + m[9]*nz) * nw3;
+          snz += (m[2]*nx + m[6]*ny + m[10]*nz) * nw3;
+        }
+      }
+
+      if (isNaN(spx) || isNaN(spy) || isNaN(spz) || (spx === 0 && spy === 0 && spz === 0 && (px !== 0 || py !== 0 || pz !== 0))) {
+        pos[i3] = px; pos[i3 + 1] = py; pos[i3 + 2] = pz;
+        norm[i3] = nx; norm[i3 + 1] = ny; norm[i3 + 2] = nz;
+      } else {
+        pos[i3] = spx; pos[i3 + 1] = spy; pos[i3 + 2] = spz;
+        const nlen = Math.hypot(snx, sny, snz) || 1;
+        norm[i3] = snx / nlen;
+        norm[i3 + 1] = sny / nlen;
+        norm[i3 + 2] = snz / nlen;
+      }
+    }
+
+    const gl = this.gl;
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vboPos);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, pos);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vboNorm);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, norm);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  }
+
+  async loadSpecificGLBModel(url) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to fetch ${url}`);
+      const arrayBuffer = await response.arrayBuffer();
+
+      const header = new DataView(arrayBuffer, 0, 12);
+      const magic = header.getUint32(0, true);
+      if (magic !== 0x46546C67) throw new Error('Invalid GLB magic');
+      const version = header.getUint32(4, true);
+      const length = header.getUint32(8, true);
+
+      let offset = 12;
+      let jsonChunk = null;
+      let binChunk = null;
+
+      while (offset < length) {
+        if (offset + 8 > length) break;
+        const chunkLength = new DataView(arrayBuffer, offset, 4).getUint32(0, true);
+        const chunkType = new DataView(arrayBuffer, offset + 4, 4).getUint32(0, true);
+        
+        if (chunkType === 0x4E4F534A) { // JSON
+          const jsonBytes = new Uint8Array(arrayBuffer, offset + 8, chunkLength);
+          const jsonText = new TextDecoder().decode(jsonBytes);
+          jsonChunk = JSON.parse(jsonText);
+        } else if (chunkType === 0x004E4942) { // BIN
+          binChunk = arrayBuffer.slice(offset + 8, offset + 8 + chunkLength);
+        }
+        offset += 8 + chunkLength;
+      }
+
+      if (!jsonChunk || !binChunk) throw new Error('Missing JSON or BIN chunk');
+
+      let allPos = [];
+      let allNorm = [];
+      let allUV = [];
+      let allIdx = [];
+      let allJoints = [];
+      let allWeights = [];
+      let vertexOffset = 0;
+
+      const getAccessorData = (accessorIndex) => {
+        try {
+          const accessor = jsonChunk.accessors[accessorIndex];
+          const bufferView = jsonChunk.bufferViews[accessor.bufferView];
+          const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+          
+          let typedArrayConstructor = Float32Array;
+          let elementBytes = 4;
+          if (accessor.componentType === 5126) { typedArrayConstructor = Float32Array; elementBytes = 4; }
+          else if (accessor.componentType === 5123) { typedArrayConstructor = Uint16Array; elementBytes = 2; }
+          else if (accessor.componentType === 5125) { typedArrayConstructor = Uint32Array; elementBytes = 4; }
+          else if (accessor.componentType === 5121) { typedArrayConstructor = Uint8Array; elementBytes = 1; }
+          else if (accessor.componentType === 5120) { typedArrayConstructor = Int8Array; elementBytes = 1; }
+          else if (accessor.componentType === 5122) { typedArrayConstructor = Int16Array; elementBytes = 2; }
+
+          let numComponents = 1;
+          if (accessor.type === 'VEC2') numComponents = 2;
+          else if (accessor.type === 'VEC3') numComponents = 3;
+          else if (accessor.type === 'VEC4') numComponents = 4;
+          else if (accessor.type === 'MAT4') numComponents = 16;
+
+          const byteLength = accessor.count * numComponents * elementBytes;
+          return new typedArrayConstructor(binChunk, byteOffset, accessor.count * numComponents);
+        } catch(e) {
+          console.warn("[GLB Parser] Accessor error:", e);
+          return null;
+        }
+      };
+
+      if (jsonChunk.meshes && jsonChunk.meshes.length > 0) {
+        jsonChunk.meshes.forEach(mesh => {
+          if (mesh.primitives && mesh.primitives.length > 0) {
+            mesh.primitives.forEach(prim => {
+              const posData = prim.attributes.POSITION !== undefined ? getAccessorData(prim.attributes.POSITION) : null;
+              const normData = prim.attributes.NORMAL !== undefined ? getAccessorData(prim.attributes.NORMAL) : null;
+              const uvData = prim.attributes.TEXCOORD_0 !== undefined ? getAccessorData(prim.attributes.TEXCOORD_0) : null;
+              const indicesData = prim.indices !== undefined ? getAccessorData(prim.indices) : null;
+
+              const jointsData = prim.attributes.JOINTS_0 !== undefined ? getAccessorData(prim.attributes.JOINTS_0) : null;
+              const weightsData = prim.attributes.WEIGHTS_0 !== undefined ? getAccessorData(prim.attributes.WEIGHTS_0) : null;
+
+              if (posData) {
+                const count = posData.length / 3;
+                for (let i = 0; i < posData.length; i++) allPos.push(posData[i]);
+                
+                if (normData) {
+                  for (let i = 0; i < normData.length; i++) allNorm.push(normData[i]);
+                } else {
+                  for (let i = 0; i < count * 3; i++) allNorm.push(0);
+                }
+
+                if (uvData) {
+                  for (let i = 0; i < uvData.length; i++) allUV.push(uvData[i]);
+                } else {
+                  for (let i = 0; i < count * 2; i++) allUV.push(0);
+                }
+
+                if (jointsData) {
+                  for (let i = 0; i < jointsData.length; i++) allJoints.push(jointsData[i]);
+                } else {
+                  for (let i = 0; i < count * 4; i++) allJoints.push(0);
+                }
+
+                if (weightsData) {
+                  for (let i = 0; i < weightsData.length; i++) allWeights.push(weightsData[i]);
+                } else {
+                  for (let i = 0; i < count * 4; i++) allWeights.push(0);
+                }
+
+                if (indicesData) {
+                  for (let i = 0; i < indicesData.length; i++) {
+                    allIdx.push(indicesData[i] + vertexOffset);
+                  }
+                } else {
+                  for (let i = 0; i < count; i++) {
+                    allIdx.push(i + vertexOffset);
+                  }
+                }
+
+                vertexOffset += count;
+              }
+            });
+          }
+        });
+      }
+
+      if (allPos.length === 0) throw new Error('No mesh positions found in GLB');
+
+      let jointsNodeIndices = [];
+      let inverseBindMatrices = [];
+      if (jsonChunk.skins && jsonChunk.skins.length > 0) {
+        const skin = jsonChunk.skins[0];
+        jointsNodeIndices = skin.joints;
+        if (skin.inverseBindMatrices !== undefined) {
+          const rawIbm = getAccessorData(skin.inverseBindMatrices);
+          if (rawIbm) {
+            for (let i = 0; i < rawIbm.length; i += 16) {
+              inverseBindMatrices.push(rawIbm.slice(i, i + 16));
+            }
+          }
+        }
+      }
+
+      let nodes = [];
+      if (jsonChunk.nodes && jsonChunk.nodes.length > 0) {
+        jsonChunk.nodes.forEach((node, idx) => {
+          nodes.push({
+            index: idx,
+            name: node.name || `Node_${idx}`,
+            parent: -1,
+            children: node.children || [],
+            translation: node.translation || [0, 0, 0],
+            rotation: node.rotation || [0, 0, 0, 1],
+            scale: node.scale || [1, 1, 1],
+            matrix: node.matrix || null,
+            localMatrix: Mat4.create(),
+            worldMatrix: Mat4.create()
+          });
+        });
+
+        nodes.forEach(node => {
+          node.children.forEach(childIdx => {
+            if (nodes[childIdx]) nodes[childIdx].parent = node.index;
+          });
+        });
+      }
+
+      let animations = [];
+      if (jsonChunk.animations && jsonChunk.animations.length > 0) {
+        jsonChunk.animations.forEach((anim, animIdx) => {
+          let channels = [];
+          anim.channels.forEach(chan => {
+            const sampler = anim.samplers[chan.sampler];
+            if (sampler) {
+              const timestamps = getAccessorData(sampler.input);
+              const values = getAccessorData(sampler.output);
+              if (timestamps && values) {
+                channels.push({
+                  targetNode: chan.target.node,
+                  targetPath: chan.target.path,
+                  timestamps: timestamps,
+                  values: values
+                });
+              }
+            }
+          });
+          if (channels.length > 0) {
+            const maxDuration = Math.max(...channels.map(c => c.timestamps[c.timestamps.length - 1] || 0));
+            animations.push({
+              name: anim.name || `Anim_${animIdx}`,
+              duration: maxDuration,
+              channels: channels
+            });
+          }
+        });
+      }
+
+      if (allPos.length > 0) {
+        let minX = Infinity, maxX = -Infinity;
+        let minY = Infinity, maxY = -Infinity;
+        let minZ = Infinity, maxZ = -Infinity;
+        for (let i = 0; i < allPos.length; i += 3) {
+          const x = allPos[i];
+          const y = allPos[i+1];
+          const z = allPos[i+2];
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+          if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+        }
+        
+        const modelHeight = maxY - minY;
+        const targetHeight = 1.6;
+        let scaleFactor = 1.0;
+        
+        if (modelHeight > 0.01) {
+          if (modelHeight < 0.2 || modelHeight > 5.0) {
+            scaleFactor = targetHeight / modelHeight;
+            for (let i = 0; i < allPos.length; i++) {
+              allPos[i] *= scaleFactor;
+            }
+            minY *= scaleFactor;
+            maxY *= scaleFactor;
+
+            if (nodes) {
+              nodes.forEach(node => {
+                node.translation[0] *= scaleFactor;
+                node.translation[1] *= scaleFactor;
+                node.translation[2] *= scaleFactor;
+              });
+            }
+            if (inverseBindMatrices) {
+              inverseBindMatrices.forEach(ibm => {
+                ibm[12] /= scaleFactor;
+                ibm[13] /= scaleFactor;
+                ibm[14] /= scaleFactor;
+              });
+            }
+          }
+          
+          if (Math.abs(minY) > 0.05) {
+            const shiftY = -minY;
+            for (let i = 1; i < allPos.length; i += 3) {
+              allPos[i] += shiftY;
+            }
+            if (nodes) {
+              nodes.forEach(node => {
+                if (node.parent === -1) {
+                  node.translation[1] += shiftY;
+                }
+              });
+            }
+          }
+        }
+      }
+
+      const barys = [];
+      for (let i = 0; i < allPos.length / 3; i++) {
+        barys.push(i % 3 === 0 ? 1 : 0, i % 3 === 1 ? 1 : 0, i % 3 === 2 ? 1 : 0);
+      }
+
+      let characterTexture = null;
+      if (jsonChunk.images && jsonChunk.images.length > 0 && binChunk) {
+        await new Promise((resolve) => {
+          try {
+            const imgDef = jsonChunk.images[0];
+            if (imgDef.bufferView !== undefined) {
+              const bv = jsonChunk.bufferViews[imgDef.bufferView];
+              const bOffset = (bv.byteOffset || 0);
+              const bLength = bv.byteLength;
+              const imgSlice = binChunk.slice(bOffset, bOffset + bLength);
+              const mime = imgDef.mimeType || 'image/png';
+              const blob = new Blob([imgSlice], { type: mime });
+              const imgUrl = URL.createObjectURL(blob);
+              const img = new Image();
+              img.onload = () => {
+                const gl = this.gl;
+                const tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                gl.generateMipmap(gl.TEXTURE_2D);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                characterTexture = tex;
+                resolve();
+              };
+              img.onerror = () => { resolve(); };
+              img.src = imgUrl;
+            } else {
+              resolve();
+            }
+          } catch (e) {
+            resolve();
+          }
+        });
+      }
+
+      const meshData = {
+        name: url.includes('monster') ? "Monster_GLB" : "Soldier_GLB",
+        positions: allPos,
+        normals: allNorm,
+        uvs: allUV,
+        barys: barys,
+        indices: allIdx
+      };
+
+      const mesh = this.buildMeshBuffer(meshData, true);
+      if (characterTexture) {
+        mesh.texture = characterTexture;
+      }
+
+      return {
+        soldierMesh: mesh,
+        soldierSkeletonData: {
+          nodes: nodes,
+          animations: animations,
+          jointsNodeIndices: jointsNodeIndices,
+          inverseBindMatrices: inverseBindMatrices,
+          originalPos: Float32Array.from(allPos),
+          originalNorm: Float32Array.from(allNorm),
+          joints: Uint16Array.from(allJoints),
+          weights: Float32Array.from(allWeights)
+        },
+        characterTexture: characterTexture
+      };
+    } catch(err) {
+      console.error("[loadSpecificGLBModel] Failed:", err);
+      return null;
+    }
+  }
+
   async loadSoldierGLB(customUrl = 'assets/models/character2/monster.glb') {
     try {
       const url = customUrl || 'assets/models/character2/monster.glb';
       this.currentGlbModel = url;
+      
+      const loaded = await this.loadSpecificGLBModel(url);
+      if (loaded) {
+        if (this.soldierMesh) {
+          const gl = this.gl;
+          if (this.soldierMesh.vao) gl.deleteVertexArray(this.soldierMesh.vao);
+          if (this.soldierMesh.vboPos) gl.deleteBuffer(this.soldierMesh.vboPos);
+          if (this.soldierMesh.vboNorm) gl.deleteBuffer(this.soldierMesh.vboNorm);
+          if (this.soldierMesh.ibo) gl.deleteBuffer(this.soldierMesh.ibo);
+        }
+        this.skinnedPosArray = null;
+        this.skinnedNormArray = null;
+
+        this.soldierMesh = loaded.soldierMesh;
+        this.soldierSkeletonData = loaded.soldierSkeletonData;
+        this.characterTexture = loaded.characterTexture;
+        this.characterMesh = this.soldierMesh;
+        this.monsterMesh = this.soldierMesh;
+
+        const animNames = this.soldierSkeletonData.animations.map(a => a.name).join(', ');
+        console.log(`[GLB Loader Delegated] Successfully loaded ${url}. Animations:`, animNames);
+        return;
+      }
+
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Failed to fetch ${url}`);
       const arrayBuffer = await response.arrayBuffer();
@@ -5938,6 +6568,79 @@ void main() {
         });
       }
 
+      // =========================================================================
+      // DYNAMIC BOUNDS CALCULATION & AUTO-NORMALIZATION / CENTERING
+      // =========================================================================
+      if (allPos.length > 0) {
+        let minX = Infinity, maxX = -Infinity;
+        let minY = Infinity, maxY = -Infinity;
+        let minZ = Infinity, maxZ = -Infinity;
+        for (let i = 0; i < allPos.length; i += 3) {
+          const x = allPos[i];
+          const y = allPos[i+1];
+          const z = allPos[i+2];
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+          if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+        }
+        
+        const modelHeight = maxY - minY;
+        console.log(`[GLB Loader Raw Bounds] x:[${minX.toFixed(2)}, ${maxX.toFixed(2)}], y:[${minY.toFixed(2)}, ${maxY.toFixed(2)}], z:[${minZ.toFixed(2)}, ${maxZ.toFixed(2)}], height: ${modelHeight.toFixed(2)}`);
+        
+        // We want the final character height to be around 1.6 units in the WebGL scene
+        const targetHeight = 1.6;
+        let scaleFactor = 1.0;
+        
+        if (modelHeight > 0.01) {
+          // If the model is extremely small or extremely large
+          if (modelHeight < 0.2 || modelHeight > 5.0) {
+            scaleFactor = targetHeight / modelHeight;
+            console.log(`[GLB Auto-Scale] Scaling vertices by factor ${scaleFactor.toFixed(4)} to achieve standard height of ${targetHeight}`);
+            for (let i = 0; i < allPos.length; i++) {
+              allPos[i] *= scaleFactor;
+            }
+            
+            // Scaled bounds
+            minY *= scaleFactor;
+            maxY *= scaleFactor;
+
+            // Scale skeleton translations
+            if (nodes) {
+              nodes.forEach(node => {
+                node.translation[0] *= scaleFactor;
+                node.translation[1] *= scaleFactor;
+                node.translation[2] *= scaleFactor;
+              });
+            }
+            // Scale inverse bind matrices translation components
+            if (inverseBindMatrices) {
+              inverseBindMatrices.forEach(ibm => {
+                ibm[12] /= scaleFactor;
+                ibm[13] /= scaleFactor;
+                ibm[14] /= scaleFactor;
+              });
+            }
+          }
+          
+          // Shifting the model's feet so Y=0 corresponds precisely to bottom of feet (ground level)
+          if (Math.abs(minY) > 0.05) {
+            const shiftY = -minY;
+            console.log(`[GLB Auto-Shift] Shifting model vertically by ${shiftY.toFixed(4)} to align feet on ground level (Y = 0)`);
+            for (let i = 1; i < allPos.length; i += 3) {
+              allPos[i] += shiftY;
+            }
+            // Shift the root bones translations to match
+            if (nodes) {
+              nodes.forEach(node => {
+                if (node.parent === -1) {
+                  node.translation[1] += shiftY;
+                }
+              });
+            }
+          }
+        }
+      }
+
       this.soldierSkeletonData = {
         nodes: nodes,
         animations: animations,
@@ -6019,6 +6722,34 @@ void main() {
       console.error(`[GLB Loader] Failed to load ${url}:`, err);
       this.log(`⚠️ Failed to load GLB model: ${err.message}`, "error");
     }
+  }
+
+  async preloadAllMobaHeroes() {
+    if (this._mobaHeroesPreloaded) return;
+    this.log("⏳ Preloading all 3D Combat Hero models side-by-side...", "info");
+    const urls = [
+      'assets/models/moba-characters/arissa.glb',
+      'assets/models/moba-characters/bot.glb',
+      'assets/models/moba-characters/erika.glb',
+      'assets/models/moba-characters/monster.glb',
+      'assets/models/moba-characters/skeletonz.glb',
+      'assets/models/moba-characters/woman-mobile.glb'
+    ];
+    this.mobaHeroModels = {};
+    
+    const loadedList = await Promise.all(urls.map(async (url) => {
+      const model = await this.loadSpecificGLBModel(url);
+      return { url, model };
+    }));
+
+    loadedList.forEach(({ url, model }) => {
+      if (model) {
+        this.mobaHeroModels[url] = model;
+      }
+    });
+
+    this._mobaHeroesPreloaded = true;
+    this.log("✅ All 3D Combat Hero models loaded successfully into the carousel system!", "success");
   }
 
   getSphereLOD(isSmallHolder = false) {
@@ -24557,6 +25288,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
   initMobaDemo() {
     this.log("🎮 Initializing MOBA Forest of Hollow Blood Simulation Layer...", "info");
+    this.preloadAllMobaHeroes();
 
     // Initialize/Reset MOBA Local State
     this.mobaState = {
@@ -24593,11 +25325,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       spawnTimer: 0.0,
       lobbyHeroes: [
         new Hero('Arissa', 6.5, 18, 28, 14, 550, 240, 'Ranged Agility Bowmaster', 'Agility Assassin / Ranger', 'Devastates targets from range with deadly arrow streams and blinking maneuvers.', 0),
-        new Hero('Erika', 5.0, 15, 16, 30, 450, 500, 'Sustained Magical Sorceress', 'Magical Mage / Support', 'Weaves elemental spell cascades to control territory and support allies from afar.', 1),
-        new Hero('Maria Sword', 5.5, 26, 18, 16, 680, 200, 'Nimble Swift Blade', 'Melee Swift Gladiator', 'Dashes through enemy ranks with dual sabers and executes high-damage physical sweeps.', 2),
-        new Hero('Slayzer', 5.8, 24, 22, 14, 640, 180, 'Heavy Chaos Dual-Axes', 'Bruiser Melee Fighter', 'Thrives in chaotic close-range teamfights, gaining strength as battle grows bloodier.', 3),
-        new Hero('Warrok', 6.2, 20, 25, 15, 580, 220, 'Feral Savage Clawfighter', 'Savage Melee Skirmisher', 'Rips through target armor with razor claw strikes and increases base attack speed over time.', 4),
-        new Hero('Steelborn', 4.8, 28, 14, 18, 750, 250, 'Heavy Colossus Paladin', 'Defensive Tank / Initiator', 'Shields allies, absorbs immense damage, and forces fights with a heavy ground-slam.', 5)
+        new Hero('Bot', 5.5, 20, 20, 20, 600, 250, 'Support Android / Tactical Bot', 'Defensive Tank / Support', 'Wields high durability and defensive protocols to shield allies and lock down areas.', 1),
+        new Hero('Erika', 5.0, 15, 16, 30, 450, 500, 'Sustained Magical Sorceress', 'Magical Mage / Support', 'Weaves elemental spell cascades to control territory and support allies from afar.', 2),
+        new Hero('Monster', 4.8, 30, 12, 10, 750, 150, 'Heavy Chaos Bruiser / Colossus', 'Melee Heavy Bruiser', 'Smashes through ground lines with massive brute force, shrugging off incoming damage.', 3),
+        new Hero('Skeletonz', 6.2, 22, 26, 12, 520, 200, 'Nimble Swift Blade / Assassin', 'Melee Swift Gladiator', 'Strikes from the shadows with relentless fury and exceptional mobility.', 4),
+        new Hero('Woman Mobile', 5.8, 18, 25, 15, 580, 220, 'Savage Melee Skirmisher', 'Savage Melee Skirmisher', 'Rips through target defense with rapid consecutive slashes and high-speed dashes.', 5)
       ],
       clickRipples: [],
       vfxBursts: [],
@@ -24805,17 +25537,60 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (this._unsubMobaState) this._unsubMobaState();
     if (this._unsubMobaAction) this._unsubMobaAction();
     if (this._unsubMobaCreateSuccess) this._unsubMobaCreateSuccess();
+    if (this._unsubMobaError) this._unsubMobaError();
 
     this._unsubMobaCreateSuccess = this.net.on('moba:create_success', (partyId) => {
       this.joinMobaParty(partyId);
     });
 
+    this._unsubMobaError = this.net.on('moba:error', (errMsg) => {
+      console.warn("[MOBA Matchmaking Error]", errMsg);
+      this.log(`⚠️ ${errMsg}`, "error");
+      const toast = document.getElementById('moba-error-toast');
+      if (toast) {
+        toast.textContent = `⚠️ ${errMsg}`;
+        toast.style.display = 'block';
+        setTimeout(() => {
+          toast.style.display = 'none';
+        }, 5000);
+      }
+    });
+
     this._unsubMobaList = this.net.on('moba:parties_list', (data) => {
-      this.mobaState.partiesList = data.parties || [];
+      let parties = [];
+      if (Array.isArray(data)) {
+        parties = data;
+      } else if (data && Array.isArray(data.parties)) {
+        parties = data.parties;
+      } else if (data && data.payload && Array.isArray(data.payload)) {
+        parties = data.payload;
+      }
+      
+      // Ensure each party has a teams property grouping RED and BLACK players
+      parties.forEach(p => {
+        if (!p.teams) {
+          p.teams = {
+            RED: p.players ? p.players.filter(pl => pl.team === 'RED') : [],
+            BLACK: p.players ? p.players.filter(pl => pl.team === 'BLACK') : []
+          };
+        }
+      });
+      
+      this.mobaState.partiesList = parties;
       this.mobaRenderPartiesListUI();
     });
 
     this._unsubMobaState = this.net.on('moba:party_state', (party) => {
+      if (!party) return;
+      
+      // Ensure the teams property is built dynamically from players list if not provided by server
+      if (!party.teams) {
+        party.teams = {
+          RED: party.players ? party.players.filter(p => p.team === 'RED') : [],
+          BLACK: party.players ? party.players.filter(p => p.team === 'BLACK') : []
+        };
+      }
+      
       this.mobaState.party = party;
       this.mobaState.activePartyId = party.id;
       
@@ -24877,7 +25652,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   joinMobaParty(partyId) {
-    this.net.send('moba:join_party', { partyId });
+    const nameInput = document.getElementById('moba-player-name-input');
+    const playerName = nameInput ? nameInput.value.trim() : `HeroPlayer_${Math.floor(100 + Math.random() * 900)}`;
+    this.net.send('moba:join_party', {
+      partyId,
+      playerId: this.net.localPlayerId,
+      playerName: playerName || `HeroPlayer_${Math.floor(100 + Math.random() * 900)}`
+    });
     this.mobaPlaySound('select');
   }
 
@@ -24948,13 +25729,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
   mobaLoadHeroModel(heroName) {
     const glbPath = {
-      Arissa: 'assets/models/character1/soldier.glb',
-      Erika: 'assets/models/character2/monster.glb',
-      'Maria Sword': 'assets/models/zombie/zombie-cap.glb',
-      Slayzer: 'assets/models/zombie/zombi-crawl1.glb',
-      Warrok: 'assets/models/character2/monster.glb',
-      Steelborn: 'assets/models/character1/soldier.glb'
-    }[heroName] || 'assets/models/character1/soldier.glb';
+      Arissa: 'assets/models/moba-characters/arissa.glb',
+      Bot: 'assets/models/moba-characters/bot.glb',
+      Erika: 'assets/models/moba-characters/erika.glb',
+      Monster: 'assets/models/moba-characters/monster.glb',
+      Skeletonz: 'assets/models/moba-characters/skeletonz.glb',
+      'Woman Mobile': 'assets/models/moba-characters/woman-mobile.glb'
+    }[heroName] || 'assets/models/moba-characters/arissa.glb';
 
     if (this.currentGlbModel !== glbPath) {
       this.loadSoldierGLB(glbPath);
@@ -24963,7 +25744,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
   cycleMobaHero(dir) {
     if (this.mobaState.lockedHero) return;
-    const list = ['Arissa', 'Erika', 'Maria Sword', 'Slayzer', 'Warrok', 'Steelborn'];
+    const list = ['Arissa', 'Bot', 'Erika', 'Monster', 'Skeletonz', 'Woman Mobile'];
     let idx = list.indexOf(this.mobaState.selectedHero);
     if (idx === -1) idx = 0;
     idx = (idx + dir + list.length) % list.length;
@@ -25247,13 +26028,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // Lobby preview character bone evaluation / camera interpolation
     if (!this.mobaState.playing) {
-      // Focus camera directly at origin [0.0, 0.5, 0.0] for showroom close-up!
+      // Focus camera directly at origin [0.0, 0.95, 0.0] for showroom close-up!
       this.state.camTarget[0] = 0.0;
-      this.state.camTarget[1] = 0.5;
+      this.state.camTarget[1] = 0.95;
       this.state.camTarget[2] = 0.0;
 
       this.state.camRadius = 4.5;  // beautiful close-up zoom
-      this.state.camPitch = 0.18;   // beautiful sight-level angle
+      this.state.camPitch = 0.0;   // perfectly sight-level horizontal angle so hero is in middle of screen
       this.state.camYaw = 0.0;
       return;
     }
@@ -25327,7 +26108,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const textStatsLvl = document.getElementById('moba-hud-stats-lvl');
     if (textStatsLvl) {
       textStatsLvl.innerHTML = `
-        <span class="text-sky-300 font-bold">Arissa</span> (Level 12 Max)<br>
+        <span class="text-sky-300 font-bold">${this.mobaState.selectedHero || 'Arissa'}</span> (Level 12 Max)<br>
         ⚔️ DMG: <span class="text-amber-300 font-bold">${s.damage}</span> | ⚡ SPD: <span class="text-amber-300 font-bold">${s.speed.toFixed(1)}</span>
       `;
     }
@@ -25533,64 +26314,79 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // Render Lobby Setup view Lineup
     if (!this.mobaState.playing) {
-      const charPos = [0.0, 0.0, 0.0];
-      const charYaw = timestamp * 0.0015; // rotate slowly!
+      const list = ['Arissa', 'Bot', 'Erika', 'Monster', 'Skeletonz', 'Woman Mobile'];
+      let selectedIdx = list.indexOf(this.mobaState.selectedHero);
+      if (selectedIdx === -1) selectedIdx = 0;
 
-      if (this.soldierMesh) {
-        if (this.soldierSkeletonData) {
-          const skinMatrices = this.evaluateSoldierSkeleton(timestamp * 0.002, 'idle');
-          if (skinMatrices) {
-            this.updateSoldierMeshBuffer(skinMatrices);
-          }
-        }
-        
+      if (this.mobaCarouselX === undefined) {
+        this.mobaCarouselX = selectedIdx;
+      }
+      this.mobaCarouselX += (selectedIdx - this.mobaCarouselX) * 0.12;
+
+      for (let i = 0; i < list.length; i++) {
+        const heroName = list[i];
+        const posX = (i - this.mobaCarouselX) * 2.4;
+        const charPos = [posX, 0.0, 0.0];
+        const charYaw = timestamp * 0.0015;
+
+        const glbPath = {
+          Arissa: 'assets/models/moba-characters/arissa.glb',
+          Bot: 'assets/models/moba-characters/bot.glb',
+          Erika: 'assets/models/moba-characters/erika.glb',
+          Monster: 'assets/models/moba-characters/monster.glb',
+          Skeletonz: 'assets/models/moba-characters/skeletonz.glb',
+          'Woman Mobile': 'assets/models/moba-characters/woman-mobile.glb'
+        }[heroName];
+
+        const model = (this.mobaHeroModels && this.mobaHeroModels[glbPath]);
+
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.05);
+
         const baseColor = {
           Arissa: [0.1, 0.85, 0.35],
+          Bot: [0.85, 0.85, 0.05],
           Erika: [0.06, 0.85, 0.95],
-          'Maria Sword': [0.9, 0.08, 0.15],
-          Slayzer: [0.95, 0.45, 0.05],
-          Warrok: [0.65, 0.15, 0.95],
-          Steelborn: [0.72, 0.76, 0.82]
-        }[this.mobaState.selectedHero] || [1, 1, 1];
+          Monster: [0.95, 0.45, 0.05],
+          Skeletonz: [0.65, 0.15, 0.95],
+          'Woman Mobile': [0.72, 0.76, 0.82]
+        }[heroName] || [1, 1, 1];
 
-        this.drawBotMeshPart(progInfo, this.soldierMesh, charPos, charYaw, 0, 0, 0, 1.25, 1.25, 1.25, baseColor, 0.3, 0.2, 0, 0.1);
-      } else {
-        // Fallback placeholder rotating glowing sphere if GLB model is still loading
-        const sphereMesh = this.meshBuffers[0];
-        if (sphereMesh) {
-          gl.bindVertexArray(sphereMesh.vao);
-          const size = 1.0;
-          const rotateSpeed = 1.5;
-          const angle = timestamp * 0.001 * rotateSpeed;
-          const cosY = Math.cos(angle), sinY = Math.sin(angle);
+        if (model && model.soldierMesh) {
+          if (model.soldierSkeletonData) {
+            const skinMatrices = this.evaluateSpecificSkeleton(model.soldierSkeletonData, timestamp * 0.002, 'idle');
+            if (skinMatrices) {
+              this.updateGenericMeshBuffer(model.soldierMesh, model.soldierSkeletonData, skinMatrices);
+            }
+          }
+          const distToCenter = Math.abs(i - this.mobaCarouselX);
+          const scale = Math.max(0.6, 1.25 - distToCenter * 0.35);
+          this.drawBotMeshPart(progInfo, model.soldierMesh, charPos, charYaw, 0, 0, 0, scale, scale, scale, baseColor, 0.3, 0.2, 0, 0.1);
+        } else {
+          const sphereMesh = this.meshBuffers[0];
+          if (sphereMesh) {
+            gl.bindVertexArray(sphereMesh.vao);
+            const size = 1.0;
+            const rotateSpeed = 1.5;
+            const angle = timestamp * 0.001 * rotateSpeed;
+            const cosY = Math.cos(angle), sinY = Math.sin(angle);
 
-          this.instanceMatrix[0] = cosY * size; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinY * size; this.instanceMatrix[3] = 0;
-          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = size; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-          this.instanceMatrix[8] = sinY * size; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosY * size; this.instanceMatrix[11] = 0;
-          this.instanceMatrix[12] = 0.0; this.instanceMatrix[13] = 0.5 * size; this.instanceMatrix[14] = 0.0; this.instanceMatrix[15] = 1.0;
+            this.instanceMatrix[0] = cosY * size; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinY * size; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = size; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = sinY * size; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosY * size; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = posX; this.instanceMatrix[13] = 0.5 * size; this.instanceMatrix[14] = 0.0; this.instanceMatrix[15] = 1.0;
 
-          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
 
-          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.2);
-          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.9);
-
-          const baseColor = {
-            Arissa: new Float32Array([0.1, 0.85, 0.35]),
-            Erika: new Float32Array([0.06, 0.85, 0.95]),
-            'Maria Sword': new Float32Array([0.9, 0.08, 0.15]),
-            Slayzer: new Float32Array([0.95, 0.45, 0.05]),
-            Warrok: new Float32Array([0.65, 0.15, 0.95]),
-            Steelborn: new Float32Array([0.72, 0.76, 0.82])
-          }[this.mobaState.selectedHero] || new Float32Array([1,1,1]);
-
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, baseColor);
-          gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(baseColor));
+            gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          }
         }
       }
 
-      // Draw a small decorative hovering halo disk above selected character
+      // Draw a small decorative hovering halo disk above selected character (at posX = 0)
       const diskMesh = this.meshBuffers[7];
       if (diskMesh) {
         gl.bindVertexArray(diskMesh.vao);
@@ -25603,6 +26399,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
 
+        const activeHero = this.mobaState.selectedHero;
         const haloColor = {
           Arissa: new Float32Array([0.1, 0.85, 0.35]),
           Erika: new Float32Array([0.06, 0.85, 0.95]),
@@ -25610,7 +26407,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           Slayzer: new Float32Array([0.95, 0.45, 0.05]),
           Warrok: new Float32Array([0.65, 0.15, 0.95]),
           Steelborn: new Float32Array([0.72, 0.76, 0.82])
-        }[this.mobaState.selectedHero] || new Float32Array([1,1,1]);
+        }[activeHero] || new Float32Array([1,1,1]);
 
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, haloColor);
         gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
@@ -25727,41 +26524,95 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     // 4. Draw other active players & bot heroes
-    const charMesh = this.meshBuffers[0]; // Use sphere as base representation for heroes
-    if (charMesh && this.mobaState.players) {
-      gl.bindVertexArray(charMesh.vao);
+    const charMesh = this.meshBuffers[0]; // Use sphere as fallback representation
+    if (this.mobaState.players) {
       this.mobaState.players.forEach(p => {
         if (p.hp <= 0) return; // Dead
         if (p.id === this.net.localPlayerId) return; // Drawn separately next
 
-        this.instanceMatrix[0] = 0.85; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.85; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.85; this.instanceMatrix[11] = 0;
-        this.instanceMatrix[12] = p.pos[0]; this.instanceMatrix[13] = 0.42; this.instanceMatrix[14] = p.pos[2]; this.instanceMatrix[15] = 1.0;
+        const pYaw = p.yaw || 0;
+        const color = p.team === 'RED' ? [0.9, 0.2, 0.2] : [0.2, 0.4, 0.9];
+        const heroName = p.selectedHero || 'Arissa';
 
-        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-        
-        // Sync aesthetic theme
-        const color = p.team === 'RED' ? new Float32Array([0.9, 0.2, 0.2]) : new Float32Array([0.2, 0.4, 0.9]);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
-        gl.drawElements(gl.TRIANGLES, charMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        const glbPath = {
+          Arissa: 'assets/models/moba-characters/arissa.glb',
+          Bot: 'assets/models/moba-characters/bot.glb',
+          Erika: 'assets/models/moba-characters/erika.glb',
+          Monster: 'assets/models/moba-characters/monster.glb',
+          Skeletonz: 'assets/models/moba-characters/skeletonz.glb',
+          'Woman Mobile': 'assets/models/moba-characters/woman-mobile.glb'
+        }[heroName] || 'assets/models/moba-characters/arissa.glb';
+
+        const model = (this.mobaHeroModels && this.mobaHeroModels[glbPath]);
+
+        if (model && model.soldierMesh) {
+          const animTime = timestamp * 0.0012 + (p.id ? p.id.charCodeAt(0) : 0);
+          const isMoving = p.moving || false;
+          const animToPlay = isMoving ? 'walk' : 'idle';
+          if (model.soldierSkeletonData) {
+            const skinMatrices = this.evaluateSpecificSkeleton(model.soldierSkeletonData, animTime, animToPlay);
+            if (skinMatrices) {
+              this.updateGenericMeshBuffer(model.soldierMesh, model.soldierSkeletonData, skinMatrices);
+            }
+          }
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.05);
+          this.drawBotMeshPart(progInfo, model.soldierMesh, p.pos, pYaw, 0, 0, 0, 1.25, 1.25, 1.25, color, 0.3, 0.2, 0, 0.1);
+        } else if (charMesh) {
+          gl.bindVertexArray(charMesh.vao);
+          this.instanceMatrix[0] = 0.85; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.85; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.85; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = p.pos[0]; this.instanceMatrix[13] = 0.42; this.instanceMatrix[14] = p.pos[2]; this.instanceMatrix[15] = 1.0;
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(color));
+          gl.drawElements(gl.TRIANGLES, charMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
       });
     }
 
     // 5. Draw Local Player Hero
-    if (charMesh && !this.mobaState.winner) {
-      gl.bindVertexArray(charMesh.vao);
+    if (!this.mobaState.winner) {
       const playerPos = this.mobaState.currentPos;
-      
-      this.instanceMatrix[0] = 0.85; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.85; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.85; this.instanceMatrix[11] = 0;
-      this.instanceMatrix[12] = playerPos[0]; this.instanceMatrix[13] = 0.42; this.instanceMatrix[14] = playerPos[2]; this.instanceMatrix[15] = 1.0;
+      const playerYaw = this.mobaState.currentYaw || 0;
+      const myColor = this.mobaState.team === 'RED' ? [0.9, 0.25, 0.25] : [0.25, 0.35, 0.95];
+      const myHeroName = this.mobaState.selectedHero || 'Arissa';
 
-      gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-      const myColor = this.mobaState.team === 'RED' ? new Float32Array([0.9, 0.25, 0.25]) : new Float32Array([0.25, 0.35, 0.95]);
-      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, myColor);
-      gl.drawElements(gl.TRIANGLES, charMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      const glbPath = {
+        Arissa: 'assets/models/moba-characters/arissa.glb',
+        Bot: 'assets/models/moba-characters/bot.glb',
+        Erika: 'assets/models/moba-characters/erika.glb',
+        Monster: 'assets/models/moba-characters/monster.glb',
+        Skeletonz: 'assets/models/moba-characters/skeletonz.glb',
+        'Woman Mobile': 'assets/models/moba-characters/woman-mobile.glb'
+      }[myHeroName] || 'assets/models/moba-characters/arissa.glb';
+
+      const model = (this.mobaHeroModels && this.mobaHeroModels[glbPath]);
+
+      if (model && model.soldierMesh) {
+        const isMoving = Math.hypot(this.mobaState.velocity[0], this.mobaState.velocity[2]) > 0.1;
+        const isAttacking = (timestamp - (this.mobaState.lastAttackTime || 0)) < 350;
+        const animToPlay = isAttacking ? 'attack' : (isMoving ? 'walk' : 'idle');
+        const animTime = timestamp * 0.0012;
+        if (model.soldierSkeletonData) {
+          const skinMatrices = this.evaluateSpecificSkeleton(model.soldierSkeletonData, animTime, animToPlay);
+          if (skinMatrices) {
+            this.updateGenericMeshBuffer(model.soldierMesh, model.soldierSkeletonData, skinMatrices);
+          }
+        }
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.05);
+        this.drawBotMeshPart(progInfo, model.soldierMesh, playerPos, playerYaw, 0, 0, 0, 1.25, 1.25, 1.25, myColor, 0.3, 0.2, 0, 0.1);
+      } else if (charMesh) {
+        gl.bindVertexArray(charMesh.vao);
+        this.instanceMatrix[0] = 0.85; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.85; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.85; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = playerPos[0]; this.instanceMatrix[13] = 0.42; this.instanceMatrix[14] = playerPos[2]; this.instanceMatrix[15] = 1.0;
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(myColor));
+        gl.drawElements(gl.TRIANGLES, charMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
     }
 
     // 6. Draw dynamic VFX bursts & spells circles

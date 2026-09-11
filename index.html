@@ -991,7 +991,7 @@
             <!-- ========================================== -->
             <div id="moba-overlay" style="display: none;" class="absolute inset-0 z-40 flex flex-col font-sans select-none pointer-events-none">
               <!-- TOP HUD (Tron HP & Match Status) -->
-              <div id="moba-hud-top" class="w-full flex justify-between items-center px-6 py-3 bg-gradient-to-b from-black/80 to-transparent pointer-events-auto">
+              <div id="moba-hud-top" class="w-full flex justify-between items-center px-6 py-3 bg-gradient-to-b from-black/10 to-transparent pointer-events-auto">
                 <!-- RED TEAM TRON -->
                 <div class="flex items-center space-x-3 bg-red-950/40 border border-red-800/30 px-4 py-2 rounded-lg">
                   <div class="w-4 h-4 bg-red-600 rounded-full animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
@@ -1005,7 +1005,7 @@
                 </div>
 
                 <!-- MATCH STATISTICS -->
-                <div class="flex flex-col items-center bg-black/50 border border-slate-800 px-6 py-2 rounded-xl text-center">
+                <div class="flex flex-col items-center bg-black/10 border border-slate-800/20 px-6 py-2 rounded-xl text-center">
                   <div class="text-[11px] text-amber-500 font-extrabold tracking-widest uppercase">FOREST OF HOLLOW BLOOD</div>
                   <div class="flex items-center space-x-6 mt-1">
                     <span id="moba-red-kills" class="text-xl font-black text-red-500 font-mono">0</span>
@@ -1036,7 +1036,7 @@
                 </div>
 
                 <!-- Shop button on screen -->
-                <div class="w-full flex justify-between items-end pointer-events-auto">
+                <div class="w-full flex justify-between items-end pointer-events-auto mb-24">
                   <button id="moba-btn-shop" class="flex items-center space-x-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 border border-amber-400/30 px-4 py-2.5 rounded-xl shadow-lg transition-all text-white font-bold text-xs cursor-pointer">
                     <span>🛒 OPEN BASE SHOP</span>
                   </button>
@@ -1053,7 +1053,7 @@
               </div>
 
               <!-- BOTTOM PANEL (Portrait, HP/Mana, Spells, Inventory, Gold) -->
-              <div id="moba-hud-bottom" class="w-full bg-gradient-to-t from-black/95 via-black/85 to-black/30 border-t border-slate-900 px-6 py-4 flex items-center justify-between pointer-events-auto">
+              <div id="moba-hud-bottom" class="absolute bottom-0 left-0 right-0 bg-slate-950/20 border-t border-slate-800/20 px-6 py-3.5 flex items-center justify-between pointer-events-auto z-50 backdrop-blur-sm shadow-2xl">
                 <!-- HERO INFO & STATS -->
                 <div class="flex items-center space-x-4 w-1/4">
                   <!-- Portrait -->
@@ -1191,15 +1191,15 @@
             </div>
 
             <!-- ========================================== -->
-            <!-- 🩸 MOBA Startup & Character Selection Menu -->
-            <!-- ========================================== -->
-            <div id="moba-startup-menu" style="display: none;" class="absolute inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/95 overflow-hidden select-none pointer-events-auto font-sans">
-              <!-- Animated dark forest atmosphere bg -->
-              <div class="absolute inset-0 bg-radial-at-c from-red-950/20 via-slate-950/80 to-black pointer-events-none opacity-80"></div>
-              
-              <div class="relative w-full max-w-6xl h-full max-h-[640px] flex flex-col bg-slate-900/80 border border-red-900/30 rounded-3xl shadow-2xl p-6 backdrop-blur-xl">
-                <!-- Header -->
-                <div class="flex justify-between items-start border-b border-slate-800 pb-4 mb-4">
+            <div id="moba-startup-menu" style="display: none;" class="absolute inset-0 z-50 flex items-center justify-center p-6 bg-transparent overflow-hidden select-none pointer-events-none font-sans">
+              <!-- Floating Matchmaking Error Toast -->
+              <div id="moba-error-toast" style="display: none;" class="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-red-950/95 border border-red-500/40 text-red-200 px-6 py-3 rounded-2xl text-xs font-bold tracking-wide shadow-2xl font-sans text-center max-w-md pointer-events-auto">
+                ⚠️ Only 2 parties can be active on the server.
+              </div>
+
+              <div class="relative w-full max-w-6xl h-full max-h-[640px] flex flex-col pointer-events-none">
+                <!-- Header: Frosted Glass Panel -->
+                <div class="flex justify-between items-center bg-slate-950/20 border border-slate-800/20 p-4 rounded-2xl shadow-2xl mb-4 pointer-events-auto backdrop-blur-sm">
                   <div>
                     <span class="bg-red-950/60 text-red-400 border border-red-500/20 text-[9px] font-black tracking-widest px-2.5 py-1 rounded-full uppercase">MOBA ARENA &bull; DEMO MODE</span>
                     <h1 class="text-xl font-black text-white tracking-tight mt-1.5 flex items-center space-x-2">
@@ -1208,15 +1208,15 @@
                     </h1>
                   </div>
                   <div class="flex items-center space-x-3">
-                    <input type="text" id="moba-player-name-input" class="bg-slate-950 border border-slate-800 focus:border-amber-500/40 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-200 outline-none w-44" placeholder="Enter Your Name..." value="MobaFighter">
-                    <button id="moba-btn-leave-party" class="bg-slate-950 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-400 transition-all cursor-pointer">Leave Party</button>
+                    <input type="text" id="moba-player-name-input" class="bg-slate-900 border border-slate-800 focus:border-amber-500/40 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-200 outline-none w-44" placeholder="Enter Your Name..." value="MobaFighter">
+                    <button id="moba-btn-leave-party" class="bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-400 transition-all cursor-pointer">Leave Party</button>
                   </div>
                 </div>
 
                 <!-- Main Section -->
-                <div class="flex-1 flex space-x-6 min-h-0">
-                  <!-- Left side: Parties list -->
-                  <div class="w-[280px] flex flex-col border-r border-slate-800 pr-6 min-h-0">
+                <div class="flex-1 flex space-x-6 min-h-0 pointer-events-none">
+                  <!-- Left side: Parties list widget -->
+                  <div class="w-[280px] flex flex-col bg-slate-950/20 border border-slate-800/20 rounded-2xl p-4 min-h-0 pointer-events-auto shadow-2xl backdrop-blur-sm">
                     <div class="flex justify-between items-center mb-3">
                       <span class="text-[11px] font-black tracking-wider text-slate-400 uppercase">ACTIVE BATTLE PARTIES</span>
                       <span id="moba-parties-count" class="text-[10px] font-bold text-amber-500 bg-amber-950/30 px-1.5 rounded">0/2</span>
@@ -1234,7 +1234,7 @@
                   </div>
 
                   <!-- Placeholder Panel: Shown when NOT in an active party -->
-                  <div id="moba-lobby-placeholder" class="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-950/40 rounded-2xl border border-slate-800/30">
+                  <div id="moba-lobby-placeholder" class="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-950/20 rounded-2xl border border-slate-800/20 pointer-events-auto backdrop-blur-sm">
                     <div class="text-5xl mb-4 animate-bounce">🛡️</div>
                     <h2 class="text-base font-black text-white uppercase tracking-widest mb-2 text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-amber-500">Battle Room Required</h2>
                     <p class="text-[11px] text-slate-400 max-w-md leading-relaxed">
@@ -1243,32 +1243,32 @@
                   </div>
 
                   <!-- Active Party Panels (Center + Right): Shown only when inside a party -->
-                  <div id="moba-lobby-active-panel" style="display: none;" class="flex-1 flex space-x-6 min-h-0">
+                  <div id="moba-lobby-active-panel" style="display: none;" class="flex-1 flex space-x-6 min-h-0 pointer-events-none">
                     <!-- Center: Hero Select (Destroyed carousel, transparent central area with < PREV and NEXT > buttons) -->
-                    <div class="flex-1 flex flex-col min-h-0 justify-between text-slate-200 bg-transparent">
+                    <div class="flex-1 flex flex-col min-h-0 justify-between text-slate-200 bg-transparent pointer-events-none">
                       <!-- Title & Lore -->
-                      <div class="text-center bg-slate-950/80 border border-slate-800 p-3 rounded-2xl shadow-md">
+                      <div class="text-center bg-slate-950/20 border border-slate-800/20 p-3 rounded-2xl shadow-2xl pointer-events-auto backdrop-blur-sm">
                         <div class="text-[10px] text-amber-400 tracking-widest font-black uppercase">SELECT YOUR CHAMPION</div>
                         <div class="text-[11px] text-slate-400 italic mt-0.5" id="moba-hero-select-help">Only one player can select one hero in a party. TWO players cannot select same hero.</div>
                       </div>
 
                       <!-- PREVIOUS & NEXT BUTTONS (COMPLETELY TRANSPARENT CENTER TO VIEW THE 3D GLB HERO IN BACKGROUND) -->
-                      <div class="flex-1 flex items-center justify-between px-4 pointer-events-none">
-                        <button id="moba-btn-prev-hero" class="pointer-events-auto bg-slate-950/90 hover:bg-slate-900 active:scale-95 border border-slate-800 hover:border-cyan-500 text-white font-extrabold text-xs px-4 py-3 rounded-xl shadow-lg transition-all cursor-pointer flex items-center space-x-2">
-                          <span class="text-cyan-400 text-sm">◀</span> <span>PREVIOUS HERO</span>
+                      <div class="flex-1 flex items-center justify-between px-2 pointer-events-none">
+                        <button id="moba-btn-prev-hero" class="pointer-events-auto bg-slate-950/95 hover:bg-slate-900 active:scale-95 border border-slate-800 hover:border-cyan-500 text-white font-extrabold text-[10px] px-4 py-3 rounded-xl shadow-2xl transition-all cursor-pointer flex items-center space-x-2 backdrop-blur-md">
+                          <span class="text-cyan-400 text-sm">◀</span> <span>PREV CHAMPION</span>
                         </button>
-                        <button id="moba-btn-next-hero" class="pointer-events-auto bg-slate-950/90 hover:bg-slate-900 active:scale-95 border border-slate-800 hover:border-cyan-500 text-white font-extrabold text-xs px-4 py-3 rounded-xl shadow-lg transition-all cursor-pointer flex items-center space-x-2">
-                          <span>NEXT HERO</span> <span class="text-cyan-400 text-sm">▶</span>
+                        <button id="moba-btn-next-hero" class="pointer-events-auto bg-slate-950/95 hover:bg-slate-900 active:scale-95 border border-slate-800 hover:border-cyan-500 text-white font-extrabold text-[10px] px-4 py-3 rounded-xl shadow-2xl transition-all cursor-pointer flex items-center space-x-2 backdrop-blur-md">
+                          <span>NEXT CHAMPION</span> <span class="text-cyan-400 text-sm">▶</span>
                         </button>
                       </div>
 
-                      <!-- Selected Hero Details Block (Keep opaque at bottom) -->
-                      <div id="moba-selected-details" class="bg-slate-950/95 border border-slate-800 p-4 rounded-2xl flex space-x-4 text-slate-200 shadow-2xl">
+                      <!-- Selected Hero Details Block (Frosted at bottom) -->
+                      <div id="moba-selected-details" class="bg-slate-950/20 border border-slate-800/20 p-4 rounded-2xl flex space-x-4 text-slate-200 shadow-2xl pointer-events-auto backdrop-blur-sm">
                         <!-- Left details -->
                         <div class="w-1/3 border-r border-slate-800/60 pr-4 space-y-1.5">
                           <div class="text-md font-black text-white" id="moba-detail-name">Arissa</div>
                           <div class="text-[9px] text-amber-500 font-bold tracking-widest uppercase" id="moba-detail-role">Agility Assassin / Ranger</div>
-                          <p class="text-[10px] text-slate-400 leading-relaxed" id="moba-detail-desc">Devastates targets from range with deadly arrow streams and blinking maneuvers.</p>
+                          <p class="text-[10px] text-slate-400 leading-relaxed font-light" id="moba-detail-desc">Devastates targets from range with deadly arrow streams and blinking maneuvers.</p>
                         </div>
                         <!-- Right attributes -->
                         <div class="flex-1 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
@@ -1283,7 +1283,7 @@
                     </div>
 
                     <!-- Right: Lobby Players & Ready States -->
-                    <div class="w-[240px] flex flex-col border-l border-slate-800 pl-6 min-h-0 text-slate-200">
+                    <div class="w-[240px] flex flex-col bg-slate-950/20 border border-slate-800/20 rounded-2xl p-4 min-h-0 text-slate-200 pointer-events-auto shadow-2xl backdrop-blur-sm">
                       <div class="flex justify-between items-center mb-3">
                         <span class="text-[11px] font-black tracking-wider text-slate-400 uppercase">LOBBY PLAYERS</span>
                         <span id="moba-lobby-count" class="text-[10px] font-bold text-slate-400">0/6</span>
@@ -1311,8 +1311,8 @@
                       <!-- Lobby controls (Add bot, clear, start) -->
                       <div class="space-y-2 border-t border-slate-800 pt-3 mt-3">
                         <div class="flex gap-1.5">
-                          <button id="moba-btn-add-bot" class="pointer-events-auto flex-1 bg-slate-950 hover:bg-slate-900 border border-slate-800 py-1.5 rounded-lg text-[10px] font-bold text-slate-300 cursor-pointer">🤖 Add Bot</button>
-                          <button id="moba-btn-clear-bots" class="pointer-events-auto flex-1 bg-slate-950 hover:bg-slate-900 border border-slate-800 py-1.5 rounded-lg text-[10px] font-bold text-slate-400 cursor-pointer">Clear Bots</button>
+                          <button id="moba-btn-add-bot" class="pointer-events-auto flex-1 bg-slate-900 hover:bg-slate-850 border border-slate-800 py-1.5 rounded-lg text-[10px] font-bold text-slate-300 cursor-pointer">🤖 Add Bot</button>
+                          <button id="moba-btn-clear-bots" class="pointer-events-auto flex-1 bg-slate-900 hover:bg-slate-850 border border-slate-800 py-1.5 rounded-lg text-[10px] font-bold text-slate-400 cursor-pointer">Clear Bots</button>
                         </div>
                         
                         <!-- Lock in / Start buttons -->
@@ -1329,12 +1329,15 @@
                 </div>
               </div>
             </div>
+                </div>
+              </div>
+            </div>
 
             <!-- ========================================== -->
             <!-- 🛒 MOBA Base Shop Modal Overlay -->
             <!-- ========================================== -->
-            <div id="moba-shop-modal" style="display: none;" class="absolute inset-0 z-50 flex items-center justify-center p-6 bg-black/90 select-none pointer-events-auto font-sans">
-              <div class="w-full max-w-2xl bg-slate-900 border border-amber-500/30 rounded-2xl shadow-2xl p-6 flex flex-col max-h-[500px]">
+            <div id="moba-shop-modal" style="display: none;" class="absolute inset-0 z-50 flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm select-none pointer-events-auto font-sans">
+              <div class="w-full max-w-2xl bg-slate-900/30 border border-amber-500/20 rounded-2xl shadow-2xl p-6 flex flex-col max-h-[500px]">
                 <div class="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
                   <div>
                     <h2 class="text-md font-black text-amber-400 tracking-wide uppercase">🛒 MOBA ANCIENT SHOP (BASE ONLY)</h2>

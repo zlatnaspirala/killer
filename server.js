@@ -752,6 +752,15 @@ wss.on('connection', (ws) => {
         return;
       } else if (parsed.event === 'moba:create_party') {
         const payload = parsed.payload || {};
+        
+        // Resilient Prune: Remove empty or inactive parties (> 10 mins) to prevent getting stuck
+        const now = Date.now();
+        for (const [id, party] of Object.entries(mobaParties)) {
+          if (!party.players || party.players.length === 0 || (now - (party.lastActive || now)) > 10 * 60 * 1000) {
+            delete mobaParties[id];
+          }
+        }
+
         const partyCount = Object.keys(mobaParties).length;
         if (partyCount >= 2) {
           ws.send(JSON.stringify({ event: 'moba:error', payload: 'Only 2 parties can be active on the server at the same time.' }));
@@ -795,6 +804,7 @@ wss.on('connection', (ws) => {
 
         ws.mobaRoomId = roomId;
         ws.mobaPlayerId = playerId;
+        party.lastActive = Date.now();
 
         // Auto assign team based on current counts (RED vs BLACK)
         const redCount = party.players.filter(p => p.team === 'RED').length;
@@ -821,6 +831,7 @@ wss.on('connection', (ws) => {
         const hero = payload.hero;
         const party = mobaParties[roomId];
         if (party) {
+          party.lastActive = Date.now();
           // Rule check: TWO players cannot select the same hero!
           const alreadySelected = party.players.some(p => p.id !== ws.mobaPlayerId && p.selectedHero === hero);
           if (alreadySelected) {
@@ -838,6 +849,7 @@ wss.on('connection', (ws) => {
         const roomId = ws.mobaRoomId;
         const party = mobaParties[roomId];
         if (party) {
+          party.lastActive = Date.now();
           if (party.players.length >= 6) {
             ws.send(JSON.stringify({ event: 'moba:error', payload: 'Party is full.' }));
             return;
@@ -871,6 +883,7 @@ wss.on('connection', (ws) => {
         const roomId = ws.mobaRoomId;
         const party = mobaParties[roomId];
         if (party) {
+          party.lastActive = Date.now();
           party.players = party.players.filter(p => !p.isBot);
           broadcastMobaPartyState(roomId);
         }
@@ -879,6 +892,7 @@ wss.on('connection', (ws) => {
         const roomId = ws.mobaRoomId;
         const party = mobaParties[roomId];
         if (party) {
+          party.lastActive = Date.now();
           // Check count of active playing parties
           const playingCount = Object.values(mobaParties).filter(p => p.status === 'playing').length;
           if (playingCount >= 2 && party.status !== 'playing') {
