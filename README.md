@@ -279,7 +279,7 @@ MIT License.
 
 Built with Google Filament PBR principles and modern C++17.
 
-### 🎬 Credits & Assets
+### 🎬 Credits
 
 - **Mixamo (mixamo.com)**: The 3D Soldier character model (`soldier.glb`) and animations used for the FPS combat bots are provided courtesy of [Mixamo](https://www.mixamo.com).
   - **Permitted Use**: Royalty-free use in commercial, personal, and educational 3D game projects.
