@@ -841,7 +841,17 @@ wss.on('connection', (ws) => {
           const pl = party.players.find(p => p.id === ws.mobaPlayerId);
           if (pl) {
             pl.selectedHero = hero;
+            pl.ready = true;
           }
+          broadcastMobaPartyState(roomId);
+        }
+        return;
+      } else if (parsed.event === 'moba:toggle_bot_play') {
+        const roomId = ws.mobaRoomId;
+        const party = mobaParties[roomId];
+        if (party) {
+          party.lastActive = Date.now();
+          party.botPlay = parsed.payload && parsed.payload.enabled !== undefined ? !!parsed.payload.enabled : !party.botPlay;
           broadcastMobaPartyState(roomId);
         }
         return;
@@ -855,7 +865,7 @@ wss.on('connection', (ws) => {
             return;
           }
           // Choose bot name
-          const botNames = ['ArissaBot', 'ErikaBot', 'MariaBot', 'SlayzerBot', 'WarrokBot', 'SteelbornBot'];
+          const botNames = ['ArissaBot', 'CyberBot', 'ErikaBot', 'MonsterBot', 'SkeletonBot', 'OperativeBot'];
           const unusedName = botNames.find(n => !party.players.some(p => p.name === n)) || `Bot_${party.players.length + 1}`;
           
           // Auto assign team
@@ -863,9 +873,9 @@ wss.on('connection', (ws) => {
           const blackCount = party.players.filter(p => p.team === 'BLACK').length;
           const team = redCount <= blackCount ? 'RED' : 'BLACK';
 
-          // Assign unused hero for the bot
-          const heroes = ['Arissa', 'Erika', 'Maria Sword', 'Slayzer', 'Warrok', 'Steelborn'];
-          const selectedHero = heroes.find(h => !party.players.some(p => p.selectedHero === h)) || 'Arissa';
+          // Assign unused hero for the bot from the 6 approved heroes: Arissa, Bot, Erika, Monster, Skeletonz, Woman Mobile
+          const heroes = ['Arissa', 'Bot', 'Erika', 'Monster', 'Skeletonz', 'Woman Mobile'];
+          const selectedHero = heroes.find(h => !party.players.some(p => p.selectedHero === h)) || 'Bot';
 
           party.players.push({
             id: 'bot_' + Math.random().toString(36).substr(2, 5),
@@ -888,17 +898,12 @@ wss.on('connection', (ws) => {
           broadcastMobaPartyState(roomId);
         }
         return;
-      } else if (parsed.event === 'moba:start_game') {
+      } else if (parsed.event === 'moba:agree_start' || parsed.event === 'moba:start_game') {
         const roomId = ws.mobaRoomId;
         const party = mobaParties[roomId];
         if (party) {
           party.lastActive = Date.now();
-          // Check count of active playing parties
-          const playingCount = Object.values(mobaParties).filter(p => p.status === 'playing').length;
-          if (playingCount >= 2 && party.status !== 'playing') {
-            ws.send(JSON.stringify({ event: 'moba:error', payload: 'Maximum of 2 playing parties can be played concurrently.' }));
-            return;
-          }
+          // Shortcut: If 2 players agree (or total ready players/bots >= 2), allow instant start
           party.status = 'playing';
           broadcastMobaPartyState(roomId);
         }
