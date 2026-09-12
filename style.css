@@ -1221,6 +1221,7 @@ body.app-body {
 
 /* Touch Look Zone Hint */
 .touch-look-hint {
+  display: none !important;
   position: absolute;
   top: 20px;
   left: 50%;
@@ -6336,7 +6337,7 @@ body.app-body {
   #moba-hud-bottom {
     padding: 3px 6px !important;
     gap: 4px !important;
-    max-height: 54px !important;
+    max-height: none !important;
   }
 
   .moba-spell-slot {

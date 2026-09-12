@@ -1064,8 +1064,9 @@
                 <!-- HERO INFO & STATS -->
                 <div class="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
                   <!-- Portrait -->
-                  <div class="relative w-8 h-8 sm:w-12 sm:h-12 bg-black/40 border border-white/20 rounded-lg overflow-hidden flex items-center justify-center shrink-0">
-                    <span id="moba-portrait-placeholder" class="text-base sm:text-2xl">👤</span>
+                  <div class="relative w-11 h-11 sm:w-16 sm:h-16 bg-black/40 border border-white/20 rounded-lg overflow-hidden flex items-center justify-center shrink-0">
+                    <img id="moba-portrait-img" src="assets/textures/moba/hero-image/arissa.png" class="w-full h-full object-cover" onerror="this.style.display='none'; document.getElementById('moba-portrait-placeholder').style.display='block';" />
+                    <span id="moba-portrait-placeholder" class="text-base sm:text-2xl hidden">👤</span>
                     <div id="moba-team-tag" class="absolute bottom-0 left-0 right-0 text-center text-[6px] sm:text-[7px] font-black text-white uppercase py-0.2 bg-red-600">RED</div>
                   </div>
 
@@ -1144,13 +1145,13 @@
                   </div>
 
                   <!-- 3x2 Grid -->
-                  <div class="grid grid-cols-3 grid-rows-2 gap-0.5 bg-black/30 border border-white/10 p-0.5 rounded-lg">
-                    <div class="w-5 h-5 sm:w-7 sm:h-7 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-[8px] text-slate-500 cursor-pointer" id="moba-item-0" data-idx="0">1</div>
-                    <div class="w-5 h-5 sm:w-7 sm:h-7 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-[8px] text-slate-500 cursor-pointer" id="moba-item-1" data-idx="1">2</div>
-                    <div class="w-5 h-5 sm:w-7 sm:h-7 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-[8px] text-slate-500 cursor-pointer" id="moba-item-2" data-idx="2">3</div>
-                    <div class="w-5 h-5 sm:w-7 sm:h-7 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-[8px] text-slate-500 cursor-pointer" id="moba-item-3" data-idx="3">4</div>
-                    <div class="w-5 h-5 sm:w-7 sm:h-7 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-[8px] text-slate-500 cursor-pointer" id="moba-item-4" data-idx="4">5</div>
-                    <div class="w-5 h-5 sm:w-7 sm:h-7 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-[8px] text-slate-500 cursor-pointer" id="moba-item-5" data-idx="5">6</div>
+                  <div id="moba-inventory-grid" class="grid grid-cols-3 grid-rows-2 gap-1 bg-black/30 border border-white/10 p-1 rounded-lg">
+                    <div class="w-7 h-7 sm:w-11 sm:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">1</div>
+                    <div class="w-7 h-7 sm:w-11 sm:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">2</div>
+                    <div class="w-7 h-7 sm:w-11 sm:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">3</div>
+                    <div class="w-7 h-7 sm:w-11 sm:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">4</div>
+                    <div class="w-7 h-7 sm:w-11 sm:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">5</div>
+                    <div class="w-7 h-7 sm:w-11 sm:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">6</div>
                   </div>
                 </div>
               </div>
@@ -1357,7 +1358,7 @@
                 </div>
 
                 <!-- Products Grid -->
-                <div class="flex-1 overflow-y-auto grid grid-cols-2 gap-3 pr-1" id="moba-shop-grid">
+                <div class="flex-1 overflow-y-auto grid grid-cols-2 gap-3 pr-1" id="moba-shop-items-grid">
                   <!-- Filled via JS -->
                 </div>
 

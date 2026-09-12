@@ -8676,8 +8676,12 @@ void main() {
         overlay.classList.add('hidden');
         if (btnToggleJoy) btnToggleJoy.textContent = '🎮 Joystick: OFF';
       } else {
-        // Auto
-        overlay.classList.remove('hidden');
+        // Auto - Hide on desktop/non-touch devices, show on mobile
+        if (isTouchDevice) {
+          overlay.classList.remove('hidden');
+        } else {
+          overlay.classList.add('hidden');
+        }
         if (btnToggleJoy) btnToggleJoy.textContent = '🎮 Joystick: AUTO';
       }
       this.updateMobileActionButtonsVisibility();
@@ -25680,16 +25684,29 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       ];
 
       shopItems.forEach(item => {
+        const itemImages = {
+          blade: 'aether-gladius.png',
+          boots: 'lux-feather.png',
+          heart: 'silva-heart.png',
+          scepter: 'vita-mindza.png',
+          shield: 'ventus-aegis.png'
+        };
+        const imageFile = itemImages[item.key] || 'aether-gladius.png';
+        const imagePath = `assets/textures/moba/invertory/${imageFile}`;
+
         const card = document.createElement('div');
-        card.className = `p-3 border rounded-lg bg-slate-900/90 hover:bg-slate-800 transition-all ${item.color} flex flex-col justify-between`;
+        card.className = `p-3 border rounded-lg bg-slate-900/90 hover:bg-slate-800 transition-all ${item.color} flex items-center space-x-3`;
         card.innerHTML = `
-          <div>
-            <div class="font-bold text-slate-100 text-xs">${item.name}</div>
-            <div class="text-[10px] text-slate-400 mt-1">${item.desc}</div>
-          </div>
-          <div class="flex items-center justify-between mt-3">
-            <span class="text-[11px] text-amber-400 font-bold">🪙 ${item.price} Gold</span>
-            <button class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] py-1 px-2 rounded-md active:scale-95 transition-all" onclick="app.buyMobaItem('${item.key}')">BUY</button>
+          <div class="w-12 h-12 bg-cover bg-center rounded border border-white/10 shrink-0" style="background-image: url('${imagePath}');"></div>
+          <div class="flex-1 flex flex-col justify-between h-full">
+            <div>
+              <div class="font-bold text-slate-100 text-xs">${item.name}</div>
+              <div class="text-[10px] text-slate-400 mt-0.5 leading-snug">${item.desc}</div>
+            </div>
+            <div class="flex items-center justify-between mt-1.5">
+              <span class="text-[10px] text-amber-400 font-bold font-mono">🪙 ${item.price} Gold</span>
+              <button class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[9px] py-0.5 px-2 rounded active:scale-95 transition-all" onclick="app.buyMobaItem('${item.key}')">BUY</button>
+            </div>
           </div>
         `;
         shopContainer.appendChild(card);
@@ -26283,8 +26300,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const dx = target.pos[0] - playerPos[0];
         const dz = target.pos[2] - playerPos[2];
         const dist = Math.hypot(dx, dz);
+        const targetRad = this.getMobaTargetRadius(target);
 
-        if (dist > attackRange) {
+        if (dist > attackRange + targetRad) {
           // Walk into range
           const moveDist = Math.min(dist, speed * dt);
           playerPos[0] += (dx / dist) * moveDist;
@@ -26352,7 +26370,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
       // Auto-target nearest hostile if idle and within range + 1.2m
       if (this.mobaState.attackTimer <= 0) {
-        this.mobaAutoAcquireTarget();
+        const autoT = this.mobaAutoAcquireTarget();
+        if (autoT) {
+          this.mobaState.targetEntity = autoT;
+        }
       }
     }
 
@@ -26491,6 +26512,29 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const textHeroName = document.getElementById('moba-hero-name');
     if (textHeroName) textHeroName.textContent = this.mobaState.selectedHero || 'Arissa';
 
+    const activeHero = this.mobaState.selectedHero || 'Arissa';
+    const heroImg = document.getElementById('moba-portrait-img');
+    const placeholder = document.getElementById('moba-portrait-placeholder');
+    if (heroImg) {
+      const heroMap = {
+        'arissa': 'arissa.png',
+        'erika': 'erika.png',
+        'skeletonz': 'skeletonz.png',
+        'monster': 'warrok.png',
+        'bot': 'slayzer.png',
+        'womanmobile': 'mariasword.png',
+        'slayzer': 'slayzer.png',
+        'steelborn': 'steelborn.png',
+        'warrok': 'warrok.png',
+        'mariasword': 'mariasword.png'
+      };
+      const key = activeHero.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const filename = heroMap[key] || 'arissa.png';
+      heroImg.src = `assets/textures/moba/hero-image/${filename}`;
+      heroImg.style.display = 'block';
+      if (placeholder) placeholder.style.display = 'none';
+    }
+
     const teamTag = document.getElementById('moba-team-tag');
     if (teamTag) {
       teamTag.textContent = this.mobaState.team || 'RED';
@@ -26524,15 +26568,28 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     for (let i = 0; i < 6; i++) {
       const item = this.mobaState.inventory[i];
       const slot = document.createElement('div');
-      slot.className = 'w-10 h-10 border border-slate-700 bg-slate-950/80 rounded flex items-center justify-center text-center text-[10px] text-slate-400 select-none relative cursor-pointer hover:border-red-500';
+      slot.className = 'w-7 h-7 sm:w-11 sm:h-11 border border-slate-700 bg-slate-950/80 rounded flex items-center justify-center text-center text-[10px] text-slate-400 select-none relative cursor-pointer hover:border-red-500 overflow-hidden';
       if (item) {
+        const itemImages = {
+          blade: 'aether-gladius.png',
+          boots: 'lux-feather.png',
+          heart: 'silva-heart.png',
+          scepter: 'vita-mindza.png',
+          shield: 'ventus-aegis.png'
+        };
+        const imageFile = itemImages[item.key] || 'aether-gladius.png';
+        const imagePath = `assets/textures/moba/invertory/${imageFile}`;
+
         slot.innerHTML = `
-          <span class="font-bold text-slate-100 text-[9px] leading-tight">${item.name.split(' ').pop()}</span>
-          <div class="absolute -top-1 -right-1 bg-red-600 hover:bg-red-500 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold text-[8px]" onclick="event.stopPropagation(); app.sellMobaItem(${i})">×</div>
+          <div class="absolute inset-0 bg-cover bg-center opacity-90" style="background-image: url('${imagePath}');"></div>
+          <div class="absolute inset-0 bg-black/40 hover:bg-transparent transition-colors flex items-center justify-center">
+            <span class="font-bold text-slate-100 text-[6.5px] sm:text-[9.5px] leading-tight text-shadow z-10 bg-black/60 px-1 py-0.2 rounded truncate max-w-[90%]">${item.name.split(' ').pop()}</span>
+          </div>
+          <div class="absolute -top-1 -right-1 bg-red-600 hover:bg-red-500 text-white rounded-full w-3 sm:w-4 h-3 sm:h-4 flex items-center justify-center font-bold text-[7px] sm:text-[9px] z-20" onclick="event.stopPropagation(); app.sellMobaItem(${i})">×</div>
         `;
         slot.title = `${item.name}: ${item.desc} (Click top cross to SELL)`;
       } else {
-        slot.innerHTML = `<span class="opacity-30">Empty</span>`;
+        slot.innerHTML = `<span class="opacity-30 text-[8px] sm:text-xs font-mono">${i + 1}</span>`;
       }
       grid.appendChild(slot);
     }
@@ -27980,6 +28037,39 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
   }
 
+  getMobaTargetRadius(target) {
+    if (!target) return 0.0;
+
+    // Check if target is a tower in the towers list
+    if (this.mobaState && this.mobaState.towers) {
+      if (this.mobaState.towers.some(t => t.id === target.id)) {
+        return 1.25;
+      }
+    }
+
+    // Check if target is a Tron
+    if (target.id && typeof target.id === 'string' && target.id.includes('tron')) {
+      return 2.4;
+    }
+
+    // Check if target is a player
+    if (target.isPlayer || target === (this.mobaState && this.mobaState.heroStats)) {
+      return 0.65;
+    }
+
+    // Check if target is a creep
+    if (target.id && typeof target.id === 'string' && target.id.includes('creep')) {
+      return 0.45;
+    }
+
+    // Check if target is a bot/player
+    if (target.isBot || (this.mobaState && this.mobaState.players && this.mobaState.players.some(p => p.id === target.id))) {
+      return 0.65;
+    }
+
+    return 0.0;
+  }
+
   updateMobaCreeps(dt) {
     if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
 
@@ -28072,8 +28162,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const dx = targetPos[0] - creep.pos[0];
         const dz = targetPos[2] - creep.pos[2];
         const dist = Math.hypot(dx, dz);
+        const targetRad = this.getMobaTargetRadius(target);
 
-        if (dist <= creep.attackRange) {
+        if (dist <= creep.attackRange + targetRad) {
           // Attack target
           creep.isMoving = false;
           if (creep.attackTimer <= 0) {
@@ -28302,9 +28393,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const dx = tPos[0] - b.pos[0];
         const dz = tPos[2] - b.pos[2];
         const dist = Math.hypot(dx, dz);
+        const targetRad = this.getMobaTargetRadius(closestTarget);
         const attackRange = b.attackRange || (b.isRanged ? 6.8 : 2.2);
 
-        if (dist <= attackRange) {
+        if (dist <= attackRange + targetRad) {
           b.moving = false;
           b.yaw = Math.atan2(dx, dz);
           if (b.attackTimer <= 0) {
@@ -28394,8 +28486,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const dx = tPos[0] - this.mobaState.currentPos[0];
     const dz = tPos[2] - this.mobaState.currentPos[2];
     const dist = Math.hypot(dx, dz);
+    const targetRad = this.getMobaTargetRadius(target);
 
-    if (dist <= stats.attackRange) {
+    if (dist <= stats.attackRange + targetRad) {
       // In range: perform attack!
       this.mobaState.attackTimer = stats.attackCooldown || 0.85;
       this.mobaState.lastAttackTime = performance.now();
