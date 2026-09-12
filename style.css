@@ -5807,9 +5807,9 @@ body.app-body {
 
 /* Mode Selection Ask Popup Modal */
 .pong-modal-backdrop {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 10000;
+  z-index: 60;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6294,6 +6294,70 @@ body.app-body {
     height: 74px;
   }
 }
+
+/* ==========================================================================
+   DEMO 10: MOBA 3D TRANSPARENT & MOBILE-ADAPTED STYLES
+   ========================================================================== */
+#moba-startup-menu,
+#moba-overlay {
+  pointer-events: none;
+}
+
+#moba-startup-menu * {
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  #moba-startup-menu {
+    padding: 4px !important;
+  }
+  
+  #moba-startup-menu .relative.w-full {
+    height: 100% !important;
+    max-height: 100% !important;
+  }
+
+  #moba-hero-loop-bar {
+    padding: 3px 8px !important;
+    margin: 2px auto !important;
+    max-width: 320px !important;
+  }
+
+  #moba-btn-prev-hero,
+  #moba-btn-next-hero {
+    opacity: 0.95;
+    touch-action: manipulation;
+  }
+
+  #moba-hud-top {
+    padding: 4px 6px !important;
+  }
+
+  #moba-hud-bottom {
+    padding: 3px 6px !important;
+    gap: 4px !important;
+    max-height: 54px !important;
+  }
+
+  .moba-spell-slot {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 6px !important;
+  }
+
+  #moba-selected-details {
+    padding: 6px 8px !important;
+    margin-bottom: 2px !important;
+    gap: 4px !important;
+  }
+
+  #moba-col-rooms,
+  #moba-col-roster {
+    max-height: calc(100vh - 130px) !important;
+    padding: 6px !important;
+  }
+}
+
 
 
 
