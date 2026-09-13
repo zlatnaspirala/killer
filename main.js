@@ -15,6 +15,7 @@ import {
 import { globalNetworkManager } from './src/net/NetworkManager.js';
 import { NetworkConfig } from './network.config.js';
 import { ProceduralGeometryFactory, globalForestLayoutEngine } from './src/core/ProceduralGeometryFactory.js';
+import { SacredGeometryFactory } from './src/core/SacredGeometryFactory.js';
 
 
 const SOURCE_FILES = {
@@ -6637,6 +6638,234 @@ void main() {
     }
 
     this.log("✅ All 3D Combat Hero models loaded successfully into the carousel system!", "success");
+    await this.loadTowerGLB();
+    this.initSacredGeometryMeshes();
+  }
+
+  initSacredGeometryMeshes() {
+    if (this._sacredMeshesInitialized) return;
+    this._sacredMeshesInitialized = true;
+
+    try {
+      this.sacredHeroMeshes = {
+        Arissa: this.buildMeshBuffer(SacredGeometryFactory.createPentagramCircle(1.2)),
+        Erika: this.buildMeshBuffer(SacredGeometryFactory.createHexagramCircle(1.2)),
+        Monster: this.buildMeshBuffer(SacredGeometryFactory.createTripleTriangleCircle(1.25)),
+        Bot: this.buildMeshBuffer(SacredGeometryFactory.createOctagramCircle(1.2)),
+        Skeletonz: this.buildMeshBuffer(SacredGeometryFactory.createHeptagramCircle(1.2)),
+        'Woman Mobile': this.buildMeshBuffer(SacredGeometryFactory.createMetatronCircle(1.2))
+      };
+
+      this.sacredSpellMeshes = {
+        nova: this.buildMeshBuffer(SacredGeometryFactory.createSacredNovaMesh(1.0)),
+        shieldDome: this.buildMeshBuffer(SacredGeometryFactory.createSacredShieldDome(1.6)),
+        ultimateCircle: this.buildMeshBuffer(SacredGeometryFactory.createSacredUltimateCircle(1.0))
+      };
+      this.log("✨ Sacred Geometry mathematical glyphs and ritual circles initialized!", "success");
+    } catch (err) {
+      console.warn("[initSacredGeometryMeshes] Error generating sacred meshes:", err);
+    }
+  }
+
+  async loadTowerGLB(customUrl = '/towers/tower.glb') {
+    if (this.mobaTowerMesh) return this.mobaTowerMesh;
+    const urls = [customUrl, '/towers/tower.glb', '/assets/models/towers/tower.glb', 'towers/tower.glb'];
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const arrayBuffer = await res.arrayBuffer();
+        const jsonLen = new DataView(arrayBuffer, 12, 4).getUint32(0, true);
+        const jsonText = new TextDecoder().decode(new Uint8Array(arrayBuffer, 20, jsonLen));
+        const jsonChunk = JSON.parse(jsonText);
+        const binChunk = arrayBuffer.slice(20 + jsonLen + 8);
+
+        const getAccessorData = (index, type = Float32Array) => {
+          const accessor = jsonChunk.accessors[index];
+          const bufferView = jsonChunk.bufferViews[accessor.bufferView];
+          const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+          const count = accessor.count * (accessor.type === "VEC3" ? 3 : accessor.type === "VEC2" ? 2 : 1);
+          return new type(binChunk, byteOffset, count);
+        };
+
+        const node2 = (jsonChunk.nodes && jsonChunk.nodes[2]) || null;
+        const q = (node2 && node2.rotation) || [0, 0, 0, 1];
+        const t = (node2 && node2.translation) || [0, 0, 0];
+
+        const rotateVec = (v, quat) => {
+          const qx = quat[0], qy = quat[1], qz = quat[2], qw = quat[3];
+          const vx = v[0], vy = v[1], vz = v[2];
+          const tx = 2 * (qy * vz - qz * vy);
+          const ty = 2 * (qz * vx - qx * vz);
+          const tz = 2 * (qx * vy - qy * tx);
+          return [
+            vx + qw * tx + (qy * tz - qz * ty),
+            vy + qw * ty + (qz * tx - qx * tz),
+            vz + qw * tz + (qx * ty - qy * tx)
+          ];
+        };
+
+        const rawPos = getAccessorData(0, Float32Array);
+        const rawNorm = getAccessorData(1, Float32Array);
+        const rawUv = getAccessorData(2, Float32Array);
+
+        let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, minZ = 1e9, maxZ = -1e9;
+        const positions = new Float32Array(rawPos.length);
+        const normals = new Float32Array(rawNorm.length);
+
+        for (let i = 0; i < rawPos.length; i += 3) {
+          const v = [rawPos[i], rawPos[i+1], rawPos[i+2]];
+          const rv = rotateVec(v, q);
+          const fx = rv[0] + t[0];
+          const fy = rv[1] + t[1];
+          const fz = rv[2] + t[2];
+          positions[i] = fx; positions[i+1] = fy; positions[i+2] = fz;
+          minX = Math.min(minX, fx); maxX = Math.max(maxX, fx);
+          minY = Math.min(minY, fy); maxY = Math.max(maxY, fy);
+          minZ = Math.min(minZ, fz); maxZ = Math.max(maxZ, fz);
+
+          const nv = [rawNorm[i], rawNorm[i+1], rawNorm[i+2]];
+          const rnv = rotateVec(nv, q);
+          normals[i] = rnv[0]; normals[i+1] = rnv[1]; normals[i+2] = rnv[2];
+        }
+
+        const cx = (minX + maxX) / 2;
+        const cz = (minZ + maxZ) / 2;
+        const by = minY;
+        for (let i = 0; i < positions.length; i += 3) {
+          positions[i] -= cx;
+          positions[i+1] -= by;
+          positions[i+2] -= cz;
+        }
+
+        const allIndices = [];
+        if (jsonChunk.meshes && jsonChunk.meshes[0] && jsonChunk.meshes[0].primitives) {
+          jsonChunk.meshes[0].primitives.forEach(prim => {
+            const idx = getAccessorData(prim.indices, Uint16Array);
+            for (let j = 0; j < idx.length; j++) allIndices.push(idx[j]);
+          });
+        }
+
+        const barys = [];
+        for (let i = 0; i < positions.length / 3; i++) {
+          barys.push(i % 3 === 0 ? 1 : 0, i % 3 === 1 ? 1 : 0, i % 3 === 2 ? 1 : 0);
+        }
+
+        let towerTexture = null;
+        if (jsonChunk.images && jsonChunk.images.length > 1 && binChunk) {
+          await new Promise(resImg => {
+            try {
+              const imgDef = jsonChunk.images[1] || jsonChunk.images[0];
+              if (imgDef && imgDef.bufferView !== undefined) {
+                const bv = jsonChunk.bufferViews[imgDef.bufferView];
+                const bOffset = bv.byteOffset || 0;
+                const bLen = bv.byteLength;
+                const slice = binChunk.slice(bOffset, bOffset + bLen);
+                const blob = new Blob([slice], { type: imgDef.mimeType || 'image/png' });
+                const blobUrl = URL.createObjectURL(blob);
+                const img = new Image();
+                img.onload = () => {
+                  const gl = this.gl;
+                  const tex = gl.createTexture();
+                  gl.bindTexture(gl.TEXTURE_2D, tex);
+                  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+                  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                  gl.generateMipmap(gl.TEXTURE_2D);
+                  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+                  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+                  towerTexture = tex;
+                  resImg();
+                };
+                img.onerror = () => resImg();
+                img.src = blobUrl;
+              } else {
+                resImg();
+              }
+            } catch(e) { resImg(); }
+          });
+        }
+
+        const meshData = {
+          positions,
+          normals,
+          uvs: rawUv,
+          barys,
+          indices: allIndices
+        };
+
+        const mesh = this.buildMeshBuffer(meshData);
+        if (towerTexture) mesh.texture = towerTexture;
+        this.mobaTowerMesh = mesh;
+        this.log("🏰 3D GLB Tower Model loaded successfully from " + url, "success");
+        return mesh;
+      } catch (err) {
+        console.warn(`[loadTowerGLB] Failed to load from ${url}:`, err);
+      }
+    }
+    return null;
+  }
+
+  drawHeroSacredCircle(progInfo, heroName, team, pos, timestamp, isLocal = false) {
+    if (!this.sacredHeroMeshes) return;
+    const mesh = this.sacredHeroMeshes[heroName] || this.sacredHeroMeshes.Arissa;
+    if (!mesh) return;
+
+    const gl = this.gl;
+    gl.bindVertexArray(mesh.vao);
+
+    const heroThemeColors = {
+      Arissa: [0.15, 0.95, 0.45],
+      Erika: [0.82, 0.38, 0.98],
+      Monster: [0.98, 0.48, 0.12],
+      Bot: [0.12, 0.92, 0.98],
+      Skeletonz: [0.35, 0.95, 0.75],
+      'Woman Mobile': [0.98, 0.85, 0.2]
+    };
+
+    const baseColor = heroThemeColors[heroName] || [0.9, 0.9, 0.3];
+    const teamTint = team === 'RED' ? [1.0, 0.25, 0.2] : [0.25, 0.5, 1.0];
+    const finalColor = [
+      baseColor[0] * 0.75 + teamTint[0] * 0.25,
+      baseColor[1] * 0.75 + teamTint[1] * 0.25,
+      baseColor[2] * 0.75 + teamTint[2] * 0.25
+    ];
+
+    const spinSpeed = 0.00075;
+    const spin = timestamp * spinSpeed * (team === 'RED' ? 1 : -1);
+    const pulse = (isLocal ? 1.35 : 1.15) + Math.sin(timestamp * 0.004 + pos[0]) * 0.08;
+    const cosS = Math.cos(spin) * pulse;
+    const sinS = Math.sin(spin) * pulse;
+
+    this.instanceMatrix[0] = cosS;  this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinS; this.instanceMatrix[3] = 0;
+    this.instanceMatrix[4] = 0;     this.instanceMatrix[5] = 0.03; this.instanceMatrix[6] = 0;  this.instanceMatrix[7] = 0;
+    this.instanceMatrix[8] = sinS;  this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosS; this.instanceMatrix[11] = 0;
+    this.instanceMatrix[12] = pos[0]; this.instanceMatrix[13] = 0.025; this.instanceMatrix[14] = pos[2]; this.instanceMatrix[15] = 1.0;
+
+    Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+    gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+    if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+    if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.15);
+    if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.85);
+    if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(finalColor));
+    gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+    if (isLocal && this.meshBuffers[6]) {
+      const innerRing = this.meshBuffers[6];
+      gl.bindVertexArray(innerRing.vao);
+      const revSpin = -spin * 1.5;
+      const cR = Math.cos(revSpin) * 0.65, sR = Math.sin(revSpin) * 0.65;
+      this.instanceMatrix[0] = cR;  this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sR; this.instanceMatrix[3] = 0;
+      this.instanceMatrix[4] = 0;   this.instanceMatrix[5] = 0.035; this.instanceMatrix[6] = 0;  this.instanceMatrix[7] = 0;
+      this.instanceMatrix[8] = sR;  this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cR; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[12] = pos[0]; this.instanceMatrix[13] = 0.028; this.instanceMatrix[14] = pos[2]; this.instanceMatrix[15] = 1.0;
+      Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(baseColor));
+      gl.drawElements(gl.TRIANGLES, innerRing.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
   }
 
   getSphereLOD(isSmallHolder = false) {
@@ -25215,6 +25444,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   initMobaDemo() {
     this.log("🎮 Initializing MOBA Forest of Hollow Blood Simulation Layer...", "info");
     this.preloadAllMobaHeroes();
+    this.loadTowerGLB();
+    this.initSacredGeometryMeshes();
 
     // Initialize/Reset MOBA Local State
     this.mobaState = {
@@ -26052,17 +26283,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const myTeam = this.mobaState.team;
 
     if (index === 0) {
-      // Q: Area Blast - AOE 4.8m damage & knockback
+      // Q: Area Blast - AOE 4.8m damage & knockback with Sacred Nova Shockwave
       this.mobaState.vfxBursts.push({
+        type: 'areaBlast',
         x: playerPos[0],
         z: playerPos[2],
-        radius: 4.8,
-        timer: 0.6,
-        color: [0.06, 0.85, 0.95]
+        radius: 5.2,
+        timer: 0.65,
+        maxTimer: 0.65,
+        color: [0.08, 0.92, 0.98]
       });
       this.mobaDamageInRadius(playerPos, 4.8, 135, myTeam, true);
     } else if (index === 1) {
-      // W: Blink Dash - 6.0m forward teleport with line damage
+      // W: Blink Dash - 6.0m forward teleport with line damage & sacred starburst
       const forwardAngle = this.mobaState.currentYaw || 0.0;
       const dx = Math.sin(forwardAngle) * 6.0;
       const dz = Math.cos(forwardAngle) * 6.0;
@@ -26070,11 +26303,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.resolveMobaCollision(newPos, 0.7);
 
       this.mobaState.vfxBursts.push({
+        type: 'blinkDepart',
         x: playerPos[0],
         z: playerPos[2],
-        radius: 2.0,
-        timer: 0.4,
-        color: [0.95, 0.2, 0.8]
+        radius: 2.2,
+        timer: 0.45,
+        maxTimer: 0.45,
+        color: [0.95, 0.25, 0.85]
       });
 
       playerPos[0] = newPos[0];
@@ -26082,34 +26317,40 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.targetPos = null;
 
       this.mobaState.vfxBursts.push({
+        type: 'blinkArrive',
         x: playerPos[0],
         z: playerPos[2],
-        radius: 2.5,
-        timer: 0.4,
-        color: [0.95, 0.2, 0.8]
+        radius: 2.8,
+        timer: 0.45,
+        maxTimer: 0.45,
+        color: [0.95, 0.25, 0.85]
       });
 
       this.mobaDamageInRadius(playerPos, 3.2, 80, myTeam, true);
     } else if (index === 2) {
-      // E: Barrier Field - 240 HP shield + radial pulse
+      // E: Barrier Field - 240 HP shield + sacred geodesic dome + radial pulse
       this.mobaState.heroStats.shield = (this.mobaState.heroStats.shield || 0) + 240;
       this.mobaState.heroStats.shieldTimer = 5.0;
       this.mobaState.vfxBursts.push({
+        type: 'barrier',
         x: playerPos[0],
         z: playerPos[2],
-        radius: 3.5,
-        timer: 0.7,
-        color: [0.1, 0.95, 0.35]
+        radius: 3.8,
+        timer: 0.85,
+        maxTimer: 0.85,
+        color: [0.15, 0.98, 0.45]
       });
       this.mobaDamageInRadius(playerPos, 3.5, 45, myTeam, true);
     } else if (index === 3) {
-      // R: Hollow Eclipse Ultimate - Massive 8.5m nova
+      // R: Hollow Eclipse Ultimate - Massive 8.5m grand sacred ritual circle
       this.mobaState.vfxBursts.push({
+        type: 'ultimate',
         x: playerPos[0],
         z: playerPos[2],
-        radius: 8.5,
-        timer: 1.0,
-        color: [0.95, 0.05, 0.2]
+        radius: 8.8,
+        timer: 1.25,
+        maxTimer: 1.25,
+        color: [0.98, 0.12, 0.25]
       });
       this.mobaDamageInRadius(playerPos, 8.5, 340, myTeam, true, true);
       this.showMobaAlert("🌑 HOLLOW ECLIPSE NOVA UNLEASHED!");
@@ -26197,7 +26438,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.state.camPitch = 0.98;
     this.state.camYaw = 0.0;
 
-    // Ensure we have a spotlight following the player in sceneEntities
+    // Ensure Main Light follows the player hero (exact middle of screen) with big radius covering whole screen
     if (this.sceneEntities) {
       let playerSpotlight = this.sceneEntities.find(e => e.id === 'playerSpotlight');
       if (!playerSpotlight) {
@@ -26205,20 +26446,42 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           id: 'playerSpotlight',
           isLight: true,
           lightType: 'spot',
-          pos: [playerPos[0], 9.5, playerPos[2]],
+          pos: [playerPos[0], 14.0, playerPos[2]],
           lightDir: [0, -1, 0],
-          color: [1.0, 1.0, 0.88], // bright warm yellow spotlight
-          intensity: 35.0,
-          spotCutoff: Math.cos(22 * Math.PI / 180),
-          outerCutoff: Math.cos(32 * Math.PI / 180)
+          color: [1.2, 1.15, 1.05],
+          intensity: 45.0,
+          spotCutoff: Math.cos(65 * Math.PI / 180), // wide cone covering viewport
+          outerCutoff: Math.cos(78 * Math.PI / 180)
         };
         this.sceneEntities.push(playerSpotlight);
       } else {
         playerSpotlight.pos[0] = playerPos[0];
-        playerSpotlight.pos[1] = 9.5;
+        playerSpotlight.pos[1] = 14.0;
         playerSpotlight.pos[2] = playerPos[2];
         playerSpotlight.lightDir = [0, -1, 0];
-        playerSpotlight.intensity = 35.0;
+        playerSpotlight.intensity = 45.0;
+        playerSpotlight.spotCutoff = Math.cos(65 * Math.PI / 180);
+        playerSpotlight.outerCutoff = Math.cos(78 * Math.PI / 180);
+      }
+
+      let playerMainPointLight = this.sceneEntities.find(e => e.id === 'playerMainPointLight');
+      if (!playerMainPointLight) {
+        playerMainPointLight = {
+          id: 'playerMainPointLight',
+          isLight: true,
+          lightType: 'point',
+          pos: [playerPos[0], 7.5, playerPos[2]],
+          color: [1.25, 1.22, 1.15],
+          intensity: 48.0,
+          radius: 46.0 // Large radius covering almost the whole screen
+        };
+        this.sceneEntities.push(playerMainPointLight);
+      } else {
+        playerMainPointLight.pos[0] = playerPos[0];
+        playerMainPointLight.pos[1] = 7.5;
+        playerMainPointLight.pos[2] = playerPos[2];
+        playerMainPointLight.radius = 46.0;
+        playerMainPointLight.intensity = 48.0;
       }
     }
 
@@ -26822,6 +27085,38 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
 
+    // Main Light follows player hero (exact middle of screen) with big radius covering almost whole screen
+    const pCenterPos = (this.mobaState && this.mobaState.playing && this.mobaState.currentPos) ? this.mobaState.currentPos : [0, 0, 0];
+    if (progInfo.uLightDir) gl.uniform3fv(progInfo.uLightDir, [0.35, 0.92, 0.4]);
+    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [2.5, 2.45, 2.3]);
+    if (progInfo.uFillLightDir) gl.uniform3fv(progInfo.uFillLightDir, [-0.4, 0.65, -0.35]);
+    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [1.1, 1.15, 1.25]);
+
+    if (progInfo.uNumPointLights && progInfo.pointLights) {
+      gl.uniform1i(progInfo.uNumPointLights, 3);
+      const u0 = progInfo.pointLights[0];
+      if (u0) {
+        if (u0.pos) gl.uniform3fv(u0.pos, [pCenterPos[0], pCenterPos[1] + 8.5, pCenterPos[2]]);
+        if (u0.color) gl.uniform3fv(u0.color, [1.38, 1.32, 1.22]);
+        if (u0.intensity) gl.uniform1f(u0.intensity, 52.0);
+        if (u0.radius) gl.uniform1f(u0.radius, 48.0); // Big radius covering whole viewport!
+      }
+      const u1 = progInfo.pointLights[1];
+      if (u1) {
+        if (u1.pos) gl.uniform3fv(u1.pos, [pCenterPos[0] - 18.0, pCenterPos[1] + 6.0, pCenterPos[2] - 16.0]);
+        if (u1.color) gl.uniform3fv(u1.color, [0.75, 0.9, 1.3]);
+        if (u1.intensity) gl.uniform1f(u1.intensity, 24.0);
+        if (u1.radius) gl.uniform1f(u1.radius, 38.0);
+      }
+      const u2 = progInfo.pointLights[2];
+      if (u2) {
+        if (u2.pos) gl.uniform3fv(u2.pos, [pCenterPos[0] + 18.0, pCenterPos[1] + 6.0, pCenterPos[2] + 16.0]);
+        if (u2.color) gl.uniform3fv(u2.color, [1.3, 0.8, 0.55]);
+        if (u2.intensity) gl.uniform1f(u2.intensity, 24.0);
+        if (u2.radius) gl.uniform1f(u2.radius, 38.0);
+      }
+    }
+
     // Render Ground plate
     const groundMesh = this.meshBuffers[1]; // Use cube scaled wide for terrain
     if (groundMesh) {
@@ -26925,6 +27220,28 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(themeColor));
           gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+
+        // 2b. Sacred Geometry Magic Circle on pedestal
+        const sacredMesh = this.sacredHeroMeshes && this.sacredHeroMeshes[heroName];
+        if (sacredMesh) {
+          gl.bindVertexArray(sacredMesh.vao);
+          const sacredSpin = timestamp * 0.0006 * (i % 2 === 0 ? 1 : -1);
+          const cSec = Math.cos(sacredSpin) * (0.85 * scale);
+          const sSec = Math.sin(sacredSpin) * (0.85 * scale);
+
+          this.instanceMatrix[0] = cSec; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sSec; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.028; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sSec; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cSec; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = posX; this.instanceMatrix[13] = 0.024; this.instanceMatrix[14] = 0.0; this.instanceMatrix[15] = 1.0;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.2);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.8);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(themeColor));
+          gl.drawElements(gl.TRIANGLES, sacredMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
 
         // 3. Orbiting luminous particles around the hero
@@ -27256,26 +27573,98 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       gl.drawElements(gl.TRIANGLES, baseCube.indexCount, gl.UNSIGNED_SHORT, 0);
     }
 
-    // 2. Draw towers along lanes
-    const towerMesh = this.meshBuffers[1];
+    // 2. Draw towers along lanes (GLB Tower Model "/towers/tower.glb" with sacred defense wards & apex crystal)
+    const towerMesh = this.mobaTowerMesh || this.meshBuffers[1];
+    const orbMesh = this.meshBuffers[4] || (this.sphereLODs && this.sphereLODs[0]);
+    const towerWardMesh = (this.sacredHeroMeshes && this.sacredHeroMeshes.Bot) || this.meshBuffers[6];
+
     if (towerMesh) {
-      gl.bindVertexArray(towerMesh.vao);
       this.mobaState.towers.forEach(t => {
         if (t.hp <= 0) return; // Destroyed
 
-        const factor = t.hp / 1200;
-        this.instanceMatrix[0] = 0.7; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 2.0; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.7; this.instanceMatrix[11] = 0;
-        this.instanceMatrix[12] = t.pos[0]; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = t.pos[2]; this.instanceMatrix[15] = 1.0;
+        const factor = Math.max(0.12, t.hp / (t.maxHp || 1200));
+        const isRed = t.team === 'RED';
+        const teamColor = isRed ? [0.95, 0.25, 0.2] : [0.22, 0.45, 0.95];
+        const crystalColor = isRed ? [1.0 * factor, 0.3 * factor, 0.2 * factor] : [0.25 * factor, 0.6 * factor, 1.0 * factor];
 
-        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-        if (progInfo.uBaseColor) {
-          gl.uniform3fv(progInfo.uBaseColor, t.team === 'RED' 
-            ? new Float32Array([0.8 * factor, 0.2 * factor, 0.1 * factor]) 
-            : new Float32Array([0.15 * factor, 0.2 * factor, 0.8 * factor]));
+        // 2a. Ground Defense Ward Circle beneath tower
+        if (towerWardMesh) {
+          gl.bindVertexArray(towerWardMesh.vao);
+          const wardPulse = 2.4 + Math.sin(timestamp * 0.003 + t.pos[0]) * 0.12;
+          const wardAngle = timestamp * 0.0004 * (isRed ? 1 : -1);
+          const cW = Math.cos(wardAngle) * wardPulse, sW = Math.sin(wardAngle) * wardPulse;
+
+          this.instanceMatrix[0] = cW; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sW; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.04; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sW; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cW; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = t.pos[0]; this.instanceMatrix[13] = 0.02; this.instanceMatrix[14] = t.pos[2]; this.instanceMatrix[15] = 1.0;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.2);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.8);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(teamColor));
+          gl.drawElements(gl.TRIANGLES, towerWardMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
-        gl.drawElements(gl.TRIANGLES, towerMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // 2b. Tower Structure (GLB Model or Primitive)
+        gl.bindVertexArray(towerMesh.vao);
+        const hasTex = !!towerMesh.texture;
+        if (hasTex && progInfo.uAlbedoMap && progInfo.uUseTexMaps) {
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, towerMesh.texture);
+          gl.uniform1i(progInfo.uAlbedoMap, 2);
+          gl.uniform1i(progInfo.uUseTexMaps, 1);
+        }
+
+        const isGlb = !!this.mobaTowerMesh;
+        const scale = isGlb ? 0.72 : 0.7;
+        this.instanceMatrix[0] = scale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = isGlb ? scale : 2.0; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = scale; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = t.pos[0]; this.instanceMatrix[13] = isGlb ? 0.0 : 1.0; this.instanceMatrix[14] = t.pos[2]; this.instanceMatrix[15] = 1.0;
+
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.75);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.15);
+        if (progInfo.uBaseColor) {
+          gl.uniform3fv(progInfo.uBaseColor, isRed 
+            ? new Float32Array([0.95 * factor, 0.65 * factor, 0.65 * factor]) 
+            : new Float32Array([0.65 * factor, 0.75 * factor, 0.95 * factor]));
+        }
+        const idxType = towerMesh.indexType || gl.UNSIGNED_SHORT;
+        gl.drawElements(gl.TRIANGLES, towerMesh.indexCount, idxType, 0);
+
+        if (hasTex && progInfo.uUseTexMaps) {
+          gl.uniform1i(progInfo.uUseTexMaps, 0);
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, null);
+        }
+
+        // 2c. Tower Apex Floating Energy Sentinel Crystal
+        if (orbMesh) {
+          gl.bindVertexArray(orbMesh.vao);
+          const spin = timestamp * 0.002;
+          const bob = Math.sin(timestamp * 0.0035 + t.pos[0]) * 0.12;
+          const orbScale = 0.42 * factor;
+          const cO = Math.cos(spin) * orbScale, sO = Math.sin(spin) * orbScale;
+
+          this.instanceMatrix[0] = cO; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sO; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = orbScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sO; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cO; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = t.pos[0]; this.instanceMatrix[13] = 3.9 + bob; this.instanceMatrix[14] = t.pos[2]; this.instanceMatrix[15] = 1.0;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.1);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(crystalColor));
+          gl.drawElements(gl.TRIANGLES, orbMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
       });
     }
 
@@ -27291,10 +27680,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const cYaw = creep.yaw || 0;
 
       if (botModel && botModel.soldierMesh) {
-        // Animate creeps: Use 'attack' when attacking, 'walk' when moving, 'idle' when standing
-        const animTime = timestamp * 0.0016 + (creep.id ? creep.id.charCodeAt(0) : 0);
-        const isAttacking = (timestamp - (creep.lastAttackTime || 0)) < 400;
+        // Animate creeps: Use 'attack' when attacking or engaged in combat, 'walk' when moving, 'idle' when standing
+        const timeSinceAttack = timestamp - (creep.lastAttackTime || 0);
+        const isAttacking = creep.isAttacking || timeSinceAttack < 750;
         const animToPlay = isAttacking ? 'attack' : (creep.isMoving ? 'walk' : 'idle');
+        const animTime = isAttacking 
+          ? (timeSinceAttack * 0.0018) 
+          : (timestamp * 0.0016 + (creep.id ? creep.id.charCodeAt(0) : 0));
+
         if (botModel.soldierSkeletonData) {
           const skinMatrices = this.evaluateSpecificSkeleton(botModel.soldierSkeletonData, animTime, animToPlay);
           if (skinMatrices) {
@@ -27329,6 +27722,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const pYaw = p.yaw || 0;
         const color = p.team === 'RED' ? [0.9, 0.2, 0.2] : [0.2, 0.4, 0.9];
         const heroName = p.selectedHero || 'Arissa';
+
+        // Draw unique sacred geometry circle under hero feet!
+        this.drawHeroSacredCircle(progInfo, heroName, p.team, p.pos, timestamp, false);
 
         const glbPath = {
           Arissa: 'assets/models/moba-characters/arissa.glb',
@@ -27375,6 +27771,29 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const myColor = this.mobaState.team === 'RED' ? [0.9, 0.25, 0.25] : [0.25, 0.35, 0.95];
       const myHeroName = this.mobaState.selectedHero || 'Arissa';
 
+      // Draw local hero's unique sacred geometry circle under feet!
+      this.drawHeroSacredCircle(progInfo, myHeroName, this.mobaState.team, playerPos, timestamp, true);
+
+      // Render active barrier shield dome if active
+      if (this.mobaState.heroStats.shield > 0 && this.sacredSpellMeshes && this.sacredSpellMeshes.shieldDome) {
+        const shieldMesh = this.sacredSpellMeshes.shieldDome;
+        gl.bindVertexArray(shieldMesh.vao);
+        const sPulse = 1.35 + Math.sin(timestamp * 0.006) * 0.08;
+        const sSpin = timestamp * 0.001;
+        const cS = Math.cos(sSpin) * sPulse, sS = Math.sin(sSpin) * sPulse;
+        this.instanceMatrix[0] = cS; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sS; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sPulse * 1.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sS; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cS; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = playerPos[0]; this.instanceMatrix[13] = 0.85; this.instanceMatrix[14] = playerPos[2]; this.instanceMatrix[15] = 1.0;
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.1);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.9);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.2, 0.95, 0.65]));
+        gl.drawElements(gl.TRIANGLES, shieldMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
+
       const glbPath = {
         Arissa: 'assets/models/moba-characters/arissa.glb',
         Bot: 'assets/models/moba-characters/bot.glb',
@@ -27385,24 +27804,6 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }[myHeroName] || 'assets/models/moba-characters/arissa.glb';
 
       const model = (this.mobaHeroModels && this.mobaHeroModels[glbPath]);
-
-      // Circle surface on bottom of player legs indicating team presence
-      const diskMesh = this.meshBuffers[7];
-      if (diskMesh) {
-        gl.bindVertexArray(diskMesh.vao);
-        this.instanceMatrix[0] = 0.85; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.02; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.85; this.instanceMatrix[11] = 0;
-        this.instanceMatrix[12] = playerPos[0]; this.instanceMatrix[13] = 0.015; this.instanceMatrix[14] = playerPos[2]; this.instanceMatrix[15] = 1.0;
-
-        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
-        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.9);
-        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(myColor));
-        gl.drawElements(gl.TRIANGLES, diskMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-      }
 
       if (model && model.soldierMesh) {
         const isMoving = !!this.mobaState.isWalking || (this.mobaState.velocity && Math.hypot(this.mobaState.velocity[0], this.mobaState.velocity[2]) > 0.1);
@@ -27430,25 +27831,104 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
     }
 
-    // 6. Draw dynamic VFX bursts & spells circles
+    // 6. Draw dynamic Sacred Geometry VFX bursts & spell circles
     const ringMesh = this.meshBuffers[6];
-    if (ringMesh) {
-      gl.bindVertexArray(ringMesh.vao);
-      this.mobaState.vfxBursts.forEach(vfx => {
-        const factor = vfx.timer / 1.0;
-        const scale = vfx.radius * (2.0 - factor);
-        
+    const ultimateMesh = this.sacredSpellMeshes && this.sacredSpellMeshes.ultimateCircle;
+    const novaMesh = this.sacredSpellMeshes && this.sacredSpellMeshes.nova;
+    const shieldMesh = this.sacredSpellMeshes && this.sacredSpellMeshes.shieldDome;
+
+    this.mobaState.vfxBursts.forEach(vfx => {
+      const maxT = vfx.maxTimer || 1.0;
+      const progress = Math.max(0, Math.min(1.0, (maxT - vfx.timer) / maxT));
+      const isUltimate = vfx.type === 'ultimate' || vfx.radius >= 6.0;
+      const isBarrier = vfx.type === 'barrier';
+
+      if (isUltimate && ultimateMesh) {
+        // Grand multi-tier sacred mandala
+        gl.bindVertexArray(ultimateMesh.vao);
+        const uScale = vfx.radius * (0.65 + 0.45 * progress);
+        const spin = timestamp * 0.001;
+        const cU = Math.cos(spin) * uScale, sU = Math.sin(spin) * uScale;
+
+        this.instanceMatrix[0] = cU; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sU; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.04; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sU; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cU; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.035; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.1);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
+        gl.drawElements(gl.TRIANGLES, ultimateMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // Ascending vertical pillar of ritual light
+        const pillarMesh = this.meshBuffers[1]; // cube scaled as column
+        if (pillarMesh) {
+          gl.bindVertexArray(pillarMesh.vao);
+          const pSpin = -timestamp * 0.002;
+          const pRad = 0.55 * (1.0 - progress * 0.4);
+          const cP = Math.cos(pSpin) * pRad, sP = Math.sin(pSpin) * pRad;
+          this.instanceMatrix[0] = cP; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sP; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 12.0; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sP; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cP; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 6.0; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 0.35, 0.45]));
+          gl.drawElements(gl.TRIANGLES, pillarMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+      } else if (isBarrier && shieldMesh) {
+        // Expanding sacred barrier dome
+        gl.bindVertexArray(shieldMesh.vao);
+        const bScale = vfx.radius * (0.8 + 0.3 * Math.sin(progress * Math.PI));
+        this.instanceMatrix[0] = bScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = bScale * 0.9; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = bScale; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.5; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.15);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.85);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
+        gl.drawElements(gl.TRIANGLES, shieldMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      } else if (novaMesh) {
+        // Sacred Nova expanding starburst & triangle mandala
+        gl.bindVertexArray(novaMesh.vao);
+        const nScale = vfx.radius * (0.5 + 0.7 * progress);
+        const spin = timestamp * 0.0015;
+        const cN = Math.cos(spin) * nScale, sN = Math.sin(spin) * nScale;
+
+        this.instanceMatrix[0] = cN; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sN; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.04; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sN; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cN; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.03; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.12);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.9);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
+        gl.drawElements(gl.TRIANGLES, novaMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      } else if (ringMesh) {
+        gl.bindVertexArray(ringMesh.vao);
+        const scale = vfx.radius * (2.0 - (vfx.timer / maxT));
         this.instanceMatrix[0] = scale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
         this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
         this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = scale; this.instanceMatrix[11] = 0;
         this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.04; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
-
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
         gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-      });
+      }
+    });
 
-      // Render movement green/red clicks ripples
+    // Render movement green/red clicks ripples using sacred star
+    if (ringMesh) {
+      gl.bindVertexArray(ringMesh.vao);
       this.mobaState.clickRipples.forEach(ripple => {
         const t = (0.5 - ripple.timer) / 0.5;
         const scale = 1.2 * t;
@@ -28300,6 +28780,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (dist <= creep.attackRange + targetRad) {
           // Attack target
           creep.isMoving = false;
+          creep.isAttacking = true;
+          creep.yaw = Math.atan2(dx, dz);
           if (creep.attackTimer <= 0) {
             creep.attackTimer = creep.attackCooldown || 1.0;
             creep.lastAttackTime = performance.now();
@@ -28307,6 +28789,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           }
         } else {
           // Walk toward target
+          creep.isAttacking = false;
           const step = Math.min(dist, creep.speed * dt);
           creep.pos[0] += (dx / dist) * step;
           creep.pos[2] += (dz / dist) * step;
@@ -28315,6 +28798,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           creep.isMoving = true;
         }
       } else {
+        creep.isAttacking = false;
         // Advance along classic Dota lane waypoints (around the map rather than direct diagonal fight)
         if (creep.waypoints && creep.waypoints.length > 0) {
           if (creep.waypointIndex === undefined) creep.waypointIndex = 1;
