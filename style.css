@@ -6359,6 +6359,51 @@ body.app-body {
   }
 }
 
+/* ==========================================================================
+   DESKTOP ONLY BOTTOM HUD RESIZING (DONT TOUCH MOBILE ARCHITECTURE)
+   ========================================================================== */
+@media (min-width: 769px) {
+  /* Desktop bottom HUD footer height increased to 2x (comfortable 144px) */
+  #moba-hud-bottom {
+    height: 144px !important;
+    min-height: 144px !important;
+    max-height: 144px !important;
+    padding: 12px 24px !important;
+  }
+
+  /* Make portrait larger to match the taller footer */
+  #moba-hud-bottom .shrink-0 .relative,
+  #moba-hud-bottom #moba-portrait-img {
+    width: 80px !important;
+    height: 80px !important;
+  }
+
+  /* Uniform size compromise for magic spells and inventory cells */
+  .moba-spell-slot,
+  #moba-inventory-grid > div {
+    width: 56px !important;
+    height: 56px !important;
+    min-width: 56px !important;
+    min-height: 56px !important;
+  }
+
+  /* Font size & padding scaling for larger desktop slots */
+  .moba-spell-slot span, 
+  .moba-spell-slot div {
+    font-size: 11px !important;
+  }
+  
+  #moba-inventory-grid > div span {
+    font-size: 11px !important;
+  }
+
+  #moba-inventory-grid > div div.absolute.top-0.right-0 {
+    width: 16px !important;
+    height: 16px !important;
+    font-size: 11px !important;
+  }
+}
+
 
 
 

@@ -70,30 +70,41 @@ async function detectToolchain() {
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.wasm': 'application/wasm',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.bin': 'application/octet-stream',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
 };
 
 const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = parsedUrl.pathname;
 
+  // Global CORS headers for API and static asset requests in iframe
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, HEAD');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+
   // CORS for API
   if (pathname.startsWith('/api/')) {
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-      res.statusCode = 204;
-      res.end();
-      return;
-    }
   }
 
   // WebRTC & Media Server (OpenVidu / Kurento / Geckos / Direct P2P) Signaling Endpoint
@@ -499,9 +510,18 @@ var Module = (function() {
     return;
   }
 
-  // Static file serving from dist/ or root
-  let filePath = path.join(fs.existsSync(DIST_DIR) ? DIST_DIR : __dirname, pathname === '/' ? 'index.html' : pathname);
+  // Static file serving: check dist/ first, then root __dirname
+  let targetPath = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '');
+  let filePath = path.join(DIST_DIR, targetPath);
   if (!fs.existsSync(filePath)) {
+    filePath = path.join(__dirname, targetPath);
+  }
+  if (!fs.existsSync(filePath)) {
+    if (pathname.includes('.') && !pathname.endsWith('.html')) {
+      res.writeHead(404, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+      res.end(`Not Found: ${pathname}`);
+      return;
+    }
     filePath = path.join(fs.existsSync(DIST_DIR) ? DIST_DIR : __dirname, 'index.html');
   }
 
@@ -510,11 +530,16 @@ var Module = (function() {
 
   fs.readFile(filePath, (err, content) => {
     if (err) {
-      res.writeHead(500);
+      res.writeHead(500, { 'Access-Control-Allow-Origin': '*' });
       res.end(`Server Error: ${err.code}`);
     } else {
-      res.writeHead(200, { 'Content-Type': contentType });
-      res.end(content, 'utf-8');
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Content-Length': content.length,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': ext === '.glb' || ext === '.webp' || ext === '.png' || ext === '.mp3' ? 'public, max-age=3600' : 'no-cache'
+      });
+      res.end(content);
     }
   });
 });
