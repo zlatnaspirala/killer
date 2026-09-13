@@ -293,6 +293,7 @@ export class ProceduralForestLayoutEngine {
     this.trees = [];
     this.boulders = [];
     this.bushes = [];
+    this.grass = [];
     this.towers = [];
     this.lanePaths = {
       top: [],
@@ -313,60 +314,60 @@ export class ProceduralForestLayoutEngine {
     // 1. Classic Dota 3-Lane Waypoint Definitions
     // Top Lane: Curves north along west forest border, crosses top river corner, enters enemy base
     this.lanePaths.top = [
-      [-14.0, 0, -14.0], // Red Base
-      [-14.0, 0, -6.0],  // Red Top Tier 2 Tower Area
-      [-14.0, 0, 3.5],   // Red Top Tier 1 Tower Area
-      [-11.5, 0, 11.5],  // River Top Shallows Crossing
-      [-3.5, 0, 14.0],   // Black Top Tier 1 Tower Area
-      [6.0, 0, 14.0],    // Black Top Tier 2 Tower Area
-      [14.0, 0, 14.0]    // Black Base
+      [-28.0, 0, -28.0], // Red Base
+      [-28.0, 0, -12.0],  // Red Top Tier 2 Tower Area
+      [-28.0, 0, 7.0],   // Red Top Tier 1 Tower Area
+      [-23.0, 0, 23.0],  // River Top Shallows Crossing
+      [-7.0, 0, 28.0],   // Black Top Tier 1 Tower Area
+      [12.0, 0, 28.0],    // Black Top Tier 2 Tower Area
+      [28.0, 0, 28.0]    // Black Base
     ];
 
     // Mid Lane: Classic straight diagonal through river bridge
     this.lanePaths.mid = [
-      [-14.0, 0, -14.0], // Red Base
-      [-8.5, 0, -8.5],   // Red Mid Tier 2 Area
-      [-4.5, 0, -4.5],   // Red Mid Tier 1 Tower
+      [-28.0, 0, -28.0], // Red Base
+      [-17.0, 0, -17.0],   // Red Mid Tier 2 Area
+      [-9.0, 0, -9.0],   // Red Mid Tier 1 Tower
       [0.0, 0, 0.0],     // River Center Shallows & Ancient Runes
-      [4.5, 0, 4.5],     // Black Mid Tier 1 Tower
-      [8.5, 0, 8.5],     // Black Mid Tier 2 Area
-      [14.0, 0, 14.0]    // Black Base
+      [9.0, 0, 9.0],     // Black Mid Tier 1 Tower
+      [17.0, 0, 17.0],     // Black Mid Tier 2 Area
+      [28.0, 0, 28.0]    // Black Base
     ];
 
     // Bottom Lane: Curves east along south forest border, crosses bottom river corner, enters enemy base
     this.lanePaths.bot = [
-      [-14.0, 0, -14.0], // Red Base
-      [-6.0, 0, -14.0],  // Red Bot Tier 2 Tower Area
-      [3.5, 0, -14.0],   // Red Bot Tier 1 Tower Area
-      [11.5, 0, -11.5],  // River Bot Shallows Crossing
-      [14.0, 0, -3.5],   // Black Bot Tier 1 Tower Area
-      [14.0, 0, 6.0],    // Black Bot Tier 2 Tower Area
-      [14.0, 0, 14.0]    // Black Base
+      [-28.0, 0, -28.0], // Red Base
+      [-12.0, 0, -28.0],  // Red Bot Tier 2 Tower Area
+      [7.0, 0, -28.0],   // Red Bot Tier 1 Tower Area
+      [23.0, 0, -23.0],  // River Bot Shallows Crossing
+      [28.0, 0, -7.0],   // Black Bot Tier 1 Tower Area
+      [28.0, 0, 12.0],    // Black Bot Tier 2 Tower Area
+      [28.0, 0, 28.0]    // Black Base
     ];
 
     // River bed points
     this.riverPath = [
-      [-18.0, 0, 18.0],
-      [-10.0, 0, 10.0],
+      [-36.0, 0, 36.0],
+      [-20.0, 0, 20.0],
       [0.0, 0, 0.0],
-      [10.0, 0, -10.0],
-      [18.0, 0, -18.0]
+      [20.0, 0, -20.0],
+      [36.0, 0, -36.0]
     ];
 
     // 2. Defensive Towers for all 3 classic lanes
     this.towers = [
       // Top Lane
-      { id: 'tower_red_top', team: 'RED', lane: 'top', pos: [-14.0, 0, 3.5], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 7.0, attackTimer: 0 },
-      { id: 'tower_black_top', team: 'BLACK', lane: 'top', pos: [-3.5, 0, 14.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 7.0, attackTimer: 0 },
+      { id: 'tower_red_top', team: 'RED', lane: 'top', pos: [-28.0, 0, 7.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
+      { id: 'tower_black_top', team: 'BLACK', lane: 'top', pos: [-7.0, 0, 28.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
       // Mid Lane
-      { id: 'tower_red_mid', team: 'RED', lane: 'mid', pos: [-4.5, 0, -4.5], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 7.0, attackTimer: 0 },
-      { id: 'tower_black_mid', team: 'BLACK', lane: 'mid', pos: [4.5, 0, 4.5], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 7.0, attackTimer: 0 },
+      { id: 'tower_red_mid', team: 'RED', lane: 'mid', pos: [-9.0, 0, -9.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
+      { id: 'tower_black_mid', team: 'BLACK', lane: 'mid', pos: [9.0, 0, 9.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
       // Bottom Lane
-      { id: 'tower_red_bot', team: 'RED', lane: 'bot', pos: [3.5, 0, -14.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 7.0, attackTimer: 0 },
-      { id: 'tower_black_bot', team: 'BLACK', lane: 'bot', pos: [14.0, 0, -3.5], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 7.0, attackTimer: 0 },
+      { id: 'tower_red_bot', team: 'RED', lane: 'bot', pos: [7.0, 0, -28.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
+      { id: 'tower_black_bot', team: 'BLACK', lane: 'bot', pos: [28.0, 0, -7.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
       // Base Guardian Towers
-      { id: 'tower_red_base', team: 'RED', lane: 'base', pos: [-11.5, 0, -11.5], hp: 1500, maxHp: 1500, mp: 600, maxMp: 600, damage: 80, range: 7.5, attackTimer: 0 },
-      { id: 'tower_black_base', team: 'BLACK', lane: 'base', pos: [11.5, 0, 11.5], hp: 1500, maxHp: 1500, mp: 600, maxMp: 600, damage: 80, range: 7.5, attackTimer: 0 }
+      { id: 'tower_red_base', team: 'RED', lane: 'base', pos: [-23.0, 0, -23.0], hp: 1500, maxHp: 1500, mp: 600, maxMp: 600, damage: 80, range: 15.0, attackTimer: 0 },
+      { id: 'tower_black_base', team: 'BLACK', lane: 'base', pos: [23.0, 0, 23.0], hp: 1500, maxHp: 1500, mp: 600, maxMp: 600, damage: 80, range: 15.0, attackTimer: 0 }
     ];
 
     // 3. Generate Procedural Forest Trees
@@ -389,13 +390,13 @@ export class ProceduralForestLayoutEngine {
   /**
    * Checks whether [x, z] is inside any lane corridor (which must remain free of trees)
    */
-  isPointInLaneOrSanctuary(x, z, laneClearance = 2.4) {
-    // Red Base Sanctuary
-    if (Math.hypot(x - (-15.0), z - (-15.0)) < 5.2) return true;
-    // Black Base Sanctuary
-    if (Math.hypot(x - 15.0, z - 15.0) < 5.2) return true;
+  isPointInLaneOrSanctuary(x, z, laneClearance = 4.8) {
+    // Red Base Sanctuary (scaled 2.0)
+    if (Math.hypot(x - (-30.0), z - (-30.0)) < 10.4) return true;
+    // Black Base Sanctuary (scaled 2.0)
+    if (Math.hypot(x - 30.0, z - 30.0) < 10.4) return true;
     // Center River Rune Shrine
-    if (Math.hypot(x, z) < 2.0) return true;
+    if (Math.hypot(x, z) < 4.0) return true;
 
     // Check all 3 classic lanes
     const lanes = [this.lanePaths.top, this.lanePaths.mid, this.lanePaths.bot];
@@ -409,7 +410,7 @@ export class ProceduralForestLayoutEngine {
 
     // Check towers clearance
     for (const t of this.towers) {
-      if (Math.hypot(x - t.pos[0], z - t.pos[2]) < 2.2) return true;
+      if (Math.hypot(x - t.pos[0], z - t.pos[2]) < 4.4) return true;
     }
 
     return false;
@@ -422,26 +423,27 @@ export class ProceduralForestLayoutEngine {
     this.trees = [];
     this.boulders = [];
     this.bushes = [];
+    this.grass = [];
 
     const rng = new PRNG(998877);
     const treeTypes = ['oak', 'pine', 'willow', 'ancient_spire'];
 
-    // Sample candidate spots in a jittered grid
-    const mapExtent = 18.5;
-    const step = 2.2;
+    // Sample candidate spots in a jittered grid (scaled up 2.0x for 4x map area)
+    const mapExtent = 37.0;
+    const step = 4.4;
 
     for (let gx = -mapExtent; gx <= mapExtent; gx += step) {
       for (let gz = -mapExtent; gz <= mapExtent; gz += step) {
-        const jx = gx + rng.range(-0.7, 0.7);
-        const jz = gz + rng.range(-0.7, 0.7);
+        const jx = gx + rng.range(-1.4, 1.4);
+        const jz = gz + rng.range(-1.4, 1.4);
 
         // Keep lanes and bases open
-        if (this.isPointInLaneOrSanctuary(jx, jz, 2.5)) continue;
+        if (this.isPointInLaneOrSanctuary(jx, jz, 5.0)) continue;
 
-        // Check distance to existing trees (Poisson spacing)
+        // Check distance to existing trees (Poisson spacing scaled)
         let tooClose = false;
         for (const t of this.trees) {
-          if (Math.hypot(jx - t.x, jz - t.z) < 2.2) {
+          if (Math.hypot(jx - t.x, jz - t.z) < 4.4) {
             tooClose = true;
             break;
           }
@@ -452,7 +454,7 @@ export class ProceduralForestLayoutEngine {
         let type = 'oak';
         const distFromCenter = Math.hypot(jx, jz);
 
-        if (distFromCenter > 15.0) {
+        if (distFromCenter > 30.0) {
           // Perimeter dense ancient boundary
           type = rng.next() > 0.4 ? 'pine' : 'ancient_spire';
         } else if (jx * jz < 0) {
@@ -513,23 +515,58 @@ export class ProceduralForestLayoutEngine {
           type,
           foliageColor: folColor,
           trunkColor: trColor,
-          collisionRadius: 0.55 * scale
+          collisionRadius: 0.55 * scale * 2.0
         });
 
-        // Occasionally place companion boulder or bush near tree base
-        if (rng.next() < 0.28) {
-          const bx = jx + rng.range(-1.2, 1.2);
-          const bz = jz + rng.range(-1.2, 1.2);
-          if (!this.isPointInLaneOrSanctuary(bx, bz, 1.8)) {
+        // Place companion boulder near tree base with high probability (more rocky decoration)
+        if (rng.next() < 0.65) {
+          const bx = jx + rng.range(-2.8, 2.8);
+          const bz = jz + rng.range(-2.8, 2.8);
+          if (!this.isPointInLaneOrSanctuary(bx, bz, 3.2)) {
             this.boulders.push({
               x: bx,
               z: bz,
-              scale: rng.range(0.5, 0.95),
+              scale: rng.range(0.55, 1.25), // varied larger sizes for better env
               rotY: rng.range(0, Math.PI * 2),
-              color: [0.35, 0.36, 0.38]
+              color: [0.32, 0.34, 0.36]
             });
           }
         }
+      }
+    }
+
+    // Procedural wild forest grass generation
+    const grassRng = new PRNG(445566);
+    const grassExtent = 38.0;
+    const grassStep = 1.6; // dense layout step
+    for (let gx = -grassExtent; gx <= grassExtent; gx += grassStep) {
+      for (let gz = -grassExtent; gz <= grassExtent; gz += grassStep) {
+        const jx = gx + grassRng.range(-0.6, 0.6);
+        const jz = gz + grassRng.range(-0.6, 0.6);
+
+        // Keep lanes and core bases open, allow slightly closer on edges
+        if (this.isPointInLaneOrSanctuary(jx, jz, 2.2)) continue;
+
+        const scaleX = grassRng.range(0.18, 0.35); // grass tuft width
+        const scaleY = grassRng.range(0.55, 1.35); // grass tuft height
+        const rotY = grassRng.range(0, Math.PI * 2);
+
+        const greenRoll = grassRng.next();
+        let color = [0.12, 0.42, 0.16]; // Deep forest green
+        if (greenRoll < 0.35) {
+          color = [0.22, 0.52, 0.18]; // Vibrant green
+        } else if (greenRoll < 0.70) {
+          color = [0.28, 0.45, 0.14]; // Olive mossy green
+        }
+
+        this.grass.push({
+          x: jx,
+          z: jz,
+          scaleX,
+          scaleY,
+          rotY,
+          color
+        });
       }
     }
   }

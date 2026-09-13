@@ -1031,7 +1031,17 @@
               </div>
 
               <!-- HUD MIDDLE AREA (Announcements and Shop trigger) -->
-              <div class="flex-1 flex flex-col justify-between items-center pointer-events-none p-2 sm:p-4">
+              <div class="flex-1 flex flex-col justify-between items-center pointer-events-none p-2 sm:p-4 relative">
+                <!-- RESPAWN TIMER OVERLAY (Shown when player is dead) -->
+                <div id="moba-respawn-overlay" class="absolute inset-0 bg-black/75 flex flex-col items-center justify-center pointer-events-auto z-40 hidden transition-all duration-300">
+                  <div class="bg-slate-950/95 border border-red-500/50 p-6 rounded-2xl flex flex-col items-center max-w-xs text-center shadow-[0_0_30px_rgba(239,68,68,0.4)]">
+                    <span class="text-4xl">💀</span>
+                    <h2 class="text-lg font-black text-rose-500 tracking-wider mt-2 uppercase">YOU HAVE FALLEN</h2>
+                    <p class="text-[10px] text-slate-400 mt-1 leading-relaxed">Wait for respawn or use <strong class="text-cyan-400">Magic Reborn</strong> potion from your inventory to half cut respawn time!</p>
+                    <div class="text-4xl font-black font-mono text-amber-400 mt-3 animate-pulse" id="moba-respawn-countdown">20s</div>
+                  </div>
+                </div>
+
                 <!-- Kill Alerts -->
                 <div id="moba-alert" class="bg-black/60 border border-amber-500/40 text-amber-400 px-4 py-1.5 rounded-full text-xs font-bold tracking-wide shadow-xl transition-all duration-300 transform scale-0 pointer-events-auto">
                   ARISSA SLAYS ENEMY CREEP!

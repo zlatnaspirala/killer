@@ -2611,6 +2611,65 @@ void main() {
         metallic = 0.0;
         emissive = u_baseColor * (1.2 + corePulse * 1.5);
     }
+    else if (u_matType == 16) {
+        // 16. MIXED PROCEDURAL FOREST FOLIAGE (Evergreen needles + Deciduous broadleaves)
+        vec3 leafP = p * 12.0; // Leaf size frequency
+        
+        // Use a 3D noise to create spatial clumps of evergreen vs deciduous leaves
+        float clumpNoise = noise3d(p * 0.25);
+        bool isEvergreenClump = clumpNoise > 0.45;
+
+        // Leaf pattern 1: Deciduous Broadleaf structure using a cell/Voronoi pattern
+        vec2 leafCell = voronoi2d(leafP.xy + leafP.z * 0.3);
+        float leafShade = leafCell.x; // Cell borders represent leaf edges
+        float veinPattern = sin(leafCell.y * 30.0) * 0.5 + 0.5;
+        
+        // Deciduous Colors (mix of vibrant light green, golden-yellow, and orange)
+        vec3 deciduousColor = mix(vec3(0.12, 0.48, 0.14), vec3(0.20, 0.62, 0.18), leafShade);
+        deciduousColor = mix(deciduousColor, vec3(0.65, 0.48, 0.10), veinPattern * 0.25); // yellowing highlights
+
+        // Leaf Pattern 2: Evergreen Conifer Needle structure using high-frequency sine waves
+        float needle1 = sin(leafP.x * 25.0) * cos(leafP.y * 12.0);
+        float needle2 = cos(leafP.z * 25.0) * sin(leafP.y * 12.0);
+        float needlePattern = max(needle1, needle2);
+        
+        // Evergreen Colors (mix of deep pine green and shadow spruce)
+        vec3 evergreenColor = mix(vec3(0.04, 0.25, 0.12), vec3(0.06, 0.35, 0.16), needlePattern * 0.5 + 0.5);
+
+        // Blending the two types of foliage spatially
+        float blendFactor = smoothstep(0.35, 0.65, clumpNoise);
+        albedo = mix(deciduousColor, evergreenColor, blendFactor) * u_baseColor * 1.25;
+
+        // Custom organic normal perturbation for leafy fluffiness
+        float heightPerturb = isEvergreenClump ? needlePattern * 0.10 : leafShade * 0.15;
+        N = perturbNormal(N, v_worldPos, heightPerturb, bumpScale * 2.0);
+
+        // Soft, non-metallic organic response
+        roughness = mix(0.75, 0.90, blendFactor);
+        metallic = 0.0;
+    }
+    else if (u_matType == 17) {
+        // 17. ANCIENT COBBLESTONE PATHWAY WITH PROCEDURAL STONE BLOCKS & GAPS
+        vec3 pScale = p * 1.8; // scaling of cobblestones
+        // Use a 2D Voronoi / cell pattern to define individual stones
+        vec2 cell = voronoi2d(pScale.xz + sin(pScale.y * 0.5) * 0.1);
+        float stoneDist = cell.x; // Distance to cell boundary
+        float isGap = smoothstep(0.04, 0.18, stoneDist); // Gaps between stones
+        
+        // Base rock texture
+        float rockDetails = sin(pScale.x * 12.0) * cos(pScale.z * 12.0) * 0.5 + 0.5;
+        
+        vec3 stoneColor = mix(vec3(0.18, 0.16, 0.14), vec3(0.28, 0.25, 0.22), rockDetails * 0.6);
+        vec3 gapColor = vec3(0.06, 0.05, 0.04); // Dark ancient dirt gap
+        
+        albedo = mix(gapColor, stoneColor, isGap) * u_baseColor * 1.6;
+        roughness = mix(0.95, 0.75, isGap);
+        metallic = 0.05;
+        
+        // Generate high-fidelity normal bump for low-poly road to look rich and high-poly!
+        float heightMap = mix(-0.25, rockDetails * 0.1, isGap);
+        N = perturbNormal(N, v_worldPos, heightMap, bumpScale * 2.8);
+    }
 
     // Blend optional 2D Texture Maps if active (Preserve authentic GLB UV origin & soft non-metallic response)
     if (u_useTexMaps > 0) {
@@ -5407,8 +5466,8 @@ void main() {
 
     globalForestLayoutEngine.initMapLayout();
 
-    // 1. Procedural fluted trunk (cylinder with logarithmic root flare)
-    const trunkData = ProceduralGeometryFactory.createCylinder(0.28, 0.58, 2.2, 12, 4, true);
+    // 1. Procedural fluted trunk (cylinder with logarithmic root flare - made thinner)
+    const trunkData = ProceduralGeometryFactory.createCylinder(0.11, 0.22, 2.2, 12, 4, true);
     trunkData.name = "ProceduralTreeTrunk";
     this.mobaTreeTrunkMesh = this.buildMeshBuffer(trunkData);
 
@@ -25680,7 +25739,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         { key: 'boots', name: 'Boots of Speed', price: 80, desc: '+2.5 Speed Boost', color: 'border-emerald-600/50' },
         { key: 'heart', name: 'Heart of Titan', price: 150, desc: '+400 Max Health', color: 'border-cyan-600/50' },
         { key: 'scepter', name: 'Archmage Scepter', price: 120, desc: '+300 Max Mana', color: 'border-purple-600/50' },
-        { key: 'shield', name: 'Aegis Shield', price: 110, desc: '+15 Health Regen / Armor', color: 'border-amber-600/50' }
+        { key: 'shield', name: 'Aegis Shield', price: 110, desc: '+15 Health Regen / Armor', color: 'border-amber-600/50' },
+        { key: 'magic_reborn', name: 'Magic Reborn', price: 150, desc: 'One-time use potion. Halves respawn time or +10 HP when alive.', color: 'border-blue-600/50' }
       ];
 
       shopItems.forEach(item => {
@@ -25689,7 +25749,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           boots: 'lux-feather.png',
           heart: 'silva-heart.png',
           scepter: 'vita-mindza.png',
-          shield: 'ventus-aegis.png'
+          shield: 'ventus-aegis.png',
+          magic_reborn: 'aqua-sanctum.png'
         };
         const imageFile = itemImages[item.key] || 'aether-gladius.png';
         const imagePath = `assets/textures/moba/invertory/${imageFile}`;
@@ -26037,7 +26098,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       boots: { name: 'Boots of Speed', price: 80, speed: 2.5, desc: '+2.5 Speed' },
       heart: { name: 'Heart of Titan', price: 150, hp: 400, desc: '+400 Max HP' },
       scepter: { name: 'Archmage Scepter', price: 120, mp: 300, desc: '+300 Max Mana' },
-      shield: { name: 'Aegis Shield', price: 110, armor: 15, desc: '+15 HP Regen / Armor' }
+      shield: { name: 'Aegis Shield', price: 110, armor: 15, desc: '+15 HP Regen / Armor' },
+      magic_reborn: { name: 'Magic Reborn', price: 150, desc: 'One-time use potion. Halves respawn time or +10 HP when alive.' }
     }[itemKey];
 
     if (!itemDetails) return;
@@ -26107,8 +26169,49 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaUpdateInventoryUI();
   }
 
+  useMobaItem(index) {
+    if (!this.mobaState || !this.mobaState.playing || index < 0 || index >= 6) return;
+    const item = this.mobaState.inventory[index];
+    if (!item) return;
+
+    if (item.key === 'magic_reborn') {
+      const stats = this.mobaState.heroStats;
+      if (stats.hp <= 0) {
+        // Player is dead, cut remaining respawn time in half!
+        if (this._playerRespawnRemaining !== undefined && this._playerRespawnRemaining > 0) {
+          this._playerRespawnRemaining = this._playerRespawnRemaining / 2.0;
+          this.log("🔮 Magic Reborn consumed! Respawn wait time halved!", "success");
+          this.showMobaAlert(`✨ RESPAWN TIME HALVED: ${this._playerRespawnRemaining.toFixed(1)}s!`, 'text-blue-400');
+          this.mobaPlaySound('confirm');
+          
+          // Consume item
+          this.mobaState.inventory[index] = null;
+          this.mobaUpdateInventoryUI();
+        } else {
+          this.log("Cannot use Magic Reborn now.", "error");
+        }
+      } else {
+        // Player is alive, drink for +10 HP heal
+        stats.hp = Math.min(stats.maxHp, stats.hp + 10);
+        this.addMobaCombatText(this.mobaState.currentPos[0], 2.2, this.mobaState.currentPos[2], `+10 HP`, '#10b981');
+        this.log("🔮 Magic Reborn consumed! Healed +10 HP.", "success");
+        this.mobaPlaySound('confirm');
+
+        // Consume item
+        this.mobaState.inventory[index] = null;
+        this.mobaUpdateInventoryUI();
+      }
+    } else {
+      this.log(`🎒 ${item.name} is a passive stat item. It cannot be consumed.`, "info");
+    }
+  }
+
   castMobaSpell(index) {
     if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
+    if (this._playerRespawnRemaining !== undefined && this._playerRespawnRemaining > 0) {
+      this.log("💀 You are dead! Cannot cast abilities.", "error");
+      return;
+    }
 
     const spellNames = ['Area Blast', 'Blink Dash', 'Barrier Field', 'Hollow Eclipse Ultimate'];
     const manaCosts = [40, 50, 60, 110];
@@ -26282,8 +26385,72 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.state.camPitch = 0.98;
     this.state.camYaw = 0.0;
 
+    // Ensure we have a spotlight following the player in sceneEntities
+    if (this.sceneEntities) {
+      let playerSpotlight = this.sceneEntities.find(e => e.id === 'playerSpotlight');
+      if (!playerSpotlight) {
+        playerSpotlight = {
+          id: 'playerSpotlight',
+          isLight: true,
+          lightType: 'spot',
+          pos: [playerPos[0], 9.5, playerPos[2]],
+          lightDir: [0, -1, 0],
+          color: [1.0, 1.0, 0.88], // bright warm yellow spotlight
+          intensity: 35.0,
+          spotCutoff: Math.cos(22 * Math.PI / 180),
+          outerCutoff: Math.cos(32 * Math.PI / 180)
+        };
+        this.sceneEntities.push(playerSpotlight);
+      } else {
+        playerSpotlight.pos[0] = playerPos[0];
+        playerSpotlight.pos[1] = 9.5;
+        playerSpotlight.pos[2] = playerPos[2];
+        playerSpotlight.lightDir = [0, -1, 0];
+        playerSpotlight.intensity = 35.0;
+      }
+    }
+
     // Advance match clock
     this.mobaState.matchTimer = (this.mobaState.matchTimer || 0) + dt;
+
+    // Handle player respawn timer & countdown update
+    if (this._playerRespawnRemaining !== undefined && this._playerRespawnRemaining > 0) {
+      this._playerRespawnRemaining -= dt;
+      
+      const respCountdown = document.getElementById('moba-respawn-countdown');
+      if (respCountdown) {
+        respCountdown.textContent = `${Math.max(0, this._playerRespawnRemaining).toFixed(1)}s`;
+      }
+
+      if (this._playerRespawnRemaining <= 0) {
+        this._playerRespawnRemaining = 0;
+        
+        // Hide overlay
+        const respOverlay = document.getElementById('moba-respawn-overlay');
+        if (respOverlay) {
+          respOverlay.classList.add('hidden');
+        }
+
+        // Restore health and mana
+        if (this.mobaState.heroStats) {
+          this.mobaState.heroStats.hp = this.mobaState.heroStats.maxHp;
+          this.mobaState.heroStats.mp = this.mobaState.heroStats.maxMp;
+          const basePos = this.mobaState.team === 'RED' ? [-30.0, 0, -30.0] : [30.0, 0, 30.0];
+          this.mobaState.currentPos = [...basePos];
+          this.mobaState.targetPos = null;
+          this.mobaState.targetEntity = null;
+          this.mobaState.currentTargetId = null;
+          this.showMobaAlert("✨ RESPAWNED AT FOUNTAIN!");
+          this.mobaPlaySound('confirm');
+        }
+      }
+
+      // Force velocity to zero and walking to false when dead
+      this.mobaState.velocity = [0, 0, 0];
+      this.mobaState.isWalking = false;
+      this.mobaState.targetPos = null;
+      this.mobaState.targetEntity = null;
+    }
 
     // Cooldown on player basic attack
     this.mobaState.attackTimer = Math.max(0, (this.mobaState.attackTimer || 0) - dt);
@@ -26292,7 +26459,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const attackRange = (this.mobaState.heroStats && this.mobaState.heroStats.attackRange) || 5.0;
 
     // 1. Player targeting & combat movement
-    if (this.mobaState.targetEntity) {
+    if (this._playerRespawnRemaining !== undefined && this._playerRespawnRemaining > 0) {
+      // Do nothing, player is dead
+    } else if (this.mobaState.targetEntity) {
       const target = this.mobaState.targetEntity;
       if (target.hp <= 0) {
         this.mobaState.targetEntity = null;
@@ -26416,6 +26585,68 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // 6. Resolve unit-to-unit soft separation
     this.resolveUnitSeparation();
+
+    // =========================================================================
+    // BASE FOUNTAIN HEALING ZONE
+    // =========================================================================
+    if (this.mobaState.playing && !this.mobaState.winner) {
+      const healRateHP = 80.0; // 80 HP per second
+      const healRateMP = 60.0; // 60 MP per second
+
+      // 1. Heal the local player if near their team's base (scaled 2.0x)
+      if (this.mobaState.heroStats && this.mobaState.heroStats.hp > 0) {
+        const playerTeam = this.mobaState.team;
+        const playerPos = this.mobaState.currentPos;
+        const baseCenter = playerTeam === 'RED' ? [-31.0, 0, -31.0] : [31.0, 0, 31.0];
+        const distToBase = Math.hypot(playerPos[0] - baseCenter[0], playerPos[2] - baseCenter[2]);
+
+        if (distToBase < 13.0) {
+          const stats = this.mobaState.heroStats;
+          const oldHp = stats.hp;
+          stats.hp = Math.min(stats.maxHp, stats.hp + dt * healRateHP);
+          stats.mp = Math.min(stats.maxMp || 250, (stats.mp || 0) + dt * healRateMP);
+          
+          // Trigger a subtle green heal effect sometimes
+          if (Math.random() < 0.08 && stats.hp > oldHp && !this.mobaState.winner) {
+            if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+            this.mobaState.vfxBursts.push({
+              x: playerPos[0] + (Math.random() - 0.5) * 1.5,
+              z: playerPos[2] + (Math.random() - 0.5) * 1.5,
+              radius: 0.6,
+              color: [0.1, 0.9, 0.2] // green healing spark
+            });
+          }
+        }
+      }
+
+      // 2. Heal friendly bot players if near their team's base (scaled 2.0x)
+      if (this.mobaState.players) {
+        this.mobaState.players.forEach(b => {
+          if (b.hp > 0 && b.pos) {
+            const botTeam = b.team;
+            const baseCenter = botTeam === 'RED' ? [-31.0, 0, -31.0] : [31.0, 0, 31.0];
+            const distToBase = Math.hypot(b.pos[0] - baseCenter[0], b.pos[2] - baseCenter[2]);
+
+            if (distToBase < 13.0) {
+              const oldHp = b.hp;
+              b.hp = Math.min(b.maxHp, b.hp + dt * healRateHP);
+              b.mp = Math.min(b.maxMp || 250, (b.mp || 0) + dt * healRateMP);
+
+              // Spark effect for bots
+              if (Math.random() < 0.08 && b.hp > oldHp) {
+                if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+                this.mobaState.vfxBursts.push({
+                  x: b.pos[0] + (Math.random() - 0.5) * 1.5,
+                  z: b.pos[2] + (Math.random() - 0.5) * 1.5,
+                  radius: 0.6,
+                  color: [0.1, 0.9, 0.2] // green healing spark
+                });
+              }
+            }
+          }
+        });
+      }
+    }
 
     // 7. Shield countdown & decay
     if (this.mobaState.heroStats.shieldTimer > 0) {
@@ -26575,7 +26806,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           boots: 'lux-feather.png',
           heart: 'silva-heart.png',
           scepter: 'vita-mindza.png',
-          shield: 'ventus-aegis.png'
+          shield: 'ventus-aegis.png',
+          magic_reborn: 'aqua-sanctum.png'
         };
         const imageFile = itemImages[item.key] || 'aether-gladius.png';
         const imagePath = `assets/textures/moba/invertory/${imageFile}`;
@@ -26587,7 +26819,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           </div>
           <div class="absolute -top-1 -right-1 bg-red-600 hover:bg-red-500 text-white rounded-full w-3 sm:w-4 h-3 sm:h-4 flex items-center justify-center font-bold text-[7px] sm:text-[9px] z-20" onclick="event.stopPropagation(); app.sellMobaItem(${i})">×</div>
         `;
-        slot.title = `${item.name}: ${item.desc} (Click top cross to SELL)`;
+        slot.title = `${item.name}: ${item.desc} (Click to consume/use, click top cross to SELL)`;
+        slot.setAttribute('onclick', `app.useMobaItem(${i})`);
       } else {
         slot.innerHTML = `<span class="opacity-30 text-[8px] sm:text-xs font-mono">${i + 1}</span>`;
       }
@@ -26637,6 +26870,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     this.mobaState.partiesList.forEach(party => {
+      if (!party) return;
+      if (!party.teams) {
+        party.teams = {
+          RED: party.players ? party.players.filter(p => p.team === 'RED') : [],
+          BLACK: party.players ? party.players.filter(p => p.team === 'BLACK') : []
+        };
+      }
       const card = document.createElement('div');
       card.className = 'p-3 border border-slate-800/80 bg-slate-900/60 rounded-xl flex items-center justify-between mb-2';
       
@@ -26656,6 +26896,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   mobaRenderLobbyUI(party) {
+    if (!party) return;
+    if (!party.teams) {
+      party.teams = {
+        RED: party.players ? party.players.filter(p => p.team === 'RED') : [],
+        BLACK: party.players ? party.players.filter(p => p.team === 'BLACK') : []
+      };
+    }
     // Show matchmaking room panels
     const viewLobby = document.getElementById('moba-lobby-view');
     const viewJoin = document.getElementById('moba-join-view');
@@ -26759,10 +27006,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (groundMesh) {
       gl.bindVertexArray(groundMesh.vao);
       
-      // Scale to cover 50x50 forest plateau
-      this.instanceMatrix[0] = 50.0; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+      // Scale to cover 100x100 forest plateau (scaled up 2.0x for 4x map area)
+      this.instanceMatrix[0] = 100.0; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
       this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 50.0; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 100.0; this.instanceMatrix[11] = 0;
       this.instanceMatrix[12] = 0; this.instanceMatrix[13] = -0.05; this.instanceMatrix[14] = 0; this.instanceMatrix[15] = 1.0;
 
       Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
@@ -26958,14 +27205,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (pathCube) {
       gl.bindVertexArray(pathCube.vao);
 
-      // River shallow crossing diagonal strip
-      this.instanceMatrix[0] = 3.6; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+      // River shallow crossing diagonal strip (scaled 2.0x for larger map area)
+      this.instanceMatrix[0] = 7.2; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
       this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.04; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 38.0; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 76.0; this.instanceMatrix[11] = 0;
       // Rotate 45 degrees across the center
       const cos45 = Math.SQRT1_2, sin45 = Math.SQRT1_2;
-      this.instanceMatrix[0] = 3.6 * cos45; this.instanceMatrix[2] = 3.6 * sin45;
-      this.instanceMatrix[8] = -38.0 * sin45; this.instanceMatrix[10] = 38.0 * cos45;
+      this.instanceMatrix[0] = 7.2 * cos45; this.instanceMatrix[2] = 7.2 * sin45;
+      this.instanceMatrix[8] = -76.0 * sin45; this.instanceMatrix[10] = 76.0 * cos45;
       this.instanceMatrix[12] = 0; this.instanceMatrix[13] = 0.01; this.instanceMatrix[14] = 0; this.instanceMatrix[15] = 1.0;
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.2);
@@ -26974,6 +27221,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       gl.drawElements(gl.TRIANGLES, pathCube.indexCount, gl.UNSIGNED_SHORT, 0);
 
       // Render 3-Lane Cobblestone/Dirt Waypoint Segments
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 17);
       const lanes = ['top', 'mid', 'bot'];
       lanes.forEach(laneKey => {
         const wps = globalForestLayoutEngine.lanePaths[laneKey] || [];
@@ -27003,6 +27251,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.drawElements(gl.TRIANGLES, pathCube.indexCount, gl.UNSIGNED_SHORT, 0);
         }
       });
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
     }
 
     // 0.1 Render Procedural Forest Trees (Trunks & Natural Canopies)
@@ -27032,10 +27281,20 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       }
 
-      // Draw Tree Foliage Canopies
+      // Draw Tree Foliage Canopies (with u_matType 16 mixed leaf texture and time-based sway)
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 16);
+
+      const timeFactor = timestamp * 0.0016; // smooth wind wave speed
+
       for (let i = 0; i < globalForestLayoutEngine.trees.length; i++) {
         const t = globalForestLayoutEngine.trees[i];
         const sc = t.scale;
+
+        // Calculate custom wind sway offset unique to each tree's coordinate position
+        const treePhase = t.x * 0.22 + t.z * 0.18;
+        const windSwayAmp = 0.16 * sc; // Sway offset scale
+        const swayX = Math.sin(timeFactor + treePhase) * windSwayAmp;
+        const swayZ = Math.cos(timeFactor * 0.85 + treePhase) * (windSwayAmp * 0.7);
 
         if (t.type === 'pine' && pineMesh) {
           gl.bindVertexArray(pineMesh.vao);
@@ -27043,18 +27302,22 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(t.foliageColor));
 
-          // 3-tiered conical pine skirt
+          // 3-tiered conical pine skirt (higher tiers sway progressively more)
           const tiers = [
-            { yOff: 1.2 * sc, rSc: 1.05 * sc, hSc: 1.0 * sc },
-            { yOff: 1.85 * sc, rSc: 0.82 * sc, hSc: 0.9 * sc },
-            { yOff: 2.45 * sc, rSc: 0.55 * sc, hSc: 0.8 * sc }
+            { yOff: 1.2 * sc, rSc: 1.05 * sc, hSc: 1.0 * sc, swayMult: 0.35 },
+            { yOff: 1.85 * sc, rSc: 0.82 * sc, hSc: 0.9 * sc, swayMult: 0.70 },
+            { yOff: 2.45 * sc, rSc: 0.55 * sc, hSc: 0.8 * sc, swayMult: 1.05 }
           ];
           for (let j = 0; j < tiers.length; j++) {
             const tier = tiers[j];
+            const tSwayX = swayX * tier.swayMult;
+            const tSwayZ = swayZ * tier.swayMult;
+
             this.instanceMatrix[0] = tier.rSc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
             this.instanceMatrix[4] = 0; this.instanceMatrix[5] = tier.hSc; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
             this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = tier.rSc; this.instanceMatrix[11] = 0;
-            this.instanceMatrix[12] = t.x; this.instanceMatrix[13] = tier.yOff; this.instanceMatrix[14] = t.z; this.instanceMatrix[15] = 1.0;
+            this.instanceMatrix[12] = t.x + tSwayX; this.instanceMatrix[13] = tier.yOff; this.instanceMatrix[14] = t.z + tSwayZ; this.instanceMatrix[15] = 1.0;
+
             gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
             gl.drawElements(gl.TRIANGLES, pineMesh.indexCount, gl.UNSIGNED_SHORT, 0);
           }
@@ -27068,11 +27331,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.instanceMatrix[0] = sc * 1.1; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
           this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sc * 1.05; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
           this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sc * 1.1; this.instanceMatrix[11] = 0;
-          this.instanceMatrix[12] = t.x; this.instanceMatrix[13] = canopyY; this.instanceMatrix[14] = t.z; this.instanceMatrix[15] = 1.0;
+          this.instanceMatrix[12] = t.x + swayX; this.instanceMatrix[13] = canopyY; this.instanceMatrix[14] = t.z + swayZ; this.instanceMatrix[15] = 1.0;
+
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           gl.drawElements(gl.TRIANGLES, oakMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
       }
+
+      // Restore standard material type (0) for subsequent objects (boulders, etc.)
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
 
       // Draw Procedural Underbrush Boulders
       if (boulderMesh && globalForestLayoutEngine.boulders) {
@@ -27092,6 +27359,30 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.drawElements(gl.TRIANGLES, boulderMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
       }
+
+      // Draw Procedural Grass Tufts (with wind sway)
+      if (pineMesh && globalForestLayoutEngine.grass) {
+        gl.bindVertexArray(pineMesh.vao);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.95);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
+        
+        const swayTime = timestamp * 0.0022;
+
+        for (let i = 0; i < globalForestLayoutEngine.grass.length; i++) {
+          const g = globalForestLayoutEngine.grass[i];
+          const swayPhase = g.x * 0.45 + g.z * 0.35;
+          const grassSway = Math.sin(swayTime + swayPhase) * 0.09 * g.scaleY;
+
+          this.instanceMatrix[0] = g.scaleX; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = grassSway; this.instanceMatrix[5] = g.scaleY; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = g.scaleX; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = g.x; this.instanceMatrix[13] = -0.05; this.instanceMatrix[14] = g.z; this.instanceMatrix[15] = 1.0;
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(g.color));
+          gl.drawElements(gl.TRIANGLES, pineMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+      }
     }
 
     // 1. Draw RED and BLACK Base Trons and Base circular fields
@@ -27099,7 +27390,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const baseCube = this.meshBuffers[1];
 
     if (baseSphere && baseCube) {
-      // Draw Red Base Tron (At [-15, 0, -15])
+      // Draw Red Base Tron (At [-30, 0, -30])
       gl.bindVertexArray(baseSphere.vao);
       let sizeRed = 1.6 + Math.sin(timestamp * 0.003) * 0.15;
       const redHpFactor = this.mobaState.trons.RED.hp / 2500;
@@ -27108,7 +27399,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.instanceMatrix[0] = sizeRed; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
       this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sizeRed; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
       this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sizeRed; this.instanceMatrix[11] = 0;
-      this.instanceMatrix[12] = -15.0; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = -15.0; this.instanceMatrix[15] = 1.0;
+      this.instanceMatrix[12] = -30.0; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = -30.0; this.instanceMatrix[15] = 1.0;
 
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.1);
@@ -27122,11 +27413,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.instanceMatrix[0] = Math.cos(redRot) * 0.5; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -Math.sin(redRot) * 0.5; this.instanceMatrix[3] = 0;
       this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 2.5; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
       this.instanceMatrix[8] = Math.sin(redRot) * 0.5; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = Math.cos(redRot) * 0.5; this.instanceMatrix[11] = 0;
-      this.instanceMatrix[12] = -15.0; this.instanceMatrix[13] = 1.25; this.instanceMatrix[14] = -15.0; this.instanceMatrix[15] = 1.0;
+      this.instanceMatrix[12] = -30.0; this.instanceMatrix[13] = 1.25; this.instanceMatrix[14] = -30.0; this.instanceMatrix[15] = 1.0;
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       gl.drawElements(gl.TRIANGLES, baseCube.indexCount, gl.UNSIGNED_SHORT, 0);
 
-      // Draw Black Base Tron (At [15, 0, 15])
+      // Draw Black Base Tron (At [30, 0, 30])
       gl.bindVertexArray(baseSphere.vao);
       let sizeBlack = 1.6 + Math.sin(timestamp * 0.003 + 2.0) * 0.15;
       const blackHpFactor = this.mobaState.trons.BLACK.hp / 2500;
@@ -27135,7 +27426,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.instanceMatrix[0] = sizeBlack; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
       this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sizeBlack; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
       this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sizeBlack; this.instanceMatrix[11] = 0;
-      this.instanceMatrix[12] = 15.0; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = 15.0; this.instanceMatrix[15] = 1.0;
+      this.instanceMatrix[12] = 30.0; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = 30.0; this.instanceMatrix[15] = 1.0;
 
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.15 * blackHpFactor, 0.05 * blackHpFactor, 0.9 * blackHpFactor])); // Violet/Black energy core
@@ -27147,7 +27438,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.instanceMatrix[0] = Math.cos(blackRot) * 0.5; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -Math.sin(blackRot) * 0.5; this.instanceMatrix[3] = 0;
       this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 2.5; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
       this.instanceMatrix[8] = Math.sin(blackRot) * 0.5; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = Math.cos(blackRot) * 0.5; this.instanceMatrix[11] = 0;
-      this.instanceMatrix[12] = 15.0; this.instanceMatrix[13] = 1.25; this.instanceMatrix[14] = 15.0; this.instanceMatrix[15] = 1.0;
+      this.instanceMatrix[12] = 30.0; this.instanceMatrix[13] = 1.25; this.instanceMatrix[14] = 30.0; this.instanceMatrix[15] = 1.0;
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       gl.drawElements(gl.TRIANGLES, baseCube.indexCount, gl.UNSIGNED_SHORT, 0);
     }
@@ -27175,13 +27466,33 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       });
     }
 
-    // 3. Draw active Creeps
-    const creepMesh = this.meshBuffers[4]; // Torus / robot bot style creep
-    if (creepMesh) {
-      gl.bindVertexArray(creepMesh.vao);
-      this.mobaState.creeps.forEach(creep => {
-        if (creep.hp <= 0) return;
+    // 3. Draw active Creeps (Using bot.glb, scaled smaller than heroes, with skeletal animations)
+    const botGlbPath = 'assets/models/moba-characters/bot.glb';
+    const botModel = (this.mobaHeroModels && this.mobaHeroModels[botGlbPath]);
+    const creepFallbackMesh = this.meshBuffers[4]; // Torus / robot fallback
 
+    this.mobaState.creeps.forEach(creep => {
+      if (creep.hp <= 0) return;
+
+      const creepColor = creep.team === 'RED' ? [0.95, 0.25, 0.25] : [0.25, 0.35, 0.95];
+      const cYaw = creep.yaw || 0;
+
+      if (botModel && botModel.soldierMesh) {
+        // Animate creeps: Use 'walk' when moving, 'idle' when standing
+        const animTime = timestamp * 0.0016 + (creep.id ? creep.id.charCodeAt(0) : 0);
+        const animToPlay = creep.isMoving ? 'walk' : 'idle';
+        if (botModel.soldierSkeletonData) {
+          const skinMatrices = this.evaluateSpecificSkeleton(botModel.soldierSkeletonData, animTime, animToPlay);
+          if (skinMatrices) {
+            this.updateGenericMeshBuffer(botModel.soldierMesh, botModel.soldierSkeletonData, skinMatrices);
+          }
+        }
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.05);
+        // Draw at 0.65 scale (making them smaller than heroes which are drawn at 1.25)
+        this.drawBotMeshPart(progInfo, botModel.soldierMesh, creep.pos, cYaw, 0, 0, 0, 0.65, 0.65, 0.65, creepColor, 0.3, 0.2, 0, 0.1);
+      } else if (creepFallbackMesh) {
+        gl.bindVertexArray(creepFallbackMesh.vao);
         const size = 0.55;
         this.instanceMatrix[0] = size; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
         this.instanceMatrix[4] = 0; this.instanceMatrix[5] = size; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
@@ -27189,14 +27500,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.instanceMatrix[12] = creep.pos[0]; this.instanceMatrix[13] = 0.35; this.instanceMatrix[14] = creep.pos[2]; this.instanceMatrix[15] = 1.0;
 
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-        if (progInfo.uBaseColor) {
-          gl.uniform3fv(progInfo.uBaseColor, creep.team === 'RED' 
-            ? new Float32Array([0.95, 0.25, 0.25]) 
-            : new Float32Array([0.25, 0.35, 0.95]));
-        }
-        gl.drawElements(gl.TRIANGLES, creepMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-      });
-    }
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(creepColor));
+        gl.drawElements(gl.TRIANGLES, creepFallbackMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
+    });
 
     // 4. Draw other active players & bot heroes
     const charMesh = this.meshBuffers[0]; // Use sphere as fallback representation
@@ -27797,6 +28104,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.inventory = [null, null, null, null, null, null];
     this.mobaState.targetEntity = null;
     this.mobaState.currentTargetId = null;
+    this._playerRespawnRemaining = 0;
+
+    const respOverlay = document.getElementById('moba-respawn-overlay');
+    if (respOverlay) {
+      respOverlay.classList.add('hidden');
+    }
+
+    if (this.sceneEntities) {
+      this.sceneEntities = this.sceneEntities.filter(e => e.id !== 'playerSpotlight');
+    }
 
     if (!this.mobaState.team) this.mobaState.team = 'RED';
     if (!this.mobaState.lockedHero) this.lockInMobaHero();
@@ -27815,16 +28132,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       shieldTimer: 0
     };
 
-    const startPos = this.mobaState.team === 'RED' ? [-15.0, 0, -15.0] : [15.0, 0, 15.0];
+    const startPos = this.mobaState.team === 'RED' ? [-30.0, 0, -30.0] : [30.0, 0, 30.0];
     this.mobaState.currentPos = [...startPos];
     this.mobaState.targetPos = null;
     this.mobaState.velocity = [0, 0, 0];
     this.mobaState.currentYaw = this.mobaState.team === 'RED' ? Math.PI * 0.25 : -Math.PI * 0.75;
 
-    // Trons with dual HP & Mana energy reservoirs
+    // Trons with dual HP & Mana energy reservoirs (scaled up)
     this.mobaState.trons = {
-      RED: { id: 'tron_red', team: 'RED', hp: 2500, maxHp: 2500, mp: 1000, maxMp: 1000, pos: [-16.0, 0, -16.0], radius: 2.5 },
-      BLACK: { id: 'tron_black', team: 'BLACK', hp: 2500, maxHp: 2500, mp: 1000, maxMp: 1000, pos: [16.0, 0, 16.0], radius: 2.5 }
+      RED: { id: 'tron_red', team: 'RED', hp: 2500, maxHp: 2500, mp: 1000, maxMp: 1000, pos: [-32.0, 0, -32.0], radius: 4.8 },
+      BLACK: { id: 'tron_black', team: 'BLACK', hp: 2500, maxHp: 2500, mp: 1000, maxMp: 1000, pos: [32.0, 0, 32.0], radius: 4.8 }
     };
 
     // Initialize Procedural Map Layout & 8 Classic Defensive Towers across all 3 lanes
@@ -27839,17 +28156,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       mp: t.mp || 400,
       maxMp: t.maxMp || 400,
       attackTimer: 0,
-      range: t.range || 7.5,
+      range: t.range || 15.0,
       damage: t.damage || 70
     }));
 
-    // Bots deployed across Top, Mid, and Bot lanes with full HP & Mana pools
+    // Bots deployed across Top, Mid, and Bot lanes with full HP & Mana pools (spawn points scaled up)
     this.mobaState.players = [
-      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 500, maxHp: 500, mp: 500, maxMp: 500, damage: 50, speed: 5.0, attackRange: 6.8, attackCooldown: 0.9, attackTimer: 0, pos: [-13.0, 0, -11.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1 },
-      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 750, maxHp: 750, mp: 200, maxMp: 200, damage: 65, speed: 4.8, attackRange: 2.2, attackCooldown: 1.1, attackTimer: 0, pos: [-11.0, 0, -13.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1 },
-      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 550, maxHp: 550, mp: 240, maxMp: 240, damage: 52, speed: 5.0, attackRange: 7.0, attackCooldown: 0.9, attackTimer: 0, pos: [13.0, 0, 11.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1 },
-      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 600, maxHp: 600, mp: 220, maxMp: 220, damage: 58, speed: 5.2, attackRange: 2.2, attackCooldown: 1.0, attackTimer: 0, pos: [11.0, 0, 13.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1 },
-      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 680, maxHp: 680, mp: 300, maxMp: 300, damage: 60, speed: 4.9, attackRange: 2.2, attackCooldown: 1.0, attackTimer: 0, pos: [12.0, 0, 12.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1 }
+      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 500, maxHp: 500, mp: 500, maxMp: 500, damage: 50, speed: 5.0, attackRange: 6.8, attackCooldown: 0.9, attackTimer: 0, pos: [-26.0, 0, -22.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1 },
+      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 750, maxHp: 750, mp: 200, maxMp: 200, damage: 65, speed: 4.8, attackRange: 2.2, attackCooldown: 1.1, attackTimer: 0, pos: [-22.0, 0, -26.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1 },
+      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 550, maxHp: 550, mp: 240, maxMp: 240, damage: 52, speed: 5.0, attackRange: 7.0, attackCooldown: 0.9, attackTimer: 0, pos: [26.0, 0, 22.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1 },
+      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 600, maxHp: 600, mp: 220, maxMp: 220, damage: 58, speed: 5.2, attackRange: 2.2, attackCooldown: 1.0, attackTimer: 0, pos: [22.0, 0, 26.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1 },
+      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 680, maxHp: 680, mp: 300, maxMp: 300, damage: 60, speed: 4.9, attackRange: 2.2, attackCooldown: 1.0, attackTimer: 0, pos: [24.0, 0, 24.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1 }
     ];
 
     // Spawn first creep wave
@@ -27958,17 +28275,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // 1. Resolve procedural forest tree collisions
     globalForestLayoutEngine.resolveTreeCollisions(pos, radius);
 
-    // 2. Obstacles in arena (river rocks, pillars, shrines, trons)
+    // 2. Obstacles in arena (river rocks, pillars, shrines, trons - scaled up 2.0x for larger map area)
     const obstacles = [
-      { x: -4.0, z: 4.0, r: 1.6 },
-      { x: 4.0, z: -4.0, r: 1.6 },
-      { x: -10.0, z: 2.0, r: 1.9 },
-      { x: 10.0, z: -2.0, r: 1.9 },
-      { x: 2.0, z: -10.0, r: 1.9 },
-      { x: -2.0, z: 10.0, r: 1.9 },
-      // Trons
-      { x: -16.0, z: -16.0, r: 2.4 },
-      { x: 16.0, z: 16.0, r: 2.4 }
+      { x: -8.0, z: 8.0, r: 3.2 },
+      { x: 8.0, z: -8.0, r: 3.2 },
+      { x: -20.0, z: 4.0, r: 3.8 },
+      { x: 20.0, z: -4.0, r: 3.8 },
+      { x: 4.0, z: -20.0, r: 3.8 },
+      { x: -4.0, z: 20.0, r: 3.8 },
+      // Trons (scaled to 30.0 / 32.0 positions and 4.8 radius)
+      { x: -32.0, z: -32.0, r: 4.8 },
+      { x: 32.0, z: 32.0, r: 4.8 }
     ];
 
     // Add active towers
@@ -27993,9 +28310,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
     }
 
-    // Outer arena boundary clamp
-    pos[0] = Math.max(-18.5, Math.min(18.5, pos[0]));
-    pos[2] = Math.max(-18.5, Math.min(18.5, pos[2]));
+    // Outer arena boundary clamp (scaled up from 18.5 to 37.0 to match fourfold increase)
+    pos[0] = Math.max(-37.0, Math.min(37.0, pos[0]));
+    pos[2] = Math.max(-37.0, Math.min(37.0, pos[2]));
   }
 
   resolveUnitSeparation() {
@@ -28049,7 +28366,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // Check if target is a Tron
     if (target.id && typeof target.id === 'string' && target.id.includes('tron')) {
-      return 2.4;
+      return 4.8;
     }
 
     // Check if target is a player
@@ -28085,9 +28402,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // Filter out dead creeps
     this.mobaState.creeps = this.mobaState.creeps.filter(c => c.hp > 0);
 
+    // Enemy base locations (scaled to match the 2.0x larger map)
     const enemyFountain = {
-      RED: [15.0, 0, 15.0],
-      BLACK: [-15.0, 0, -15.0]
+      RED: [30.0, 0, 30.0],
+      BLACK: [-30.0, 0, -30.0]
     };
 
     this.mobaState.creeps.forEach(creep => {
@@ -28096,9 +28414,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // Mana regeneration (+5 MP/s)
       creep.mp = Math.min(creep.maxMp || 100, (creep.mp || 0) + dt * 5);
 
-      // Find closest enemy entity within 7.0m
+      // Find closest enemy entity within 14.0m (scaled up from 7.0m for larger map)
       let target = null;
-      let minDist = 7.0;
+      let minDist = 14.0;
 
       // Check player
       if (this.mobaState.team !== creep.team && this.mobaState.heroStats.hp > 0) {
@@ -28191,7 +28509,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             const dz = currentWp[2] - creep.pos[2];
             const dist = Math.hypot(dx, dz);
 
-            if (dist < 1.15) {
+            // Scaled waypoint tolerance to prevent getting stuck on friendly/enemy tower collisions (since min dist can be 1.7)
+            if (dist < 3.0) {
               creep.waypointIndex++;
             } else {
               const step = Math.min(dist, creep.speed * dt);
@@ -28202,7 +28521,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
               creep.isMoving = true;
             }
           } else {
-            // Reached base gate: attack enemy fountain/tron directly
+            // Reached base gate: attack enemy fountain/tron directly (scaled match location)
             const marchTarget = enemyFountain[creep.team] || [0, 0, 0];
             const dx = marchTarget[0] - creep.pos[0];
             const dz = marchTarget[2] - creep.pos[2];
@@ -28304,8 +28623,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // Bot mana regeneration (+6 MP/s)
       b.mp = Math.min(b.maxMp || 250, (b.mp || 0) + dt * 6);
 
-      const basePos = b.team === 'RED' ? [-16.0, 0, -16.0] : [16.0, 0, 16.0];
-      const enemyBasePos = b.team === 'RED' ? [16.0, 0, 16.0] : [-16.0, 0, -16.0];
+      const basePos = b.team === 'RED' ? [-30.0, 0, -30.0] : [30.0, 0, 30.0];
+      const enemyBasePos = b.team === 'RED' ? [30.0, 0, 30.0] : [-30.0, 0, -30.0];
 
       // Low health retreat to base fountain
       if (b.hp < b.maxHp * 0.25) {
@@ -28433,7 +28752,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const dx = wp[0] - b.pos[0];
         const dz = wp[2] - b.pos[2];
         const dist = Math.hypot(dx, dz);
-        if (dist < 1.3) {
+        // Scaled waypoint tolerance to prevent friendly bots getting stuck on friendly/enemy tower collisions (since min dist can be 1.9)
+        if (dist < 3.2) {
           b.waypointIndex++;
         } else {
           const step = Math.min(dist, b.speed * dt);
@@ -28609,19 +28929,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
       if (stats.hp <= 0) {
         this.mobaPlaySound('kill');
-        this.showMobaAlert("💀 YOU HAVE FALLEN! RESPAWNING IN 5s...");
+        this._playerRespawnRemaining = 20.0;
+        this.mobaState.targetPos = null;
+        this.mobaState.targetEntity = null;
+        this.mobaState.currentTargetId = null;
         if (this.mobaState.kills && this.mobaState.kills[attackerTeam] !== undefined) {
           this.mobaState.kills[attackerTeam]++;
         }
-        setTimeout(() => {
-          if (this.mobaState && this.mobaState.heroStats) {
-            this.mobaState.heroStats.hp = this.mobaState.heroStats.maxHp;
-            const basePos = this.mobaState.team === 'RED' ? [-15.0, 0, -15.0] : [15.0, 0, 15.0];
-            this.mobaState.currentPos = [...basePos];
-            this.mobaState.targetPos = null;
-            this.showMobaAlert("✨ RESPAWNED AT FOUNTAIN!");
-          }
-        }, 5000);
+
+        // Show the respawn overlay instantly
+        const respOverlay = document.getElementById('moba-respawn-overlay');
+        if (respOverlay) {
+          respOverlay.classList.remove('hidden');
+        }
+        const respCountdown = document.getElementById('moba-respawn-countdown');
+        if (respCountdown) {
+          respCountdown.textContent = "20.0s";
+        }
       }
       return;
     }
@@ -28649,7 +28973,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         setTimeout(() => {
           if (target && this.mobaState && this.mobaState.playing) {
             target.hp = target.maxHp;
-            const bBase = target.team === 'RED' ? [-15.0, 0, -15.0] : [15.0, 0, 15.0];
+            const bBase = target.team === 'RED' ? [-30.0, 0, -30.0] : [30.0, 0, 30.0];
             target.pos = [...bBase];
           }
         }, 10000);
