@@ -40,7 +40,7 @@ export class ProceduralGeometryFactory {
       // Radius interpolation with optional organic root flare at the base
       let r = radiusBottom + (radiusTop - radiusBottom) * v;
       if (flareBottom && v < 0.25) {
-        const flare = Math.pow(1.0 - (v / 0.25), 2.2) * 0.45;
+        const flare = Math.pow(1.0 - (v / 0.25), 2.2) * (radiusBottom * 0.35);
         r += flare;
       }
 
@@ -283,6 +283,292 @@ export class ProceduralGeometryFactory {
 
     return { positions, normals, uvs, barys, indices };
   }
+
+  /**
+   * Generates a curved grass tuft comprising multiple organically bent blades tapering to points
+   */
+  static createCurvedGrassTuft(bladesCount = 5) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    const rng = new PRNG(12345);
+
+    for (let b = 0; b < bladesCount; b++) {
+      // Angle around the center of the tuft
+      const angle = (b / bladesCount) * Math.PI * 2 + rng.range(-0.15, 0.15);
+      // Curve bending outward direction
+      const curveDirX = Math.cos(angle) * rng.range(0.22, 0.38);
+      const curveDirZ = Math.sin(angle) * rng.range(0.22, 0.38);
+
+      const height = rng.range(0.85, 1.35);
+      const width = rng.range(0.09, 0.14);
+
+      const segments = 4;
+      const startIndex = positions.length / 3;
+
+      for (let s = 0; s <= segments; s++) {
+        const t = s / segments;
+        // Bending math: quadratic bending curve
+        const bendX = curveDirX * t * t;
+        const bendZ = curveDirZ * t * t;
+
+        const y = t * height;
+        // Tapering width towards top
+        const currentWidth = width * (1.0 - t * 0.95);
+
+        // Orthogonal vector for blade width
+        const orthX = -Math.sin(angle) * currentWidth;
+        const orthZ = Math.cos(angle) * currentWidth;
+
+        // Left and right vertices of the blade segment
+        const lx = bendX - orthX;
+        const lz = bendZ - orthZ;
+        const rx = bendX + orthX;
+        const rz = bendZ + orthZ;
+
+        // Add 2 vertices per segment
+        positions.push(lx, y, lz);
+        positions.push(rx, y, rz);
+
+        // Normals pointing upwards/outwards
+        const nx = Math.cos(angle) * 0.5;
+        const ny = 0.86;
+        const nz = Math.sin(angle) * 0.5;
+        normals.push(nx, ny, nz);
+        normals.push(nx, ny, nz);
+
+        uvs.push(0.0, t);
+        uvs.push(1.0, t);
+
+        barys.push(1, 0, 0, 0, 1, 0);
+      }
+
+      // Indices for this blade's segments
+      for (let s = 0; s < segments; s++) {
+        const i0 = startIndex + s * 2;
+        const i1 = i0 + 1;
+        const i2 = i0 + 2;
+        const i3 = i0 + 3;
+
+        // Two triangles per segment
+        indices.push(i0, i1, i2);
+        indices.push(i1, i3, i2);
+      }
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates continuous organic road ribbon geometry with realistic wavy, jagged edges (NO straight lines)
+   * Includes elevated road crown and organic earth fringes that blend naturally into the terrain
+   */
+  static createProceduralRoadRibbon(lanesDict) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    const rng = new PRNG(776655);
+
+    Object.keys(lanesDict).forEach(laneKey => {
+      const wps = lanesDict[laneKey];
+      if (!wps || wps.length < 2) return;
+
+      const baseWidth = laneKey === 'mid' ? 3.4 : 2.8;
+      const halfWidth = baseWidth * 0.5;
+
+      // Sample along continuous polyline with small steps for high fidelity organic curves
+      const stepDist = 0.9;
+      let totalDist = 0;
+
+      // Calculate cumulative lengths
+      const segLengths = [];
+      let laneLength = 0;
+      for (let i = 0; i < wps.length - 1; i++) {
+        const d = Math.hypot(wps[i + 1][0] - wps[i][0], wps[i + 1][2] - wps[i][2]);
+        segLengths.push(d);
+        laneLength += d;
+      }
+
+      let currentSeg = 0;
+      let distInSeg = 0;
+      let laneStartIndex = positions.length / 3;
+      let crossSections = 0;
+
+      while (totalDist <= laneLength) {
+        // Find segment
+        while (currentSeg < segLengths.length - 1 && distInSeg > segLengths[currentSeg]) {
+          distInSeg -= segLengths[currentSeg];
+          currentSeg++;
+        }
+
+        const tSeg = Math.min(1.0, Math.max(0.0, distInSeg / Math.max(0.001, segLengths[currentSeg])));
+        const p1 = wps[currentSeg];
+        const p2 = wps[currentSeg + 1] || p1;
+
+        // Smooth position interpolation
+        const cx = p1[0] + (p2[0] - p1[0]) * tSeg;
+        const cz = p1[2] + (p2[2] - p1[2]) * tSeg;
+
+        // Tangent and 2D normal
+        const tdx = p2[0] - p1[0];
+        const tdz = p2[2] - p1[2];
+        const tLen = Math.hypot(tdx, tdz) || 1.0;
+        const nx = -tdz / tLen;
+        const nz = tdx / tLen;
+
+        // Organic edge wobble calculations (multi-frequency natural noise)
+        const wobbleL = Math.sin(totalDist * 0.95) * 0.45 + Math.cos(totalDist * 2.3) * 0.25 + Math.sin(totalDist * 5.1) * 0.15 + rng.range(-0.15, 0.15);
+        const wobbleR = Math.cos(totalDist * 0.88) * 0.42 + Math.sin(totalDist * 2.5) * 0.28 + Math.cos(totalDist * 4.7) * 0.14 + rng.range(-0.15, 0.15);
+
+        const wL = halfWidth + wobbleL;
+        const wR = halfWidth + wobbleR;
+
+        // 5 vertices across: [Fringe Left, Stone Edge Left, Crown Center, Stone Edge Right, Fringe Right]
+        const vCols = [
+          { off: -(wL + 0.45), y: 0.010, u: 0.0 },
+          { off: -wL,          y: 0.024, u: 0.2 },
+          { off: 0.0,          y: 0.038, u: 0.5 }, // Elevated road crown
+          { off: wR,           y: 0.024, u: 0.8 },
+          { off: wR + 0.45,    y: 0.010, u: 1.0 }
+        ];
+
+        for (let c = 0; c < 5; c++) {
+          const col = vCols[c];
+          const px = cx + nx * col.off;
+          const pz = cz + nz * col.off;
+
+          positions.push(px, col.y, pz);
+          normals.push(0.0, 1.0, 0.0);
+          uvs.push(col.u, totalDist * 0.45);
+          barys.push(1, 0, 0);
+        }
+
+        crossSections++;
+        totalDist += stepDist;
+        distInSeg += stepDist;
+      }
+
+      // Generate quad triangles between cross sections
+      for (let s = 0; s < crossSections - 1; s++) {
+        const row0 = laneStartIndex + s * 5;
+        const row1 = laneStartIndex + (s + 1) * 5;
+
+        for (let c = 0; c < 4; c++) {
+          const i0 = row0 + c;
+          const i1 = row0 + c + 1;
+          const i2 = row1 + c;
+          const i3 = row1 + c + 1;
+
+          indices.push(i0, i1, i2);
+          indices.push(i1, i3, i2);
+        }
+      }
+    });
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates organic river ribbon with flowing banks and center expansion for water simulation
+   */
+  static createProceduralRiverRibbon(riverPath, baseWidth = 8.8) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    const rng = new PRNG(112233);
+    const halfWidth = baseWidth * 0.5;
+
+    let laneLength = 0;
+    const segLengths = [];
+    for (let i = 0; i < riverPath.length - 1; i++) {
+      const d = Math.hypot(riverPath[i + 1][0] - riverPath[i][0], riverPath[i + 1][2] - riverPath[i][2]);
+      segLengths.push(d);
+      laneLength += d;
+    }
+
+    const stepDist = 1.2;
+    let totalDist = 0;
+    let currentSeg = 0;
+    let distInSeg = 0;
+    let crossSections = 0;
+
+    while (totalDist <= laneLength) {
+      while (currentSeg < segLengths.length - 1 && distInSeg > segLengths[currentSeg]) {
+        distInSeg -= segLengths[currentSeg];
+        currentSeg++;
+      }
+
+      const tSeg = Math.min(1.0, Math.max(0.0, distInSeg / Math.max(0.001, segLengths[currentSeg])));
+      const p1 = riverPath[currentSeg];
+      const p2 = riverPath[currentSeg + 1] || p1;
+
+      const cx = p1[0] + (p2[0] - p1[0]) * tSeg;
+      const cz = p1[2] + (p2[2] - p1[2]) * tSeg;
+
+      const tdx = p2[0] - p1[0];
+      const tdz = p2[2] - p1[2];
+      const tLen = Math.hypot(tdx, tdz) || 1.0;
+      const nx = -tdz / tLen;
+      const nz = tdx / tLen;
+
+      // Wider pool at the center of the map (ancient rune shrine)
+      const centerProximity = Math.max(0.0, 1.0 - Math.hypot(cx, cz) / 32.0);
+      const centerExpansion = centerProximity * 2.8;
+
+      // Organic bank ripples
+      const bankWobbleL = Math.sin(totalDist * 0.4) * 0.8 + Math.cos(totalDist * 1.2) * 0.4 + rng.range(-0.2, 0.2);
+      const bankWobbleR = Math.cos(totalDist * 0.38) * 0.75 + Math.sin(totalDist * 1.3) * 0.45 + rng.range(-0.2, 0.2);
+
+      const wL = halfWidth + centerExpansion + bankWobbleL;
+      const wR = halfWidth + centerExpansion + bankWobbleR;
+
+      // 4 vertices across river: Bank Left, Shallows Left, Shallows Right, Bank Right
+      const vCols = [
+        { off: -wL,        y: 0.018, u: 0.0 },
+        { off: -wL * 0.45, y: 0.015, u: 0.35 },
+        { off: wR * 0.45,  y: 0.015, u: 0.65 },
+        { off: wR,         y: 0.018, u: 1.0 }
+      ];
+
+      for (let c = 0; c < 4; c++) {
+        const col = vCols[c];
+        positions.push(cx + nx * col.off, col.y, cz + nz * col.off);
+        normals.push(0.0, 1.0, 0.0);
+        uvs.push(col.u, totalDist * 0.15); // U across banks, V along river current
+        barys.push(1, 0, 0);
+      }
+
+      crossSections++;
+      totalDist += stepDist;
+      distInSeg += stepDist;
+    }
+
+    for (let s = 0; s < crossSections - 1; s++) {
+      const row0 = s * 4;
+      const row1 = (s + 1) * 4;
+
+      for (let c = 0; c < 3; c++) {
+        const i0 = row0 + c;
+        const i1 = row0 + c + 1;
+        const i2 = row1 + c;
+        const i3 = row1 + c + 1;
+
+        indices.push(i0, i1, i2);
+        indices.push(i1, i3, i2);
+      }
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
 }
 
 /**
@@ -305,69 +591,69 @@ export class ProceduralForestLayoutEngine {
   }
 
   /**
-   * Initializes the entire procedural layout
+   * Initializes the entire procedural layout (Expanded & Enlarged Map Layout)
    */
   initMapLayout() {
     if (this.initialized) return;
     this.initialized = true;
 
-    // 1. Classic Dota 3-Lane Waypoint Definitions
+    // 1. Classic Dota 3-Lane Waypoint Definitions (Enlarged 35x35 extent map)
     // Top Lane: Curves north along west forest border, crosses top river corner, enters enemy base
     this.lanePaths.top = [
-      [-28.0, 0, -28.0], // Red Base
-      [-28.0, 0, -12.0],  // Red Top Tier 2 Tower Area
-      [-28.0, 0, 7.0],   // Red Top Tier 1 Tower Area
-      [-23.0, 0, 23.0],  // River Top Shallows Crossing
-      [-7.0, 0, 28.0],   // Black Top Tier 1 Tower Area
-      [12.0, 0, 28.0],    // Black Top Tier 2 Tower Area
-      [28.0, 0, 28.0]    // Black Base
+      [-35.0, 0, -35.0], // Red Base
+      [-35.0, 0, -16.0], // Red Top Tier 2 Tower Area
+      [-35.0, 0, 9.0],   // Red Top Tier 1 Tower Area
+      [-26.0, 0, 26.0],  // River Top Shallows Crossing
+      [-9.0, 0, 35.0],   // Black Top Tier 1 Tower Area
+      [16.0, 0, 35.0],   // Black Top Tier 2 Tower Area
+      [35.0, 0, 35.0]    // Black Base
     ];
 
     // Mid Lane: Classic straight diagonal through river bridge
     this.lanePaths.mid = [
-      [-28.0, 0, -28.0], // Red Base
-      [-17.0, 0, -17.0],   // Red Mid Tier 2 Area
-      [-9.0, 0, -9.0],   // Red Mid Tier 1 Tower
+      [-35.0, 0, -35.0], // Red Base
+      [-22.0, 0, -22.0], // Red Mid Tier 2 Area
+      [-11.0, 0, -11.0], // Red Mid Tier 1 Tower
       [0.0, 0, 0.0],     // River Center Shallows & Ancient Runes
-      [9.0, 0, 9.0],     // Black Mid Tier 1 Tower
-      [17.0, 0, 17.0],     // Black Mid Tier 2 Area
-      [28.0, 0, 28.0]    // Black Base
+      [11.0, 0, 11.0],   // Black Mid Tier 1 Tower
+      [22.0, 0, 22.0],   // Black Mid Tier 2 Area
+      [35.0, 0, 35.0]    // Black Base
     ];
 
     // Bottom Lane: Curves east along south forest border, crosses bottom river corner, enters enemy base
     this.lanePaths.bot = [
-      [-28.0, 0, -28.0], // Red Base
-      [-12.0, 0, -28.0],  // Red Bot Tier 2 Tower Area
-      [7.0, 0, -28.0],   // Red Bot Tier 1 Tower Area
-      [23.0, 0, -23.0],  // River Bot Shallows Crossing
-      [28.0, 0, -7.0],   // Black Bot Tier 1 Tower Area
-      [28.0, 0, 12.0],    // Black Bot Tier 2 Tower Area
-      [28.0, 0, 28.0]    // Black Base
+      [-35.0, 0, -35.0], // Red Base
+      [-16.0, 0, -35.0], // Red Bot Tier 2 Tower Area
+      [9.0, 0, -35.0],   // Red Bot Tier 1 Tower Area
+      [26.0, 0, -26.0],  // River Bot Shallows Crossing
+      [35.0, 0, -9.0],   // Black Bot Tier 1 Tower Area
+      [35.0, 0, 16.0],   // Black Bot Tier 2 Tower Area
+      [35.0, 0, 35.0]    // Black Base
     ];
 
-    // River bed points
+    // River bed points (Enlarged across full map diagonal)
     this.riverPath = [
-      [-36.0, 0, 36.0],
-      [-20.0, 0, 20.0],
+      [-48.0, 0, 48.0],
+      [-25.0, 0, 25.0],
       [0.0, 0, 0.0],
-      [20.0, 0, -20.0],
-      [36.0, 0, -36.0]
+      [25.0, 0, -25.0],
+      [48.0, 0, -48.0]
     ];
 
-    // 2. Defensive Towers for all 3 classic lanes
+    // 2. Defensive Towers for all 3 classic lanes (Scaled to enlarged map)
     this.towers = [
       // Top Lane
-      { id: 'tower_red_top', team: 'RED', lane: 'top', pos: [-28.0, 0, 7.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
-      { id: 'tower_black_top', team: 'BLACK', lane: 'top', pos: [-7.0, 0, 28.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
+      { id: 'tower_red_top', team: 'RED', lane: 'top', pos: [-35.0, 0, 9.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
+      { id: 'tower_black_top', team: 'BLACK', lane: 'top', pos: [-9.0, 0, 35.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
       // Mid Lane
-      { id: 'tower_red_mid', team: 'RED', lane: 'mid', pos: [-9.0, 0, -9.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
-      { id: 'tower_black_mid', team: 'BLACK', lane: 'mid', pos: [9.0, 0, 9.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
+      { id: 'tower_red_mid', team: 'RED', lane: 'mid', pos: [-11.0, 0, -11.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
+      { id: 'tower_black_mid', team: 'BLACK', lane: 'mid', pos: [11.0, 0, 11.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
       // Bottom Lane
-      { id: 'tower_red_bot', team: 'RED', lane: 'bot', pos: [7.0, 0, -28.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
-      { id: 'tower_black_bot', team: 'BLACK', lane: 'bot', pos: [28.0, 0, -7.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 14.0, attackTimer: 0 },
+      { id: 'tower_red_bot', team: 'RED', lane: 'bot', pos: [9.0, 0, -35.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
+      { id: 'tower_black_bot', team: 'BLACK', lane: 'bot', pos: [35.0, 0, -9.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
       // Base Guardian Towers
-      { id: 'tower_red_base', team: 'RED', lane: 'base', pos: [-23.0, 0, -23.0], hp: 1500, maxHp: 1500, mp: 600, maxMp: 600, damage: 80, range: 15.0, attackTimer: 0 },
-      { id: 'tower_black_base', team: 'BLACK', lane: 'base', pos: [23.0, 0, 23.0], hp: 1500, maxHp: 1500, mp: 600, maxMp: 600, damage: 80, range: 15.0, attackTimer: 0 }
+      { id: 'tower_red_base', team: 'RED', lane: 'base', pos: [-28.0, 0, -28.0], hp: 1500, maxHp: 1500, mp: 600, maxMp: 600, damage: 80, range: 16.0, attackTimer: 0 },
+      { id: 'tower_black_base', team: 'BLACK', lane: 'base', pos: [28.0, 0, 28.0], hp: 1500, maxHp: 1500, mp: 600, maxMp: 600, damage: 80, range: 16.0, attackTimer: 0 }
     ];
 
     // 3. Generate Procedural Forest Trees
@@ -391,12 +677,12 @@ export class ProceduralForestLayoutEngine {
    * Checks whether [x, z] is inside any lane corridor (which must remain free of trees)
    */
   isPointInLaneOrSanctuary(x, z, laneClearance = 4.8) {
-    // Red Base Sanctuary (scaled 2.0)
-    if (Math.hypot(x - (-30.0), z - (-30.0)) < 10.4) return true;
-    // Black Base Sanctuary (scaled 2.0)
-    if (Math.hypot(x - 30.0, z - 30.0) < 10.4) return true;
+    // Red Base Sanctuary (scaled to enlarged map)
+    if (Math.hypot(x - (-35.0), z - (-35.0)) < 11.5) return true;
+    // Black Base Sanctuary (scaled to enlarged map)
+    if (Math.hypot(x - 35.0, z - 35.0) < 11.5) return true;
     // Center River Rune Shrine
-    if (Math.hypot(x, z) < 4.0) return true;
+    if (Math.hypot(x, z) < 4.5) return true;
 
     // Check all 3 classic lanes
     const lanes = [this.lanePaths.top, this.lanePaths.mid, this.lanePaths.bot];
@@ -410,7 +696,7 @@ export class ProceduralForestLayoutEngine {
 
     // Check towers clearance
     for (const t of this.towers) {
-      if (Math.hypot(x - t.pos[0], z - t.pos[2]) < 4.4) return true;
+      if (Math.hypot(x - t.pos[0], z - t.pos[2]) < 4.8) return true;
     }
 
     return false;
@@ -428,8 +714,8 @@ export class ProceduralForestLayoutEngine {
     const rng = new PRNG(998877);
     const treeTypes = ['oak', 'pine', 'willow', 'ancient_spire'];
 
-    // Sample candidate spots in a jittered grid (scaled up 2.0x for 4x map area)
-    const mapExtent = 37.0;
+    // Sample candidate spots across enlarged map (mapExtent 46.0)
+    const mapExtent = 46.0;
     const step = 4.4;
 
     for (let gx = -mapExtent; gx <= mapExtent; gx += step) {
@@ -454,7 +740,7 @@ export class ProceduralForestLayoutEngine {
         let type = 'oak';
         const distFromCenter = Math.hypot(jx, jz);
 
-        if (distFromCenter > 30.0) {
+        if (distFromCenter > 38.0) {
           // Perimeter dense ancient boundary
           type = rng.next() > 0.4 ? 'pine' : 'ancient_spire';
         } else if (jx * jz < 0) {
@@ -515,7 +801,8 @@ export class ProceduralForestLayoutEngine {
           type,
           foliageColor: folColor,
           trunkColor: trColor,
-          collisionRadius: 0.55 * scale * 2.0
+          // Tight trunk cylinder collision radius (actual trunk base radius ~0.22 * scale)
+          collisionRadius: Math.min(0.35, 0.22 * scale + 0.04)
         });
 
         // Place companion boulder near tree base with high probability (more rocky decoration)
@@ -535,20 +822,20 @@ export class ProceduralForestLayoutEngine {
       }
     }
 
-    // Procedural wild forest grass generation
+    // Procedural wild forest grass generation - Much higher density and coverage across enlarged map
     const grassRng = new PRNG(445566);
-    const grassExtent = 38.0;
-    const grassStep = 1.6; // dense layout step
+    const grassExtent = 47.0;
+    const grassStep = 1.0; // ultra dense lush grass layout (3x more grass)
     for (let gx = -grassExtent; gx <= grassExtent; gx += grassStep) {
       for (let gz = -grassExtent; gz <= grassExtent; gz += grassStep) {
-        const jx = gx + grassRng.range(-0.6, 0.6);
-        const jz = gz + grassRng.range(-0.6, 0.6);
+        const jx = gx + grassRng.range(-0.45, 0.45);
+        const jz = gz + grassRng.range(-0.45, 0.45);
 
         // Keep lanes and core bases open, allow slightly closer on edges
-        if (this.isPointInLaneOrSanctuary(jx, jz, 2.2)) continue;
+        if (this.isPointInLaneOrSanctuary(jx, jz, 2.0)) continue;
 
-        const scaleX = grassRng.range(0.18, 0.35); // grass tuft width
-        const scaleY = grassRng.range(0.55, 1.35); // grass tuft height
+        const scaleX = grassRng.range(0.18, 0.38); // grass tuft width
+        const scaleY = grassRng.range(0.60, 1.45); // grass tuft height
         const rotY = grassRng.range(0, Math.PI * 2);
 
         const greenRoll = grassRng.next();
@@ -557,6 +844,8 @@ export class ProceduralForestLayoutEngine {
           color = [0.22, 0.52, 0.18]; // Vibrant green
         } else if (greenRoll < 0.70) {
           color = [0.28, 0.45, 0.14]; // Olive mossy green
+        } else if (greenRoll < 0.85) {
+          color = [0.16, 0.58, 0.22]; // Fresh spring green
         }
 
         this.grass.push({
@@ -590,13 +879,19 @@ export class ProceduralForestLayoutEngine {
    */
   resolveTreeCollisions(pos, unitRadius = 0.5) {
     if (!pos) return;
+    // Cap effective unit collision radius against tree trunks so units don't snag on trees from far away
+    const effUnitRadius = Math.min(unitRadius, 0.32);
     for (let i = 0; i < this.trees.length; i++) {
       const tree = this.trees[i];
       const dx = pos[0] - tree.x;
       const dz = pos[2] - tree.z;
       const dist = Math.hypot(dx, dz);
-      const minDist = unitRadius + tree.collisionRadius;
-      if (dist < minDist && dist > 0.001) {
+      // Realistic trunk-only collision radius (strictly matches trunk cylinder geometry)
+      const treeR = tree.collisionRadius !== undefined
+        ? Math.min(tree.collisionRadius, 0.25 * (tree.scale || 1.0) + 0.04)
+        : 0.25;
+      const minDist = effUnitRadius + treeR;
+      if (dist < minDist && dist > 0.0001) {
         const push = minDist - dist;
         pos[0] += (dx / dist) * push;
         pos[2] += (dz / dist) * push;
