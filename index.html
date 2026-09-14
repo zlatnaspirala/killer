@@ -13,20 +13,6 @@
   </head>
   <body class="app-body">
     <div id="app-root">
-      <!-- Top Navigation / Header (Extremely sleek, lightweight, space saving!) -->
-      <header class="app-header">
-        <div class="header-left">
-          <div class="logo-badge" style="background: linear-gradient(135deg, #ef4444, #b91c1c); border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); color: #ffffff;">
-            <span class="logo-symbol">KIller</span>
-          </div>
-        </div>
-        <div class="header-right">
-          <button id="btn-fullscreen" class="btn-action" title="Toggle Fullscreen">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-          </button>
-        </div>
-      </header>
-
       <!-- Global Top-Level Navigation Tabs Bar -->
       <nav class="app-tabs-nav" id="app-tabs-nav">
         <!-- ⚡ LIVE Dropdown (Side-by-side in first place) -->
@@ -72,6 +58,13 @@
         <button class="tab-btn" data-tab="api-docs">
           <span class="tab-icon">📚</span>
           <span>API DOCS</span>
+        </button>
+        <!-- Fullscreen Tab Action Button (Saves precious vertical screen real estate!) -->
+        <button id="btn-fullscreen" class="tab-btn ml-auto flex items-center space-x-1 hover:bg-slate-800/40 text-sky-400 font-bold border-l border-slate-800/80 pl-4 transition-all" title="Toggle Fullscreen">
+          <span class="tab-icon">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="inline-block align-middle"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+          </span>
+          <span class="text-[11px] sm:text-xs">Fullscreen</span>
         </button>
       </nav>
 
@@ -1016,14 +1009,14 @@
                   ARISSA SLAYS ENEMY CREEP!
                 </div>
 
-                <!-- Shop button on screen -->
-                <div class="w-full flex justify-between items-end pointer-events-auto mb-[11vh] sm:mb-28 md:mb-32 lg:mb-36 px-2 sm:px-4">
-                  <button id="moba-btn-shop" class="flex items-center space-x-1.5 bg-gradient-to-r from-amber-600/90 to-amber-500/90 hover:from-amber-600 hover:to-amber-500 border border-amber-400/40 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-lg transition-all text-white font-bold text-[11px] sm:text-xs cursor-pointer active:scale-95">
+                <!-- Shop button on screen (pointer-events-none to let click navigation propagate through empty space) -->
+                <div class="w-full flex justify-between items-end pointer-events-none mb-[11vh] sm:mb-28 md:mb-32 lg:mb-36 px-2 sm:px-4 z-30">
+                  <button id="moba-btn-shop" class="flex items-center space-x-1.5 bg-gradient-to-r from-amber-600/90 to-amber-500/90 hover:from-amber-600 hover:to-amber-500 border border-amber-400/40 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-lg transition-all text-white font-bold text-[11px] sm:text-xs cursor-pointer active:scale-95 pointer-events-auto">
                     <span>🛒 BASE SHOP</span>
                   </button>
 
-                  <div class="flex items-center space-x-2">
-                    <button id="moba-btn-attack" class="flex items-center space-x-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 border border-red-400/50 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-[0_0_12px_rgba(239,68,68,0.5)] transition-all text-white font-black text-[11px] sm:text-xs cursor-pointer active:scale-95 pointer-events-auto">
+                  <div class="flex items-center space-x-2 pointer-events-auto">
+                    <button id="moba-btn-attack" class="flex items-center space-x-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 border border-red-400/50 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-[0_0_12px_rgba(239,68,68,0.5)] transition-all text-white font-black text-[11px] sm:text-xs cursor-pointer active:scale-95">
                       <span>⚔️ ATTACK [A]</span>
                     </button>
                     <div class="flex flex-col items-end space-y-1">
@@ -1055,40 +1048,44 @@
                     <div id="moba-team-tag" class="absolute bottom-0 left-0 right-0 text-center text-[7px] sm:text-[9px] font-black text-white uppercase py-0.2 bg-red-600">RED</div>
                   </div>
 
-                  <!-- HP & MANA BARS & REAL-TIME STATS -->
-                  <div class="w-20 sm:w-36 md:w-48 space-y-0.5 sm:space-y-1">
-                    <div class="text-[10px] sm:text-xs md:text-sm font-black text-slate-100 flex justify-between items-center leading-none">
+                  <!-- HP & MANA BARS -->
+                  <div class="w-20 sm:w-32 md:w-36 space-y-0.5 sm:space-y-1">
+                    <div class="text-[9px] sm:text-xs font-black text-slate-100 flex justify-between items-center leading-none">
                       <span id="moba-hero-name" class="truncate max-w-[50px] sm:max-w-none">Arissa</span>
-                      <span class="text-[8px] sm:text-[10px] text-amber-400 font-mono">LVL 1</span>
+                      <span class="text-[7.5px] sm:text-[9px] text-amber-400 font-mono">LVL 1</span>
                     </div>
-                    <!-- HP -->
-                    <div class="w-full bg-black/60 h-2 sm:h-3 md:h-3.5 rounded overflow-hidden border border-emerald-500/40 relative">
+                    <!-- HP (Smaller Height) -->
+                    <div class="w-full bg-black/60 h-1.5 sm:h-2 md:h-2 rounded overflow-hidden border border-emerald-500/40 relative">
                       <div id="moba-hero-hp-bar" class="bg-gradient-to-r from-emerald-500 via-emerald-400 to-green-300 h-full transition-all duration-100" style="width: 100%; box-shadow: 0 0 10px rgba(16, 185, 129, 0.85);"></div>
-                      <span id="moba-hero-hp-text" class="absolute inset-0 flex items-center justify-center text-[7px] sm:text-[8px] md:text-[9px] font-black text-white font-mono leading-none">550/550</span>
+                      <span id="moba-hero-hp-text" class="absolute inset-0 flex items-center justify-center text-[5.5px] sm:text-[7px] md:text-[7.5px] font-black text-white font-mono leading-none">550/550</span>
                     </div>
-                    <!-- MANA -->
-                    <div class="w-full bg-black/60 h-1.5 sm:h-2 md:h-2.5 rounded overflow-hidden border border-blue-500/40 relative">
+                    <!-- MANA (Smaller Height) -->
+                    <div class="w-full bg-black/60 h-1 sm:h-1.5 md:h-1.5 rounded overflow-hidden border border-blue-500/40 relative">
                       <div id="moba-hero-mp-bar" class="bg-gradient-to-r from-blue-600 to-sky-400 h-full transition-all duration-100" style="width: 100%; box-shadow: 0 0 10px rgba(59, 130, 246, 0.85);"></div>
-                      <span id="moba-hero-mp-text" class="absolute inset-0 flex items-center justify-center text-[6px] sm:text-[7.5px] md:text-[8px] font-black text-white font-mono leading-none">240/240</span>
+                      <span id="moba-hero-mp-text" class="absolute inset-0 flex items-center justify-center text-[5px] sm:text-[6px] md:text-[6.5px] font-black text-white font-mono leading-none">240/240</span>
                     </div>
-                    <!-- SLEEK REAL-TIME STATS (Attack, Speed, Defense, Intellect) -->
-                    <div class="flex items-center justify-between text-[7.5px] sm:text-[9.5px] font-mono text-slate-400 font-extrabold leading-none pt-0.5 select-none">
-                      <div class="flex items-center space-x-0.5" title="Attack Power (⚔️ ATK)">
-                        <span>⚔️</span>
-                        <span id="moba-stat-atk" class="text-rose-400 font-black">55</span>
-                      </div>
-                      <div class="flex items-center space-x-0.5" title="Movement Speed (👟 MS)">
-                        <span>👟</span>
-                        <span id="moba-stat-speed" class="text-sky-400 font-black">4.5</span>
-                      </div>
-                      <div class="flex items-center space-x-0.5" title="Defense / Armor (🛡️ DEF)">
-                        <span>🛡️</span>
-                        <span id="moba-stat-def" class="text-emerald-400 font-black">12</span>
-                      </div>
-                      <div class="flex items-center space-x-0.5" title="Intelligence / Spellpower (🔮 INT)">
-                        <span>🔮</span>
-                        <span id="moba-stat-int" class="text-purple-400 font-black">24</span>
-                      </div>
+                  </div>
+                </div>
+
+                <!-- SLEEK REAL-TIME STATS (Placed between Bars and Details) -->
+                <div class="flex flex-col justify-center border-l border-white/10 pl-2 md:pl-3 mr-1 md:mr-2 h-full shrink-0 select-none">
+                  <span class="text-amber-400 font-extrabold uppercase tracking-wider text-[7px] sm:text-[8px] md:text-[9px] mb-0.5 sm:mb-1">Attributes</span>
+                  <div class="grid grid-cols-2 gap-x-1.5 sm:gap-x-3 gap-y-0.5 text-[7px] sm:text-[9px] md:text-[10px] font-mono text-slate-300 font-extrabold leading-none">
+                    <div class="flex items-center space-x-0.5" title="Attack Power (⚔️ ATK)">
+                      <span>⚔️</span>
+                      <span id="moba-stat-atk" class="text-rose-400 font-black">55</span>
+                    </div>
+                    <div class="flex items-center space-x-0.5" title="Movement Speed (👟 MS)">
+                      <span>👟</span>
+                      <span id="moba-stat-speed" class="text-sky-400 font-black">4.5</span>
+                    </div>
+                    <div class="flex items-center space-x-0.5" title="Defense / Armor (🛡️ DEF)">
+                      <span>🛡️</span>
+                      <span id="moba-stat-def" class="text-emerald-400 font-black">12</span>
+                    </div>
+                    <div class="flex items-center space-x-0.5" title="Intelligence / Spellpower (🔮 INT)">
+                      <span>🔮</span>
+                      <span id="moba-stat-int" class="text-purple-400 font-black">24</span>
                     </div>
                   </div>
                 </div>

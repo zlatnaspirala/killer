@@ -2781,6 +2781,42 @@ void main() {
         roughness = mix(0.03, 0.35, totalFoam); // mirror-smooth water, slightly diffuse foam
         metallic = 0.08;
     }
+    else if (u_matType == 21) {
+        // 21. HIGH-FIDELITY PROCEDURAL FOREST FLOOR TERRAIN
+        // Rich, multi-frequency micro-grass blades, moss clumps, and fertile soil tones
+        vec2 floorUV = v_worldPos.xz * 3.8;
+        
+        // Multi-layered organic color noise
+        float colNoise1 = noise3d(vec3(v_worldPos.xz * 0.04, u_time * 0.015));
+        float colNoise2 = noise3d(vec3(v_worldPos.xz * 0.28, 0.0));
+        
+        // Base dark organic soil, moss, and dense clover tones
+        vec3 forestBase = vec3(0.05, 0.09, 0.06);
+        vec3 cloverGreen = vec3(0.12, 0.26, 0.14);
+        vec3 vibrantMoss = vec3(0.16, 0.36, 0.18);
+        vec3 dryEarth    = vec3(0.08, 0.06, 0.04);
+        
+        vec3 terrainColor = mix(cloverGreen, vibrantMoss, colNoise1);
+        terrainColor = mix(dryEarth, terrainColor, 0.88 - colNoise2 * 0.15);
+        
+        // Generate high-density Voronoi micro-blades
+        vec2 voronoiGrass = voronoi2d(floorUV * 8.0);
+        float bladeMask = smoothstep(0.12, 0.88, voronoiGrass.x);
+        
+        // Add random blade variations & micro-highlights
+        float bladeHue = sin(voronoiGrass.y * 64.0) * 0.5 + 0.5;
+        vec3 grassBladeCol = mix(cloverGreen * 0.65, vibrantMoss * 1.4, bladeHue);
+        
+        // Combine soil foundation and dynamic grass blade layers
+        albedo = mix(terrainColor, grassBladeCol, bladeMask * 0.78) * (u_baseColor * 2.2);
+        
+        // Perturb normals to make the ground appear beautifully bumpy and lush instead of flat
+        float normalPerturb = voronoiGrass.x * 0.22 + colNoise1 * 0.08;
+        N = perturbNormal(N, v_worldPos, normalPerturb, bumpScale * 2.8);
+        
+        roughness = mix(0.96, 0.80, bladeMask);
+        metallic = 0.0;
+    }
 
     // Blend optional 2D Texture Maps if active (Preserve authentic GLB UV origin & soft non-metallic response)
     if (u_useTexMaps > 0) {
@@ -6768,9 +6804,10 @@ void main() {
         for (let i = 0; i < rawPos.length; i += 3) {
           const v = [rawPos[i], rawPos[i+1], rawPos[i+2]];
           const rv = rotateVec(v, q);
+          // Flip 180 degrees around X-axis (swap bottom and top so tower stands upright)
           const fx = rv[0] + t[0];
-          const fy = rv[1] + t[1];
-          const fz = rv[2] + t[2];
+          const fy = -(rv[1] + t[1]);
+          const fz = -(rv[2] + t[2]);
           positions[i] = fx; positions[i+1] = fy; positions[i+2] = fz;
           minX = Math.min(minX, fx); maxX = Math.max(maxX, fx);
           minY = Math.min(minY, fy); maxY = Math.max(maxY, fy);
@@ -6778,7 +6815,7 @@ void main() {
 
           const nv = [rawNorm[i], rawNorm[i+1], rawNorm[i+2]];
           const rnv = rotateVec(nv, q);
-          normals[i] = rnv[0]; normals[i+1] = rnv[1]; normals[i+2] = rnv[2];
+          normals[i] = rnv[0]; normals[i+1] = -rnv[1]; normals[i+2] = -rnv[2];
         }
 
         const cx = (minX + maxX) / 2;
@@ -7711,10 +7748,21 @@ void main() {
     canvasContainer.addEventListener('wheel', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
-      if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, .bingo-overlay-panel, #fps-startup-overlay, .modal-overlay, .panel')) {
-        return; // Allow native mouse wheel scrolling in UI panels
+      if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, .bingo-overlay-panel, #fps-startup-overlay, .modal-overlay, .panel, #moba-shop-modal')) {
+        return; // Allow native mouse wheel scrolling in UI panels and the Shop modal
       }
       e.preventDefault();
+
+      const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba') && this.mobaState && this.mobaState.playing;
+      if (isMoba) {
+        if (this.mobaState.zoomLevel === undefined) {
+          this.mobaState.zoomLevel = this.isMobileDevice() ? 18.5 : 16.5;
+        }
+        // Increment zoomLevel by scroll amount (with constraints between 1.8 for FPS and 32.0 for RTS bird's eye)
+        this.mobaState.zoomLevel = Math.max(1.8, Math.min(32.0, this.mobaState.zoomLevel + e.deltaY * 0.015));
+        return;
+      }
+
       if (this.state.cameraMode === 0) {
         this.state.camRadius = Math.max(0.5, Math.min(30.0, this.state.camRadius + e.deltaY * 0.004));
       } else {
@@ -25827,12 +25875,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (shopContainer) {
       shopContainer.innerHTML = '';
       const shopItems = [
-        { key: 'blade', name: 'Blade of Blood', price: 100, desc: '+25 Strength / Damage', color: 'border-red-600/50' },
-        { key: 'boots', name: 'Boots of Speed', price: 80, desc: '+2.5 Speed Boost', color: 'border-emerald-600/50' },
-        { key: 'heart', name: 'Heart of Titan', price: 150, desc: '+400 Max Health', color: 'border-cyan-600/50' },
-        { key: 'scepter', name: 'Archmage Scepter', price: 120, desc: '+300 Max Mana', color: 'border-purple-600/50' },
-        { key: 'shield', name: 'Aegis Shield', price: 110, desc: '+15 Health Regen / Armor', color: 'border-amber-600/50' },
-        { key: 'magic_reborn', name: 'Magic Reborn', price: 150, desc: 'One-time use potion. Halves respawn time or +10 HP when alive.', color: 'border-blue-600/50' }
+        { key: 'blade', name: 'Blade of Blood', price: 200, desc: '+25 Strength / Damage', color: 'border-red-600/50' },
+        { key: 'boots', name: 'Boots of Speed', price: 160, desc: '+2.5 Speed Boost', color: 'border-emerald-600/50' },
+        { key: 'heart', name: 'Heart of Titan', price: 300, desc: '+400 Max Health', color: 'border-cyan-600/50' },
+        { key: 'scepter', name: 'Archmage Scepter', price: 240, desc: '+300 Max Mana', color: 'border-purple-600/50' },
+        { key: 'shield', name: 'Aegis Shield', price: 220, desc: '+15 Health Regen / Armor', color: 'border-amber-600/50' },
+        { key: 'magic_reborn', name: 'Magic Reborn', price: 300, desc: 'One-time use potion. Halves respawn time or +10 HP when alive.', color: 'border-blue-600/50' }
       ];
 
       shopItems.forEach(item => {
@@ -26186,12 +26234,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
 
     const itemDetails = {
-      blade: { name: 'Blade of Blood', price: 100, strength: 25, desc: '+25 Strength / Damage' },
-      boots: { name: 'Boots of Speed', price: 80, speed: 2.5, desc: '+2.5 Speed' },
-      heart: { name: 'Heart of Titan', price: 150, hp: 400, desc: '+400 Max HP' },
-      scepter: { name: 'Archmage Scepter', price: 120, mp: 300, desc: '+300 Max Mana' },
-      shield: { name: 'Aegis Shield', price: 110, armor: 15, desc: '+15 HP Regen / Armor' },
-      magic_reborn: { name: 'Magic Reborn', price: 150, desc: 'One-time use potion. Halves respawn time or +10 HP when alive.' }
+      blade: { name: 'Blade of Blood', price: 200, strength: 25, desc: '+25 Strength / Damage' },
+      boots: { name: 'Boots of Speed', price: 160, speed: 2.5, desc: '+2.5 Speed' },
+      heart: { name: 'Heart of Titan', price: 300, hp: 400, desc: '+400 Max HP' },
+      scepter: { name: 'Archmage Scepter', price: 240, mp: 300, desc: '+300 Max Mana' },
+      shield: { name: 'Aegis Shield', price: 220, armor: 15, desc: '+15 HP Regen / Armor' },
+      magic_reborn: { name: 'Magic Reborn', price: 300, desc: 'One-time use potion. Halves respawn time or +10 HP when alive.' }
     }[itemKey];
 
     if (!itemDetails) return;
@@ -26509,9 +26557,27 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.state.camTarget[2] = playerPos[2];
 
     const isMobile = this.isMobileDevice();
-    this.state.camRadius = isMobile ? 18.5 : 16.5;
-    this.state.camPitch = 0.98;
-    this.state.camYaw = 0.0;
+    const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
+
+    if (zoom <= 3.5) {
+      const playerYaw = this.mobaState.currentYaw || this.mobaState.rotation || 0;
+      // Position camera target slightly ahead of player to offset shoulder view
+      this.state.camTarget[0] = playerPos[0] + Math.sin(playerYaw) * 2.2;
+      this.state.camTarget[1] = playerPos[1] + 1.25;
+      this.state.camTarget[2] = playerPos[2] + Math.cos(playerYaw) * 2.2;
+
+      this.state.camRadius = zoom;
+      this.state.camPitch = 0.15; // Ground-level view
+      this.state.camYaw = playerYaw + Math.PI; // Face the direction hero is moving
+    } else {
+      this.state.camTarget[0] = playerPos[0];
+      this.state.camTarget[1] = 1.0;
+      this.state.camTarget[2] = playerPos[2];
+
+      this.state.camRadius = zoom;
+      this.state.camPitch = 0.98; // Traditional MOBA steep tilt angle
+      this.state.camYaw = 0.0;
+    }
 
     // Ensure Main Light follows the player hero (exact middle of screen) with big radius covering whole screen
     if (this.sceneEntities) {
@@ -26814,12 +26880,18 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
     this.mobaUpdateAbilitiesCooldownUI();
 
-    // 9. Passive Gold & Mana regeneration (+3 gold, +5 mana per second)
+    // 9. Passive Gold & Mana regeneration (+1 gold per 2s, +5 mana per 1s)
     this.mobaState.goldTimer = (this.mobaState.goldTimer || 0) + dt;
     if (this.mobaState.goldTimer >= 1.0) {
-      this.mobaState.goldTimer = 0.0;
-      this.mobaState.gold = (this.mobaState.gold || 0) + 3;
+      this.mobaState.goldTimer -= 1.0;
       this.mobaState.heroStats.mp = Math.min(this.mobaState.heroStats.maxMp, this.mobaState.heroStats.mp + 5);
+      
+      // Secondary accumulator to give exactly +1 gold every 2 seconds
+      this.mobaState.passiveGoldTicks = (this.mobaState.passiveGoldTicks || 0) + 1;
+      if (this.mobaState.passiveGoldTicks >= 2) {
+        this.mobaState.passiveGoldTicks = 0;
+        this.mobaState.gold = (this.mobaState.gold || 0) + 1;
+      }
     }
 
     // 10. Click ripples & VFX bursts timers
@@ -27175,10 +27247,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const pCenterPos = (this.mobaState && this.mobaState.playing && this.mobaState.currentPos) ? this.mobaState.currentPos : [0, 0, 0];
     if (progInfo.uLightDir) gl.uniform3fv(progInfo.uLightDir, [0.35, 0.92, 0.4]);
     // Slashed ambient sun and fill lights to make the entire map moody and beautifully dark (almost black)
-    // Completely darkened to [0.0, 0.0, 0.0] so only the player's light illuminates the map
-    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [0.0, 0.0, 0.0]);
+    // Completely darkened to a tiny non-zero [0.0015, 0.0015, 0.0015] to bypass shader fallback defaults so only the player's light illuminates the map
+    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [0.0015, 0.0015, 0.0015]);
     if (progInfo.uFillLightDir) gl.uniform3fv(progInfo.uFillLightDir, [-0.4, 0.65, -0.35]);
-    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [0.0, 0.0, 0.0]);
+    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [0.0015, 0.0015, 0.0015]);
 
     if (progInfo.uNumPointLights && progInfo.pointLights) {
       gl.uniform1i(progInfo.uNumPointLights, 3);
@@ -27226,8 +27298,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.95);
       if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
       if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.08, 0.18, 0.1])); // Forest deep green rock base
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 21); // Apply high-fidelity procedural forest floor terrain shader!
 
       gl.drawElements(gl.TRIANGLES, groundMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Restore default material type
     }
 
     // Render Lobby Setup view Lineup
@@ -27896,19 +27970,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.bindTexture(gl.TEXTURE_2D, null);
         }
 
-        // 2c. Tower Apex Floating Energy Sentinel Crystal
-        if (orbMesh) {
-          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 15); // Glowing Core Material type for stunning glow
-          gl.bindVertexArray(orbMesh.vao);
-          const spin = timestamp * 0.002;
-          const bob = Math.sin(timestamp * 0.0035 + t.pos[0]) * 0.12;
-          const orbScale = 0.42 * factor;
-          const cO = Math.cos(spin) * orbScale, sO = Math.sin(spin) * orbScale;
+          // 2c. Tower Apex Floating Energy Sentinel Crystal
+          if (orbMesh) {
+            if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 15); // Glowing Core Material type for stunning glow
+            gl.bindVertexArray(orbMesh.vao);
+            const spin = timestamp * 0.002;
+            const bob = Math.sin(timestamp * 0.0035 + t.pos[0]) * 0.12;
+            const orbScale = 0.42 * factor;
+            const cO = Math.cos(spin) * orbScale, sO = Math.sin(spin) * orbScale;
 
-          this.instanceMatrix[0] = cO; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sO; this.instanceMatrix[3] = 0;
-          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = orbScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-          this.instanceMatrix[8] = sO; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cO; this.instanceMatrix[11] = 0;
-          this.instanceMatrix[12] = t.pos[0]; this.instanceMatrix[13] = 3.9 + bob; this.instanceMatrix[14] = t.pos[2]; this.instanceMatrix[15] = 1.0;
+            this.instanceMatrix[0] = cO; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sO; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = orbScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = sO; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cO; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = t.pos[0]; this.instanceMatrix[13] = 5.2 + bob; this.instanceMatrix[14] = t.pos[2]; this.instanceMatrix[15] = 1.0;
 
           Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
@@ -28030,9 +28104,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
       // Render active barrier shield dome if active
       if (this.mobaState.heroStats.shield > 0 && this.sacredSpellMeshes && this.sacredSpellMeshes.shieldDome) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive neon glow blending
+        gl.depthMask(false); // Disable depth writing for seamless translucent rendering
+        
         const shieldMesh = this.sacredSpellMeshes.shieldDome;
         gl.bindVertexArray(shieldMesh.vao);
-        const sPulse = 1.35 + Math.sin(timestamp * 0.006) * 0.08;
+        const sPulse = 1.45 + Math.sin(timestamp * 0.006) * 0.06;
         const sSpin = timestamp * 0.001;
         const cS = Math.cos(sSpin) * sPulse, sS = Math.sin(sSpin) * sPulse;
         this.instanceMatrix[0] = cS; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sS; this.instanceMatrix[3] = 0;
@@ -28042,10 +28120,57 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.1);
-        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.9);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.2, 0.95, 0.65]));
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.05);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.38 + 0.1 * Math.sin(timestamp * 0.005));
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12); // Emissive neon glow material!
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.0, 0.95, 0.85])); // Cyan energy sphere
         gl.drawElements(gl.TRIANGLES, shieldMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // Render 6 sharp, rotating neon-magenta spikes protruding from the sphere
+        const spikeMesh = this.meshBuffers[9]; // Sharp Pyramid Mesh
+        if (spikeMesh) {
+          gl.bindVertexArray(spikeMesh.vao);
+          const baseRot = timestamp * 0.0022; // Dynamic spin speed
+          const dist = 1.25; // Distance of spikes from center
+          const spikeScale = [0.15, 0.65, 0.15]; // Sharp elongated dimensions
+
+          const directions = [
+            { pos: [0, dist, 0] },          // Top
+            { pos: [0, -dist, 0] },         // Bottom
+            { pos: [dist, 0.4, 0] },        // Right
+            { pos: [-dist, 0.4, 0] },       // Left
+            { pos: [0, 0.4, dist] },        // Forward
+            { pos: [0, 0.4, -dist] }        // Backward
+          ];
+
+          directions.forEach(dir => {
+            // Spin positions in the horizontal XZ plane
+            const origX = dir.pos[0];
+            const origZ = dir.pos[2];
+            const cosS = Math.cos(baseRot), sinS = Math.sin(baseRot);
+            const rotX = origX * cosS - origZ * sinS;
+            const rotZ = origX * sinS + origZ * cosS;
+
+            this.instanceMatrix[0] = spikeScale[0] * cosS; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -spikeScale[2] * sinS; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = spikeScale[1]; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = spikeScale[0] * sinS; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = spikeScale[2] * cosS; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = playerPos[0] + rotX; this.instanceMatrix[13] = 0.45 + dir.pos[1]; this.instanceMatrix[14] = playerPos[2] + rotZ; this.instanceMatrix[15] = 1.0;
+
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+            if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.80);
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 0.15, 0.75])); // Glowing magenta/pink spike
+            gl.drawElements(gl.TRIANGLES, spikeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          });
+        }
+
+        // Restore standard opaque pipeline states
+        gl.disable(gl.BLEND);
+        gl.depthMask(true);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
       }
 
       const glbPath = {
@@ -28657,6 +28782,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.winner = null;
     this.mobaState.gold = 200;
     this.mobaState.goldTimer = 0;
+    this.mobaState.passiveGoldTicks = 0;
+    this.mobaState.zoomLevel = this.isMobileDevice() ? 18.5 : 16.5;
     this.mobaState.matchTimer = 0;
     this.mobaState.attackTimer = 0;
     this.mobaState.waveTimer = 0;

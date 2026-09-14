@@ -1561,7 +1561,7 @@ body.app-body {
   }
 
   .main-tab-viewport {
-    height: calc(100vh - 44px - 38px);
+    height: calc(100vh - 38px);
   }
 
   .tab-scroll-pane {
