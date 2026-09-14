@@ -288,3 +288,5 @@ Built with Google Filament PBR principles and modern C++17.
 - **Djinn Bestiary — Ancient Oddities – Vol. 1 (13 Free Potions)**: Used for high-fidelity inventory item designs and MOBA potion layouts. Licensed for royalty-free use in commercial and personal game development projects.
 
 - **BLACK FLY by Audionautix** (http://audionautix.com): Audio background track used for MOBA battle environments. Licensed under Creative Commons Attribution-ShareAlike 3.0 Unported.
+
+- **Towers WoW** (https://skfb.ly/6XtCI) by CGArt is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
