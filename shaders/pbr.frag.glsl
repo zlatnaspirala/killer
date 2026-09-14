@@ -492,7 +492,9 @@ void main() {
         Lo *= 0.22; // Greatly reduce direct light influence to avoid blink/contrast extremes!
     }
 
-    vec3 color = Lo + (iblDiffuse + iblSpecular) * 0.55 + emissive;
+    // Scale down ambient when uLightColor is dimmed or zero (e.g. moody/dark mode mapping)
+    float ambScale = clamp(length(uLightColor) * 2.5, 0.005, 1.0);
+    vec3 color = Lo + (iblDiffuse + iblSpecular) * 0.55 * ambScale + emissive;
 
     // HDR Reinhard Tone Mapping & Gamma Correction
     color = color / (color + vec3(1.0));

@@ -13,57 +13,14 @@
   </head>
   <body class="app-body">
     <div id="app-root">
-      <!-- Top Navigation / Header -->
+      <!-- Top Navigation / Header (Extremely sleek, lightweight, space saving!) -->
       <header class="app-header">
         <div class="header-left">
           <div class="logo-badge" style="background: linear-gradient(135deg, #ef4444, #b91c1c); border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); color: #ffffff;">
             <span class="logo-symbol">KIller</span>
           </div>
         </div>
-        
-        <!-- High-Visibility Live Demo Header Dropdown with Crimson/Red Theme -->
-        <div class="header-demo-selector-container">
-          <span class="header-demo-label">⚡ POPUP ACTIVE LIVE DEMO</span>
-          <select id="viewport-demo-scene-select" class="header-demo-select">
-            <option value="06_glb_character_collision_player.cpp">Demo 01: Player Controller &amp; Character</option>
-            <option value="07_fps_shooter_damage_system.cpp">Demo 02: First-Person Shooter Arena</option>
-            <option value="08_all_materials_presentation.cpp">Demo 03: Material Showroom Gallery</option>
-            <option value="09_slot_machine.cpp">Demo 04: 3D Casino Slot Machine</option>
-            <option value="10_sliding_puzzle.cpp">Demo 05: Dynamic 3D Sliding Puzzle</option>
-            <option value="11_plinko.cpp">Demo 06: 3D Plinko Cascade Board</option>
-            <option value="12_roulette.cpp">Demo 07: 3D Physics Roulette Wheel</option>
-            <option value="13_bingo_physics.cpp">Demo 08: 3D Physics Bingo &amp; Diamond Drum</option>
-            <option value="14_pong.cpp" selected>Demo 09: Retro 3D Arcade Pong</option>
-            <option value="15_moba.cpp">Demo 10: MOBA Forest of Hollow Blood</option>
-          </select>
-        </div>
         <div class="header-right">
-          <!-- Clickable Debug Render Data Toggle Pill -->
-          <div class="status-pill" id="debug-toggle-pill" style="cursor: pointer; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.35); transition: all 0.2s; user-select: none;" title="Toggle real-time vertices, triangles, and memory telemetry overlays">
-            <span class="status-dot" style="background: #ef4444; box-shadow: 0 0 8px #ef4444; animation: none;" id="debug-toggle-dot"></span>
-            <span class="status-text" style="color: #a5f3fc; font-weight: 700; font-size: 11px; white-space: nowrap;">DEBUG DATA: <span id="debug-toggle-status" style="color: #fca5a5; font-weight: 800;">OFF</span></span>
-          </div>
-
-          <!-- Killer Engine LOD Policy Toggle Pill -->
-          <div class="status-pill" id="lod-toggle-pill" style="cursor: pointer; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.35); transition: all 0.2s; user-select: none;" title="Toggle Killer Engine LOD Policy: Desktop Force Quality vs Mobile Max Optimization">
-            <span class="status-dot" style="background: #10b981; box-shadow: 0 0 8px #10b981; animation: none;" id="lod-toggle-dot"></span>
-            <span class="status-text" style="color: #a7f3d0; font-weight: 700; font-size: 11px; white-space: nowrap;">LOD: <span id="lod-toggle-status" style="color: #6ee7b7; font-weight: 800;">AUTO</span></span>
-          </div>
-
-          <div class="status-pill" id="engine-status-pill">
-            <span class="status-dot"></span>
-            <span class="status-text">Engine: ACTIVE</span>
-          </div>
-          <div class="status-pill backend-pill" id="backend-status-pill">
-            <span class="status-dot"></span>
-            <span class="status-text" id="backend-status-text">Backend: Connecting...</span>
-          </div>
-          <div class="status-pill net-pill" id="net-header-status-pill" title="Network Transport Mode & Media Server">
-            <span class="status-dot" style="background:#10b981;"></span>
-            <span class="status-text" id="net-header-status-text">Net: WebRTC / OpenVidu</span>
-            <span class="fps-badge" id="net-ping-badge" style="margin-left: 6px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; padding: 2px 6px; border-radius: 4px; font-size: 11px;">18ms</span>
-          </div>
-          <div class="fps-badge" id="fps-counter">60.0 FPS</div>
           <button id="btn-fullscreen" class="btn-action" title="Toggle Fullscreen">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
           </button>
@@ -72,17 +29,29 @@
 
       <!-- Global Top-Level Navigation Tabs Bar -->
       <nav class="app-tabs-nav" id="app-tabs-nav">
+        <!-- ⚡ LIVE Dropdown (Side-by-side in first place) -->
+        <div class="flex items-center space-x-1.5 px-3 py-1 bg-gradient-to-r from-red-950/40 via-slate-900/80 to-slate-950/80 border-r border-slate-800/80 shrink-0 self-stretch mr-2" style="border-right-width: 1.5px; border-right-color: rgba(239, 68, 68, 0.35);">
+          <span class="text-red-500 font-extrabold text-[10px] sm:text-xs tracking-wider animate-pulse whitespace-nowrap">⚡ LIVE:</span>
+          <select id="viewport-demo-scene-select" class="bg-black/60 hover:bg-black/80 text-red-200 text-[10px] sm:text-[11px] font-bold border border-red-500/30 rounded px-1.5 py-1 focus:outline-none focus:border-red-500 max-w-[130px] sm:max-w-[200px] cursor-pointer transition-all">
+            <!-- Dynamic items populated by JS -->
+          </select>
+        </div>
+
         <button class="tab-btn active" data-tab="viewport">
           <span class="tab-icon">🖥️</span>
           <span>3D Viewport</span>
+        </button>
+        <button class="tab-btn" data-tab="controls">
+          <span class="tab-icon">⚙️</span>
+          <span>Controls &amp; Demos</span>
         </button>
         <button class="tab-btn" data-tab="project">
           <span class="tab-icon">📁</span>
           <span>Project</span>
         </button>
-        <button class="tab-btn" data-tab="controls">
-          <span class="tab-icon">⚙️</span>
-          <span>Controls &amp; Demos</span>
+        <button class="tab-btn" data-tab="status">
+          <span class="tab-icon">📊</span>
+          <span>Status</span>
         </button>
         <button class="tab-btn" data-tab="live-editor">
           <span class="tab-icon">⚡</span>
@@ -1048,7 +1017,7 @@
                 </div>
 
                 <!-- Shop button on screen -->
-                <div class="w-full flex justify-between items-end pointer-events-auto mb-20 sm:mb-24 px-2 sm:px-4">
+                <div class="w-full flex justify-between items-end pointer-events-auto mb-[11vh] sm:mb-28 md:mb-32 lg:mb-36 px-2 sm:px-4">
                   <button id="moba-btn-shop" class="flex items-center space-x-1.5 bg-gradient-to-r from-amber-600/90 to-amber-500/90 hover:from-amber-600 hover:to-amber-500 border border-amber-400/40 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-lg transition-all text-white font-bold text-[11px] sm:text-xs cursor-pointer active:scale-95">
                     <span>🛒 BASE SHOP</span>
                   </button>
@@ -1086,23 +1055,48 @@
                     <div id="moba-team-tag" class="absolute bottom-0 left-0 right-0 text-center text-[7px] sm:text-[9px] font-black text-white uppercase py-0.2 bg-red-600">RED</div>
                   </div>
 
-                  <!-- HP & MANA BARS -->
-                  <div class="w-16 sm:w-32 md:w-40 space-y-0.5 sm:space-y-1">
+                  <!-- HP & MANA BARS & REAL-TIME STATS -->
+                  <div class="w-20 sm:w-36 md:w-48 space-y-0.5 sm:space-y-1">
                     <div class="text-[10px] sm:text-xs md:text-sm font-black text-slate-100 flex justify-between items-center leading-none">
                       <span id="moba-hero-name" class="truncate max-w-[50px] sm:max-w-none">Arissa</span>
                       <span class="text-[8px] sm:text-[10px] text-amber-400 font-mono">LVL 1</span>
                     </div>
                     <!-- HP -->
-                    <div class="w-full bg-black/60 h-2 sm:h-3.5 rounded overflow-hidden border border-emerald-500/30 relative">
-                      <div id="moba-hero-hp-bar" class="bg-gradient-to-r from-emerald-600 to-emerald-400 h-full transition-all duration-100" style="width: 100%;"></div>
-                      <span id="moba-hero-hp-text" class="absolute inset-0 flex items-center justify-center text-[7.5px] sm:text-[9.5px] font-black text-white font-mono leading-none">550/550</span>
+                    <div class="w-full bg-black/60 h-2 sm:h-3 md:h-3.5 rounded overflow-hidden border border-emerald-500/40 relative">
+                      <div id="moba-hero-hp-bar" class="bg-gradient-to-r from-emerald-500 via-emerald-400 to-green-300 h-full transition-all duration-100" style="width: 100%; box-shadow: 0 0 10px rgba(16, 185, 129, 0.85);"></div>
+                      <span id="moba-hero-hp-text" class="absolute inset-0 flex items-center justify-center text-[7px] sm:text-[8px] md:text-[9px] font-black text-white font-mono leading-none">550/550</span>
                     </div>
                     <!-- MANA -->
-                    <div class="w-full bg-black/60 h-1.5 sm:h-3 rounded overflow-hidden border border-blue-500/30 relative">
-                      <div id="moba-hero-mp-bar" class="bg-gradient-to-r from-blue-600 to-sky-400 h-full transition-all duration-100" style="width: 100%;"></div>
-                      <span id="moba-hero-mp-text" class="absolute inset-0 flex items-center justify-center text-[7px] sm:text-[8.5px] font-black text-white font-mono leading-none">240/240</span>
+                    <div class="w-full bg-black/60 h-1.5 sm:h-2 md:h-2.5 rounded overflow-hidden border border-blue-500/40 relative">
+                      <div id="moba-hero-mp-bar" class="bg-gradient-to-r from-blue-600 to-sky-400 h-full transition-all duration-100" style="width: 100%; box-shadow: 0 0 10px rgba(59, 130, 246, 0.85);"></div>
+                      <span id="moba-hero-mp-text" class="absolute inset-0 flex items-center justify-center text-[6px] sm:text-[7.5px] md:text-[8px] font-black text-white font-mono leading-none">240/240</span>
+                    </div>
+                    <!-- SLEEK REAL-TIME STATS (Attack, Speed, Defense, Intellect) -->
+                    <div class="flex items-center justify-between text-[7.5px] sm:text-[9.5px] font-mono text-slate-400 font-extrabold leading-none pt-0.5 select-none">
+                      <div class="flex items-center space-x-0.5" title="Attack Power (⚔️ ATK)">
+                        <span>⚔️</span>
+                        <span id="moba-stat-atk" class="text-rose-400 font-black">55</span>
+                      </div>
+                      <div class="flex items-center space-x-0.5" title="Movement Speed (👟 MS)">
+                        <span>👟</span>
+                        <span id="moba-stat-speed" class="text-sky-400 font-black">4.5</span>
+                      </div>
+                      <div class="flex items-center space-x-0.5" title="Defense / Armor (🛡️ DEF)">
+                        <span>🛡️</span>
+                        <span id="moba-stat-def" class="text-emerald-400 font-black">12</span>
+                      </div>
+                      <div class="flex items-center space-x-0.5" title="Intelligence / Spellpower (🔮 INT)">
+                        <span>🔮</span>
+                        <span id="moba-stat-int" class="text-purple-400 font-black">24</span>
+                      </div>
                     </div>
                   </div>
+                </div>
+
+                <!-- Dedicated Footer Description Box (Left of Magic Slots, responsive) -->
+                <div id="moba-footer-description" class="hidden sm:flex flex-col justify-center text-left max-w-[120px] md:max-w-[180px] lg:max-w-[240px] text-slate-300 text-[9px] md:text-xs leading-tight border-l border-white/10 pl-2 md:pl-3 mr-1 md:mr-2 h-full shrink select-none">
+                  <span class="text-amber-400 font-extrabold uppercase tracking-wider text-[8px] md:text-[9px] mb-0.5">Details</span>
+                  <div id="moba-footer-description-content" class="text-slate-400 font-bold" style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">Hover over an ability or item to view details.</div>
                 </div>
 
                 <!-- SPELLS GRID (4x1) - Significantly enlarged on desktop -->
@@ -1890,6 +1884,110 @@
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab STATUS: Real-time diagnostics & Engine performance telemetry -->
+        <div class="tab-content" id="tab-status">
+          <div class="p-6 max-w-4xl mx-auto space-y-6 font-sans">
+            <div>
+              <h2 class="text-xl font-black text-slate-100 tracking-wide uppercase flex items-center space-x-2">
+                <span class="text-emerald-500">📊</span>
+                <span>SYSTEM DIAGNOSTICS &amp; ENGINE STATUS</span>
+              </h2>
+              <p class="text-xs text-slate-400 italic mt-1">Real-time health, performance metrics, and WebAssembly compilation states of the Killer Engine.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <!-- Engine Performance Panel -->
+              <div class="bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex flex-col justify-between min-h-[120px]">
+                <span class="text-[10px] text-cyan-400 font-extrabold uppercase tracking-widest mb-2 block">Engine Performance</span>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-300 text-xs font-bold">WASM Frame Rate</span>
+                  <!-- FPS Counter Element -->
+                  <div class="fps-badge text-right font-mono font-black text-cyan-400 text-sm bg-cyan-950/40 border border-cyan-500/30 px-3 py-1 rounded" id="fps-counter">60.0 FPS</div>
+                </div>
+                <p class="text-[10px] text-slate-500 mt-2">Real-time frames per second rendered by the WebGL2 C++ backend.</p>
+              </div>
+
+              <!-- Debug Telemetry Panel -->
+              <div class="bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex flex-col justify-between min-h-[120px]">
+                <span class="text-[10px] text-sky-400 font-extrabold uppercase tracking-widest mb-2 block">Debug Overlays</span>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-300 text-xs font-bold">Telemetry Data</span>
+                  <div class="status-pill cursor-pointer flex items-center bg-sky-950/20 border border-sky-500/30 px-2.5 py-1 rounded-lg" id="debug-toggle-pill" title="Toggle real-time vertices, triangles, and memory telemetry overlays">
+                    <span class="status-dot inline-block w-2 h-2 rounded-full mr-2 bg-red-500" id="debug-toggle-dot"></span>
+                    <span class="status-text text-[10px] text-cyan-300 font-bold">DEBUG: <span id="debug-toggle-status" class="text-red-400 font-black">OFF</span></span>
+                  </div>
+                </div>
+                <p class="text-[10px] text-slate-500 mt-2">Toggle vertex buffers, wireframe, and memory allocations metrics.</p>
+              </div>
+
+              <!-- LOD Optimization Policy -->
+              <div class="bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex flex-col justify-between min-h-[120px]">
+                <span class="text-[10px] text-emerald-400 font-extrabold uppercase tracking-widest mb-2 block">LOD Policy</span>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-300 text-xs font-bold">Level of Detail</span>
+                  <div class="status-pill cursor-pointer flex items-center bg-emerald-950/20 border border-emerald-500/30 px-2.5 py-1 rounded-lg" id="lod-toggle-pill" title="Toggle Killer Engine LOD Policy: Desktop Force Quality vs Mobile Max Optimization">
+                    <span class="status-dot inline-block w-2 h-2 rounded-full mr-2 bg-emerald-500" id="lod-toggle-dot"></span>
+                    <span class="status-text text-[10px] text-emerald-300 font-bold">LOD: <span id="lod-toggle-status" class="text-emerald-400 font-black">AUTO</span></span>
+                  </div>
+                </div>
+                <p class="text-[10px] text-slate-500 mt-2">Force Desktop Quality or trigger Mobile Max Optimizations.</p>
+              </div>
+
+              <!-- Engine Core Lifecycle -->
+              <div class="bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex flex-col justify-between min-h-[120px]">
+                <span class="text-[10px] text-amber-400 font-extrabold uppercase tracking-widest mb-2 block">Core State</span>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-300 text-xs font-bold">Execution Engine</span>
+                  <div class="status-pill flex items-center bg-amber-950/20 border border-amber-500/30 px-2.5 py-1 rounded-lg" id="engine-status-pill">
+                    <span class="status-dot inline-block w-2 h-2 rounded-full mr-2 bg-amber-500"></span>
+                    <span class="status-text text-[10px] text-amber-300 font-bold">ACTIVE</span>
+                  </div>
+                </div>
+                <p class="text-[10px] text-slate-500 mt-2">Active state of the compiled WebAssembly graphics pipeline.</p>
+              </div>
+
+              <!-- Network Transport -->
+              <div class="bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex flex-col justify-between min-h-[120px]">
+                <span class="text-[10px] text-violet-400 font-extrabold uppercase tracking-widest mb-2 block">Network Layer</span>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-300 text-xs font-bold">Transport Mode</span>
+                  <div class="status-pill flex items-center bg-violet-950/20 border border-violet-500/30 px-2.5 py-1 rounded-lg" id="net-header-status-pill" title="Network Transport Mode & Media Server">
+                    <span class="status-dot inline-block w-2 h-2 rounded-full mr-2 bg-emerald-500"></span>
+                    <span class="status-text text-[10px] text-violet-300 font-bold mr-1.5" id="net-header-status-text">WebRTC</span>
+                    <span class="fps-badge text-[9px] bg-cyan-950/40 text-cyan-400 px-1.5 py-0.5 rounded" id="net-ping-badge">18ms</span>
+                  </div>
+                </div>
+                <p class="text-[10px] text-slate-500 mt-2">Multiplayer session relay server latency and WebSockets transport.</p>
+              </div>
+
+              <!-- Backend Cloud Sync -->
+              <div class="bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex flex-col justify-between min-h-[120px]">
+                <span class="text-[10px] text-rose-400 font-extrabold uppercase tracking-widest mb-2 block">Cloud Syncer</span>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-300 text-xs font-bold">Server Connection</span>
+                  <div class="status-pill flex items-center bg-rose-950/20 border border-rose-500/30 px-2.5 py-1 rounded-lg" id="backend-status-pill">
+                    <span class="status-dot inline-block w-2 h-2 rounded-full mr-2 bg-emerald-500"></span>
+                    <span class="status-text text-[10px] text-rose-300 font-bold" id="backend-status-text">Connecting...</span>
+                  </div>
+                </div>
+                <p class="text-[10px] text-slate-500 mt-2">Durable game synchronization server status.</p>
+              </div>
+            </div>
+
+            <!-- Fullscreen controls inside tab -->
+            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between">
+              <div class="text-left mb-3 sm:mb-0">
+                <div class="text-xs font-bold text-slate-200">Device Screen Resolution Mode</div>
+                <div class="text-[10px] text-slate-500 mt-1">Maximize execution field of view by running in immersive fullscreen mode.</div>
+              </div>
+              <button id="btn-tab-fullscreen" class="bg-slate-900 hover:bg-slate-800 border border-slate-700/60 text-slate-300 text-xs font-bold px-4 py-2 rounded-lg flex items-center space-x-1.5 transition-all">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                <span>ENTER FULLSCREEN</span>
+              </button>
             </div>
           </div>
         </div>
