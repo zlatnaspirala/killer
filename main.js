@@ -2917,7 +2917,9 @@ void main() {
         iblSpecular += iblSpecularColor * clearCoatFresnel * 0.8;
     }
 
-    vec3 color = Lo + (iblDiffuse + iblSpecular) * 0.18 + emissive;
+    // Scale down ambient when u_lightColor is dimmed or zero (e.g. moody/dark mode mapping)
+    float ambScale = clamp(length(u_lightColor) * 2.5, 0.005, 1.0);
+    vec3 color = Lo + (iblDiffuse + iblSpecular) * 0.18 * ambScale + emissive;
 
     // HDR Reinhard Tone Mapping & Gamma Correction
     color = color / (color + vec3(1.0));
@@ -27172,33 +27174,34 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // Main Light follows player hero (exact middle of screen) with big radius covering almost whole screen
     const pCenterPos = (this.mobaState && this.mobaState.playing && this.mobaState.currentPos) ? this.mobaState.currentPos : [0, 0, 0];
     if (progInfo.uLightDir) gl.uniform3fv(progInfo.uLightDir, [0.35, 0.92, 0.4]);
-    // Slashed ambient sun and fill lights to make the entire map moody and beautifully dark
-    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [0.12, 0.12, 0.18]);
+    // Slashed ambient sun and fill lights to make the entire map moody and beautifully dark (almost black)
+    // Completely darkened to [0.0, 0.0, 0.0] so only the player's light illuminates the map
+    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [0.0, 0.0, 0.0]);
     if (progInfo.uFillLightDir) gl.uniform3fv(progInfo.uFillLightDir, [-0.4, 0.65, -0.35]);
-    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [0.04, 0.04, 0.06]);
+    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [0.0, 0.0, 0.0]);
 
     if (progInfo.uNumPointLights && progInfo.pointLights) {
       gl.uniform1i(progInfo.uNumPointLights, 3);
       const u0 = progInfo.pointLights[0];
       if (u0) {
-        // High-contrast focused spotlight following the player (just like real MOBAs)
+        // High-contrast focused spotlight following the player (just like real MOBAs) - low intensity per request
         if (u0.pos) gl.uniform3fv(u0.pos, [pCenterPos[0], pCenterPos[1] + 6.0, pCenterPos[2]]);
-        if (u0.color) gl.uniform3fv(u0.color, [2.8, 2.8, 3.2]); // Moonlight-tinted focused beam
-        if (u0.intensity) gl.uniform1f(u0.intensity, 110.0);
-        if (u0.radius) gl.uniform1f(u0.radius, 14.0); // Focused spotlight radius!
+        if (u0.color) gl.uniform3fv(u0.color, [1.8, 1.8, 2.0]); // Soft moonlight-tinted focused beam
+        if (u0.intensity) gl.uniform1f(u0.intensity, 30.0); // Exact 30.0 intensity as requested by the user
+        if (u0.radius) gl.uniform1f(u0.radius, 16.0); // Focused spotlight radius
       }
       const u1 = progInfo.pointLights[1];
       if (u1) {
         if (u1.pos) gl.uniform3fv(u1.pos, [pCenterPos[0] - 18.0, pCenterPos[1] + 6.0, pCenterPos[2] - 16.0]);
-        if (u1.color) gl.uniform3fv(u1.color, [0.5, 0.7, 1.2]); // Dim landscape accent light
-        if (u1.intensity) gl.uniform1f(u1.intensity, 8.0);
+        if (u1.color) gl.uniform3fv(u1.color, [0.0, 0.0, 0.0]); // Turned off
+        if (u1.intensity) gl.uniform1f(u1.intensity, 0.0); // Completely dark edges
         if (u1.radius) gl.uniform1f(u1.radius, 20.0);
       }
       const u2 = progInfo.pointLights[2];
       if (u2) {
         if (u2.pos) gl.uniform3fv(u2.pos, [pCenterPos[0] + 18.0, pCenterPos[1] + 6.0, pCenterPos[2] + 16.0]);
-        if (u2.color) gl.uniform3fv(u2.color, [1.1, 0.6, 0.35]); // Dim landscape accent light
-        if (u2.intensity) gl.uniform1f(u2.intensity, 8.0);
+        if (u2.color) gl.uniform3fv(u2.color, [0.0, 0.0, 0.0]); // Turned off
+        if (u2.intensity) gl.uniform1f(u2.intensity, 0.0); // Completely dark edges
         if (u2.radius) gl.uniform1f(u2.radius, 20.0);
       }
     }
@@ -27821,7 +27824,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // 2. Draw towers along lanes (GLB Tower Model "/towers/tower.glb" with sacred defense wards & apex crystal)
     const towerMesh = this.mobaTowerMesh || this.meshBuffers[1];
-    const orbMesh = this.meshBuffers[4] || (this.sphereLODs && this.sphereLODs[0]);
+    // Using pyramidMesh (meshBuffers[9]) instead of torusMesh (meshBuffers[4]) for the apex sentinel per user request
+    const orbMesh = this.meshBuffers[9] || (this.sphereLODs && this.sphereLODs[0]);
     const towerWardMesh = (this.sacredHeroMeshes && this.sacredHeroMeshes.Bot) || this.meshBuffers[6];
 
     if (towerMesh) {
@@ -27832,6 +27836,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const isRed = t.team === 'RED';
         const teamColor = isRed ? [0.95, 0.25, 0.2] : [0.22, 0.45, 0.95];
         const crystalColor = isRed ? [1.0 * factor, 0.3 * factor, 0.2 * factor] : [0.25 * factor, 0.6 * factor, 1.0 * factor];
+
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Standard non-emissive base
 
         // 2a. Ground Defense Ward Circle beneath tower
         if (towerWardMesh) {
@@ -27892,6 +27898,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
         // 2c. Tower Apex Floating Energy Sentinel Crystal
         if (orbMesh) {
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 15); // Glowing Core Material type for stunning glow
           gl.bindVertexArray(orbMesh.vao);
           const spin = timestamp * 0.002;
           const bob = Math.sin(timestamp * 0.0035 + t.pos[0]) * 0.12;
@@ -27910,6 +27917,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(crystalColor));
           gl.drawElements(gl.TRIANGLES, orbMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Reset material type
         }
       });
     }
