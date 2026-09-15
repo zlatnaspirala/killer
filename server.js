@@ -179,7 +179,6 @@ const server = http.createServer(async (req, res) => {
         'examples/05_desktop_standalone_app.cpp',
         'examples/06_glb_character_collision_player.cpp',
         'examples/07_fps_shooter_damage_system.cpp',
-        'examples/08_all_materials_presentation.cpp',
         'examples/09_slot_machine.cpp',
         'examples/10_sliding_puzzle.cpp',
         'examples/11_plinko.cpp',

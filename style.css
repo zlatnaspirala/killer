@@ -1143,6 +1143,24 @@ body.app-body {
   display: none !important;
 }
 
+/* Remove joystick completely from MOBA and Roulette demos */
+body.moba-active #mobile-touch-overlay,
+body.moba-active #joystick-left-container,
+body.roulette-active #mobile-touch-overlay,
+body.roulette-active #joystick-left-container,
+#viewport-container:has(#moba-overlay:not([style*="display: none"])) #mobile-touch-overlay,
+#viewport-container:has(#moba-overlay:not([style*="display: none"])) #joystick-left-container,
+#viewport-container:has(#moba-startup-menu:not([style*="display: none"])) #mobile-touch-overlay,
+#viewport-container:has(#moba-startup-menu:not([style*="display: none"])) #joystick-left-container,
+#viewport-container:has(#roulette-overlay:not([style*="display: none"])) #mobile-touch-overlay,
+#viewport-container:has(#roulette-overlay:not([style*="display: none"])) #joystick-left-container,
+#viewport-container:has(#roulette-banner:not([style*="display: none"])) #mobile-touch-overlay,
+#viewport-container:has(#roulette-banner:not([style*="display: none"])) #joystick-left-container {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
 /* Left Joystick */
 .joystick-container {
   display: flex;
@@ -4171,7 +4189,18 @@ body.app-body {
   color: #e2e8f0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  overflow-y: auto;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  overscroll-behavior-y: contain;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+}
+
+.slot-machine-overlay-panel.mobile-minimized {
+  transform: translateX(-115%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 @keyframes slideInLeft {
@@ -4180,10 +4209,37 @@ body.app-body {
 }
 
 .slot-header {
-  text-align: center;
   border-bottom: 1.5px solid rgba(245, 158, 11, 0.3);
   padding-bottom: 10px;
   margin-bottom: 14px;
+}
+
+.slot-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.slot-header-btn {
+  background: transparent;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #94a3b8;
+  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: bold;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slot-header-btn:hover {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+  border-color: #fbbf24;
 }
 
 .slot-title {
@@ -4440,6 +4496,52 @@ body.app-body {
   font-size: 11px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  transition: left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slot-machine-banner.panel-closed {
+  left: 16px;
+}
+
+/* 🎰 Slot Machine Desktop & Mobile Toggle Controls */
+.slot-desktop-show-btn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1.5px solid #f59e0b;
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: #fbbf24;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.75), 0 0 15px rgba(245, 158, 11, 0.3);
+  cursor: pointer;
+  z-index: 155;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slot-desktop-show-btn:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: #fbbf24;
+  color: #fef3c7;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.8), 0 0 20px rgba(245, 158, 11, 0.5);
+  transform: translateY(-2px);
+}
+
+.slot-desktop-show-btn:active {
+  transform: translateY(0);
+}
+
+.slot-mobile-bar {
+  display: none;
 }
 
 /* 🧩 3D Sliding Puzzle Overlay Styles */
@@ -5301,6 +5403,137 @@ body.app-body {
   }
 
   .roulette-desktop-fab {
+    display: none !important;
+  }
+
+  /* 🎰 Slot Machine Mobile Optimization & Minimize */
+  .slot-machine-overlay-panel {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100vw;
+    height: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+    border: none;
+    padding: 16px 14px 44px 14px;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.95);
+    background: rgba(10, 15, 30, 0.97);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    animation: fadeIn 0.25s ease-out;
+    box-sizing: border-box;
+    z-index: 170;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain;
+  }
+
+  .slot-machine-overlay-panel.mobile-minimized {
+    transform: translateY(100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .slot-header-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.5);
+    color: #fbbf24;
+  }
+
+  .slot-machine-banner {
+    left: 8px !important;
+    right: 8px !important;
+    top: 8px !important;
+    padding: 6px 10px;
+    font-size: 9.5px;
+    border-radius: 6px;
+    justify-content: space-between;
+  }
+
+  .slot-mobile-bar {
+    position: absolute;
+    bottom: 18px;
+    left: 12px;
+    right: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    z-index: 160;
+    pointer-events: none;
+  }
+
+  .slot-mobile-fab,
+  .slot-mobile-spin-fab {
+    pointer-events: auto;
+  }
+
+  .slot-mobile-fab {
+    background: rgba(10, 15, 30, 0.94);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1.5px solid #f59e0b;
+    border-radius: 24px;
+    padding: 10px 18px;
+    color: #fbbf24;
+    font-weight: 800;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.85), 0 0 14px rgba(245, 158, 11, 0.35);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .slot-mobile-fab:active {
+    transform: scale(0.95);
+  }
+
+  .slot-mobile-spin-fab {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    border-radius: 24px;
+    padding: 10px 22px;
+    color: #0f172a;
+    font-weight: 900;
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    box-shadow: 0 4px 22px rgba(0, 0, 0, 0.85), 0 0 18px rgba(245, 158, 11, 0.6);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .slot-mobile-spin-fab:active {
+    transform: scale(0.95);
+  }
+
+  .slot-mobile-spin-fab:disabled,
+  .slot-mobile-spin-fab.disabled {
+    background: #1e293b;
+    border-color: rgba(255, 255, 255, 0.08);
+    color: #64748b;
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .slot-desktop-show-btn {
     display: none !important;
   }
 }
@@ -6338,15 +6571,15 @@ body.app-body {
   }
 
   #moba-hud-bottom {
-    padding: 3px 6px !important;
-    gap: 4px !important;
+    padding: 1px 2px !important;
+    gap: 2px !important;
     max-height: none !important;
   }
 
   .moba-spell-slot {
     width: 36px !important;
     height: 36px !important;
-    border-radius: 6px !important;
+    border-radius: 4px !important;
   }
 
   #moba-selected-details {
@@ -6410,42 +6643,53 @@ body.app-body {
 /* ==========================================================================
    MOBILE PORTRAIT AND MOBILE LAYOUT OVERRIDES (INVENTORY FIT & COMPACT)
    ========================================================================== */
-@media (max-width: 480px) and (orientation: portrait) {
-  /* Increase footer height by 50% for mobile portrait */
+@media (max-width: 768px) {
+  /* Footer container: zero excess padding/margins to use full space */
   #moba-hud-bottom {
-    height: 12.5vh !important;
-    min-height: 72px !important;
-    max-height: 84px !important;
-    padding: 3px 4px !important;
+    padding: 1px 2px !important;
     gap: 2px !important;
   }
 
-  /* Make components inside compact to be all visible */
-  #moba-hud-bottom .flex-row, 
-  #moba-hud-bottom .flex {
+  /* Left cluster: packed neatly to the left without wasted padding or margins */
+  #moba-footer-left-group {
+    padding: 0 !important;
+    margin: 0 !important;
     gap: 2px !important;
   }
 
-  /* Compact portrait and bars */
+  /* Compact portrait */
   #moba-hud-bottom .shrink-0 .relative,
   #moba-hud-bottom #moba-portrait-img {
-    width: 32px !important;
-    height: 32px !important;
+    width: 28px !important;
+    height: 28px !important;
   }
 
-  #moba-hud-bottom .w-20 {
-    width: 56px !important;
+  /* Energy and mana bars: slim height, width strictly untouched as requested */
+  #moba-hero-hp-container {
+    height: 3.5px !important;
+    min-height: 3.5px !important;
+    max-height: 4px !important;
+    border-radius: 9999px !important;
   }
 
-  /* Hide attributes text label, make icons and text super compact */
-  #moba-hud-bottom .flex.flex-col.justify-center.border-l {
+  #moba-hero-mp-container {
+    height: 2.5px !important;
+    min-height: 2.5px !important;
+    max-height: 3px !important;
+    border-radius: 9999px !important;
+  }
+
+  #moba-hero-hp-bar,
+  #moba-hero-mp-bar {
+    height: 100% !important;
+  }
+
+  /* Compact attributes: zero wasted margin */
+  #moba-hud-bottom .flex.flex-col.justify-center.border-l,
+  #moba-hud-bottom .flex.flex-col.justify-center {
     border-left: none !important;
     padding-left: 1px !important;
-    margin-right: 1px !important;
-  }
-
-  #moba-hud-bottom .flex.flex-col.justify-center.border-l > span {
-    display: none !important; /* Hide "Attributes" label */
+    margin: 0 !important;
   }
 
   #moba-hud-bottom .grid-cols-2 {
@@ -6454,37 +6698,100 @@ body.app-body {
   }
 
   #moba-hud-bottom .grid-cols-2 span {
-    font-size: 8px !important;
+    font-size: 7px !important;
   }
 
-  /* Compact Spell slots */
+  /* For mobile devices description is an independent popup OUT from footer */
+  #moba-footer-description {
+    display: none !important;
+  }
+
+  /* Independent popup floating outside/above the footer */
+  #moba-hud-description {
+    bottom: calc(100% + 8px) !important;
+    max-width: 94vw !important;
+    font-size: 10.5px !important;
+    padding: 3px 8px !important;
+    z-index: 100 !important;
+  }
+
+  /* Magic spell slots: larger to use space */
   .moba-spell-slot {
-    width: 32px !important;
-    height: 32px !important;
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
     padding: 1px !important;
+    margin: 0 !important;
+    border-radius: 4px !important;
   }
 
   .moba-spell-slot span,
   .moba-spell-slot div {
-    font-size: 7px !important;
+    font-size: 7.5px !important;
   }
 
-  /* Compact inventory grid */
+  /* Right cluster: inventory grid firmly anchored to the right, no margin/padding */
+  #moba-footer-right-group {
+    margin: 0 !important;
+    margin-left: auto !important;
+    padding: 0 !important;
+    gap: 2px !important;
+  }
+
+  /* Inventory grid: larger cells to use space while all 6 slots stay 100% visible */
   #moba-inventory-grid {
     gap: 1px !important;
-    padding: 1px !important;
+    padding: 0.5px !important;
+    margin: 0 !important;
   }
 
   #moba-inventory-grid > div {
-    width: 22px !important;
-    height: 22px !important;
-    min-width: 22px !important;
-    min-height: 22px !important;
+    width: 25px !important;
+    height: 25px !important;
+    min-width: 25px !important;
+    min-height: 25px !important;
+    font-size: 8px !important;
+    border-radius: 3px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #moba-inventory-grid > div div.absolute.top-0.right-0 {
+    width: 10px !important;
+    height: 10px !important;
     font-size: 7px !important;
   }
 
   #moba-gold {
     font-size: 9px !important;
+  }
+}
+
+@media (max-width: 400px) {
+  /* Extra-compact mobile screens */
+  #moba-hud-bottom {
+    padding: 1px 1px !important;
+    gap: 1.5px !important;
+  }
+
+  #moba-footer-left-group {
+    gap: 1.5px !important;
+  }
+
+  .moba-spell-slot {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+  }
+
+  #moba-inventory-grid > div {
+    width: 23px !important;
+    height: 23px !important;
+    min-width: 23px !important;
+    min-height: 23px !important;
+    font-size: 7.5px !important;
   }
 }
 

@@ -985,6 +985,498 @@ export class ProceduralGeometryFactory {
 
     return { positions, normals, uvs, barys, indices };
   }
+
+  /**
+   * Generates high-detail procedural 3D stone bridges with arched decks,
+   * masonry parapets, coping stones, corner gateway pylons, under-arch vaults,
+   * keystones, river cutwaters, abutment wing walls, and warm beacon lanterns
+   * at the 3 locations where the lanes/roads cross the river.
+   */
+  static createProceduralBridges() {
+    const deckData = {
+      name: "ProceduralBridgeDeck",
+      positions: [],
+      normals: [],
+      uvs: [],
+      barys: [],
+      indices: []
+    };
+
+    const masonryData = {
+      name: "ProceduralBridgeMasonry",
+      positions: [],
+      normals: [],
+      uvs: [],
+      barys: [],
+      indices: []
+    };
+
+    const lanternsData = {
+      name: "ProceduralBridgeLanterns",
+      positions: [],
+      normals: [],
+      uvs: [],
+      barys: [],
+      indices: []
+    };
+
+    const invSqrt2 = 0.70710678;
+    const u_s = [invSqrt2, 0, invSqrt2];    // Road longitudinal direction (1, 1)
+    const u_w = [-invSqrt2, 0, invSqrt2];   // Transverse direction across bridge (-1, 1)
+
+    function toWorld(s, y, w, center) {
+      return [
+        center[0] + s * u_s[0] + w * u_w[0],
+        center[1] + y,
+        center[2] + s * u_s[2] + w * u_w[2]
+      ];
+    }
+
+    function toWorldNorm(ns, ny, nw) {
+      const nx = ns * u_s[0] + nw * u_w[0];
+      const nz = ns * u_s[2] + nw * u_w[2];
+      const len = Math.hypot(nx, ny, nz) || 1.0;
+      return [nx / len, ny / len, nz / len];
+    }
+
+    function addQuad(mesh, p0, p1, p2, p3, normal, uv0, uv1, uv2, uv3) {
+      const v1x = p1[0] - p0[0], v1y = p1[1] - p0[1], v1z = p1[2] - p0[2];
+      const v2x = p2[0] - p0[0], v2y = p2[1] - p0[1], v2z = p2[2] - p0[2];
+      const cx = v1y * v2z - v1z * v2y;
+      const cy = v1z * v2x - v1x * v2z;
+      const cz = v1x * v2y - v1y * v2x;
+      const dot = cx * normal[0] + cy * normal[1] + cz * normal[2];
+
+      let v0 = p0, v1 = p1, v2 = p2, v3 = p3;
+      let t0 = uv0, t1 = uv1, t2 = uv2, t3 = uv3;
+      if (dot < 0) {
+        v1 = p3; v3 = p1;
+        t1 = uv3; t3 = uv1;
+      }
+
+      const baseIdx = mesh.positions.length / 3;
+      mesh.positions.push(
+        v0[0], v0[1], v0[2],
+        v1[0], v1[1], v1[2],
+        v2[0], v2[1], v2[2],
+        v3[0], v3[1], v3[2]
+      );
+      mesh.normals.push(
+        normal[0], normal[1], normal[2],
+        normal[0], normal[1], normal[2],
+        normal[0], normal[1], normal[2],
+        normal[0], normal[1], normal[2]
+      );
+      mesh.uvs.push(
+        t0[0], t0[1],
+        t1[0], t1[1],
+        t2[0], t2[1],
+        t3[0], t3[1]
+      );
+      mesh.barys.push(
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 1,
+        1, 0, 0
+      );
+      mesh.indices.push(
+        baseIdx, baseIdx + 1, baseIdx + 2,
+        baseIdx, baseIdx + 2, baseIdx + 3
+      );
+    }
+
+    function addBox(mesh, cs, cy, cw, ds, dy, dw, center, uvScale = 1.0) {
+      const hds = ds * 0.5, hdy = dy * 0.5, hdw = dw * 0.5;
+      const s0 = cs - hds, s1 = cs + hds;
+      const y0 = cy - hdy, y1 = cy + hdy;
+      const w0 = cw - hdw, w1 = cw + hdw;
+
+      const p0 = toWorld(s0, y0, w0, center);
+      const p1 = toWorld(s1, y0, w0, center);
+      const p2 = toWorld(s1, y1, w0, center);
+      const p3 = toWorld(s0, y1, w0, center);
+
+      const p4 = toWorld(s0, y0, w1, center);
+      const p5 = toWorld(s1, y0, w1, center);
+      const p6 = toWorld(s1, y1, w1, center);
+      const p7 = toWorld(s0, y1, w1, center);
+
+      // Top (+y)
+      addQuad(mesh, p3, p2, p6, p7, [0, 1, 0], [0, 0], [ds * uvScale, 0], [ds * uvScale, dw * uvScale], [0, dw * uvScale]);
+      // Bottom (-y)
+      addQuad(mesh, p0, p4, p5, p1, [0, -1, 0], [0, 0], [0, dw * uvScale], [ds * uvScale, dw * uvScale], [ds * uvScale, 0]);
+      // Front (+s)
+      addQuad(mesh, p1, p5, p6, p2, toWorldNorm(1, 0, 0), [0, 0], [dw * uvScale, 0], [dw * uvScale, dy * uvScale], [0, dy * uvScale]);
+      // Back (-s)
+      addQuad(mesh, p4, p0, p3, p7, toWorldNorm(-1, 0, 0), [0, 0], [dw * uvScale, 0], [dw * uvScale, dy * uvScale], [0, dy * uvScale]);
+      // Right (+w)
+      addQuad(mesh, p5, p4, p7, p6, toWorldNorm(0, 0, 1), [0, 0], [ds * uvScale, 0], [ds * uvScale, dy * uvScale], [0, dy * uvScale]);
+      // Left (-w)
+      addQuad(mesh, p0, p1, p2, p3, toWorldNorm(0, 0, -1), [0, 0], [ds * uvScale, 0], [ds * uvScale, dy * uvScale], [0, dy * uvScale]);
+    }
+
+    function addPyramid(mesh, cs, cyBase, cw, baseS, baseW, height, center) {
+      const hbS = baseS * 0.5, hbW = baseW * 0.5;
+      const b0 = toWorld(cs - hbS, cyBase, cw - hbW, center);
+      const b1 = toWorld(cs + hbS, cyBase, cw - hbW, center);
+      const b2 = toWorld(cs + hbS, cyBase, cw + hbW, center);
+      const b3 = toWorld(cs - hbS, cyBase, cw + hbW, center);
+      const apex = toWorld(cs, cyBase + height, cw, center);
+
+      const sides = [
+        [b0, b1, toWorldNorm(0, 0.6, -1)],
+        [b1, b2, toWorldNorm(1, 0.6, 0)],
+        [b2, b3, toWorldNorm(0, 0.6, 1)],
+        [b3, b0, toWorldNorm(-1, 0.6, 0)]
+      ];
+      for (const [va, vb, norm] of sides) {
+        const idx = mesh.positions.length / 3;
+        mesh.positions.push(va[0], va[1], va[2], vb[0], vb[1], vb[2], apex[0], apex[1], apex[2]);
+        mesh.normals.push(norm[0], norm[1], norm[2], norm[0], norm[1], norm[2], norm[0], norm[1], norm[2]);
+        mesh.uvs.push(0, 0, 1, 0, 0.5, 1);
+        mesh.barys.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
+        mesh.indices.push(idx, idx + 1, idx + 2);
+      }
+    }
+
+    function addFacetedOrb(mesh, cs, cy, cw, rad, center) {
+      const top = toWorld(cs, cy + rad, cw, center);
+      const bot = toWorld(cs, cy - rad, cw, center);
+      const ring = [];
+      const segs = 6;
+      for (let i = 0; i < segs; i++) {
+        const ang = (i / segs) * Math.PI * 2;
+        const ds = Math.cos(ang) * rad;
+        const dw = Math.sin(ang) * rad;
+        ring.push(toWorld(cs + ds, cy, cw + dw, center));
+      }
+
+      for (let i = 0; i < segs; i++) {
+        const next = (i + 1) % segs;
+        const r0 = ring[i], r1 = ring[next];
+
+        // Top triangle
+        const tIdx = mesh.positions.length / 3;
+        mesh.positions.push(r0[0], r0[1], r0[2], r1[0], r1[1], r1[2], top[0], top[1], top[2]);
+        mesh.normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+        mesh.uvs.push(0, 0, 1, 0, 0.5, 1);
+        mesh.barys.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
+        mesh.indices.push(tIdx, tIdx + 1, tIdx + 2);
+
+        // Bottom triangle
+        const bIdx = mesh.positions.length / 3;
+        mesh.positions.push(r1[0], r1[1], r1[2], r0[0], r0[1], r0[2], bot[0], bot[1], bot[2]);
+        mesh.normals.push(0, -1, 0, 0, -1, 0, 0, -1, 0);
+        mesh.uvs.push(1, 0, 0, 0, 0.5, 1);
+        mesh.barys.push(0, 1, 0, 1, 0, 0, 0, 0, 1);
+        mesh.indices.push(bIdx, bIdx + 1, bIdx + 2);
+      }
+    }
+
+    // Specification for the 3 bridges where lanes cross the river
+    const bridgeConfigs = [
+      {
+        name: 'Top Bridge',
+        center: [-25.8, 0.0, 25.8],
+        length: 12.8,
+        width: 4.4,
+        archHeight: 0.44,
+        underArchHeight: 0.28,
+        hasMidPilasters: true,
+        spanFraction: 0.74
+      },
+      {
+        name: 'Mid Grand Bridge',
+        center: [0.0, 0.0, 0.0],
+        length: 15.0,
+        width: 5.2,
+        archHeight: 0.52,
+        underArchHeight: 0.35,
+        hasMidPilasters: true,
+        isGrand: true,
+        spanFraction: 0.78
+      },
+      {
+        name: 'Bottom Bridge',
+        center: [25.8, 0.0, -25.8],
+        length: 12.8,
+        width: 4.4,
+        archHeight: 0.44,
+        underArchHeight: 0.28,
+        hasMidPilasters: true,
+        spanFraction: 0.74
+      }
+    ];
+
+    bridgeConfigs.forEach(cfg => {
+      const center = cfg.center;
+      const length = cfg.length;
+      const width = cfg.width;
+      const halfL = length * 0.5;
+      const halfW = width * 0.5;
+      const archHeight = cfg.archHeight;
+      const underArchHeight = cfg.underArchHeight;
+      const spanL = halfL * cfg.spanFraction;
+
+      const curbW = 0.24;
+      const parapetW = 0.24;
+      const parapetH = 0.62;
+      const pylonS = 0.66;
+
+      // ---------------------------------------------------------------
+      // 1. ARMED COBBLESTONE BRIDGE DECK (WALKWAY)
+      // ---------------------------------------------------------------
+      const sSegs = 20;
+      const wSegs = 6;
+      const deckGrid = [];
+
+      for (let i = 0; i <= sSegs; i++) {
+        const row = [];
+        const s = -halfL + (i / sSegs) * length;
+        const t = s / halfL; // -1 to +1
+        const archY = archHeight * (1.0 - t * t);
+        const rampBlend = Math.abs(t) > 0.82 ? Math.max(0.0, (1.0 - (Math.abs(t) - 0.82) / 0.18)) : 1.0;
+
+        for (let j = 0; j <= wSegs; j++) {
+          const w = -halfW + (j / wSegs) * width;
+          const camberY = 0.024 * (1.0 - (w / halfW) ** 2);
+          const y = 0.034 + (archY + camberY) * rampBlend;
+
+          // Compute surface normal
+          const dy_ds = -2 * archHeight * t * (1.0 / halfL) * rampBlend;
+          const dy_dw = -2 * 0.024 * (w / (halfW * halfW)) * rampBlend;
+          const norm = toWorldNorm(-dy_ds, 1.0, -dy_dw);
+
+          const pt = toWorld(s, y, w, center);
+          row.push({ pt, norm, s, w, y, u: (j / wSegs) * 3.0, v: (i / sSegs) * (length * 0.45) });
+        }
+        deckGrid.push(row);
+      }
+
+      for (let i = 0; i < sSegs; i++) {
+        for (let j = 0; j < wSegs; j++) {
+          const p0 = deckGrid[i][j];
+          const p1 = deckGrid[i + 1][j];
+          const p2 = deckGrid[i + 1][j + 1];
+          const p3 = deckGrid[i][j + 1];
+
+          addQuad(
+            deckData,
+            p0.pt, p1.pt, p2.pt, p3.pt,
+            p0.norm,
+            [p0.u, p0.v], [p1.u, p1.v], [p2.u, p2.v], [p3.u, p3.v]
+          );
+        }
+      }
+
+      // Approach ramps at both ends smoothly blending down to road
+      const rampLen = 0.9;
+      [-1, 1].forEach(side => {
+        const sEnd = side * halfL;
+        const sOuter = side * (halfL + rampLen);
+        for (let j = 0; j < wSegs; j++) {
+          const w0 = -halfW + (j / wSegs) * width;
+          const w1 = -halfW + ((j + 1) / wSegs) * width;
+
+          const p0 = toWorld(sEnd, 0.034, w0, center);
+          const p1 = toWorld(sOuter, 0.020, w0, center);
+          const p2 = toWorld(sOuter, 0.020, w1, center);
+          const p3 = toWorld(sEnd, 0.034, w1, center);
+
+          const norm = toWorldNorm(-side * 0.15, 1.0, 0);
+          addQuad(deckData, p0, p1, p2, p3, norm, [0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]);
+        }
+      });
+
+      // ---------------------------------------------------------------
+      // 2. CURB STONES (FRAMING THE ROADWAY)
+      // ---------------------------------------------------------------
+      const curbSegs = 16;
+      const curbDS = length / curbSegs;
+      [-1, 1].forEach(wSide => {
+        const cw = wSide * (halfW + curbW * 0.5);
+        for (let i = 0; i < curbSegs; i++) {
+          const cs = -halfL + (i + 0.5) * curbDS;
+          const t = cs / halfL;
+          const archY = archHeight * (1.0 - t * t);
+          const cy = 0.034 + archY * 0.95 + 0.06;
+
+          addBox(masonryData, cs, cy, cw, curbDS * 0.98, 0.12, curbW, center, 1.2);
+        }
+      });
+
+      // ---------------------------------------------------------------
+      // 3. UNDER-BRIDGE VAULT ARCH & RIVER PIERS
+      // ---------------------------------------------------------------
+      const vaultSegs = 14;
+      const vaultDS = (spanL * 2) / vaultSegs;
+      const vaultTotalW = width + curbW * 2 + parapetW * 2;
+
+      for (let i = 0; i < vaultSegs; i++) {
+        const sA = -spanL + i * vaultDS;
+        const sB = -spanL + (i + 1) * vaultDS;
+        const tA = sA / spanL, tB = sB / spanL;
+        const yA = underArchHeight * (1.0 - tA * tA) + 0.015;
+        const yB = underArchHeight * (1.0 - tB * tB) + 0.015;
+
+        const wL = -vaultTotalW * 0.5, wR = vaultTotalW * 0.5;
+
+        // Curved ceiling under bridge (where river flows through!)
+        const p0 = toWorld(sA, yA, wL, center);
+        const p1 = toWorld(sB, yB, wL, center);
+        const p2 = toWorld(sB, yB, wR, center);
+        const p3 = toWorld(sA, yA, wR, center);
+
+        const dy_ds = -2 * underArchHeight * ((sA + sB) * 0.5 / (spanL * spanL));
+        const normVault = toWorldNorm(dy_ds, -1.0, 0); // Downward into river
+        addQuad(masonryData, p0, p1, p2, p3, normVault, [0, 0], [1, 0], [1, 2], [0, 2]);
+
+        // Exterior spandrel walls on Left (-w) and Right (+w)
+        [-1, 1].forEach(side => {
+          const spW = side * (halfW + curbW + parapetW);
+          const deckYA = 0.034 + archHeight * (1.0 - tA * tA);
+          const deckYB = 0.034 + archHeight * (1.0 - tB * tB);
+
+          const sp0 = toWorld(sA, yA, spW, center);
+          const sp1 = toWorld(sB, yB, spW, center);
+          const sp2 = toWorld(sB, deckYB + 0.08, spW, center);
+          const sp3 = toWorld(sA, deckYA + 0.08, spW, center);
+
+          const normSp = toWorldNorm(0, 0, side);
+          addQuad(masonryData, sp0, sp1, sp2, sp3, normSp, [0, 0], [1, 0], [1, 1], [0, 1]);
+        });
+      }
+
+      // Decorative Keystones at the apex of the arch (Left & Right facades)
+      [-1, 1].forEach(side => {
+        const kw = side * (halfW + curbW + parapetW + 0.05);
+        const ky = 0.034 + archHeight * 0.95;
+        addBox(masonryData, 0.0, ky, kw, 0.52, 0.38, 0.18, center, 1.0);
+      });
+
+      // Streamlined Stone Cutwater Pier in the river channel under bridge
+      const cutwaterDS = 0.75;
+      const cutwaterDW = width * 0.55;
+      const cutwaterY = underArchHeight * 0.45;
+      addBox(masonryData, 0.0, cutwaterY * 0.5, 0.0, cutwaterDS, cutwaterY + 0.18, cutwaterDW, center, 0.8);
+      // Wedge cutwaters pointing upstream and downstream
+      [-1, 1].forEach(side => {
+        const wedgeW = side * (cutwaterDW * 0.5 + 0.35);
+        addPyramid(masonryData, 0.0, -0.05, wedgeW, cutwaterDS, 0.7, cutwaterY + 0.15, center);
+      });
+
+      // ---------------------------------------------------------------
+      // 4. PARAPET WALLS (GUARDRAILS) & CARVED COPING CAPSTONES
+      // ---------------------------------------------------------------
+      const parapetSpan = length - pylonS * 1.8;
+      const parSegs = 10;
+      const parDS = parapetSpan / parSegs;
+
+      [-1, 1].forEach(side => {
+        const pw = side * (halfW + curbW + parapetW * 0.5);
+
+        for (let i = 0; i < parSegs; i++) {
+          const ps = -parapetSpan * 0.5 + (i + 0.5) * parDS;
+          const t = ps / halfL;
+          const archY = archHeight * (1.0 - t * t);
+          const py = 0.034 + archY + parapetH * 0.5 + 0.06;
+
+          // Parapet wall body
+          addBox(masonryData, ps, py, pw, parDS * 0.98, parapetH, parapetW, center, 1.0);
+
+          // Coping capstone atop wall (wider with chamfered overhang)
+          addBox(masonryData, ps, py + parapetH * 0.5 + 0.04, pw, parDS * 1.01, 0.08, parapetW + 0.10, center, 1.0);
+
+          // Recessed decorative stone panels on outer facade
+          if (i % 2 === 1) {
+            const panelW = side * (halfW + curbW + parapetW + 0.015);
+            addBox(masonryData, ps, py, panelW, parDS * 0.65, parapetH * 0.55, 0.04, center, 0.8);
+          }
+        }
+      });
+
+      // ---------------------------------------------------------------
+      // 5. FOUR HEAVY GATEWAY CORNER PYLONS
+      // ---------------------------------------------------------------
+      [-1, 1].forEach(sSide => {
+        [-1, 1].forEach(wSide => {
+          const pylS = sSide * (halfL - pylonS * 0.6);
+          const pylW = wSide * (halfW + curbW + parapetW * 0.55);
+
+          const t = pylS / halfL;
+          const archY = archHeight * (1.0 - t * t);
+          const baseY = 0.034 + archY;
+          const pylH = parapetH + 0.38;
+
+          // Plinth base
+          addBox(masonryData, pylS, baseY + 0.10, pylW, pylonS * 1.15, 0.22, pylonS * 1.15, center, 0.8);
+
+          // Column shaft
+          addBox(masonryData, pylS, baseY + pylH * 0.5 + 0.10, pylW, pylonS, pylH, pylonS, center, 1.0);
+
+          // Capital cornice
+          addBox(masonryData, pylS, baseY + pylH + 0.14, pylW, pylonS * 1.12, 0.10, pylonS * 1.12, center, 0.8);
+
+          // Pyramidal stone cap
+          addPyramid(masonryData, pylS, baseY + pylH + 0.19, pylW, pylonS * 1.05, pylonS * 1.05, 0.16, center);
+
+          // -----------------------------------------------------------
+          // 6. BEACON LANTERN (BRONZE FIXTURE & GLOWING EMBER CRYSTAL)
+          // -----------------------------------------------------------
+          const lanternY = baseY + pylH + 0.32;
+          // Pedestal base in masonry
+          addBox(masonryData, pylS, lanternY + 0.04, pylW, 0.26, 0.08, 0.26, center, 0.6);
+          // Lantern roof cap
+          addPyramid(masonryData, pylS, lanternY + 0.28, pylW, 0.28, 0.28, 0.14, center);
+
+          // Radiant Glowing Ember Crystal in lanternsData
+          addFacetedOrb(lanternsData, pylS, lanternY + 0.18, pylW, 0.13, center);
+        });
+      });
+
+      // ---------------------------------------------------------------
+      // 7. CENTRAL MID-SPAN PILASTERS & BRAZIERS
+      // ---------------------------------------------------------------
+      if (cfg.hasMidPilasters) {
+        [-1, 1].forEach(side => {
+          const pilW = side * (halfW + curbW + parapetW + 0.12);
+          const archApexY = 0.034 + archHeight;
+          const pilH = parapetH + 0.26;
+
+          // Mid-span projecting pillar
+          addBox(masonryData, 0.0, archApexY + pilH * 0.5, pilW, 0.70, pilH, 0.28, center, 0.9);
+          addBox(masonryData, 0.0, archApexY + pilH + 0.06, pilW, 0.78, 0.12, 0.34, center, 0.8);
+          addPyramid(masonryData, 0.0, archApexY + pilH + 0.12, pilW, 0.74, 0.32, 0.14, center);
+
+          // Grand central braziers on the Mid Grand Bridge!
+          if (cfg.isGrand) {
+            const brazierY = archApexY + pilH + 0.24;
+            addBox(masonryData, 0.0, brazierY, pilW, 0.34, 0.08, 0.34, center, 0.5);
+            addFacetedOrb(lanternsData, 0.0, brazierY + 0.15, pilW, 0.14, center);
+          }
+        });
+      }
+
+      // ---------------------------------------------------------------
+      // 8. RIVERBANK RETAINING WING WALLS (FLARING OUTWARD AT 35°)
+      // ---------------------------------------------------------------
+      [-1, 1].forEach(sSide => {
+        [-1, 1].forEach(wSide => {
+          const cornerS = sSide * (halfL - 0.4);
+          const cornerW = wSide * (halfW + curbW + parapetW * 0.7);
+
+          const wingLen = 1.6;
+          const angle = Math.PI * 0.20; // 36 degrees flare
+          const wingMidS = cornerS + sSide * Math.cos(angle) * (wingLen * 0.5);
+          const wingMidW = cornerW + wSide * Math.sin(angle) * (wingLen * 0.5);
+
+          addBox(masonryData, wingMidS, 0.22, wingMidW, wingLen * 0.85, 0.45, 0.26, center, 1.0);
+        });
+      });
+    });
+
+    return { deckData, masonryData, lanternsData };
+  }
 }
 
 /**

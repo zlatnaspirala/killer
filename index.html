@@ -242,10 +242,13 @@
               <span id="puzzle-stats-summary" style="color: #06b6d4; font-weight: bold;">Moves: 0 | Grid: 3x3</span>
             </div>
 
-            <!-- 🎰 3D Cyber Slot Machine Interactive Panel (Demo 04) -->
+            <!-- 🎰 3D Cyber Slot Machine Interactive Panel (Demo 03) -->
             <div id="slot-machine-overlay" class="slot-machine-overlay-panel" style="display: none;">
               <div class="slot-header">
-                <div class="slot-title">🎰 CASINO 3D SLOT</div>
+                <div class="slot-header-row">
+                  <div class="slot-title">🎰 CASINO 3D SLOT</div>
+                  <button id="btn-slot-close" class="slot-header-btn" title="Minimize Panel" aria-label="Minimize Panel">✕</button>
+                </div>
                 <div class="slot-subtitle">HIGH PERFORMANCE REAL-TIME SOLVER</div>
               </div>
 
@@ -322,8 +325,28 @@
 
             <!-- 🎰 Slot Machine Banner Info -->
             <div id="slot-machine-banner" class="slot-machine-banner" style="display: none;">
-              <span>🎰 <b>Demo 04 Active: 3D Casino Slot Machine</b> &bull; Drag to Rotate camera &bull; Pull lever or click SPIN!</span>
-              <span id="slot-stats-summary" style="color: #fbbf24; font-weight: bold;">Spins: 0 | Win Rate: 0%</span>
+              <div class="slot-banner-left" style="display: flex; flex-direction: column; gap: 2px;">
+                <span>🎰 <b>Demo 03 Active: 3D Casino Slot Machine</b> &bull; Drag to Rotate camera &bull; Pull lever or click SPIN!</span>
+                <span id="slot-stats-summary" style="color: #fbbf24; font-weight: bold;">Spins: 0 | Win Rate: 0%</span>
+              </div>
+              <button id="slot-banner-toggle-btn" class="roulette-banner-bets-btn" style="border-color: rgba(245, 158, 11, 0.4); color: #fbbf24;" title="Toggle Slot Controls" aria-label="Toggle Slot Controls">
+                <span>⚙️ CONTROLS</span>
+              </button>
+            </div>
+
+            <!-- 🎰 Desktop Button to Show Slot Controls -->
+            <button id="slot-desktop-show-btn" class="slot-desktop-show-btn" style="display: none;" title="Show Slot Controls" aria-label="Show Slot Controls">
+              <span>⚙️ SHOW CONTROLS</span>
+            </button>
+
+            <!-- 🎰 Floating Mobile Bottom Bar for Slot Machine (when panel is minimized) -->
+            <div id="slot-mobile-bar" class="slot-mobile-bar" style="display: none;">
+              <button id="slot-mobile-fab" class="slot-mobile-fab" title="Open Slot Controls" aria-label="Open Slot Controls">
+                <span>⚙️ CONTROLS</span>
+              </button>
+              <button id="slot-mobile-spin-fab" class="slot-mobile-spin-fab" title="Spin Slot Machine" aria-label="Spin Slot Machine">
+                <span>🎰 SPIN (10 Cr)</span>
+              </button>
             </div>
 
             <!-- 🟢 3D Plinko Interactive Panel (Demo 06) -->
@@ -1026,150 +1049,147 @@
                     <button id="moba-btn-attack" class="flex items-center space-x-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 border border-red-400/50 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-[0_0_12px_rgba(239,68,68,0.5)] transition-all text-white font-black text-[11px] sm:text-xs cursor-pointer active:scale-95">
                       <span>⚔️ ATTACK [A]</span>
                     </button>
-                    <div class="flex flex-col items-end space-y-1">
-                      <div class="bg-black/50 backdrop-blur-none px-2 py-0.5 rounded text-[9px] text-slate-300 border border-white/10">
-                        Tap / Click: <span class="text-amber-400">Move &amp; Attack</span>
-                      </div>
-                      <div class="hidden sm:block bg-black/50 px-2 py-0.5 rounded text-[9px] text-slate-300 border border-white/10">
-                        Q/W/E/R: <span class="text-amber-400">Spells</span>
-                      </div>
+                    <div class="hidden sm:block bg-black/50 px-2 py-0.5 rounded text-[9px] text-slate-300 border border-white/10">
+                      Q/W/E/R: <span class="text-amber-400">Spells</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               <!-- BOTTOM PANEL (Portrait, HP/Mana, Spells, Inventory, Gold) -->
-              <div id="moba-hud-bottom" class="absolute bottom-0 left-0 right-0 bg-black/90 backdrop-blur-md border-t border-white/20 px-1 sm:px-3 py-0.5 sm:py-1.5 flex items-center justify-between pointer-events-auto z-50 shadow-2xl flex-nowrap overflow-hidden gap-1 sm:gap-2.5 max-w-full h-[8.5vh] min-h-[46px] max-h-[56px] sm:h-20 md:h-24">
-                <!-- Interactive Tooltip/Description Floating Banner (Anchored cleanly above footer, guaranteed never covered) -->
-                <div id="moba-hud-description" class="absolute bottom-[calc(100%+6px)] left-1/2 -translate-x-1/2 bg-slate-950/95 backdrop-blur-md border border-amber-500/80 px-3 py-1.5 rounded-lg text-center text-amber-300 text-[10.5px] sm:text-[13px] font-black tracking-wide transition-all duration-200 pointer-events-none opacity-0 select-none z-[80] shadow-[0_8px_30px_rgba(0,0,0,0.95)] max-w-[94%] sm:max-w-xl w-max flex items-center justify-center space-x-2">
+              <div id="moba-hud-bottom" class="absolute bottom-0 left-0 right-0 bg-black/90 backdrop-blur-md border-t border-white/20 p-0.5 sm:px-2 sm:py-1 flex items-center justify-between pointer-events-auto z-50 shadow-2xl flex-nowrap overflow-hidden gap-0.5 sm:gap-1.5 max-w-full h-[8.5vh] min-h-[44px] max-h-[56px] sm:h-20 md:h-24">
+                <!-- Interactive Independent Tooltip/Description Floating Banner (Anchored cleanly above footer, guaranteed never covered) -->
+                <div id="moba-hud-description" class="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 bg-slate-950/95 backdrop-blur-md border border-amber-500/80 px-3 py-1.5 rounded-lg text-center text-amber-300 text-[10px] sm:text-[12.5px] font-black tracking-wide transition-all duration-200 pointer-events-none opacity-0 select-none z-[100] shadow-[0_8px_30px_rgba(0,0,0,0.95)] max-w-[94%] sm:max-w-xl w-max flex items-center justify-center space-x-2">
                   <span class="text-amber-400">🔮</span>
                   <span id="moba-hud-description-text" class="text-slate-100 font-bold">Hover or touch an item or ability to view description.</span>
                 </div>
 
-                <!-- HERO INFO & STATS -->
-                <div class="flex items-center space-x-1 sm:space-x-2 shrink-0">
-                  <!-- Portrait -->
-                  <div class="relative w-8 h-8 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-black/40 border border-white/20 rounded overflow-hidden flex items-center justify-center shrink-0">
-                    <img id="moba-portrait-img" src="assets/textures/moba/hero-image/arissa.png" class="w-full h-full object-cover" onerror="this.style.display='none'; document.getElementById('moba-portrait-placeholder').style.display='block';" />
-                    <span id="moba-portrait-placeholder" class="text-base sm:text-2xl hidden">👤</span>
-                    <div id="moba-team-tag" class="absolute bottom-0 left-0 right-0 text-center text-[7px] sm:text-[9px] font-black text-white uppercase py-0.2 bg-red-600">RED</div>
+                <!-- LEFT CLUSTER: Hero, Bars, Attributes, and Magic Slots moved left to use space (zero wasted padding/margin) -->
+                <div id="moba-footer-left-group" class="flex items-center space-x-0.5 sm:space-x-1.5 shrink-0 min-w-0 p-0 m-0">
+                  <!-- HERO INFO & STATS -->
+                  <div class="flex items-center space-x-0.5 sm:space-x-1 shrink-0 p-0 m-0">
+                    <!-- Portrait -->
+                    <div class="relative w-7 h-7 sm:w-12 sm:h-12 md:w-16 md:h-16 bg-black/40 border border-white/20 rounded overflow-hidden flex items-center justify-center shrink-0">
+                      <img id="moba-portrait-img" src="assets/textures/moba/hero-image/arissa.png" class="w-full h-full object-cover" onerror="this.style.display='none'; document.getElementById('moba-portrait-placeholder').style.display='block';" />
+                      <span id="moba-portrait-placeholder" class="text-base sm:text-2xl hidden">👤</span>
+                      <div id="moba-team-tag" class="absolute bottom-0 left-0 right-0 text-center text-[6px] sm:text-[8px] font-black text-white uppercase py-0 bg-red-600">RED</div>
+                    </div>
+
+                    <!-- HP & MANA BARS (Width strictly preserved: w-20 sm:w-32 md:w-36. Sleek slim height) -->
+                    <div class="w-20 sm:w-32 md:w-36 space-y-0.5 shrink-0 p-0 m-0">
+                      <div class="text-[8px] sm:text-[10px] font-black text-slate-100 flex justify-between items-center leading-none">
+                        <span id="moba-hero-name" class="truncate max-w-[46px] sm:max-w-none">Arissa</span>
+                        <span class="text-[7px] sm:text-[8px] text-amber-400 font-mono">LVL 1</span>
+                      </div>
+                      <!-- HP (Slim Height, width untouched) -->
+                      <div id="moba-hero-hp-container" class="w-full bg-black/70 h-[3.5px] sm:h-[4.5px] rounded-full overflow-hidden border border-emerald-500/30 relative">
+                        <div id="moba-hero-hp-bar" class="bg-gradient-to-r from-emerald-500 via-emerald-400 to-green-300 h-full transition-all duration-100" style="width: 100%; box-shadow: 0 0 6px rgba(16, 185, 129, 0.85);"></div>
+                        <span id="moba-hero-hp-text" class="hidden">550/550</span>
+                      </div>
+                      <!-- MANA (Slim Height, width untouched) -->
+                      <div id="moba-hero-mp-container" class="w-full bg-black/70 h-[2.5px] sm:h-[3.5px] rounded-full overflow-hidden border border-blue-500/30 relative">
+                        <div id="moba-hero-mp-bar" class="bg-gradient-to-r from-blue-600 to-sky-400 h-full transition-all duration-100" style="width: 100%; box-shadow: 0 0 6px rgba(59, 130, 246, 0.85);"></div>
+                        <span id="moba-hero-mp-text" class="hidden">240/240</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <!-- HP & MANA BARS -->
-                  <div class="w-20 sm:w-32 md:w-36 space-y-0.5 sm:space-y-1">
-                    <div class="text-[9px] sm:text-xs font-black text-slate-100 flex justify-between items-center leading-none">
-                      <span id="moba-hero-name" class="truncate max-w-[50px] sm:max-w-none">Arissa</span>
-                      <span class="text-[7.5px] sm:text-[9px] text-amber-400 font-mono">LVL 1</span>
+                  <!-- SLEEK REAL-TIME STATS (Between Bars and Spells, zero margin) -->
+                  <div class="flex flex-col justify-center pl-0.5 sm:pl-1 h-full shrink-0 select-none m-0">
+                    <span class="text-amber-400 font-extrabold uppercase tracking-wider text-[6.5px] sm:text-[8px] hidden sm:block mb-0.5">Attributes</span>
+                    <div class="grid grid-cols-2 gap-x-0.5 sm:gap-x-1 gap-y-0.5 text-[6.5px] sm:text-[8.5px] md:text-[9.5px] font-mono text-slate-300 font-extrabold leading-none">
+                      <div class="flex items-center space-x-0.5" title="Attack Power (⚔️ ATK)">
+                        <span>⚔️</span>
+                        <span id="moba-stat-atk" class="text-rose-400 font-black">55</span>
+                      </div>
+                      <div class="flex items-center space-x-0.5" title="Movement Speed (👟 MS)">
+                        <span>👟</span>
+                        <span id="moba-stat-speed" class="text-sky-400 font-black">4.5</span>
+                      </div>
+                      <div class="flex items-center space-x-0.5" title="Defense / Armor (🛡️ DEF)">
+                        <span>🛡️</span>
+                        <span id="moba-stat-def" class="text-emerald-400 font-black">12</span>
+                      </div>
+                      <div class="flex items-center space-x-0.5" title="Intelligence / Spellpower (🔮 INT)">
+                        <span>🔮</span>
+                        <span id="moba-stat-int" class="text-purple-400 font-black">24</span>
+                      </div>
                     </div>
-                    <!-- HP (Smaller Height) -->
-                    <div class="w-full bg-black/60 h-1.5 sm:h-2 md:h-2 rounded overflow-hidden border border-emerald-500/40 relative">
-                      <div id="moba-hero-hp-bar" class="bg-gradient-to-r from-emerald-500 via-emerald-400 to-green-300 h-full transition-all duration-100" style="width: 100%; box-shadow: 0 0 10px rgba(16, 185, 129, 0.85);"></div>
-                      <span id="moba-hero-hp-text" class="absolute inset-0 flex items-center justify-center text-[5.5px] sm:text-[7px] md:text-[7.5px] font-black text-white font-mono leading-none">550/550</span>
+                  </div>
+
+                  <!-- Dedicated Footer Description Box: Hidden on mobile to free maximum space for larger cells; handled by floating popup -->
+                  <div id="moba-footer-description" class="hidden" style="display: none !important;">
+                    <div id="moba-footer-description-content">Hover over an ability or item to view details.</div>
+                  </div>
+
+                  <!-- SPELLS GRID (4x1) - Directly adjacent to stats, using space for larger cells -->
+                  <div class="flex items-center space-x-0.5 sm:space-x-1 shrink-0 p-0 m-0">
+                    <!-- Spell Q -->
+                    <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-q"
+                         onmouseenter="app.showMobaHudTooltip('Q: Area Blast - Deals heavy magical area damage to nearby enemies and creeps (Cost: 40 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('Q: Area Blast - Deals heavy magical area damage to nearby enemies and creeps (Cost: 40 Mana)')" ontouchend="app.hideMobaHudTooltip()">
+                      <div id="moba-spell-q-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-1.png');"></div>
+                      <div class="relative flex justify-between items-center w-full leading-none">
+                        <span class="bg-black/70 px-0.5 rounded text-[7.5px] sm:text-[9.5px] md:text-xs font-black text-slate-200 font-mono">Q</span>
+                        <span class="text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-q-cost">40</span>
+                      </div>
+                      <div class="relative text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-q-name">Blast</div>
+                      <div id="moba-spell-q-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">3s</div>
                     </div>
-                    <!-- MANA (Smaller Height) -->
-                    <div class="w-full bg-black/60 h-1 sm:h-1.5 md:h-1.5 rounded overflow-hidden border border-blue-500/40 relative">
-                      <div id="moba-hero-mp-bar" class="bg-gradient-to-r from-blue-600 to-sky-400 h-full transition-all duration-100" style="width: 100%; box-shadow: 0 0 10px rgba(59, 130, 246, 0.85);"></div>
-                      <span id="moba-hero-mp-text" class="absolute inset-0 flex items-center justify-center text-[5px] sm:text-[6px] md:text-[6.5px] font-black text-white font-mono leading-none">240/240</span>
+
+                    <!-- Spell W -->
+                    <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-w"
+                         onmouseenter="app.showMobaHudTooltip('W: Blink Dash - Instantly teleports the hero toward the cursor target location (Cost: 50 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('W: Blink Dash - Instantly teleports the hero toward the cursor target location (Cost: 50 Mana)')" ontouchend="app.hideMobaHudTooltip()">
+                      <div id="moba-spell-w-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-2.png');"></div>
+                      <div class="relative flex justify-between items-center w-full leading-none">
+                        <span class="bg-black/70 px-0.5 rounded text-[7.5px] sm:text-[9.5px] md:text-xs font-black text-slate-200 font-mono">W</span>
+                        <span class="text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-w-cost">50</span>
+                      </div>
+                      <div class="relative text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-w-name">Blink</div>
+                      <div id="moba-spell-w-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">6s</div>
+                    </div>
+
+                    <!-- Spell E -->
+                    <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-e"
+                         onmouseenter="app.showMobaHudTooltip('E: Barrier Field - Creates a temporary shield that absorbs incoming damage (Cost: 60 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('E: Barrier Field - Creates a temporary shield that absorbs incoming damage (Cost: 60 Mana)')" ontouchend="app.hideMobaHudTooltip()">
+                      <div id="moba-spell-e-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-3.png');"></div>
+                      <div class="relative flex justify-between items-center w-full leading-none">
+                        <span class="bg-black/70 px-0.5 rounded text-[7.5px] sm:text-[9.5px] md:text-xs font-black text-slate-200 font-mono">E</span>
+                        <span class="text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-e-cost">60</span>
+                      </div>
+                      <div class="relative text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-e-name">Barrier</div>
+                      <div id="moba-spell-e-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">8s</div>
+                    </div>
+
+                    <!-- Spell R (Ultimate) -->
+                    <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 bg-black/40 border-2 border-red-500/60 rounded-md overflow-hidden cursor-pointer hover:border-red-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-r"
+                         onmouseenter="app.showMobaHudTooltip('R: Hollow Eclipse Ultimate - Massive devastating ultimate slow and extreme area damage (Cost: 110 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('R: Hollow Eclipse Ultimate - Massive devastating ultimate slow and extreme area damage (Cost: 110 Mana)')" ontouchend="app.hideMobaHudTooltip()">
+                      <div id="moba-spell-r-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-4.png');"></div>
+                      <div class="relative flex justify-between items-center w-full leading-none">
+                        <span class="bg-red-900/90 px-0.5 rounded text-[7.5px] sm:text-[9.5px] md:text-xs font-black text-red-200 font-mono">R</span>
+                        <span class="text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-r-cost">110</span>
+                      </div>
+                      <div class="relative text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-red-400 truncate bg-black/70 px-0.5 rounded text-center w-full font-black animate-pulse leading-tight" id="moba-spell-r-name">ECLIPSE</div>
+                      <div id="moba-spell-r-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">20s</div>
                     </div>
                   </div>
                 </div>
 
-                <!-- SLEEK REAL-TIME STATS (Placed between Bars and Details) -->
-                <div class="flex flex-col justify-center border-l border-white/10 pl-2 md:pl-3 mr-1 md:mr-2 h-full shrink-0 select-none">
-                  <span class="text-amber-400 font-extrabold uppercase tracking-wider text-[7px] sm:text-[8px] md:text-[9px] mb-0.5 sm:mb-1">Attributes</span>
-                  <div class="grid grid-cols-2 gap-x-1.5 sm:gap-x-3 gap-y-0.5 text-[7px] sm:text-[9px] md:text-[10px] font-mono text-slate-300 font-extrabold leading-none">
-                    <div class="flex items-center space-x-0.5" title="Attack Power (⚔️ ATK)">
-                      <span>⚔️</span>
-                      <span id="moba-stat-atk" class="text-rose-400 font-black">55</span>
-                    </div>
-                    <div class="flex items-center space-x-0.5" title="Movement Speed (👟 MS)">
-                      <span>👟</span>
-                      <span id="moba-stat-speed" class="text-sky-400 font-black">4.5</span>
-                    </div>
-                    <div class="flex items-center space-x-0.5" title="Defense / Armor (🛡️ DEF)">
-                      <span>🛡️</span>
-                      <span id="moba-stat-def" class="text-emerald-400 font-black">12</span>
-                    </div>
-                    <div class="flex items-center space-x-0.5" title="Intelligence / Spellpower (🔮 INT)">
-                      <span>🔮</span>
-                      <span id="moba-stat-int" class="text-purple-400 font-black">24</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Dedicated Footer Description Box (Left of Magic Slots, responsive) -->
-                <div id="moba-footer-description" class="hidden sm:flex flex-col justify-center text-left max-w-[120px] md:max-w-[180px] lg:max-w-[240px] text-slate-300 text-[9px] md:text-xs leading-tight border-l border-white/10 pl-2 md:pl-3 mr-1 md:mr-2 h-full shrink select-none">
-                  <span class="text-amber-400 font-extrabold uppercase tracking-wider text-[8px] md:text-[9px] mb-0.5">Details</span>
-                  <div id="moba-footer-description-content" class="text-slate-400 font-bold" style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">Hover over an ability or item to view details.</div>
-                </div>
-
-                <!-- SPELLS GRID (4x1) - Significantly enlarged on desktop -->
-                <div class="flex items-center space-x-1 sm:space-x-2 md:space-x-2.5 justify-center shrink-0">
-                  <!-- Spell Q -->
-                  <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 lg:w-20 lg:h-20 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 sm:p-1 group" id="moba-spell-q"
-                       onmouseenter="app.showMobaHudTooltip('Q: Area Blast - Deals heavy magical area damage to nearby enemies and creeps (Cost: 40 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('Q: Area Blast - Deals heavy magical area damage to nearby enemies and creeps (Cost: 40 Mana)')" ontouchend="app.hideMobaHudTooltip()">
-                    <div id="moba-spell-q-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-1.png');"></div>
-                    <div class="relative flex justify-between items-center w-full">
-                      <span class="bg-black/70 px-1 rounded text-[8px] sm:text-[10px] md:text-xs font-black text-slate-200 font-mono">Q</span>
-                      <span class="text-[7.5px] sm:text-[9px] md:text-[11px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 sm:px-1 rounded" id="moba-spell-q-cost">40</span>
-                    </div>
-                    <div class="relative text-[7.5px] sm:text-[9px] md:text-[11px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full" id="moba-spell-q-name">Blast</div>
-                    <div id="moba-spell-q-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">3s</div>
-                  </div>
-
-                  <!-- Spell W -->
-                  <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 lg:w-20 lg:h-20 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 sm:p-1 group" id="moba-spell-w"
-                       onmouseenter="app.showMobaHudTooltip('W: Blink Dash - Instantly teleports the hero toward the cursor target location (Cost: 50 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('W: Blink Dash - Instantly teleports the hero toward the cursor target location (Cost: 50 Mana)')" ontouchend="app.hideMobaHudTooltip()">
-                    <div id="moba-spell-w-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-2.png');"></div>
-                    <div class="relative flex justify-between items-center w-full">
-                      <span class="bg-black/70 px-1 rounded text-[8px] sm:text-[10px] md:text-xs font-black text-slate-200 font-mono">W</span>
-                      <span class="text-[7.5px] sm:text-[9px] md:text-[11px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 sm:px-1 rounded" id="moba-spell-w-cost">50</span>
-                    </div>
-                    <div class="relative text-[7.5px] sm:text-[9px] md:text-[11px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full" id="moba-spell-w-name">Blink</div>
-                    <div id="moba-spell-w-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">6s</div>
-                  </div>
-
-                  <!-- Spell E -->
-                  <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 lg:w-20 lg:h-20 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 sm:p-1 group" id="moba-spell-e"
-                       onmouseenter="app.showMobaHudTooltip('E: Barrier Field - Creates a temporary shield that absorbs incoming damage (Cost: 60 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('E: Barrier Field - Creates a temporary shield that absorbs incoming damage (Cost: 60 Mana)')" ontouchend="app.hideMobaHudTooltip()">
-                    <div id="moba-spell-e-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-3.png');"></div>
-                    <div class="relative flex justify-between items-center w-full">
-                      <span class="bg-black/70 px-1 rounded text-[8px] sm:text-[10px] md:text-xs font-black text-slate-200 font-mono">E</span>
-                      <span class="text-[7.5px] sm:text-[9px] md:text-[11px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 sm:px-1 rounded" id="moba-spell-e-cost">60</span>
-                    </div>
-                    <div class="relative text-[7.5px] sm:text-[9px] md:text-[11px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full" id="moba-spell-e-name">Barrier</div>
-                    <div id="moba-spell-e-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">8s</div>
-                  </div>
-
-                  <!-- Spell R (Ultimate) -->
-                  <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 lg:w-20 lg:h-20 bg-black/40 border-2 border-red-500/60 rounded-md overflow-hidden cursor-pointer hover:border-red-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 sm:p-1 group" id="moba-spell-r"
-                       onmouseenter="app.showMobaHudTooltip('R: Hollow Eclipse Ultimate - Massive devastating ultimate slow and extreme area damage (Cost: 110 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('R: Hollow Eclipse Ultimate - Massive devastating ultimate slow and extreme area damage (Cost: 110 Mana)')" ontouchend="app.hideMobaHudTooltip()">
-                    <div id="moba-spell-r-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-4.png');"></div>
-                    <div class="relative flex justify-between items-center w-full">
-                      <span class="bg-red-900/90 px-1 rounded text-[8px] sm:text-[10px] md:text-xs font-black text-red-200 font-mono">R</span>
-                      <span class="text-[7.5px] sm:text-[9px] md:text-[11px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 sm:px-1 rounded" id="moba-spell-r-cost">110</span>
-                    </div>
-                    <div class="relative text-[7.5px] sm:text-[9px] md:text-[11px] font-bold text-red-400 truncate bg-black/70 px-0.5 rounded text-center w-full font-black animate-pulse" id="moba-spell-r-name">ECLIPSE</div>
-                    <div id="moba-spell-r-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">20s</div>
-                  </div>
-                </div>
-
-                <!-- INVENTORY GRID (3x2) & GOLD - Always fits mobile screen -->
-                <div class="flex items-center space-x-1 sm:space-x-2 justify-end shrink-0">
+                <!-- RIGHT CLUSTER: INVENTORY GRID (3x2) & GOLD - Docked with ml-auto to ensure cells 3 & 6 are 100% visible, no padding/margin -->
+                <div id="moba-footer-right-group" class="flex items-center space-x-0.5 sm:space-x-1 justify-end shrink-0 ml-auto p-0 m-0">
                   <!-- Gold -->
-                  <div class="flex items-center space-x-0.5 shrink-0">
-                    <span class="text-amber-400 text-[11px] sm:text-xs md:text-sm font-black font-mono" id="moba-gold">600</span>
-                    <span class="text-amber-400 text-[9px] sm:text-xs">🪙</span>
+                  <div class="flex items-center space-x-0.5 shrink-0 p-0 m-0">
+                    <span class="text-amber-400 text-[9.5px] sm:text-xs md:text-sm font-black font-mono" id="moba-gold">600</span>
+                    <span class="text-amber-400 text-[8.5px] sm:text-xs">🪙</span>
                   </div>
 
-                  <!-- 3x2 Grid (Scales down gracefully so all 6 slots are 100% visible on mobile) -->
-                  <div id="moba-inventory-grid" class="grid grid-cols-3 grid-rows-2 gap-[1px] bg-black/40 border border-white/10 p-[1px] rounded shrink-0">
-                    <div class="w-6 h-6 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">1</div>
-                    <div class="w-6 h-6 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">2</div>
-                    <div class="w-6 h-6 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">3</div>
-                    <div class="w-6 h-6 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">4</div>
-                    <div class="w-6 h-6 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">5</div>
-                    <div class="w-6 h-6 sm:w-9 sm:h-9 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">6</div>
+                  <!-- 3x2 Grid (All 6 cells, including 3 and 6, clearly visible, zero wasted padding/margin) -->
+                  <div id="moba-inventory-grid" class="grid grid-cols-3 grid-rows-2 gap-[1px] bg-black/40 border border-white/10 p-[0.5px] rounded shrink-0 m-0">
+                    <div class="w-6 h-6 sm:w-8 sm:h-8 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7.5px] sm:text-xs text-slate-500 cursor-pointer">1</div>
+                    <div class="w-6 h-6 sm:w-8 sm:h-8 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7.5px] sm:text-xs text-slate-500 cursor-pointer">2</div>
+                    <div class="w-6 h-6 sm:w-8 sm:h-8 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7.5px] sm:text-xs text-slate-500 cursor-pointer">3</div>
+                    <div class="w-6 h-6 sm:w-8 sm:h-8 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7.5px] sm:text-xs text-slate-500 cursor-pointer">4</div>
+                    <div class="w-6 h-6 sm:w-8 sm:h-8 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7.5px] sm:text-xs text-slate-500 cursor-pointer">5</div>
+                    <div class="w-6 h-6 sm:w-8 sm:h-8 md:w-11 md:h-11 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7.5px] sm:text-xs text-slate-500 cursor-pointer">6</div>
                   </div>
                 </div>
               </div>
@@ -1642,95 +1662,6 @@
             <!-- Item Pickup Toast Notification Overlay -->
             <div class="item-pickup-toast" id="item-pickup-toast"></div>
 
-            <!-- Material Presentation Showroom Top Control Bar HUD Overlay (Demo 08) -->
-            <div class="showroom-hud-top" id="showroom-hud-top" style="display: none;">
-              <div class="showroom-badge-title">
-                <span class="showroom-icon">🏛️</span>
-                <div class="showroom-title-text">
-                  <span class="showroom-heading">ALL MATERIALS PRESENTATION SHOWROOM</span>
-                  <span class="showroom-subheading">17 Zero-Alloc Filament PBR Shader Materials &bull; Full Physical &amp; Procedural Gallery</span>
-                </div>
-              </div>
-
-              <div class="showroom-controls-cluster">
-                <!-- Gallery Layout Modes -->
-                <div class="showroom-btn-group">
-                  <span class="showroom-group-label">LAYOUT:</span>
-                  <button class="showroom-mode-btn active" data-layout="circular" id="btn-layout-circular" title="Circular 360° Museum Arena">⭕ Circular</button>
-                  <button class="showroom-mode-btn" data-layout="linear" id="btn-layout-linear" title="Linear Exhibition Aisle">📏 Linear</button>
-                  <button class="showroom-mode-btn" data-layout="grid" id="btn-layout-grid" title="3x6 Comparison Matrix Grid">▦ Matrix</button>
-                </div>
-
-                <!-- Sample Display Mesh -->
-                <div class="showroom-btn-group">
-                  <span class="showroom-group-label">MESH:</span>
-                  <button class="showroom-mesh-btn active" data-mesh="0" title="Shader Sphere">Sphere</button>
-                  <button class="showroom-mesh-btn" data-mesh="4" title="Torus Ring">Torus</button>
-                  <button class="showroom-mesh-btn" data-mesh="1" title="Cube">Cube</button>
-                  <button class="showroom-mesh-btn" data-mesh="3" title="Trefoil Knot">Trefoil</button>
-                  <button class="showroom-mesh-btn" data-mesh="2" title="Icosahedron Gem">Gem</button>
-                </div>
-
-                <!-- Turntable Controls -->
-                <div class="showroom-turntable-box">
-                  <label class="showroom-toggle-label">
-                    <input type="checkbox" id="chk-showroom-turntable" checked>
-                    <span>Spin Turntable</span>
-                  </label>
-                  <input type="range" id="slider-showroom-speed" min="0.1" max="2.5" step="0.05" value="0.75" class="showroom-slider" title="Turntable Rotation Speed">
-                </div>
-              </div>
-            </div>
-
-            <!-- Floating Active Material Live Diagnostic Card (Demo 08) -->
-            <div class="showroom-spec-card" id="showroom-spec-card" style="display: none;">
-              <div class="spec-card-header">
-                <div class="spec-swatch" id="showroom-card-swatch"></div>
-                <div class="spec-title-group">
-                  <div class="spec-name-row">
-                    <span class="spec-mat-name" id="showroom-card-name">Procedural Dark Walnut Wood</span>
-                    <span class="spec-cost-badge" id="showroom-card-badge">LOW</span>
-                  </div>
-                  <span class="spec-mat-category" id="showroom-card-category">CATEGORY: PROCEDURAL PBR</span>
-                </div>
-              </div>
-              <p class="spec-mat-desc" id="showroom-card-desc">Procedural wood grain synthesis using sine-wave ring perturbations, fine grain lines, and pores.</p>
-              <div class="spec-params-grid">
-                <div class="spec-param-item">
-                  <span class="spec-param-label">Roughness</span>
-                  <span class="spec-param-val" id="showroom-card-rough">0.48</span>
-                </div>
-                <div class="spec-param-item">
-                  <span class="spec-param-label">Metallic</span>
-                  <span class="spec-param-val" id="showroom-card-metal">0.00</span>
-                </div>
-                <div class="spec-param-item">
-                  <span class="spec-param-label">Clearcoat</span>
-                  <span class="spec-param-val" id="showroom-card-clearcoat">0.05</span>
-                </div>
-                <div class="spec-param-item">
-                  <span class="spec-param-label">Anisotropy</span>
-                  <span class="spec-param-val" id="showroom-card-anisotropy">0.15</span>
-                </div>
-                <div class="spec-param-item">
-                  <span class="spec-param-label">GPU ALUs</span>
-                  <span class="spec-param-val" id="showroom-card-alus">16 ALUs</span>
-                </div>
-                <div class="spec-param-item">
-                  <span class="spec-param-label">Mobile Fit</span>
-                  <span class="spec-param-val" id="showroom-card-verdict" style="color:#10b981;">60 FPS Solid</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Material Quick-Jump Strip at Bottom of Viewport (Demo 08) -->
-            <div class="showroom-hud-bottom" id="showroom-hud-bottom" style="display: none;">
-              <span class="showroom-strip-label">SELECT MATERIAL (17):</span>
-              <div class="showroom-materials-strip" id="showroom-materials-strip">
-                <!-- Dynamically generated 17 material chips -->
-              </div>
-            </div>
-
             <!-- FPS Quake-Style Player Status HUD (Health, Armor, Ammo, Powerups) -->
             <div class="fps-player-hud" id="fps-player-hud" style="display: none;">
               <div class="hud-stat-cell health-cell" id="hud-health-cell">
@@ -2020,14 +1951,13 @@
                     <select id="demo-scene-select" class="input-select active-demo-select-highlight">
                       <option value="06_glb_character_collision_player.cpp">Demo 01: GLB Character, Collision &amp; Player Controller (06_glb_character_collision_player.cpp)</option>
                       <option value="07_fps_shooter_damage_system.cpp">Demo 02: First-Person Shooter &amp; Damage System (07_fps_shooter_damage_system.cpp)</option>
-                      <option value="08_all_materials_presentation.cpp">Demo 03: All Materials Presentation Showcase (08_all_materials_presentation.cpp)</option>
-                      <option value="09_slot_machine.cpp">Demo 04: 3D Casino Slot Machine &amp; Particles (09_slot_machine.cpp)</option>
-                      <option value="10_sliding_puzzle.cpp">Demo 05: Dynamic Sliding 3D Puzzle (10_sliding_puzzle.cpp)</option>
-                      <option value="11_plinko.cpp">Demo 06: 3D Plinko Cascade Showcase (11_plinko.cpp)</option>
-                      <option value="12_roulette.cpp">Demo 07: 3D Physics-Engine Roulette Wheel (12_roulette.cpp)</option>
-                      <option value="13_bingo_physics.cpp">Demo 08: 3D Real-Physics Bingo &amp; Diamond Drum (13_bingo_physics.cpp)</option>
-                      <option value="14_pong.cpp" selected>Demo 09: Retro 3D Arcade Pong (14_pong.cpp)</option>
-                      <option value="15_moba.cpp">Demo 10: MOBA Forest of Hollow Blood (15_moba.cpp)</option>
+                      <option value="09_slot_machine.cpp">Demo 03: 3D Casino Slot Machine &amp; Particles (09_slot_machine.cpp)</option>
+                      <option value="10_sliding_puzzle.cpp">Demo 04: Dynamic Sliding 3D Puzzle (10_sliding_puzzle.cpp)</option>
+                      <option value="11_plinko.cpp">Demo 05: 3D Plinko Cascade Showcase (11_plinko.cpp)</option>
+                      <option value="12_roulette.cpp">Demo 06: 3D Physics-Engine Roulette Wheel (12_roulette.cpp)</option>
+                      <option value="13_bingo_physics.cpp">Demo 07: 3D Real-Physics Bingo &amp; Diamond Drum (13_bingo_physics.cpp)</option>
+                      <option value="14_pong.cpp" selected>Demo 08: Retro 3D Arcade Pong (14_pong.cpp)</option>
+                      <option value="15_moba.cpp">Demo 09: MOBA Forest of Hollow Blood (15_moba.cpp)</option>
                     </select>
                   </div>
                 </div>
@@ -2330,15 +2260,15 @@
               <div class="select-group">
                 <label for="live-editor-file-select" class="hud-label">Select C/C++ Source File:</label>
                 <select id="live-editor-file-select" class="input-select font-mono">
-                  <option value="examples/06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 01: GLB Character, Collision &amp; Player Controller)</option>
+                  <option value="examples/06_glb_character_collision_player.cpp" selected>examples/06_glb_character_collision_player.cpp (Demo 01: GLB Character, Collision &amp; Player Controller)</option>
                   <option value="examples/07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 02: First-Person Shooter &amp; Damage System)</option>
-                  <option value="examples/08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 03: All Materials Presentation Showcase)</option>
-                  <option value="examples/09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 04: 3D Casino Slot Machine &amp; Particles)</option>
-                  <option value="examples/10_sliding_puzzle.cpp">examples/10_sliding_puzzle.cpp (Demo 05: Dynamic Sliding 3D Puzzle)</option>
-                  <option value="examples/11_plinko.cpp">examples/11_plinko.cpp (Demo 06: 3D Plinko Cascade Showcase)</option>
-                  <option value="examples/12_roulette.cpp">examples/12_roulette.cpp (Demo 07: 3D Physics-Engine Roulette Wheel)</option>
-                  <option value="examples/13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 08: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
-                  <option value="examples/14_pong.cpp">examples/14_pong.cpp (Demo 09: Retro 3D Arcade Pong)</option>
+                  <option value="examples/09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 03: 3D Casino Slot Machine &amp; Particles)</option>
+                  <option value="examples/10_sliding_puzzle.cpp">examples/10_sliding_puzzle.cpp (Demo 04: Dynamic Sliding 3D Puzzle)</option>
+                  <option value="examples/11_plinko.cpp">examples/11_plinko.cpp (Demo 05: 3D Plinko Cascade Showcase)</option>
+                  <option value="examples/12_roulette.cpp">examples/12_roulette.cpp (Demo 06: 3D Physics-Engine Roulette Wheel)</option>
+                  <option value="examples/13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 07: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
+                  <option value="examples/14_pong.cpp">examples/14_pong.cpp (Demo 08: Retro 3D Arcade Pong)</option>
+                  <option value="examples/15_moba.cpp">examples/15_moba.cpp (Demo 09: MOBA Forest of Hollow Blood)</option>
                   <option value="src/core/Engine.cpp">src/core/Engine.cpp (Engine Core C++)</option>
                   <option value="src/core/Renderer.cpp">src/core/Renderer.cpp (Filament GLES3 Pipeline C++)</option>
                   <option value="src/core/Bindings.cpp">src/core/Bindings.cpp (Emscripten Embind Bindings C++)</option>
@@ -2393,15 +2323,15 @@
             </div>
             <div class="source-header">
               <select id="filament-examples-select" class="input-select font-mono">
-                <option value="06_glb_character_collision_player.cpp">examples/06_glb_character_collision_player.cpp (Demo 01: GLB Character, Collision &amp; Player Controller)</option>
+                <option value="06_glb_character_collision_player.cpp" selected>examples/06_glb_character_collision_player.cpp (Demo 01: GLB Character, Collision &amp; Player Controller)</option>
                 <option value="07_fps_shooter_damage_system.cpp">examples/07_fps_shooter_damage_system.cpp (Demo 02: First-Person Shooter &amp; Damage System)</option>
-                <option value="08_all_materials_presentation.cpp" selected>examples/08_all_materials_presentation.cpp (Demo 03: All Materials Presentation Showcase)</option>
-                <option value="09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 04: 3D Casino Slot Machine &amp; Particles)</option>
-                <option value="10_sliding_puzzle.cpp">examples/10_sliding_puzzle.cpp (Demo 05: Dynamic Sliding 3D Puzzle)</option>
-                <option value="11_plinko.cpp">examples/11_plinko.cpp (Demo 06: 3D Plinko Cascade Showcase)</option>
-                <option value="12_roulette.cpp">examples/12_roulette.cpp (Demo 07: 3D Physics-Engine Roulette Wheel)</option>
-                <option value="13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 08: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
-                <option value="14_pong.cpp">examples/14_pong.cpp (Demo 09: Retro 3D Arcade Pong)</option>
+                <option value="09_slot_machine.cpp">examples/09_slot_machine.cpp (Demo 03: 3D Casino Slot Machine &amp; Particles)</option>
+                <option value="10_sliding_puzzle.cpp">examples/10_sliding_puzzle.cpp (Demo 04: Dynamic Sliding 3D Puzzle)</option>
+                <option value="11_plinko.cpp">examples/11_plinko.cpp (Demo 05: 3D Plinko Cascade Showcase)</option>
+                <option value="12_roulette.cpp">examples/12_roulette.cpp (Demo 06: 3D Physics-Engine Roulette Wheel)</option>
+                <option value="13_bingo_physics.cpp">examples/13_bingo_physics.cpp (Demo 07: 3D Real-Physics Bingo &amp; Diamond Drum)</option>
+                <option value="14_pong.cpp">examples/14_pong.cpp (Demo 08: Retro 3D Arcade Pong)</option>
+                <option value="15_moba.cpp">examples/15_moba.cpp (Demo 09: MOBA Forest of Hollow Blood)</option>
               </select>
               <button id="btn-copy-example" class="btn-xs">Copy Example</button>
             </div>

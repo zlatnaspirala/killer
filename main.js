@@ -1049,88 +1049,6 @@ int main() {
 }
 `,
 
-  '08_all_materials_presentation.cpp': `// examples/08_all_materials_presentation.cpp
-// Google Filament & C++ Native Graphics Pipeline: Demo 08
-// ALL MATERIALS PRESENTATION SHOWCASE & PBR GALLERY
-// Comprehensive exhibition presenting all 17 physically-based materials in a
-// museum-grade studio showroom with zero runtime allocations per frame.
-
-#include <iostream>
-#include <vector>
-#include <string>
-#include <memory>
-#include <cmath>
-#include <iomanip>
-
-#include <filament/Engine.h>
-#include <filament/Renderer.h>
-#include <filament/Scene.h>
-#include <filament/View.h>
-#include <filament/Camera.h>
-#include <filament/Material.h>
-#include <filament/MaterialInstance.h>
-#include <filament/RenderableManager.h>
-#include <filament/TransformManager.h>
-#include <filament/LightManager.h>
-#include <utils/EntityManager.h>
-#include <math/mat4.h>
-#include <math/vec3.h>
-
-using namespace filament;
-using namespace filament::math;
-using utils::Entity;
-using utils::EntityManager;
-
-// Data structure representing one of Filament's 17 custom shader materials
-struct MaterialSpec {
-    const char* key;
-    const char* name;
-    const char* category;
-    float3 baseColor;
-    float roughness;
-    float metallic;
-    float clearCoat;
-    float anisotropy;
-    float bumpStrength;
-    float noiseScale;
-    uint32_t matTypeId;
-    const char* alus;
-    const char* costRating;
-};
-
-// Authoritative Catalog of all 17 Filament PBR Materials
-constexpr size_t TOTAL_MATERIALS = 17;
-const MaterialSpec ALL_MATERIALS[TOTAL_MATERIALS] = {
-    { "wood",         "Procedural Dark Walnut Wood",       "procedural", {0.38f, 0.22f, 0.12f}, 0.48f, 0.00f, 0.05f, 0.15f, 1.6f, 22.0f, 1,  "16 ALUs", "LOW" },
-    { "rock",         "Procedural Basalt & Granite Rock",  "procedural", {0.32f, 0.32f, 0.35f}, 0.88f, 0.00f, 0.00f, 0.00f, 2.5f, 14.0f, 2,  "18 ALUs", "LOW" },
-    { "metal",        "Brushed Aerospace Titanium",        "procedural", {0.72f, 0.76f, 0.82f}, 0.24f, 0.96f, 0.00f, 0.85f, 1.4f, 35.0f, 3,  "14 ALUs", "LOW" },
-    { "gold",         "Polished 24K Pure Gold",            "reflective", {1.00f, 0.78f, 0.28f}, 0.12f, 1.00f, 0.10f, 0.00f, 0.0f,  1.0f, 0,  "12 ALUs", "LOW" },
-    { "chrome",       "Mirror Specular Chrome",            "reflective", {0.95f, 0.95f, 0.98f}, 0.04f, 1.00f, 0.00f, 0.00f, 0.0f,  1.0f, 0,  "12 ALUs", "LOW" },
-    { "glass",        "Optical Dielectric Glass",          "reflective", {0.92f, 0.96f, 1.00f}, 0.03f, 0.00f, 0.95f, 0.00f, 0.0f,  1.0f, 9,  "32 ALUs", "MEDIUM" },
-    { "water",        "Trochoidal Ripple Water",           "reflective", {0.10f, 0.45f, 0.75f}, 0.08f, 0.10f, 0.95f, 0.20f, 2.8f, 25.0f, 13, "28 ALUs", "MEDIUM" },
-    { "marble",       "Procedural Calacatta Marble",       "procedural", {0.92f, 0.92f, 0.94f}, 0.28f, 0.00f, 0.85f, 0.00f, 0.8f, 16.0f, 4,  "46 ALUs", "HIGH" },
-    { "obsidian",     "Volcanic Obsidian Glass",           "reflective", {0.08f, 0.08f, 0.10f}, 0.06f, 0.15f, 0.80f, 0.00f, 0.0f,  1.0f, 0,  "14 ALUs", "LOW" },
-    { "velvet",       "Sheen Microfiber Velvet Cloth",     "special",    {0.55f, 0.12f, 0.25f}, 0.72f, 0.00f, 0.00f, 0.00f, 0.0f,  1.0f, 10, "24 ALUs", "MEDIUM" },
-    { "carbon_fiber", "Twill Weave Carbon Fiber",          "procedural", {0.12f, 0.13f, 0.15f}, 0.30f, 0.45f, 1.00f, 0.90f, 1.8f, 40.0f, 5,  "28 ALUs", "MEDIUM" },
-    { "rust",         "Corroded Iron & Rust",              "procedural", {0.65f, 0.28f, 0.16f}, 0.82f, 0.35f, 0.00f, 0.00f, 2.2f, 20.0f, 6,  "30 ALUs", "MEDIUM" },
-    { "magma",        "Volcanic Magma & Lava Crust",       "procedural", {0.85f, 0.25f, 0.05f}, 0.65f, 0.00f, 0.00f, 0.0f,  2.0f, 18.0f, 7,  "42 ALUs", "HIGH" },
-    { "car_paint",    "Flake Metallic Clear Coat Paint",   "reflective", {0.85f, 0.15f, 0.20f}, 0.20f, 0.85f, 1.00f, 0.00f, 1.0f, 50.0f, 8,  "26 ALUs", "MEDIUM" },
-    { "leather",      "Pebble Grain Full-Grain Leather",   "procedural", {0.45f, 0.26f, 0.16f}, 0.58f, 0.00f, 0.15f, 0.10f, 1.9f, 28.0f, 14, "26 ALUs", "MEDIUM" },
-    { "hologram",     "Quantum Holographic Matrix",        "special",    {0.10f, 0.90f, 0.85f}, 0.10f, 0.00f, 0.00f, 0.0f,  0.0f, 25.0f, 11, "18 ALUs", "LOW" },
-    { "neon",         "Supercharged Emissive Neon",        "special",    {0.95f, 0.20f, 0.80f}, 0.05f, 0.00f, 0.0f,  0.0f,  0.0f,  1.0f, 12, "14 ALUs", "LOW" }
-};
-
-int main() {
-    std::cout << "========================================================\\n";
-    std::cout << "  GOOGLE FILAMENT DEMO 08: ALL MATERIALS PRESENTATION   \\n";
-    std::cout << "========================================================\\n";
-    std::cout << "Total Materials: " << TOTAL_MATERIALS << " physically-based shaders\\n";
-    std::cout << "Memory Allocation Per Frame: 0 Bytes (Host C++ Stack)\\n";
-    std::cout << "Presentation Mode: 360-Degree Circular Exhibition Showroom\\n";
-    return 0;
-}
-`,
-
   '09_slot_machine.cpp': `// examples/09_slot_machine.cpp
 // Filament / Native C++ Demo 09: 3D Casino Slot Machine & Particle Coins Showcase
 // Demonstrates spinning cylinder/torus reels, animated levers with damped sine physics,
@@ -5166,7 +5084,8 @@ class NativeApp {
       darkRock: '/assets/textures/dark-rock.webp',
       floor1: '/assets/textures/floor1.webp',
       gold2: '/assets/textures/gold-2.webp',
-      sky1: '/assets/images/env-maps/sky1.webp'
+      sky1: '/assets/images/env-maps/sky1.webp',
+      slotReel: '/assets/textures/slot/reel1-lod0.webp'
     };
 
     Object.keys(texturesToLoad).forEach(key => {
@@ -6994,16 +6913,7 @@ void main() {
     const triEl = document.getElementById('hud-triangles');
     const drawEl = document.getElementById('hud-drawcalls');
 
-    if (this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation')) {
-      const sampleMesh = this.meshBuffers[this.state.showroomMesh !== undefined ? this.state.showroomMesh : 0] || current;
-      const cubeMesh = this.meshBuffers[1];
-      const totalSamples = 17;
-      const totalTris = (sampleMesh.triangleCount * totalSamples) + (cubeMesh.triangleCount * (totalSamples + 1));
-      const totalVerts = (sampleMesh.vertexCount * totalSamples) + (cubeMesh.vertexCount * (totalSamples + 1));
-      if (vertEl) vertEl.textContent = totalVerts.toLocaleString();
-      if (triEl) triEl.textContent = totalTris.toLocaleString();
-      if (drawEl) drawEl.textContent = "35"; // 17 samples + 17 pedestals + 1 showroom floor
-    } else if (this.state.demoScene.includes('12_roulette')) {
+    if (this.state.demoScene.includes('12_roulette')) {
       const isMobile = this.isMobileDevice();
       const policy = this.state.lodPolicy || (isMobile ? 'mobile_max_optimisation' : 'desktop_force_quality');
       const holderSphere = (policy === 'mobile_max_optimisation' || isMobile)
@@ -7415,7 +7325,7 @@ void main() {
     const headerDisplay = document.getElementById('header-display');
 
     if (exampleDisplay) {
-      const activeFile = SOURCE_FILES[this.state.demoScene] || SOURCE_FILES['08_all_materials_presentation.cpp'] || SOURCE_FILES['01_pbr_material_preview.cpp'];
+      const activeFile = SOURCE_FILES[this.state.demoScene] || SOURCE_FILES['06_glb_character_collision_player.cpp'] || SOURCE_FILES['01_pbr_material_preview.cpp'];
       exampleDisplay.textContent = activeFile;
     }
     if (exportDisplay) exportDisplay.textContent = SOURCE_FILES['build_wasm.sh'];
@@ -7443,7 +7353,6 @@ void main() {
     };
 
     const updateFPSOverlays = () => {
-      const isShowroom = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
       const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
       const isSlidingPuzzle = this.state.demoScene.includes('10_sliding_puzzle');
       const isPlinko = this.state.demoScene.includes('11_plinko');
@@ -7451,16 +7360,12 @@ void main() {
       const isBingo = this.state.demoScene.includes('13_bingo');
       const isPong = Boolean(this.state.demoScene && this.state.demoScene.includes('14_pong'));
       const isMoba = Boolean(this.state.demoScene && this.state.demoScene.includes('15_moba'));
-      const isFPS = this.state.cameraMode === 3 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong && !isMoba;
+      const isFPS = this.state.cameraMode === 3 && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong && !isMoba;
       const crosshairEl = document.getElementById('fps-crosshair-overlay');
       const bannerEl = document.getElementById('fps-pointerlock-banner');
       const weaponHudEl = document.getElementById('fps-weapon-hud');
       const fpHelp = document.getElementById('fp-help');
 
-      const showroomTopEl = document.getElementById('showroom-hud-top');
-      const showroomCardEl = document.getElementById('showroom-spec-card');
-      const showroomBottomEl = document.getElementById('showroom-hud-bottom');
-      
       const slotOverlayEl = document.getElementById('slot-machine-overlay');
       const slotBannerEl = document.getElementById('slot-machine-banner');
 
@@ -7493,14 +7398,28 @@ void main() {
         }
       }
       if (weaponHudEl) weaponHudEl.style.display = 'none';
-      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong) ? 'block' : 'none';
+      if (fpHelp) fpHelp.style.display = (this.state.cameraMode !== 0 && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong) ? 'block' : 'none';
 
-      if (showroomTopEl) showroomTopEl.style.display = isShowroom ? 'flex' : 'none';
-      if (showroomCardEl) showroomCardEl.style.display = isShowroom ? 'block' : 'none';
-      if (showroomBottomEl) showroomBottomEl.style.display = isShowroom ? 'flex' : 'none';
+      const slotMobileBarEl = document.getElementById('slot-mobile-bar');
+      const slotDesktopBtnEl = document.getElementById('slot-desktop-show-btn');
+      const isMobileDevice = this.isMobileDevice() || window.innerWidth <= 768;
 
-      if (slotOverlayEl) slotOverlayEl.style.display = isSlotMachine ? 'flex' : 'none';
-      if (slotBannerEl) slotBannerEl.style.display = isSlotMachine ? 'block' : 'none';
+      if (slotOverlayEl) {
+        slotOverlayEl.style.display = isSlotMachine ? 'flex' : 'none';
+        if (!isSlotMachine) {
+          slotOverlayEl.classList.remove('mobile-minimized');
+        }
+      }
+      if (slotBannerEl) {
+        slotBannerEl.style.display = isSlotMachine ? 'flex' : 'none';
+        if (!isSlotMachine) slotBannerEl.classList.remove('panel-closed');
+      }
+      if (slotMobileBarEl && !isSlotMachine) slotMobileBarEl.style.display = 'none';
+      if (slotDesktopBtnEl && !isSlotMachine) slotDesktopBtnEl.style.display = 'none';
+      if (isSlotMachine && slotOverlayEl && slotOverlayEl.classList.contains('mobile-minimized')) {
+        if (isMobileDevice && slotMobileBarEl) slotMobileBarEl.style.display = 'flex';
+        if (!isMobileDevice && slotDesktopBtnEl) slotDesktopBtnEl.style.display = 'flex';
+      }
 
       if (puzzleOverlayEl) puzzleOverlayEl.style.display = isSlidingPuzzle ? 'flex' : 'none';
       if (puzzleBannerEl) puzzleBannerEl.style.display = isSlidingPuzzle ? 'block' : 'none';
@@ -7583,6 +7502,31 @@ void main() {
           this.leaveMobaParty();
         }
       }
+
+      // Sync active scene modes to body class
+      document.body.classList.toggle('moba-active', Boolean(isMoba));
+      document.body.classList.toggle('roulette-active', Boolean(isRoulette));
+
+      // Strictly remove joystick from MOBA and Roulette
+      const joyLeftContainer = document.getElementById('joystick-left-container');
+      const mobileTouchOverlay = document.getElementById('mobile-touch-overlay');
+      const joyToggleBtn = document.getElementById('btn-toggle-joystick');
+      if (isMoba || isRoulette) {
+        if (joyLeftContainer) joyLeftContainer.style.display = 'none';
+        if (mobileTouchOverlay) mobileTouchOverlay.classList.add('hidden');
+        if (joyToggleBtn) joyToggleBtn.style.display = 'none';
+        if (this.joystickState) {
+          this.joystickState.active = false;
+          this.joystickState.touchId = null;
+          this.joystickState.dirX = 0;
+          this.joystickState.dirY = 0;
+        }
+      } else {
+        if (joyLeftContainer) joyLeftContainer.style.display = '';
+        if (typeof this.updateOverlayVisibility === 'function') {
+          this.updateOverlayVisibility();
+        }
+      }
     };
 
     this.updateFPSOverlays = updateFPSOverlays;
@@ -7611,7 +7555,7 @@ void main() {
     canvasContainer.addEventListener('click', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
-      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab, #bingo-overlay, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell, .fps-floating-fire-btn, .btn-touch-shoot')) return;
+      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #slot-mobile-bar, #slot-mobile-fab, #slot-mobile-spin-fab, .slot-mobile-fab, .slot-mobile-spin-fab, #slot-desktop-show-btn, .slot-desktop-show-btn, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab, #bingo-overlay, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell, .fps-floating-fire-btn, .btn-touch-shoot')) return;
 
       if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
         this.handleRouletteClick(e.clientX, e.clientY);
@@ -7639,7 +7583,7 @@ void main() {
     canvasContainer.addEventListener('dblclick', (e) => {
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
-      if (e.target.closest && e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab, #bingo-overlay, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell, .fps-floating-fire-btn, .btn-touch-shoot')) return;
+      if (e.target.closest && e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, #puzzle-overlay, #slot-machine-overlay, #slot-mobile-bar, #slot-mobile-fab, #slot-mobile-spin-fab, .slot-mobile-fab, .slot-mobile-spin-fab, #slot-desktop-show-btn, .slot-desktop-show-btn, #plinko-overlay, .plinko-overlay-panel, .plinko-mobile-fab, #bingo-overlay, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell, .fps-floating-fire-btn, .btn-touch-shoot')) return;
 
       const isFPS = (this.state.cameraMode === 3) || (this.state.demoScene && this.state.demoScene.includes('07_fps'));
       if (isFPS && this.fpsFireOption === 'dblclick') {
@@ -7666,7 +7610,7 @@ void main() {
 
       const fpsOverlay = document.getElementById('fps-startup-overlay');
       if (fpsOverlay && fpsOverlay.style.display !== 'none') return;
-      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, .plinko-overlay-panel, .plinko-mobile-fab, .slot-machine-overlay-panel, .puzzle-overlay-panel, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-overlay, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell')) return;
+      if (e.target.closest('#fps-startup-overlay, .modal-overlay, button, input, select, .panel, .showroom-hud-top, .showroom-spec-card, .showroom-hud-bottom, #fps-pointerlock-banner, .plinko-overlay-panel, .plinko-mobile-fab, .slot-machine-overlay-panel, #slot-mobile-bar, #slot-mobile-fab, #slot-mobile-spin-fab, .slot-mobile-fab, .slot-mobile-spin-fab, #slot-desktop-show-btn, .slot-desktop-show-btn, .puzzle-overlay-panel, .bingo-overlay-panel, .bingo-mobile-fab, #bingo-overlay, #bingo-banner, .bingo-banner-hud, #bingo-desktop-show-btn, .bingo-card, .bingo-cell')) return;
 
       // In MOBA demo, mouse clicks on canvas are dedicated to movement & spell targeting, never drag or tilt camera!
       if (this.state.demoScene && this.state.demoScene.includes('15_moba')) return;
@@ -7968,18 +7912,7 @@ void main() {
           this.leavePlinkoMultiplayer();
         }
         this.state.demoScene = e.target.value;
-        if (this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation')) {
-          this.state.cameraMode = 0;
-          const camSelect = document.getElementById('camera-mode-select');
-          if (camSelect) camSelect.value = "0";
-          this.state.camRadius = 14.5;
-          this.state.camPitch = 0.35;
-          this.state.camYaw = 0.0;
-          this.state.camTarget[0] = 0; this.state.camTarget[1] = 0.8; this.state.camTarget[2] = 0;
-          updateFPSOverlays();
-          this.focusShowroomMaterial(this.state.showroomFocusedMatKey || 'wood');
-          this.log("Loaded Demo 03: All Materials Presentation Showcase (17 PBR Shaders)", "cpp");
-        } else if (this.state.demoScene.includes('07_fps')) {
+        if (this.state.demoScene.includes('07_fps')) {
           this.state.cameraMode = 3;
           const camSelect = document.getElementById('camera-mode-select');
           if (camSelect) camSelect.value = "3";
@@ -8865,6 +8798,32 @@ void main() {
 
     const updateOverlayVisibility = () => {
       if (!overlay) return;
+      const ds = this.state.demoScene || '';
+      const isMoba = Boolean(ds && ds.includes('15_moba'));
+      const isRoulette = Boolean(ds && (ds.includes('12_roulette') || ds.includes('09_roulette')));
+
+      document.body.classList.toggle('moba-active', isMoba);
+      document.body.classList.toggle('roulette-active', isRoulette);
+
+      const joyLeftContainer = document.getElementById('joystick-left-container');
+
+      // Strictly remove joystick from MOBA and Roulette
+      if (isMoba || isRoulette) {
+        if (joyLeftContainer) joyLeftContainer.style.display = 'none';
+        overlay.classList.add('hidden');
+        if (btnToggleJoy) btnToggleJoy.style.display = 'none';
+        if (this.joystickState) {
+          this.joystickState.active = false;
+          this.joystickState.touchId = null;
+          this.joystickState.dirX = 0;
+          this.joystickState.dirY = 0;
+        }
+        this.updateMobileActionButtonsVisibility();
+        return;
+      }
+
+      if (joyLeftContainer) joyLeftContainer.style.display = '';
+
       if (this.mobileControlsMode === 'always') {
         overlay.classList.remove('hidden');
         if (btnToggleJoy) btnToggleJoy.textContent = '🎮 Joystick: ON';
@@ -8882,6 +8841,7 @@ void main() {
       }
       this.updateMobileActionButtonsVisibility();
     };
+    this.updateOverlayVisibility = updateOverlayVisibility;
 
     if (btnToggleJoy) {
       btnToggleJoy.addEventListener('click', () => {
@@ -8998,13 +8958,12 @@ void main() {
       // Helper to check if currently in FPS Shooter mode
       const checkIsFPS = () => {
         const ds = this.state.demoScene || '';
-        const isShowroom = ds.includes('08_all_materials') || ds.includes('materials_presentation');
         const isSlotMachine = ds.includes('09_slot_machine');
         const isSlidingPuzzle = ds.includes('10_sliding_puzzle');
         const isPlinko = ds.includes('11_plinko');
         const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
         const isBingo = ds.includes('13_bingo');
-        return (this.state.cameraMode === 3 || ds.includes('07_fps')) && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo;
+        return (this.state.cameraMode === 3 || ds.includes('07_fps')) && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo;
       };
 
       canvasContainer.addEventListener('touchstart', (e) => {
@@ -9509,14 +9468,13 @@ void main() {
       // Examples / Demos
       { value: "06_glb_character_collision_player.cpp", path: "examples/06_glb_character_collision_player.cpp", name: "Demo 01: GLB Character, Collision & Player Controller", isDemoScene: true, isLiveFile: true, isExampleTab: true },
       { value: "07_fps_shooter_damage_system.cpp", path: "examples/07_fps_shooter_damage_system.cpp", name: "Demo 02: First-Person Shooter & Damage System", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "08_all_materials_presentation.cpp", path: "examples/08_all_materials_presentation.cpp", name: "Demo 03: All Materials Presentation Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "09_slot_machine.cpp", path: "examples/09_slot_machine.cpp", name: "Demo 04: 3D Casino Slot Machine & Particles", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "10_sliding_puzzle.cpp", path: "examples/10_sliding_puzzle.cpp", name: "Demo 05: Dynamic Sliding 3D Puzzle", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "11_plinko.cpp", path: "examples/11_plinko.cpp", name: "Demo 06: 3D Plinko Cascade Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "12_roulette.cpp", path: "examples/12_roulette.cpp", name: "Demo 07: 3D Physics-Engine Roulette Wheel", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "13_bingo_physics.cpp", path: "examples/13_bingo_physics.cpp", name: "Demo 08: 3D Real-Physics Bingo & Diamond Drum", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "14_pong.cpp", path: "examples/14_pong.cpp", name: "Demo 09: Retro 3D Arcade Pong", isDemoScene: true, isLiveFile: true, isExampleTab: true },
-      { value: "15_moba.cpp", path: "examples/15_moba.cpp", name: "Demo 10: MOBA Forest of Hollow Blood", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "09_slot_machine.cpp", path: "examples/09_slot_machine.cpp", name: "Demo 03: 3D Casino Slot Machine & Particles", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "10_sliding_puzzle.cpp", path: "examples/10_sliding_puzzle.cpp", name: "Demo 04: Dynamic Sliding 3D Puzzle", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "11_plinko.cpp", path: "examples/11_plinko.cpp", name: "Demo 05: 3D Plinko Cascade Showcase", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "12_roulette.cpp", path: "examples/12_roulette.cpp", name: "Demo 06: 3D Physics-Engine Roulette Wheel", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "13_bingo_physics.cpp", path: "examples/13_bingo_physics.cpp", name: "Demo 07: 3D Real-Physics Bingo & Diamond Drum", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "14_pong.cpp", path: "examples/14_pong.cpp", name: "Demo 08: Retro 3D Arcade Pong", isDemoScene: true, isLiveFile: true, isExampleTab: true },
+      { value: "15_moba.cpp", path: "examples/15_moba.cpp", name: "Demo 09: MOBA Forest of Hollow Blood", isDemoScene: true, isLiveFile: true, isExampleTab: true },
 
       // Engine Internals
       { value: "src/core/Engine.cpp", path: "src/core/Engine.cpp", name: "Engine Core C++", isDemoScene: false, isLiveFile: true, isExampleTab: false },
@@ -9589,7 +9547,7 @@ void main() {
         const option = document.createElement('option');
         option.value = item.value;
         option.textContent = `${item.path} (${item.name})`;
-        if (item.value === '08_all_materials_presentation.cpp') {
+        if (item.value === '06_glb_character_collision_player.cpp') {
           option.selected = true;
         }
         exSelect.appendChild(option);
@@ -11036,13 +10994,12 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   fireWeaponProjectile() {
-    const isShowroom = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
     const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
     const isSlidingPuzzle = this.state.demoScene.includes('10_sliding_puzzle');
     const isPlinko = this.state.demoScene.includes('11_plinko');
     const isRoulette = this.state.demoScene.includes('12_roulette');
     const isBingo = this.state.demoScene.includes('13_bingo');
-    const isFPS = (this.state.cameraMode === 3 || this.state.demoScene.includes('07_fps')) && !isShowroom && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo;
+    const isFPS = (this.state.cameraMode === 3 || this.state.demoScene.includes('07_fps')) && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo;
     if (!isFPS) return;
 
     // Auto-activate match state so weapon shoots immediately
@@ -12983,7 +12940,318 @@ else if (typeof define === 'function' && define['amd'])
     }
   }
 
+  setupDefaultSceneLighting(progInfo) {
+    const gl = this.gl;
+    if (!gl || !progInfo) return;
+
+    // Reset standard directional lights for a clear, bright studio lighting setup
+    if (progInfo.uLightDir) gl.uniform3fv(progInfo.uLightDir, [0.4, 0.6, 1.8]);
+    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [3.2, 3.0, 2.7]);
+    if (progInfo.uFillLightDir) gl.uniform3fv(progInfo.uFillLightDir, [-0.4, -0.6, 1.2]);
+    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [1.0, 0.95, 0.90]);
+
+    // Reset point and spot lights to 0 to prevent light pollution from other demos (like MOBA)
+    if (progInfo.uNumPointLights) {
+      gl.uniform1i(progInfo.uNumPointLights, 0);
+    }
+    if (progInfo.uNumSpotLights) {
+      gl.uniform1i(progInfo.uNumSpotLights, 0);
+    }
+  }
+
+  parseOBJ(objText) {
+    const lines = objText.split('\n');
+    const rawPositions = [];
+    const rawNormals = [];
+    const rawUVs = [];
+    
+    const parsedPositions = [];
+    const parsedNormals = [];
+    const parsedUVs = [];
+    const indices = [];
+    
+    const uniqueVerts = {};
+    let nextIndex = 0;
+    
+    for (let line of lines) {
+      line = line.trim();
+      if (!line || line.startsWith('#')) continue;
+      const parts = line.split(/\s+/);
+      const type = parts[0];
+      if (type === 'v') {
+        rawPositions.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+      } else if (type === 'vn') {
+        rawNormals.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+      } else if (type === 'vt') {
+        rawUVs.push([parseFloat(parts[1]), parseFloat(parts[2])]);
+      } else if (type === 'f') {
+        const faceVerts = [];
+        for (let i = 1; i < parts.length; i++) {
+          const subparts = parts[i].split('/');
+          const vIdx = parseInt(subparts[0], 10) - 1;
+          const vtIdx = subparts[1] ? parseInt(subparts[1], 10) - 1 : -1;
+          const vnIdx = subparts[2] ? parseInt(subparts[2], 10) - 1 : -1;
+          faceVerts.push({ vIdx, vtIdx, vnIdx });
+        }
+        
+        const tris = [];
+        if (faceVerts.length === 3) {
+          tris.push(faceVerts[0], faceVerts[1], faceVerts[2]);
+        } else if (faceVerts.length === 4) {
+          tris.push(faceVerts[0], faceVerts[1], faceVerts[2]);
+          tris.push(faceVerts[0], faceVerts[2], faceVerts[3]);
+        }
+        
+        for (const fv of tris) {
+          const key = `${fv.vIdx}_${fv.vtIdx}_${fv.vnIdx}`;
+          if (uniqueVerts[key] !== undefined) {
+            indices.push(uniqueVerts[key]);
+          } else {
+            uniqueVerts[key] = nextIndex;
+            indices.push(nextIndex);
+            
+            const pos = rawPositions[fv.vIdx] || [0,0,0];
+            parsedPositions.push(pos[0], pos[1], pos[2]);
+            
+            const norm = rawNormals[fv.vnIdx] || [0,0,1];
+            parsedNormals.push(norm[0], norm[1], norm[2]);
+            
+            const uv = rawUVs[fv.vtIdx] || [0,0];
+            parsedUVs.push(uv[0], uv[1]);
+            
+            nextIndex++;
+          }
+        }
+      }
+    }
+    
+    const barys = [];
+    for (let i = 0; i < parsedPositions.length / 3; i++) {
+      const b = i % 3;
+      if (b === 0) barys.push(1, 0, 0);
+      else if (b === 1) barys.push(0, 1, 0);
+      else barys.push(0, 0, 1);
+    }
+    
+    return {
+      positions: parsedPositions,
+      normals: parsedNormals,
+      uvs: parsedUVs,
+      barys: barys,
+      indices: indices
+    };
+  }
+
+  createHorizontalCylinder(radius = 1.0, height = 1.0, segments = 32) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    // Length along X from -height/2 to height/2
+    for (let i = 0; i <= segments; i++) {
+      const u = i / segments;
+      // Wrap theta to go around the cylinder (circumference)
+      const theta = u * Math.PI * 2;
+      const cosT = Math.cos(theta);
+      const sinT = Math.sin(theta);
+
+      // Left ring (x = -height/2)
+      positions.push(-height * 0.5, cosT * radius, sinT * radius);
+      normals.push(0, cosT, sinT);
+      uvs.push(0, u);
+      barys.push(i % 3 === 0 ? 1 : 0, i % 3 === 1 ? 1 : 0, i % 3 === 2 ? 1 : 0);
+
+      // Right ring (x = height/2)
+      positions.push(height * 0.5, cosT * radius, sinT * radius);
+      normals.push(0, cosT, sinT);
+      uvs.push(1, u);
+      barys.push((i + 1) % 3 === 0 ? 1 : 0, (i + 1) % 3 === 1 ? 1 : 0, (i + 1) % 3 === 2 ? 1 : 0);
+    }
+
+    // Build faces (2 triangles per segment)
+    for (let i = 0; i < segments; i++) {
+      const idx0 = i * 2;
+      const idx1 = i * 2 + 1;
+      const idx2 = (i + 1) * 2;
+      const idx3 = (i + 1) * 2 + 1;
+
+      // Triangle 1
+      indices.push(idx0, idx1, idx2);
+      // Triangle 2
+      indices.push(idx2, idx1, idx3);
+    }
+
+    return {
+      positions,
+      normals,
+      uvs,
+      barys,
+      indices
+    };
+  }
+
+  createDynamicReelTexture() {
+    const gl = this.gl;
+    if (!gl) return null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 1024;
+    const ctx = canvas.getContext('2d');
+
+    // Fill background with a polished brushed silver/white metallic look
+    const grad = ctx.createLinearGradient(0, 0, 512, 0);
+    grad.addColorStop(0, '#dadada');
+    grad.addColorStop(0.15, '#f5f5f5');
+    grad.addColorStop(0.5, '#eaeaea');
+    grad.addColorStop(0.85, '#f5f5f5');
+    grad.addColorStop(1, '#cccccc');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 1024);
+
+    // Draw vertical luxury gold side rails
+    const goldGrad = ctx.createLinearGradient(0, 0, 512, 0);
+    goldGrad.addColorStop(0, '#D4AF37');
+    goldGrad.addColorStop(0.08, '#FFFDD0');
+    goldGrad.addColorStop(0.12, '#AA7C11');
+    ctx.fillStyle = goldGrad;
+    ctx.fillRect(0, 0, 48, 1024); // Left Rail
+
+    const goldGradR = ctx.createLinearGradient(0, 0, 512, 0);
+    goldGradR.addColorStop(0.88, '#AA7C11');
+    goldGradR.addColorStop(0.92, '#FFFDD0');
+    goldGradR.addColorStop(1, '#D4AF37');
+    ctx.fillStyle = goldGradR;
+    ctx.fillRect(512 - 48, 0, 48, 1024); // Right Rail
+
+    const numSymbols = 5;
+    const segHeight = 1024 / numSymbols;
+
+    const symbols = [
+      { emoji: '🍒', label: 'CHERRY' },
+      { emoji: '🍩', label: 'DONUT' },
+      { emoji: '💎', label: 'GEM' },
+      { emoji: '🟨', label: 'GOLD' },
+      { emoji: '🧬', label: 'TREFOIL' }
+    ];
+
+    for (let i = 0; i < numSymbols; i++) {
+      const yOffset = i * segHeight;
+
+      // Draw horizontal separator tracks with beautiful 3D groove bevel
+      ctx.strokeStyle = '#555555';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(48, yOffset);
+      ctx.lineTo(512 - 48, yOffset);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(48, yOffset + 3);
+      ctx.lineTo(512 - 48, yOffset + 3);
+      ctx.stroke();
+
+      // Curved shadow to make each field look like a real three-dimensional cylinder slot section
+      const cellGrad = ctx.createLinearGradient(0, yOffset, 0, yOffset + segHeight);
+      cellGrad.addColorStop(0, 'rgba(0, 0, 0, 0.2)');
+      cellGrad.addColorStop(0.18, 'rgba(0, 0, 0, 0.0)');
+      cellGrad.addColorStop(0.82, 'rgba(0, 0, 0, 0.0)');
+      cellGrad.addColorStop(1, 'rgba(0, 0, 0, 0.24)');
+      ctx.fillStyle = cellGrad;
+      ctx.fillRect(48, yOffset, 512 - 96, segHeight);
+
+      // Save context to apply counter-squish transformation (pre-stretching)
+      ctx.save();
+      // Move origin to the center of the square cell (so stretching is symmetric around center)
+      ctx.translate(256, yOffset + segHeight / 2);
+      
+      // Counter-squish: Scale context horizontally by 2.5 to counteract the cylinder's wrapping stretch
+      ctx.scale(2.5, 1.0);
+
+      // Draw beautiful luxury circular backing badge behind the emoji
+      ctx.beginPath();
+      ctx.arc(0, -12, 45, 0, Math.PI * 2);
+      const badgeGrad = ctx.createRadialGradient(0, -12, 5, 0, -12, 45);
+      badgeGrad.addColorStop(0, '#ffffff');
+      badgeGrad.addColorStop(0.85, '#f0f0f0');
+      badgeGrad.addColorStop(1, '#d0d0d0');
+      ctx.fillStyle = badgeGrad;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 3;
+      ctx.fill();
+
+      // Outer gold ring of the backing badge
+      ctx.strokeStyle = '#D4AF37';
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.stroke();
+
+      // Draw the Emoji inside the badge
+      ctx.font = '52px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(symbols[i].emoji, 0, -12);
+
+      // Draw Label Text below the backing badge
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillStyle = '#222222';
+      ctx.fillText(symbols[i].label, 0, 48);
+
+      ctx.restore();
+    }
+
+    // Create WebGL texture from canvas
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+    return tex;
+  }
+
+  async loadSlotReelMesh() {
+    if (this.slotReelMeshLoaded) return;
+    try {
+      const res = await fetch('/assets/textures/slot/reel.obj');
+      if (!res.ok) throw new Error("Fetch failed");
+      const text = await res.text();
+      const rawData = this.parseOBJ(text);
+      this.slotReelMesh = this.buildMeshBuffer(rawData);
+      this.slotReelMeshLoaded = true;
+      this.log("🎰 Slot Machine Reel OBJ model loaded successfully!", "success");
+    } catch(e) {
+      console.warn("Failed to load slot reel OBJ model, using high-quality procedural cylinder:", e);
+    }
+  }
+
   initSlotMachineDemo() {
+    // Dynamically generate the beautiful custom reel symbols texture
+    if (this.textureCatalog) {
+      this.textureCatalog.slotReel = this.createDynamicReelTexture();
+    }
+
+    if (!this.slotReelMesh) {
+      try {
+        const cylData = this.createHorizontalCylinder(1.0, 1.0, 32);
+        cylData.name = "HorizontalCylinderReel";
+        this.slotReelMesh = this.buildMeshBuffer(cylData);
+      } catch (err) {
+        console.warn("Failed to generate fallback horizontal cylinder:", err);
+      }
+    }
+    this.loadSlotReelMesh();
+
     if (!this.slotMachine) {
       this.slotMachine = {
         credits: 1000,
@@ -13039,6 +13307,61 @@ else if (typeof define === 'function' && define['amd'])
     if (!sm.initializedUI) {
       sm.initializedUI = true;
 
+      // Event isolation on slotMachine overlay to prevent touch/wheel leaking to 3D canvas
+      const slotOverlay = document.getElementById('slot-machine-overlay');
+      if (slotOverlay && !slotOverlay._eventsIsolated) {
+        slotOverlay._eventsIsolated = true;
+        const stopProp = (e) => {
+          e.stopPropagation();
+        };
+        ['wheel', 'touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(evt => {
+          slotOverlay.addEventListener(evt, stopProp, { passive: true });
+        });
+        ['mousedown', 'mousemove', 'mouseup'].forEach(evt => {
+          slotOverlay.addEventListener(evt, stopProp);
+        });
+      }
+
+      // Close button (minimizes panel on mobile and desktop)
+      const btnClose = document.getElementById('btn-slot-close');
+      if (btnClose) {
+        btnClose.addEventListener('click', () => {
+          this.hideSlotMobileUI();
+        });
+      }
+
+      // Mobile FAB to reopen controls
+      const btnSlotFab = document.getElementById('slot-mobile-fab');
+      if (btnSlotFab) {
+        btnSlotFab.addEventListener('click', () => {
+          this.showSlotMobileUI();
+        });
+      }
+
+      // Mobile Quick Spin FAB
+      const btnSlotMobileSpin = document.getElementById('slot-mobile-spin-fab');
+      if (btnSlotMobileSpin) {
+        btnSlotMobileSpin.addEventListener('click', () => {
+          this.pullSlotLever();
+        });
+      }
+
+      // Banner Toggle Button
+      const btnSlotBannerToggle = document.getElementById('slot-banner-toggle-btn');
+      if (btnSlotBannerToggle) {
+        btnSlotBannerToggle.addEventListener('click', () => {
+          this.toggleSlotMobileUI();
+        });
+      }
+
+      // Desktop Show Button
+      const btnSlotDesktop = document.getElementById('slot-desktop-show-btn');
+      if (btnSlotDesktop) {
+        btnSlotDesktop.addEventListener('click', () => {
+          this.showSlotMobileUI();
+        });
+      }
+
       // Bet select buttons
       const betButtons = document.querySelectorAll('.slot-bet-btn');
       betButtons.forEach(btn => {
@@ -13047,6 +13370,7 @@ else if (typeof define === 'function' && define['amd'])
           betButtons.forEach(b => b.classList.remove('active'));
           e.target.classList.add('active');
           sm.bet = parseInt(e.target.getAttribute('data-bet'), 10);
+          this.updateSlotMobileSpinButtonText();
           if (this.synth) this.synth.play('ammo');
           this.log(`Bet size adjusted to: ${sm.bet} Credits`, "cpp");
         });
@@ -13070,6 +13394,9 @@ else if (typeof define === 'function' && define['amd'])
           autoBtn.style.borderColor = sm.autoSpin ? "#f59e0b" : "rgba(255, 255, 255, 0.08)";
           if (this.synth) this.synth.play('ammo');
           this.log(`Auto Spin set to: ${sm.autoSpin ? "ON" : "OFF"}`, "cpp");
+          if (sm.autoSpin && (this.isMobileDevice() || window.innerWidth <= 768)) {
+            this.hideSlotMobileUI();
+          }
         });
       }
 
@@ -13083,11 +13410,18 @@ else if (typeof define === 'function' && define['amd'])
           if (this.synth) this.synth.play('health_mega');
           this.log(`Purchased 500 Credits! Total: ${sm.credits}`, "success");
           
-          // Disable spin button safeguard
+          // Enable spin buttons
           const btnSpin = document.getElementById('btn-slot-spin');
           if (btnSpin) btnSpin.removeAttribute('disabled');
+          const mobileSpin = document.getElementById('slot-mobile-spin-fab');
+          if (mobileSpin) {
+            mobileSpin.removeAttribute('disabled');
+            mobileSpin.classList.remove('disabled');
+          }
         });
       }
+
+      this.updateSlotMobileSpinButtonText();
     }
   }
 
@@ -13100,7 +13434,15 @@ else if (typeof define === 'function' && define['amd'])
     if (sm.credits < sm.bet) {
       this.log("⚠️ Insufficient credits! Click 'Add +500 Credits' to buy-in.", "error");
       if (this.synth) this.synth.play('health_small');
+      if (this.isMobileDevice() || window.innerWidth <= 768) {
+        this.showSlotMobileUI();
+      }
       return;
+    }
+
+    // On mobile devices, auto-hide the popup immediately after clicking spin so player sees the 3D reels & physics
+    if (this.isMobileDevice() || window.innerWidth <= 768) {
+      this.hideSlotMobileUI();
     }
 
     // Deduct credits
@@ -13119,32 +13461,82 @@ else if (typeof define === 'function' && define['amd'])
 
     if (this.synth) this.synth.play('powerup'); // whoosh start sound
 
-    // Choose winning destination symbol states
+    // Choose winning destination symbol states according to a certified, mathematically exact 95.0% RTP profile
     sm.stats.spins++;
     sm.stats.totalBet += sm.bet;
     sm.wasSpinActive = true;
 
-    // Random distribution matching standard slot ratios
-    const randSymbol = () => {
-      const roll = Math.random();
-      if (roll < 0.06) return 'trefoil';   // 6% Wild Jackpot
-      if (roll < 0.16) return 'cube';      // 10% Gold
-      if (roll < 0.32) return 'gem';       // 16% Gem
-      if (roll < 0.55) return 'torus';     // 23% Donut
-      return 'cherry';                     // 45% Cherry
-    };
+    // Update banner with real-time spin status
+    const statsEl = document.getElementById('slot-stats-summary');
+    if (statsEl) {
+      statsEl.textContent = `Spinning #${sm.stats.spins}... | Bet: ${sm.bet} Cr | Credits: ${sm.credits}`;
+    }
+
+    // Calibrated professional 95.0% RTP selector
+    // Triples/Jackpots contribute 72.0% RTP, Pairs contribute 23.0% RTP
+    const roll = Math.random();
+    let r1, r2, r3;
+
+    if (roll < 0.0015) {
+      // Triple Trefoil (100x Bet)
+      r1 = r2 = r3 = 'trefoil';
+    } else if (roll < 0.0045) {
+      // Triple Gold (50x Bet)
+      r1 = r2 = r3 = 'cube';
+    } else if (roll < 0.0095) {
+      // Triple Gem (30x Bet)
+      r1 = r2 = r3 = 'gem';
+    } else if (roll < 0.0195) {
+      // Triple Donut (15x Bet)
+      r1 = r2 = r3 = 'torus';
+    } else if (roll < 0.0345) {
+      // Triple Cherry (8x Bet)
+      r1 = r2 = r3 = 'cherry';
+    } else if (roll < 0.111167) {
+      // Pair Match (3x Bet)
+      const symbols = ['cherry', 'torus', 'gem', 'cube', 'trefoil'];
+      const pairSym = symbols[Math.floor(Math.random() * symbols.length)];
+      
+      // Select non-matching symbol for the third reel to prevent unwanted triples
+      const otherSymbols = symbols.filter(s => s !== pairSym);
+      const otherSym = otherSymbols[Math.floor(Math.random() * otherSymbols.length)];
+      
+      const pairType = Math.floor(Math.random() * 3);
+      if (pairType === 0) {
+        r1 = r2 = pairSym; r3 = otherSym;
+      } else if (pairType === 1) {
+        r2 = r3 = pairSym; r1 = otherSym;
+      } else {
+        r1 = r3 = pairSym; r2 = otherSym;
+      }
+    } else {
+      // Loss (No matches, 0x Bet)
+      const symbols = ['cherry', 'torus', 'gem', 'cube', 'trefoil'];
+      // Shuffle list and choose first 3 elements to guarantee 3 distinct symbols
+      const shuffled = [...symbols].sort(() => Math.random() - 0.5);
+      r1 = shuffled[0];
+      r2 = shuffled[1];
+      r3 = shuffled[2];
+    }
+
+    const destSymbols = [r1, r2, r3];
 
     // Sequential trigger for stopping
     sm.reels.forEach((reel, idx) => {
       reel.spinning = true;
       reel.speed = 15.0 + idx * 8.0 + Math.random() * 4.0;
       reel.stopTimer = 1.4 + idx * 0.75;
-      reel.destSymbol = randSymbol();
+      reel.destSymbol = destSymbols[idx];
     });
 
     // Disable Spin UI while rolling
     const spinBtn = document.getElementById('btn-slot-spin');
     if (spinBtn) spinBtn.setAttribute('disabled', 'true');
+    const mobileSpinBtn = document.getElementById('slot-mobile-spin-fab');
+    if (mobileSpinBtn) {
+      mobileSpinBtn.setAttribute('disabled', 'true');
+      mobileSpinBtn.classList.add('disabled');
+    }
 
     this.log(`Spin #${sm.stats.spins} Triggered! Bet: ${sm.bet} Credits | Remaining: ${sm.credits}`, "cpp");
   }
@@ -13202,13 +13594,23 @@ else if (typeof define === 'function' && define['amd'])
       this.log(`💀 Spin Outcome: Missed.`, "cpp");
     }
 
-    // Re-enable Spin button
+    // Re-enable Spin buttons
     const spinBtn = document.getElementById('btn-slot-spin');
+    const mobileSpinBtn = document.getElementById('slot-mobile-spin-fab');
     if (spinBtn) {
       if (sm.credits >= sm.bet) {
         spinBtn.removeAttribute('disabled');
       } else {
         spinBtn.setAttribute('disabled', 'true');
+      }
+    }
+    if (mobileSpinBtn) {
+      if (sm.credits >= sm.bet) {
+        mobileSpinBtn.removeAttribute('disabled');
+        mobileSpinBtn.classList.remove('disabled');
+      } else {
+        mobileSpinBtn.setAttribute('disabled', 'true');
+        mobileSpinBtn.classList.add('disabled');
       }
     }
 
@@ -14107,6 +14509,80 @@ else if (typeof define === 'function' && define['amd'])
         clearTimeout(this.plinkoState.restoreTimeout);
         this.plinkoState.restoreTimeout = null;
       }
+    }
+  }
+
+  hideSlotMobileUI() {
+    const isMobile = this.isMobileDevice() || window.innerWidth <= 768;
+    const slotOverlayEl = document.getElementById('slot-machine-overlay');
+    const slotMobileBarEl = document.getElementById('slot-mobile-bar');
+    const slotDesktopBtn = document.getElementById('slot-desktop-show-btn');
+    const slotBanner = document.getElementById('slot-machine-banner');
+
+    if (slotOverlayEl) {
+      slotOverlayEl.classList.add('mobile-minimized');
+    }
+
+    const isSlotMachine = this.state.demoScene && (this.state.demoScene.includes('09_slot_machine') || this.state.demoScene.includes('slot_machine'));
+    if (isSlotMachine) {
+      if (isMobile) {
+        if (slotMobileBarEl) slotMobileBarEl.style.display = 'flex';
+        if (slotDesktopBtn) slotDesktopBtn.style.display = 'none';
+      } else {
+        if (slotDesktopBtn) slotDesktopBtn.style.display = 'flex';
+        if (slotMobileBarEl) slotMobileBarEl.style.display = 'none';
+      }
+      if (slotBanner) {
+        slotBanner.classList.add('panel-closed');
+      }
+    }
+
+    if (this.slotMachine) {
+      this.slotMachine.autoHiddenOnMobile = true;
+    }
+  }
+
+  showSlotMobileUI() {
+    const slotOverlayEl = document.getElementById('slot-machine-overlay');
+    const slotMobileBarEl = document.getElementById('slot-mobile-bar');
+    const slotDesktopBtn = document.getElementById('slot-desktop-show-btn');
+    const slotBanner = document.getElementById('slot-machine-banner');
+
+    if (slotOverlayEl) {
+      slotOverlayEl.style.display = 'flex';
+      slotOverlayEl.classList.remove('mobile-minimized');
+    }
+
+    if (slotMobileBarEl) {
+      slotMobileBarEl.style.display = 'none';
+    }
+    if (slotDesktopBtn) {
+      slotDesktopBtn.style.display = 'none';
+    }
+    if (slotBanner) {
+      slotBanner.classList.remove('panel-closed');
+    }
+
+    if (this.slotMachine) {
+      this.slotMachine.autoHiddenOnMobile = false;
+    }
+  }
+
+  toggleSlotMobileUI() {
+    const slotOverlayEl = document.getElementById('slot-machine-overlay');
+    if (!slotOverlayEl) return;
+    if (slotOverlayEl.classList.contains('mobile-minimized') || slotOverlayEl.style.display === 'none') {
+      this.showSlotMobileUI();
+    } else {
+      this.hideSlotMobileUI();
+    }
+  }
+
+  updateSlotMobileSpinButtonText() {
+    const sm = this.slotMachine;
+    const mobileSpinBtn = document.getElementById('slot-mobile-spin-fab');
+    if (mobileSpinBtn && sm) {
+      mobileSpinBtn.innerHTML = `<span>🎰 SPIN (${sm.bet} Cr)</span>`;
     }
   }
 
@@ -15048,6 +15524,7 @@ else if (typeof define === 'function' && define['amd'])
 
     this.setupRouletteUI();
     this.updateRouletteUI();
+    this.updateFPSOverlays();
 
     // Spawn/seed Web Worker
     if (!this.physicsWorker) {
@@ -17892,6 +18369,8 @@ else if (typeof define === 'function' && define['amd'])
     const rs = this.rouletteState;
     if (!rs) return;
 
+    this.setupDefaultSceneLighting(progInfo);
+
     // 1. Force completely opaque rendering pass: disable alpha blending, enable depth writing, and disable back-face culling to prevent see-through artifacts due to winding mismatch.
     gl.disable(gl.BLEND);
     gl.enable(gl.DEPTH_TEST);
@@ -19482,6 +19961,8 @@ else if (typeof define === 'function' && define['amd'])
     const bs = this.bingoState;
     if (!bs) return;
 
+    this.setupDefaultSceneLighting(progInfo);
+
     gl.disable(gl.BLEND);
     gl.enable(gl.DEPTH_TEST);
     gl.depthMask(true);
@@ -20708,6 +21189,8 @@ else if (typeof define === 'function' && define['amd'])
     const ps = this.pongState;
     if (!ps) return;
 
+    this.setupDefaultSceneLighting(progInfo);
+
     const cubeMesh = this.meshBuffers[1];
     const sphereMesh = this.meshBuffers[0];
     if (!cubeMesh || !sphereMesh) return;
@@ -20852,6 +21335,8 @@ else if (typeof define === 'function' && define['amd'])
     const gl = this.gl;
     const ps = this.plinkoState;
     if (!ps) return;
+
+    this.setupDefaultSceneLighting(progInfo);
 
     const cubeMesh = this.meshBuffers[1];
     const sphereMesh = this.meshBuffers[0];
@@ -21135,6 +21620,8 @@ else if (typeof define === 'function' && define['amd'])
     const ps = this.puzzleState;
     if (!ps) return;
 
+    this.setupDefaultSceneLighting(progInfo);
+
     const cubeMesh = this.meshBuffers[1];
     const quadMesh = this.meshBuffers[5];
     if (!cubeMesh || !quadMesh) return;
@@ -21279,6 +21766,8 @@ else if (typeof define === 'function' && define['amd'])
     const sm = this.slotMachine;
     if (!sm) return;
 
+    this.setupDefaultSceneLighting(progInfo);
+
     const cubeMesh = this.meshBuffers[1];
     const sphereMesh = this.meshBuffers[0];
     const torusMesh = this.meshBuffers[4];
@@ -21329,26 +21818,45 @@ else if (typeof define === 'function' && define['amd'])
       gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     };
 
-    // 1. Draw Slot Machine Cabinet Body
-    // Backing chassis base
-    drawCube(0, 0.2, -1.0, 4.4, 3.2, 0.6, [0.08, 0.1, 0.14], 0.18, 0.9, 0, 0.25); // Sleek gold-accent metallic backplate
-    // Gold glowing frame accents on top
-    drawCube(0, 1.8, -0.7, 4.4, 0.12, 0.3, [0.95, 0.64, 0.08], 0.05, 0.98, 12); // Yellow/gold glowing sign plate
+    // 1. Draw Slot Machine Cabinet Body (Adapted deeper design for large wheels)
+    // Deeper backing chassis cabinet
+    drawCube(0, 0.2, -0.7, 4.4, 3.2, 1.2, [0.08, 0.1, 0.14], 0.18, 0.9, 0, 0.25); // Sleek metallic main chassis
+    // Gold glowing frame accents on top (moved forward flush with bezel)
+    drawCube(0, 1.8, -0.15, 4.4, 0.12, 0.3, [0.95, 0.64, 0.08], 0.05, 0.98, 12); // Yellow/gold glowing sign plate
     // Cabinet bottom pedestal base
     drawCube(0, -1.3, -0.4, 4.4, 1.4, 1.8, [0.05, 0.06, 0.09], 0.2, 0.8, 0, 0.1);
 
-    // 2. Recessed slots backing displays & Glowing Separators
-    // Draw 3 dark display screen backings
+    // 2. High-Fidelity Front Bezel Aperture Plates & Backing Display Screens
+    // Screen backings sitting deep inside cabinet at Z = -0.95
     const colX = [-1.2, 0, 1.2];
     colX.forEach(x => {
-      drawCube(x, 0.5, -0.65, 1.0, 1.5, 0.1, [0.01, 0.02, 0.03], 0.95, 0.0, 0); // Flat non-reflective display backgrounds
+      drawCube(x, 0.5, -0.95, 1.0, 1.5, 0.1, [0.01, 0.02, 0.03], 0.95, 0.0, 0); // Flat non-reflective display backgrounds
     });
     
-    // Draw neon glowing borders between the 3 display slots
-    drawCube(-1.75, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12); // Emissive borders
-    drawCube(-0.6, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12);
-    drawCube(0.6, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12);
-    drawCube(1.75, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12);
+    // Front Titanium Bezel casing plate system forming three real, physical 3D window slits (apertures) at Z = -0.12
+    const bezelColor = [0.12, 0.14, 0.16]; // Titanium Charcoal
+    const bezelRough = 0.12;
+    const bezelMetal = 0.92;
+
+    // Top and Bottom Horizontal border bars
+    drawCube(0, 1.35, -0.12, 4.4, 0.2, 0.1, bezelColor, bezelRough, bezelMetal);
+    drawCube(0, -0.35, -0.12, 4.4, 0.2, 0.1, bezelColor, bezelRough, bezelMetal);
+
+    // Left and Right edge bars
+    drawCube(-2.1, 0.5, -0.12, 0.2, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+    drawCube(2.1, 0.5, -0.12, 0.2, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+
+    // Vertical Divider plates creating the 3 windows (each window is 0.80 wide, matching the 0.8168 reels perfectly)
+    drawCube(-1.8, 0.5, -0.12, 0.4, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+    drawCube(-0.6, 0.5, -0.12, 0.4, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+    drawCube(0.6, 0.5, -0.12, 0.4, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+    drawCube(1.8, 0.5, -0.12, 0.4, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+
+    // Premium glowing divider column indicators mounted on top of the bezel
+    drawCube(-0.6, 0.5, -0.07, 0.08, 1.5, 0.03, [0.95, 0.64, 0.08], 0.1, 0.98, 12);
+    drawCube(0.6, 0.5, -0.07, 0.08, 1.5, 0.03, [0.95, 0.64, 0.08], 0.1, 0.98, 12);
+    drawCube(-1.8, 0.5, -0.07, 0.08, 1.5, 0.03, [0.95, 0.64, 0.08], 0.1, 0.98, 12);
+    drawCube(1.8, 0.5, -0.07, 0.08, 1.5, 0.03, [0.95, 0.64, 0.08], 0.1, 0.98, 12);
 
     // 3. Draw the Right-Side Lever Handle Mechanics
     const lx = 2.4;
@@ -21365,7 +21873,6 @@ else if (typeof define === 'function' && define['amd'])
     const sEndZ = lz + sinTilt * sLen;
     
     // Draw the stick as multiple points or a rotated segment
-    // To draw a simple tilted cylinder/stick, we can interpolate 3 spheres
     for (let j = 1; j <= 5; j++) {
       const t = j / 5;
       const px = lx;
@@ -21382,65 +21889,73 @@ else if (typeof define === 'function' && define['amd'])
     drawCube(1.1, -0.6, 0.4, 0.08, 0.3, 0.8, [0.12, 0.14, 0.16], 0.15, 0.95); // right lip
     drawCube(0, -0.6, 0.8, 2.2, 0.3, 0.08, [0.12, 0.14, 0.16], 0.15, 0.95); // front lip
 
-    // 5. Render Active 3D Reel Symbols in Front of Screens
+    // 5. Render 3D Cylindrical Reel Wheels with Slot Fields Texture
     sm.reels.forEach((reel, colIdx) => {
       const rx = colX[colIdx];
       const ry = 0.5;
-      const rz = -0.3; // Floating in front of screen
 
-      const activeSymbol = reel.currentSymbol;
-      const props = sm.symbolProps[activeSymbol];
-      if (!props) return;
+      const reelMesh = this.slotReelMesh;
+      if (reelMesh) {
+        gl.bindVertexArray(reelMesh.vao);
 
-      const symMesh = this.meshBuffers[props.meshId];
-      if (symMesh) {
-        gl.bindVertexArray(symMesh.vao);
+        // Continuous physical angle (spinning vertically around X-axis)
+        const angleX = -reel.angle;
+        const cosX = Math.cos(angleX);
+        const sinX = Math.sin(angleX);
 
-        // Spin or idle rot
-        let angleY = timestamp * 0.001 * (reel.spinning ? 8.5 : 1.2) + colIdx;
-        let angleX = reel.spinning ? (reel.angle * 4.0) : 0; // rapid vertical flip when rolling!
+        // Cylinder scale matching screens perfectly & making fields perfectly square!
+        // Radius scaleY = scaleZ = 0.65 (making wheels larger and highly visible!)
+        // Width scaleX = 1.2566 * scaleY = 0.8168 (making fields perfect squares!)
+        const scaleX = 0.8168;
+        const scaleY = 0.65;
+        const scaleZ = 0.65;
 
-        const cy = Math.cos(angleY), sy = Math.sin(angleY);
-        const cx = Math.cos(angleX), sx = Math.sin(angleX);
+        // Recessed slot position centered in depth inside bezel apertures
+        const rzCoord = -0.68;
 
-        // Apply double model rotation matrices manually inside modelMatrix
-        // R_x * R_y
-        this.modelMatrix[0] = cy * 0.58;
-        this.modelMatrix[1] = sx * sy * 0.58;
-        this.modelMatrix[2] = -cx * sy * 0.58;
+        // Construct model matrix rotating around X-axis
+        this.modelMatrix[0] = scaleX;
+        this.modelMatrix[1] = 0;
+        this.modelMatrix[2] = 0;
         this.modelMatrix[3] = 0;
 
         this.modelMatrix[4] = 0;
-        this.modelMatrix[5] = cx * 0.58;
-        this.modelMatrix[6] = sx * 0.58;
+        this.modelMatrix[5] = cosX * scaleY;
+        this.modelMatrix[6] = sinX * scaleZ;
         this.modelMatrix[7] = 0;
 
-        this.modelMatrix[8] = sy * 0.58;
-        this.modelMatrix[9] = -sx * cy * 0.58;
-        this.modelMatrix[10] = cx * cy * 0.58;
+        this.modelMatrix[8] = 0;
+        this.modelMatrix[9] = -sinX * scaleY;
+        this.modelMatrix[10] = cosX * scaleZ;
         this.modelMatrix[11] = 0;
 
         this.modelMatrix[12] = rx;
         this.modelMatrix[13] = ry;
-        this.modelMatrix[14] = rz;
+        this.modelMatrix[14] = rzCoord;
         this.modelMatrix[15] = 1;
 
         Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
 
         gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, props.color);
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, props.meshId === 1 ? 0.05 : 0.2); // extra glossy gold
-        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, props.meshId === 1 ? 0.98 : 0.85);
-        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, props.matType);
-        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.2);
-        if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
-        if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
-        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, [1.0, 1.0, 1.0]); // White base for texture
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.25);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.1);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // standard PBR
+        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.1);
 
-        gl.drawElements(gl.TRIANGLES, symMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        // Bind the Slot Reel texture!
+        const slotReelTex = this.textureCatalog ? this.textureCatalog.slotReel : null;
+        this.bindMaterialTextures(progInfo, slotReelTex);
+
+        gl.drawElements(gl.TRIANGLES, reelMesh.indexCount, gl.UNSIGNED_SHORT, 0);
       }
     });
+
+    // Reset texture mapping uniforms to avoid spilling into coins
+    if (progInfo.uUseTexMaps) gl.uniform1i(progInfo.uUseTexMaps, 0);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, null);
 
     // 6. Render Spinning Gold Coin Particles falling in 3D Tray Space!
     sm.coins.forEach(coin => {
@@ -22233,50 +22748,6 @@ else if (typeof define === 'function' && define['amd'])
       entities = [
         { id: 0, name: "Desktop_Simulated_Window", type: "OS Frame Buffer Canvas", materialKey: "obsidian", pos: [0, 0, 0], scale: [2, 1.5, 1], roughness: 0.9, metallic: 0.0, color: [0.1, 0.12, 0.15], collider: "Static Plane Bounds", layer: "Layer_Desktop", badge: "SDL2 Desktop", trigger: false }
       ];
-    } else if (ds.includes('08_all_materials') || ds.includes('materials_presentation')) {
-      entities = [
-        { id: 1, name: "Showroom_Obsidian_Floor", type: "Static Ground Base", materialKey: "obsidian", pos: [0.0, -0.4, 0.0], scale: [36.0, 0.4, 36.0], roughness: 0.20, metallic: 0.85, color: [0.08, 0.09, 0.12], collider: "AABB Static", layer: "Layer_Ground", badge: "Basalt Obsidian", trigger: false }
-      ];
-      const matKeys = Object.keys(FILAMENT_MATERIALS_CATALOG);
-      const totalMats = matKeys.length;
-      for (let i = 0; i < totalMats; i++) {
-        const key = matKeys[i];
-        const mat = FILAMENT_MATERIALS_CATALOG[key];
-        const pos = this.getShowroomPedestalPos(i, totalMats, this.state.showroomLayout);
-        const activeMeshName = ["Sphere (GGX UV)", "Cube (Box UV)", "C++ Peg Pillar", "Trefoil Knot Model", "High-Poly Torus", "Procedural Quad Canvas", "Sleek Ring", "Convex Disk"][this.state.showroomMesh || 0] || "Mesh";
-        
-        entities.push({
-          id: 300 + i * 2,
-          name: `Pedestal_SL_${i}_${key.toUpperCase()}`,
-          type: "Slate Alloy Pedestal Mount",
-          materialKey: "metal",
-          pos: [pos[0], 0.35, pos[2]],
-          scale: [0.95, 0.70, 0.95],
-          roughness: 0.35,
-          metallic: 0.90,
-          color: [0.14, 0.16, 0.20],
-          collider: "AABB Pedestal",
-          layer: "Layer_Static",
-          badge: "Pedestal",
-          trigger: false
-        });
-
-        entities.push({
-          id: 300 + i * 2 + 1,
-          name: `PBR_Showcase_${key.toUpperCase()} (${activeMeshName})`,
-          type: `PBR Shader [${mat.name || key}]`,
-          materialKey: key,
-          pos: [pos[0], 1.45, pos[2]],
-          scale: [0.62, 0.62, 0.62],
-          roughness: mat.roughness,
-          metallic: mat.metallic,
-          color: mat.color || [0.5, 0.5, 0.5],
-          collider: "Visual Specular Sphere",
-          layer: "Layer_Material_Showcase",
-          badge: key.toUpperCase(),
-          trigger: false
-        });
-      }
     } else if (ds.includes('09_slot_machine')) {
       entities = [
         { id: 0, name: "Slot_Machine_Cabinet_Chassis", type: "Heavy Metal Housing", materialKey: "obsidian", pos: [0, 0.2, -1.0], scale: [4.4, 3.2, 0.6], roughness: 0.18, metallic: 0.9, color: [0.08, 0.1, 0.14], collider: "Chassis Bounding Box", layer: "Layer_Interactive", badge: "Cabinet Chassis", trigger: false },
@@ -23020,8 +23491,25 @@ else if (typeof define === 'function' && define['amd'])
 
   updateMobileActionButtonsVisibility() {
     const ds = this.state.demoScene || '';
-    const isFPS = ds.includes('07_fps') || this.state.cameraMode === 3;
+    const isMoba = Boolean(ds && ds.includes('15_moba'));
+    const isRoulette = Boolean(ds && (ds.includes('12_roulette') || ds.includes('09_roulette')));
+    const isFPS = (ds.includes('07_fps') || this.state.cameraMode === 3) && !isMoba && !isRoulette;
     const isPong = ds.includes('14_pong');
+
+    const joyLeftContainer = document.getElementById('joystick-left-container');
+    const overlay = document.getElementById('mobile-touch-overlay');
+    if (isMoba || isRoulette) {
+      if (joyLeftContainer) joyLeftContainer.style.display = 'none';
+      if (overlay) overlay.classList.add('hidden');
+      if (this.joystickState) {
+        this.joystickState.active = false;
+        this.joystickState.touchId = null;
+        this.joystickState.dirX = 0;
+        this.joystickState.dirY = 0;
+      }
+    } else {
+      if (joyLeftContainer) joyLeftContainer.style.display = '';
+    }
 
     const btnUp = document.getElementById('btn-touch-up');
     const btnDown = document.getElementById('btn-touch-down');
@@ -23735,10 +24223,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const aspect = width / (height || 1);
     Mat4.perspective(this.projMatrix, (45 * Math.PI) / 180, aspect, 0.1, 150.0);
 
-    const isShowroomDemo = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
-    const isFpsMode = (this.state.cameraMode === 3 || (this.state.cameraMode === 1 && !isShowroomDemo) || this.state.demoScene.includes('07_fps')) && !isShowroomDemo;
-    const isCharacterDemo = (this.state.demoScene.includes('06_glb') || this.state.demoScene === 'character') && !isFpsMode && !isShowroomDemo;
-    const isFpsDemo = (this.state.demoScene.includes('07_fps') || isFpsMode) && !isShowroomDemo;
+    const isFpsMode = this.state.cameraMode === 3 || this.state.cameraMode === 1 || this.state.demoScene.includes('07_fps');
+    const isCharacterDemo = (this.state.demoScene.includes('06_glb') || this.state.demoScene === 'character') && !isFpsMode;
+    const isFpsDemo = this.state.demoScene.includes('07_fps') || isFpsMode;
 
     // Tick Damage System, Elevators, Teleporters, Network Sync, and Projectiles on every frame
     this.updateProjectilesAndDamage(dt, timestamp);
@@ -24855,116 +25342,6 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       }
 
-    } else if (isShowroomDemo) {
-      // -------------------------------------------------------------
-      // DEMO 08: ALL MATERIALS PRESENTATION SHOWROOM (17 Filament PBR Shaders)
-      // -------------------------------------------------------------
-      const sampleMeshIdx = this.state.showroomMesh !== undefined ? this.state.showroomMesh : 0;
-      const sampleMesh = this.meshBuffers[sampleMeshIdx] || this.meshBuffers[0];
-      const cubeMesh = this.meshBuffers[1]; // Cube for pedestals and floor
-
-      // Helper to render an instance with full Filament PBR uniforms
-      const renderInstance = (mesh, px, py, pz, sx, sy, sz, rx, ry, rz, col, rough, metal, matType, noiseScale, clearCoat, anisotropy, bump, texKey) => {
-        if (!mesh) return;
-        gl.bindVertexArray(mesh.vao);
-
-        const cosX = Math.cos(rx), sinX = Math.sin(rx);
-        const cosY = Math.cos(ry), sinY = Math.sin(ry);
-        const cosZ = Math.cos(rz), sinZ = Math.sin(rz);
-
-        // Rotation Euler XYZ * Scale
-        this.instanceMatrix[0] = (cosY * cosZ) * sx;
-        this.instanceMatrix[1] = (cosX * sinZ + sinX * sinY * cosZ) * sx;
-        this.instanceMatrix[2] = (sinX * sinZ - cosX * sinY * cosZ) * sx;
-        this.instanceMatrix[3] = 0;
-
-        this.instanceMatrix[4] = (-cosY * sinZ) * sy;
-        this.instanceMatrix[5] = (cosX * cosZ - sinX * sinY * sinZ) * sy;
-        this.instanceMatrix[6] = (sinX * cosZ + cosX * sinY * sinZ) * sy;
-        this.instanceMatrix[7] = 0;
-
-        this.instanceMatrix[8] = (sinY) * sz;
-        this.instanceMatrix[9] = (-sinX * cosY) * sz;
-        this.instanceMatrix[10] = (cosX * cosY) * sz;
-        this.instanceMatrix[11] = 0;
-
-        this.instanceMatrix[12] = px;
-        this.instanceMatrix[13] = py;
-        this.instanceMatrix[14] = pz;
-        this.instanceMatrix[15] = 1;
-
-        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
-
-        const texObj = (texKey && this.textureCatalog) ? this.textureCatalog[texKey] : null;
-        this.bindMaterialTextures(progInfo, texObj);
-
-        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, col);
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
-        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
-        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
-        if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, noiseScale);
-        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, clearCoat);
-        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, anisotropy);
-        if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, bump);
-
-        gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
-      };
-
-      // 1. Render Showroom Gallery Floor (Polished Dark Obsidian Basalt)
-      renderInstance(cubeMesh, 0.0, -0.4, 0.0, 36.0, 0.4, 36.0, 0, 0, 0, [0.08, 0.09, 0.12], 0.20, 0.85, 0, 1.0, 0.85, 0.0, 0.0);
-
-      // 2. Render all 17 Material Samples on Pedestals
-      const matKeys = Object.keys(FILAMENT_MATERIALS_CATALOG);
-      const totalMats = matKeys.length;
-      const turnTime = timestamp * 0.001 * (this.state.showroomSpeed || 0.75);
-
-      for (let i = 0; i < totalMats; i++) {
-        const key = matKeys[i];
-        const mat = FILAMENT_MATERIALS_CATALOG[key];
-        const pos = this.getShowroomPedestalPos(i, totalMats, this.state.showroomLayout);
-        const isFocused = (this.state.showroomFocusedMatKey === key);
-
-        // Pedestal Lower Base (Brushed Slate Alloy)
-        renderInstance(cubeMesh, pos[0], 0.35, pos[2], 0.95, 0.70, 0.95, 0, 0, 0, [0.14, 0.16, 0.20], 0.35, 0.90, 3, 30.0, 0.25, 0.0, 1.0);
-
-        // Pedestal Top Platform Rim
-        renderInstance(cubeMesh, pos[0], 0.72, pos[2], 1.10, 0.04, 1.10, 0, 0, 0, [0.22, 0.25, 0.32], 0.20, 0.95, 3, 30.0, 0.40, 0.0, 0.5);
-
-        // Active Focus Indicator Ring
-        if (isFocused) {
-          const pulse = 0.5 + 0.5 * Math.sin(timestamp * 0.006);
-          const glowColor = [0.06 * (0.8 + 0.4 * pulse), 0.85 * (0.8 + 0.4 * pulse), 0.95 * (0.8 + 0.4 * pulse)];
-          renderInstance(cubeMesh, pos[0], 0.02, pos[2], 1.35, 0.04, 1.35, 0, 0, 0, glowColor, 0.05, 0.95, 12, 1.0, 0.0, 0.0, 0.0);
-        }
-
-        // Material Sample Mesh with smooth continuous turntable rotation
-        const rotY = this.state.showroomTurntable ? (turnTime + i * 0.42) : 0.0;
-        const rotX = 0.15; // Optimal tilt for GGX specular reflection
-        const matTypeId = mat.matTypeId !== undefined ? mat.matTypeId : 0;
-        const noise = mat.noiseScale || 1.0;
-        const clearCoat = mat.clearCoat || 0.0;
-        const aniso = mat.anisotropy || 0.0;
-        const bump = mat.bumpStrength !== undefined ? mat.bumpStrength : 0.0;
-
-        renderInstance(
-          sampleMesh,
-          pos[0], 1.45, pos[2],
-          0.62, 0.62, 0.62,
-          rotX, rotY, 0.0,
-          mat.color,
-          mat.roughness,
-          mat.metallic,
-          matTypeId,
-          noise,
-          clearCoat,
-          aniso,
-          bump,
-          mat.textureKey
-        );
-      }
-
     } else if (this.state.demoScene === 'matrix' || this.state.demoScene === '02_metallic_roughness_matrix.cpp') {
       // DEMO 2: 5x5 METALLIC VS ROUGHNESS MATRIX (25 Objects rendered in 1 loop, 0 allocs)
       const mesh = this.meshBuffers[this.state.activeMesh];
@@ -25240,10 +25617,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const isShowroomDemo = this.state.demoScene.includes('08_all_materials') || this.state.demoScene.includes('materials_presentation');
-    const isFpsMode = (this.state.cameraMode === 3 || (this.state.cameraMode === 1 && !isShowroomDemo) || this.state.demoScene.includes('07_fps')) && !isShowroomDemo;
-    const isCharacterDemo = (this.state.demoScene.includes('06_glb') || this.state.demoScene === 'character') && !isFpsMode && !isShowroomDemo;
-    const isFpsDemo = (this.state.demoScene.includes('07_fps') || isFpsMode) && !isShowroomDemo;
+    const isFpsMode = this.state.cameraMode === 3 || this.state.cameraMode === 1 || this.state.demoScene.includes('07_fps');
+    const isCharacterDemo = (this.state.demoScene.includes('06_glb') || this.state.demoScene === 'character') && !isFpsMode;
+    const isFpsDemo = this.state.demoScene.includes('07_fps') || isFpsMode;
     const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
     const isMatrix = this.state.demoScene === 'matrix' || this.state.demoScene === '02_metallic_roughness_matrix.cpp';
     const isStudio = this.state.demoScene.includes('03_trefoil') || this.state.demoScene === 'studio';
@@ -25258,22 +25634,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const items = [];
 
     // Collect elements
-    if (isShowroomDemo) {
-      const matKeys = Object.keys(FILAMENT_MATERIALS_CATALOG);
-      const totalMats = matKeys.length;
-      for (let i = 0; i < totalMats; i++) {
-        const key = matKeys[i];
-        const mat = FILAMENT_MATERIALS_CATALOG[key];
-        const pos = this.getShowroomPedestalPos(i, totalMats, this.state.showroomLayout);
-        const isFocused = (this.state.showroomFocusedMatKey === key);
-        const focusStr = isFocused ? " [SELECTED]" : "";
-        items.push({
-          pos: [pos[0], pos[1] + 2.1, pos[2]],
-          text: `SPECIMEN ${i+1}: ${mat.label || key}${focusStr}`,
-          isFocused: isFocused
-        });
-      }
-    } else if (isMatrix) {
+    if (isMatrix) {
       const rows = 5, cols = 5;
       const spacing = 1.35;
       const offsetX = (cols - 1) * spacing * 0.5;
@@ -26460,6 +26821,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (el && txt) {
       txt.textContent = text;
       el.style.opacity = '1';
+      if (this._mobaTooltipTimeout) clearTimeout(this._mobaTooltipTimeout);
+      // Auto fadeout after 3.5 seconds so mobile touch users have time to read the popup
+      this._mobaTooltipTimeout = setTimeout(() => {
+        if (el) el.style.opacity = '0';
+      }, 3500);
     }
     const footerTxt = document.getElementById('moba-footer-description-content');
     if (footerTxt) {
@@ -26470,6 +26836,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   hideMobaHudTooltip() {
     const el = document.getElementById('moba-hud-description');
     if (el) {
+      if (this._mobaTooltipTimeout) clearTimeout(this._mobaTooltipTimeout);
       el.style.opacity = '0';
     }
     const footerTxt = document.getElementById('moba-footer-description-content');
@@ -26524,7 +26891,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     const spellNames = ['Area Blast', 'Blink Dash', 'Barrier Field', 'Hollow Eclipse Ultimate'];
     const manaCosts = [40, 50, 60, 110];
-    const cooldowns = [4.0, 6.5, 8.0, 20.0];
+    const cooldowns = [16.0, 26.0, 32.0, 80.0];
 
     const cost = manaCosts[index];
     if (this.mobaState.heroStats.mp < cost) {
@@ -27175,7 +27542,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     for (let i = 0; i < 6; i++) {
       const item = this.mobaState.inventory[i];
       const slot = document.createElement('div');
-      slot.className = 'w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 border border-slate-700 bg-slate-950/80 rounded flex items-center justify-center text-center text-slate-400 select-none relative cursor-pointer hover:border-red-500 overflow-hidden p-[0.5px] m-[0.5px]';
+      slot.className = 'w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 border border-slate-700 bg-slate-950/80 rounded flex items-center justify-center text-center text-slate-400 select-none relative cursor-pointer hover:border-red-500 overflow-hidden p-[0.5px]';
       if (item) {
         const itemImages = {
           blade: 'aether-gladius.png',
@@ -29059,6 +29426,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     this.mobaUpdateAbilitiesUI();
+    this.updateFPSOverlays();
     this.mobaPlaySound('victory');
     this.showMobaAlert("⚔️ BATTLE HAS BEGUN! DEFEND YOUR LANES & SLAY THE ENEMY TRON!");
   }
