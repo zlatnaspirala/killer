@@ -289,4 +289,8 @@ Built with Google Filament PBR principles and modern C++17.
 
 - **BLACK FLY by Audionautix** (http://audionautix.com): Audio background track used for MOBA battle environments. Licensed under Creative Commons Attribution-ShareAlike 3.0 Unported.
 
+- Music by <a href="https://pixabay.com/users/sonican-38947841/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=379413">Dvir Silverstone</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=379413">Pixabay</a>
+
+- Music by <a href="https://pixabay.com/users/emmraan-24732583/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=280277">Emmraan</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=280277">Pixabay</a>
+
 - **Towers WoW** (https://skfb.ly/6XtCI) by CGArt is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
