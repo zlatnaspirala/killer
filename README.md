@@ -251,6 +251,10 @@ chmod +x build_android.sh
 
 ### Game templates:
 
+#### MOBA - Forest of hollow blood
+<img src="https://github.com/zlatnaspirala/killer/blob/main/screenshots/mobe-forest-of-hollow-blood.png?raw=true" />
+<img src="https://github.com/zlatnaspirala/killer/blob/main/screenshots/mobe-forest-of-hollow-blood-game-play.png?raw=true" />
+
 #### - Killer Roulette
 <img src="https://github.com/zlatnaspirala/killer/blob/main/screenshots/killer-roulette.png?raw=true" />
 
