@@ -1063,17 +1063,17 @@ export class ProceduralForestLayoutEngine {
     // 2. Defensive Towers for all 3 classic lanes (Scaled to enlarged map)
     this.towers = [
       // Top Lane
-      { id: 'tower_red_top', team: 'RED', lane: 'top', pos: [-35.0, 0, 9.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
-      { id: 'tower_black_top', team: 'BLACK', lane: 'top', pos: [-9.0, 0, 35.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
+      { id: 'tower_red_top', team: 'RED', lane: 'top', pos: [-35.0, 0, 9.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
+      { id: 'tower_black_top', team: 'BLACK', lane: 'top', pos: [-9.0, 0, 35.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
       // Mid Lane
-      { id: 'tower_red_mid', team: 'RED', lane: 'mid', pos: [-11.0, 0, -11.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
-      { id: 'tower_black_mid', team: 'BLACK', lane: 'mid', pos: [11.0, 0, 11.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
+      { id: 'tower_red_mid', team: 'RED', lane: 'mid', pos: [-11.0, 0, -11.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
+      { id: 'tower_black_mid', team: 'BLACK', lane: 'mid', pos: [11.0, 0, 11.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
       // Bottom Lane
-      { id: 'tower_red_bot', team: 'RED', lane: 'bot', pos: [9.0, 0, -35.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
-      { id: 'tower_black_bot', team: 'BLACK', lane: 'bot', pos: [35.0, 0, -9.0], hp: 1200, maxHp: 1200, mp: 400, maxMp: 400, damage: 65, range: 15.0, attackTimer: 0 },
+      { id: 'tower_red_bot', team: 'RED', lane: 'bot', pos: [9.0, 0, -35.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
+      { id: 'tower_black_bot', team: 'BLACK', lane: 'bot', pos: [35.0, 0, -9.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
       // Base Guardian Towers
-      { id: 'tower_red_base', team: 'RED', lane: 'base', pos: [-28.0, 0, -28.0], hp: 1500, maxHp: 1500, mp: 600, maxMp: 600, damage: 80, range: 16.0, attackTimer: 0 },
-      { id: 'tower_black_base', team: 'BLACK', lane: 'base', pos: [28.0, 0, 28.0], hp: 1500, maxHp: 1500, mp: 600, maxMp: 600, damage: 80, range: 16.0, attackTimer: 0 }
+      { id: 'tower_red_base', team: 'RED', lane: 'base', pos: [-28.0, 0, -28.0], hp: 3000, maxHp: 3000, mp: 600, maxMp: 600, damage: 160, range: 16.0, attackTimer: 0 },
+      { id: 'tower_black_base', team: 'BLACK', lane: 'base', pos: [28.0, 0, 28.0], hp: 3000, maxHp: 3000, mp: 600, maxMp: 600, damage: 160, range: 16.0, attackTimer: 0 }
     ];
 
     // 3. Generate Procedural Forest Trees

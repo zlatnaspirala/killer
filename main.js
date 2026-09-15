@@ -2831,8 +2831,13 @@ void main() {
             albedo = mix(texAlb.rgb, texAlb.rgb * u_baseColor, 0.35);
         }
         // GLB character material: less metallic reflex, gentle diffuse roughness
-        roughness = clamp(u_roughness, 0.65, 0.95);
-        metallic = clamp(u_metallic, 0.0, 0.04);
+        if (u_clearCoat > 0.05) {
+            roughness = clamp(u_roughness, 0.25, 0.95);
+            metallic = clamp(u_metallic, 0.0, 0.85);
+        } else {
+            roughness = clamp(u_roughness, 0.65, 0.95);
+            metallic = clamp(u_metallic, 0.0, 0.04);
+        }
     }
 
     // -------------------------------------------------------------
@@ -4770,7 +4775,7 @@ class NativeApp {
       DEBUG_RENDER_DATA: false,
       lodPolicy: initialLODPolicy,
       lodTier: detectedTier,
-      demoScene: '14_pong.cpp', // Default to Demo 09 Retro 3D Arcade Pong
+      demoScene: '15_moba.cpp', // Default to MOBA
       activeMesh: 0,
       activeShader: 0, // Default to Full PBR Filament Shader
       fpsCheapMaterial: false,
@@ -12952,9 +12957,19 @@ else if (typeof define === 'function' && define['amd'])
       gl.bindTexture(gl.TEXTURE_2D, activeTex);
       gl.uniform1i(progInfo.uAlbedoMap, 2);
       gl.uniform1i(progInfo.uUseTexMaps, 1);
-      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, Math.max(rough, 0.82));
-      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, Math.min(metal, 0.02));
-      if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
+      
+      const isMobaLobby = this.mobaState && !this.mobaState.playing;
+      if (isMobaLobby) {
+        // Start menu scene: Allow the full richness of textures to pop!
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, Math.max(rough, 0.28));
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, Math.max(metal, 0.45));
+        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.65);
+      } else {
+        // Gameplay scene: Original exact parameters untouched
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, Math.max(rough, 0.82));
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, Math.min(metal, 0.02));
+        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
+      }
       if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 1.0, 1.0]));
     }
 
@@ -23649,6 +23664,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   renderLoop(timestamp) {
+    const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba');
+    if (!isMoba) {
+      if (this.mobaAudioElement && !this.mobaAudioElement.paused) {
+        this.mobaAudioElement.pause();
+      }
+    } else {
+      if (!this._mobaMusicInitialized) {
+        this.initMobaMusic();
+      }
+    }
+
     const dt = Math.min((timestamp - this.lastTime) * 0.001, 0.1);
     this.lastTime = timestamp;
 
@@ -25590,8 +25616,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       players: [],
       lastAttackTime: 0,
       towers: [
-        { id: 'red_tower', team: 'RED', pos: [-7.0, 0, -7.0], hp: 1200, maxHp: 1200 },
-        { id: 'black_tower', team: 'BLACK', pos: [7.0, 0, 7.0], hp: 1200, maxHp: 1200 }
+        { id: 'red_tower', team: 'RED', pos: [-7.0, 0, -7.0], hp: 2400, maxHp: 2400 },
+        { id: 'black_tower', team: 'BLACK', pos: [7.0, 0, 7.0], hp: 2400, maxHp: 2400 }
       ],
       trons: {
         RED: { hp: 2500, maxHp: 2500, pos: [-15.0, 0, -15.0] },
@@ -25599,12 +25625,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       },
       spawnTimer: 0.0,
       lobbyHeroes: [
-        new Hero('Arissa', 6.5, 18, 28, 14, 550, 240, 'Ranged Agility Bowmaster', 'Agility Assassin / Ranger', 'Devastates targets from range with deadly arrow streams and blinking maneuvers.', 0),
-        new Hero('Bot', 5.5, 20, 20, 20, 600, 250, 'Support Android / Tactical Bot', 'Defensive Tank / Support', 'Wields high durability and defensive protocols to shield allies and lock down areas.', 1),
-        new Hero('Erika', 5.0, 15, 16, 30, 450, 500, 'Sustained Magical Sorceress', 'Magical Mage / Support', 'Weaves elemental spell cascades to control territory and support allies from afar.', 2),
-        new Hero('Monster', 4.8, 30, 12, 10, 750, 150, 'Heavy Chaos Bruiser / Colossus', 'Melee Heavy Bruiser', 'Smashes through ground lines with massive brute force, shrugging off incoming damage.', 3),
-        new Hero('Skeletonz', 6.2, 22, 26, 12, 520, 200, 'Nimble Swift Blade / Assassin', 'Melee Swift Gladiator', 'Strikes from the shadows with relentless fury and exceptional mobility.', 4),
-        new Hero('Woman Mobile', 5.8, 18, 25, 15, 580, 220, 'Savage Melee Skirmisher', 'Savage Melee Skirmisher', 'Rips through target defense with rapid consecutive slashes and high-speed dashes.', 5)
+        new Hero('Arissa', 5.2, 18, 28, 14, 550, 240, 'Ranged Agility Bowmaster', 'Agility Assassin / Ranger', 'Devastates targets from range with deadly arrow streams and blinking maneuvers.', 0),
+        new Hero('Bot', 4.4, 20, 20, 20, 600, 250, 'Support Android / Tactical Bot', 'Defensive Tank / Support', 'Wields high durability and defensive protocols to shield allies and lock down areas.', 1),
+        new Hero('Erika', 4.0, 15, 16, 30, 450, 500, 'Sustained Magical Sorceress', 'Magical Mage / Support', 'Weaves elemental spell cascades to control territory and support allies from afar.', 2),
+        new Hero('Monster', 3.8, 30, 12, 10, 750, 150, 'Heavy Chaos Bruiser / Colossus', 'Melee Heavy Bruiser', 'Smashes through ground lines with massive brute force, shrugging off incoming damage.', 3),
+        new Hero('Skeletonz', 5.0, 22, 26, 12, 520, 200, 'Nimble Swift Blade / Assassin', 'Melee Swift Gladiator', 'Strikes from the shadows with relentless fury and exceptional mobility.', 4),
+        new Hero('Woman Mobile', 4.6, 18, 25, 15, 580, 220, 'Savage Melee Skirmisher', 'Savage Melee Skirmisher', 'Rips through target defense with rapid consecutive slashes and high-speed dashes.', 5)
       ],
       clickRipples: [],
       vfxBursts: [],
@@ -26068,8 +26094,125 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const isMobile = window.innerWidth < 640 || this.isMobileDevice();
     this.setMobaMobileView(isMobile ? 'rooms' : 'draft');
 
+    // Bind music toggle buttons
+    const btnMusicLobby = document.getElementById('moba-btn-toggle-music');
+    if (btnMusicLobby) {
+      btnMusicLobby.onclick = (e) => {
+        if (e) e.stopPropagation();
+        this.mobaToggleMusic();
+      };
+    }
+    const btnMusicGame = document.getElementById('moba-game-btn-toggle-music');
+    if (btnMusicGame) {
+      btnMusicGame.onclick = (e) => {
+        if (e) e.stopPropagation();
+        this.mobaToggleMusic();
+      };
+    }
+
     if (this.updateFPSOverlays) {
       this.updateFPSOverlays();
+    }
+  }
+
+  initMobaMusic() {
+    if (this._mobaMusicInitialized) return;
+    this._mobaMusicInitialized = true;
+
+    this.mobaMusicEnabled = true;
+    this.mobaPlaylist = [
+      'assets/audio/rpg/music.mp3',
+      'assets/audio/rpg/wizard-rider.mp3'
+    ];
+    this.mobaCurrentTrackIndex = 0;
+    this.mobaCurrentTrackPlayCount = 0;
+    this.mobaAudioElement = null;
+
+    const startMusicOnInteraction = () => {
+      if (!this.mobaMusicEnabled) return;
+      this.mobaPlayNextTrack();
+      document.removeEventListener('click', startMusicOnInteraction);
+    };
+    document.addEventListener('click', startMusicOnInteraction);
+  }
+
+  mobaPlayNextTrack() {
+    if (!this.mobaMusicEnabled) {
+      if (this.mobaAudioElement) {
+        this.mobaAudioElement.pause();
+      }
+      return;
+    }
+
+    const trackUrl = this.mobaPlaylist[this.mobaCurrentTrackIndex];
+
+    if (!this.mobaAudioElement) {
+      this.mobaAudioElement = new Audio();
+      this.mobaAudioElement.volume = 0.40;
+      
+      this.mobaAudioElement.addEventListener('ended', () => {
+        this.mobaCurrentTrackPlayCount++;
+        if (this.mobaCurrentTrackPlayCount < 3) {
+          this.mobaAudioElement.currentTime = 0;
+          this.mobaAudioElement.play().catch(err => console.log("Music play failed:", err));
+        } else {
+          this.mobaCurrentTrackPlayCount = 0;
+          this.mobaCurrentTrackIndex = (this.mobaCurrentTrackIndex + 1) % this.mobaPlaylist.length;
+          this.mobaPlayNextTrack();
+        }
+      });
+    }
+
+    this.mobaAudioElement.src = trackUrl;
+    this.mobaAudioElement.load();
+    this.mobaAudioElement.play()
+      .then(() => {
+        console.log(`Now playing: ${trackUrl} (Repeat ${this.mobaCurrentTrackPlayCount + 1}/3)`);
+      })
+      .catch(err => {
+        console.log("Audio play deferred or blocked by browser policies:", err);
+      });
+  }
+
+  mobaToggleMusic() {
+    this.mobaMusicEnabled = !this.mobaMusicEnabled;
+    
+    const lobbyLabel = document.getElementById('moba-music-status-txt');
+    if (lobbyLabel) {
+      lobbyLabel.textContent = this.mobaMusicEnabled ? 'ON' : 'OFF';
+    }
+    const gameLabel = document.getElementById('moba-game-music-status-txt');
+    if (gameLabel) {
+      gameLabel.textContent = this.mobaMusicEnabled ? 'ON' : 'OFF';
+    }
+
+    const lobbyBtn = document.getElementById('moba-btn-toggle-music');
+    if (lobbyBtn) {
+      if (this.mobaMusicEnabled) {
+        lobbyBtn.className = "bg-amber-600/80 hover:bg-amber-500 border border-amber-400/40 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-bold text-white transition-all cursor-pointer flex items-center space-x-1";
+      } else {
+        lobbyBtn.className = "bg-slate-700/80 hover:bg-slate-600 border border-slate-500/40 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-bold text-slate-300 transition-all cursor-pointer flex items-center space-x-1";
+      }
+    }
+    const gameBtn = document.getElementById('moba-game-btn-toggle-music');
+    if (gameBtn) {
+      if (this.mobaMusicEnabled) {
+        gameBtn.className = "bg-black/60 hover:bg-black/80 border border-amber-500/50 px-2.5 py-1 rounded-xl text-[10px] sm:text-xs font-bold text-amber-400 transition-all cursor-pointer flex items-center space-x-1.5 shadow-lg";
+      } else {
+        gameBtn.className = "bg-black/60 hover:bg-black/80 border border-white/20 px-2.5 py-1 rounded-xl text-[10px] sm:text-xs font-bold text-slate-400 transition-all cursor-pointer flex items-center space-x-1.5 shadow-lg";
+      }
+    }
+
+    if (this.mobaMusicEnabled) {
+      if (this.mobaAudioElement) {
+        this.mobaAudioElement.play().catch(err => console.log("Music resume failed:", err));
+      } else {
+        this.mobaPlayNextTrack();
+      }
+    } else {
+      if (this.mobaAudioElement) {
+        this.mobaAudioElement.pause();
+      }
     }
   }
 
@@ -26205,12 +26348,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // Apply the active base hero stats to local state for the 6 approved heroes
     const baseStats = {
-      Arissa: { hp: 550, mp: 240, speed: 6.5, strength: 18, agility: 28, intelligence: 14, range: 5.0, damage: 45 },
-      Bot: { hp: 600, mp: 250, speed: 5.5, strength: 20, agility: 20, intelligence: 20, range: 2.0, damage: 42 },
-      Erika: { hp: 450, mp: 500, speed: 5.0, strength: 15, agility: 16, intelligence: 30, range: 6.0, damage: 38 },
-      Monster: { hp: 750, mp: 150, speed: 4.8, strength: 30, agility: 12, intelligence: 10, range: 1.8, damage: 55 },
-      Skeletonz: { hp: 520, mp: 200, speed: 6.2, strength: 22, agility: 26, intelligence: 12, range: 1.5, damage: 48 },
-      'Woman Mobile': { hp: 580, mp: 220, speed: 5.8, strength: 18, agility: 25, intelligence: 15, range: 1.5, damage: 46 }
+      Arissa: { hp: 550, mp: 240, speed: 5.2, strength: 18, agility: 28, intelligence: 14, range: 5.0, damage: 45 },
+      Bot: { hp: 600, mp: 250, speed: 4.4, strength: 20, agility: 20, intelligence: 20, range: 2.0, damage: 42 },
+      Erika: { hp: 450, mp: 500, speed: 4.0, strength: 15, agility: 16, intelligence: 30, range: 6.0, damage: 38 },
+      Monster: { hp: 750, mp: 150, speed: 3.8, strength: 30, agility: 12, intelligence: 10, range: 1.8, damage: 55 },
+      Skeletonz: { hp: 520, mp: 200, speed: 5.0, strength: 22, agility: 26, intelligence: 12, range: 1.5, damage: 48 },
+      'Woman Mobile': { hp: 580, mp: 220, speed: 4.6, strength: 18, agility: 25, intelligence: 15, range: 1.5, damage: 46 }
     }[this.mobaState.selectedHero];
 
     if (baseStats) {
@@ -27245,41 +27388,66 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // Main Light follows player hero (exact middle of screen) with big radius covering almost whole screen
     const pCenterPos = (this.mobaState && this.mobaState.playing && this.mobaState.currentPos) ? this.mobaState.currentPos : [0, 0, 0];
-    if (progInfo.uLightDir) gl.uniform3fv(progInfo.uLightDir, [0.35, 0.92, 0.4]);
-    // Slashed ambient sun and fill lights to make the entire map moody and beautifully dark (almost black)
-    // Completely darkened to a tiny non-zero [0.0015, 0.0015, 0.0015] to bypass shader fallback defaults so only the player's light illuminates the map
-    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [0.0015, 0.0015, 0.0015]);
-    if (progInfo.uFillLightDir) gl.uniform3fv(progInfo.uFillLightDir, [-0.4, 0.65, -0.35]);
-    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [0.0015, 0.0015, 0.0015]);
+    const isLobby = !this.mobaState.playing;
+
+    if (progInfo.uLightDir) {
+      gl.uniform3fv(progInfo.uLightDir, isLobby ? [0.45, 0.85, 0.25] : [0.35, 0.92, 0.4]);
+    }
+    // Slashed ambient sun and fill lights to make the entire map moody and beautifully dark (almost black) in gameplay.
+    // However, for the start menu lobby, we set a strong, gorgeous studio/showroom key and ambient fill light!
+    if (progInfo.uLightColor) {
+      gl.uniform3fv(progInfo.uLightColor, isLobby ? [0.4, 0.4, 0.4] : [0.0015, 0.0015, 0.0015]);
+    }
+    if (progInfo.uFillLightDir) {
+      gl.uniform3fv(progInfo.uFillLightDir, isLobby ? [-0.5, 0.6, -0.4] : [-0.4, 0.65, -0.35]);
+    }
+    if (progInfo.uFillLightColor) {
+      gl.uniform3fv(progInfo.uFillLightColor, isLobby ? [0.2, 0.2, 0.2] : [0.0015, 0.0015, 0.0015]);
+    }
 
     if (progInfo.uNumPointLights && progInfo.pointLights) {
       gl.uniform1i(progInfo.uNumPointLights, 3);
       const u0 = progInfo.pointLights[0];
       if (u0) {
-        // High-contrast focused spotlight following the player (just like real MOBAs) - low intensity per request
-        if (u0.pos) gl.uniform3fv(u0.pos, [pCenterPos[0], pCenterPos[1] + 6.0, pCenterPos[2]]);
-        if (u0.color) gl.uniform3fv(u0.color, [1.8, 1.8, 2.0]); // Soft moonlight-tinted focused beam
-        if (u0.intensity) gl.uniform1f(u0.intensity, 30.0); // Exact 30.0 intensity as requested by the user
-        if (u0.radius) gl.uniform1f(u0.radius, 16.0); // Focused spotlight radius
+        // Spotlight 0: Rich Ruby Crimson Red with soft, lower intensity
+        if (u0.pos) gl.uniform3fv(u0.pos, isLobby ? [0.0, 3.2, 4.0] : [pCenterPos[0], pCenterPos[1] + 6.0, pCenterPos[2]]);
+        if (u0.color) gl.uniform3fv(u0.color, isLobby ? [1.4, 0.05, 0.05] : [1.8, 1.8, 2.0]);
+        if (u0.intensity) gl.uniform1f(u0.intensity, isLobby ? 45.0 : 30.0);
+        if (u0.radius) gl.uniform1f(u0.radius, isLobby ? 20.0 : 16.0);
       }
       const u1 = progInfo.pointLights[1];
       if (u1) {
-        if (u1.pos) gl.uniform3fv(u1.pos, [pCenterPos[0] - 18.0, pCenterPos[1] + 6.0, pCenterPos[2] - 16.0]);
-        if (u1.color) gl.uniform3fv(u1.color, [0.0, 0.0, 0.0]); // Turned off
-        if (u1.intensity) gl.uniform1f(u1.intensity, 0.0); // Completely dark edges
-        if (u1.radius) gl.uniform1f(u1.radius, 20.0);
+        if (isLobby) {
+          // Spotlight 1: Vibrant Neon Sapphire Blue back rim light
+          if (u1.pos) gl.uniform3fv(u1.pos, [0.0, 2.5, -4.5]);
+          if (u1.color) gl.uniform3fv(u1.color, [0.05, 0.1, 1.5]);
+          if (u1.intensity) gl.uniform1f(u1.intensity, 40.0);
+          if (u1.radius) gl.uniform1f(u1.radius, 18.0);
+        } else {
+          if (u1.pos) gl.uniform3fv(u1.pos, [pCenterPos[0] - 18.0, pCenterPos[1] + 6.0, pCenterPos[2] - 16.0]);
+          if (u1.color) gl.uniform3fv(u1.color, [0.0, 0.0, 0.0]); // Turned off
+          if (u1.intensity) gl.uniform1f(u1.intensity, 0.0); // Completely dark edges
+          if (u1.radius) gl.uniform1f(u1.radius, 20.0);
+        }
       }
       const u2 = progInfo.pointLights[2];
       if (u2) {
-        if (u2.pos) gl.uniform3fv(u2.pos, [pCenterPos[0] + 18.0, pCenterPos[1] + 6.0, pCenterPos[2] + 16.0]);
-        if (u2.color) gl.uniform3fv(u2.color, [0.0, 0.0, 0.0]); // Turned off
-        if (u2.intensity) gl.uniform1f(u2.intensity, 0.0); // Completely dark edges
-        if (u2.radius) gl.uniform1f(u2.radius, 20.0);
+        if (isLobby) {
+          // Turned off in lobby to enforce the "MAX 2 different colors on one hero" rule
+          if (u2.pos) gl.uniform3fv(u2.pos, [-4.0, 1.5, 1.0]);
+          if (u2.color) gl.uniform3fv(u2.color, [0.0, 0.0, 0.0]);
+          if (u2.intensity) gl.uniform1f(u2.intensity, 0.0);
+          if (u2.radius) gl.uniform1f(u2.radius, 15.0);
+        } else {
+          if (u2.pos) gl.uniform3fv(u2.pos, [pCenterPos[0] + 18.0, pCenterPos[1] + 6.0, pCenterPos[2] + 16.0]);
+          if (u2.color) gl.uniform3fv(u2.color, [0.0, 0.0, 0.0]); // Turned off
+          if (u2.intensity) gl.uniform1f(u2.intensity, 0.0); // Completely dark edges
+          if (u2.radius) gl.uniform1f(u2.radius, 20.0);
+        }
       }
     }
 
     // Render Ground plate (forest terrain during gameplay only; removed in lobby for pure pitch-black abyss)
-    const isLobby = !this.mobaState.playing;
     const groundMesh = this.meshBuffers[1]; // Use cube scaled wide for terrain
     if (groundMesh && !isLobby) {
       gl.bindVertexArray(groundMesh.vao);
@@ -27906,7 +28074,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.towers.forEach(t => {
         if (t.hp <= 0) return; // Destroyed
 
-        const factor = Math.max(0.12, t.hp / (t.maxHp || 1200));
+        const factor = Math.max(0.12, t.hp / (t.maxHp || 2400));
         const isRed = t.team === 'RED';
         const teamColor = isRed ? [0.95, 0.25, 0.2] : [0.22, 0.45, 0.95];
         const crystalColor = isRed ? [1.0 * factor, 0.3 * factor, 0.2 * factor] : [0.25 * factor, 0.6 * factor, 1.0 * factor];
@@ -28854,11 +29022,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // Bots deployed across Top, Mid, and Bot lanes with full HP & Mana pools (spawn points scaled up for enlarged map)
     this.mobaState.players = [
-      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 500, maxHp: 500, mp: 500, maxMp: 500, damage: 50, speed: 5.0, attackRange: 6.8, attackCooldown: 0.9, attackTimer: 0, pos: [-33.0, 0, -28.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1 },
-      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 750, maxHp: 750, mp: 200, maxMp: 200, damage: 65, speed: 4.8, attackRange: 2.2, attackCooldown: 1.1, attackTimer: 0, pos: [-28.0, 0, -33.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1 },
-      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 550, maxHp: 550, mp: 240, maxMp: 240, damage: 52, speed: 5.0, attackRange: 7.0, attackCooldown: 0.9, attackTimer: 0, pos: [33.0, 0, 28.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1 },
-      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 600, maxHp: 600, mp: 220, maxMp: 220, damage: 58, speed: 5.2, attackRange: 2.2, attackCooldown: 1.0, attackTimer: 0, pos: [28.0, 0, 33.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1 },
-      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 680, maxHp: 680, mp: 300, maxMp: 300, damage: 60, speed: 4.9, attackRange: 2.2, attackCooldown: 1.0, attackTimer: 0, pos: [32.0, 0, 32.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1 }
+      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 500, maxHp: 500, mp: 500, maxMp: 500, damage: 50, speed: 4.0, attackRange: 6.8, attackCooldown: 0.9, attackTimer: 0, pos: [-33.0, 0, -28.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1 },
+      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 750, maxHp: 750, mp: 200, maxMp: 200, damage: 65, speed: 3.8, attackRange: 2.2, attackCooldown: 1.1, attackTimer: 0, pos: [-28.0, 0, -33.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1 },
+      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 550, maxHp: 550, mp: 240, maxMp: 240, damage: 52, speed: 4.0, attackRange: 7.0, attackCooldown: 0.9, attackTimer: 0, pos: [33.0, 0, 28.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1 },
+      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 600, maxHp: 600, mp: 220, maxMp: 220, damage: 58, speed: 4.2, attackRange: 2.2, attackCooldown: 1.0, attackTimer: 0, pos: [28.0, 0, 33.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1 },
+      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 680, maxHp: 680, mp: 300, maxMp: 300, damage: 60, speed: 3.9, attackRange: 2.2, attackCooldown: 1.0, attackTimer: 0, pos: [32.0, 0, 32.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1 }
     ];
 
     // Spawn first creep wave
@@ -28925,7 +29093,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           mp: 100,
           maxMp: 100,
           damage: 22,
-          speed: 3.3,
+          speed: 2.6,
           attackRange: 1.8,
           attackCooldown: 1.0,
           attackTimer: 0,
@@ -28950,7 +29118,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           mp: 100,
           maxMp: 100,
           damage: 22,
-          speed: 3.3,
+          speed: 2.6,
           attackRange: 1.8,
           attackCooldown: 1.0,
           attackTimer: 0,
@@ -29598,6 +29766,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     let targetPos = target.pos || this.mobaState.currentPos;
     let finalDmg = Math.round(amount * (isCrit ? 1.6 : 1.0));
+
+    // Towers custom logic: Magic immunity & physical damage resistance (armor)
+    const isTower = (target.id && typeof target.id === 'string' && target.id.includes('tower'));
+    if (isTower) {
+      if (isSpell) {
+        this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], "IMMUNE", "#38bdf8");
+        return;
+      }
+      // Apply 50% damage reduction for stronger armor resistance
+      finalDmg = Math.round(finalDmg * 0.5);
+    }
 
     // Sound and visual impact
     this.mobaPlaySound('hit');

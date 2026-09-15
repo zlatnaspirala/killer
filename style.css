@@ -70,6 +70,7 @@ body.app-body {
   color: var(--text-main);
   font-family: var(--font-sans);
   min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -79,6 +80,7 @@ body.app-body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
 }
 
@@ -1562,6 +1564,7 @@ body.app-body {
 
   .main-tab-viewport {
     height: calc(100vh - 38px);
+    height: calc(100dvh - 38px);
   }
 
   .tab-scroll-pane {
@@ -6401,6 +6404,103 @@ body.app-body {
     width: 16px !important;
     height: 16px !important;
     font-size: 11px !important;
+  }
+}
+
+/* ==========================================================================
+   MOBILE PORTRAIT AND MOBILE LAYOUT OVERRIDES (INVENTORY FIT & COMPACT)
+   ========================================================================== */
+@media (max-width: 480px) and (orientation: portrait) {
+  /* Increase footer height by 50% for mobile portrait */
+  #moba-hud-bottom {
+    height: 12.5vh !important;
+    min-height: 72px !important;
+    max-height: 84px !important;
+    padding: 3px 4px !important;
+    gap: 2px !important;
+  }
+
+  /* Make components inside compact to be all visible */
+  #moba-hud-bottom .flex-row, 
+  #moba-hud-bottom .flex {
+    gap: 2px !important;
+  }
+
+  /* Compact portrait and bars */
+  #moba-hud-bottom .shrink-0 .relative,
+  #moba-hud-bottom #moba-portrait-img {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  #moba-hud-bottom .w-20 {
+    width: 56px !important;
+  }
+
+  /* Hide attributes text label, make icons and text super compact */
+  #moba-hud-bottom .flex.flex-col.justify-center.border-l {
+    border-left: none !important;
+    padding-left: 1px !important;
+    margin-right: 1px !important;
+  }
+
+  #moba-hud-bottom .flex.flex-col.justify-center.border-l > span {
+    display: none !important; /* Hide "Attributes" label */
+  }
+
+  #moba-hud-bottom .grid-cols-2 {
+    gap-x: 1.5px !important;
+    gap-y: 0.5px !important;
+  }
+
+  #moba-hud-bottom .grid-cols-2 span {
+    font-size: 8px !important;
+  }
+
+  /* Compact Spell slots */
+  .moba-spell-slot {
+    width: 32px !important;
+    height: 32px !important;
+    padding: 1px !important;
+  }
+
+  .moba-spell-slot span,
+  .moba-spell-slot div {
+    font-size: 7px !important;
+  }
+
+  /* Compact inventory grid */
+  #moba-inventory-grid {
+    gap: 1px !important;
+    padding: 1px !important;
+  }
+
+  #moba-inventory-grid > div {
+    width: 22px !important;
+    height: 22px !important;
+    min-width: 22px !important;
+    min-height: 22px !important;
+    font-size: 7px !important;
+  }
+
+  #moba-gold {
+    font-size: 9px !important;
+  }
+}
+
+/* Retro 3D Arcade Pong Popup mobile scroll fix */
+@media (max-width: 768px) {
+  .pong-modal-backdrop {
+    align-items: flex-start !important;
+    overflow-y: auto !important;
+    padding: 12px !important;
+  }
+  .pong-modal-card {
+    max-height: 85vh !important;
+    max-height: 85dvh !important;
+    overflow-y: auto !important;
+    padding: 16px 20px !important;
+    gap: 12px !important;
   }
 }
 
