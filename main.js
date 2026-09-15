@@ -5166,7 +5166,8 @@ class NativeApp {
       darkRock: '/assets/textures/dark-rock.webp',
       floor1: '/assets/textures/floor1.webp',
       gold2: '/assets/textures/gold-2.webp',
-      sky1: '/assets/images/env-maps/sky1.webp'
+      sky1: '/assets/images/env-maps/sky1.webp',
+      slotReel: '/assets/textures/slot/reel1-lod0.webp'
     };
 
     Object.keys(texturesToLoad).forEach(key => {
@@ -12983,7 +12984,318 @@ else if (typeof define === 'function' && define['amd'])
     }
   }
 
+  setupDefaultSceneLighting(progInfo) {
+    const gl = this.gl;
+    if (!gl || !progInfo) return;
+
+    // Reset standard directional lights for a clear, bright studio lighting setup
+    if (progInfo.uLightDir) gl.uniform3fv(progInfo.uLightDir, [0.4, 0.6, 1.8]);
+    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [3.2, 3.0, 2.7]);
+    if (progInfo.uFillLightDir) gl.uniform3fv(progInfo.uFillLightDir, [-0.4, -0.6, 1.2]);
+    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [1.0, 0.95, 0.90]);
+
+    // Reset point and spot lights to 0 to prevent light pollution from other demos (like MOBA)
+    if (progInfo.uNumPointLights) {
+      gl.uniform1i(progInfo.uNumPointLights, 0);
+    }
+    if (progInfo.uNumSpotLights) {
+      gl.uniform1i(progInfo.uNumSpotLights, 0);
+    }
+  }
+
+  parseOBJ(objText) {
+    const lines = objText.split('\n');
+    const rawPositions = [];
+    const rawNormals = [];
+    const rawUVs = [];
+    
+    const parsedPositions = [];
+    const parsedNormals = [];
+    const parsedUVs = [];
+    const indices = [];
+    
+    const uniqueVerts = {};
+    let nextIndex = 0;
+    
+    for (let line of lines) {
+      line = line.trim();
+      if (!line || line.startsWith('#')) continue;
+      const parts = line.split(/\s+/);
+      const type = parts[0];
+      if (type === 'v') {
+        rawPositions.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+      } else if (type === 'vn') {
+        rawNormals.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+      } else if (type === 'vt') {
+        rawUVs.push([parseFloat(parts[1]), parseFloat(parts[2])]);
+      } else if (type === 'f') {
+        const faceVerts = [];
+        for (let i = 1; i < parts.length; i++) {
+          const subparts = parts[i].split('/');
+          const vIdx = parseInt(subparts[0], 10) - 1;
+          const vtIdx = subparts[1] ? parseInt(subparts[1], 10) - 1 : -1;
+          const vnIdx = subparts[2] ? parseInt(subparts[2], 10) - 1 : -1;
+          faceVerts.push({ vIdx, vtIdx, vnIdx });
+        }
+        
+        const tris = [];
+        if (faceVerts.length === 3) {
+          tris.push(faceVerts[0], faceVerts[1], faceVerts[2]);
+        } else if (faceVerts.length === 4) {
+          tris.push(faceVerts[0], faceVerts[1], faceVerts[2]);
+          tris.push(faceVerts[0], faceVerts[2], faceVerts[3]);
+        }
+        
+        for (const fv of tris) {
+          const key = `${fv.vIdx}_${fv.vtIdx}_${fv.vnIdx}`;
+          if (uniqueVerts[key] !== undefined) {
+            indices.push(uniqueVerts[key]);
+          } else {
+            uniqueVerts[key] = nextIndex;
+            indices.push(nextIndex);
+            
+            const pos = rawPositions[fv.vIdx] || [0,0,0];
+            parsedPositions.push(pos[0], pos[1], pos[2]);
+            
+            const norm = rawNormals[fv.vnIdx] || [0,0,1];
+            parsedNormals.push(norm[0], norm[1], norm[2]);
+            
+            const uv = rawUVs[fv.vtIdx] || [0,0];
+            parsedUVs.push(uv[0], uv[1]);
+            
+            nextIndex++;
+          }
+        }
+      }
+    }
+    
+    const barys = [];
+    for (let i = 0; i < parsedPositions.length / 3; i++) {
+      const b = i % 3;
+      if (b === 0) barys.push(1, 0, 0);
+      else if (b === 1) barys.push(0, 1, 0);
+      else barys.push(0, 0, 1);
+    }
+    
+    return {
+      positions: parsedPositions,
+      normals: parsedNormals,
+      uvs: parsedUVs,
+      barys: barys,
+      indices: indices
+    };
+  }
+
+  createHorizontalCylinder(radius = 1.0, height = 1.0, segments = 32) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    // Length along X from -height/2 to height/2
+    for (let i = 0; i <= segments; i++) {
+      const u = i / segments;
+      // Wrap theta to go around the cylinder (circumference)
+      const theta = u * Math.PI * 2;
+      const cosT = Math.cos(theta);
+      const sinT = Math.sin(theta);
+
+      // Left ring (x = -height/2)
+      positions.push(-height * 0.5, cosT * radius, sinT * radius);
+      normals.push(0, cosT, sinT);
+      uvs.push(0, u);
+      barys.push(i % 3 === 0 ? 1 : 0, i % 3 === 1 ? 1 : 0, i % 3 === 2 ? 1 : 0);
+
+      // Right ring (x = height/2)
+      positions.push(height * 0.5, cosT * radius, sinT * radius);
+      normals.push(0, cosT, sinT);
+      uvs.push(1, u);
+      barys.push((i + 1) % 3 === 0 ? 1 : 0, (i + 1) % 3 === 1 ? 1 : 0, (i + 1) % 3 === 2 ? 1 : 0);
+    }
+
+    // Build faces (2 triangles per segment)
+    for (let i = 0; i < segments; i++) {
+      const idx0 = i * 2;
+      const idx1 = i * 2 + 1;
+      const idx2 = (i + 1) * 2;
+      const idx3 = (i + 1) * 2 + 1;
+
+      // Triangle 1
+      indices.push(idx0, idx1, idx2);
+      // Triangle 2
+      indices.push(idx2, idx1, idx3);
+    }
+
+    return {
+      positions,
+      normals,
+      uvs,
+      barys,
+      indices
+    };
+  }
+
+  createDynamicReelTexture() {
+    const gl = this.gl;
+    if (!gl) return null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 1024;
+    const ctx = canvas.getContext('2d');
+
+    // Fill background with a polished brushed silver/white metallic look
+    const grad = ctx.createLinearGradient(0, 0, 512, 0);
+    grad.addColorStop(0, '#dadada');
+    grad.addColorStop(0.15, '#f5f5f5');
+    grad.addColorStop(0.5, '#eaeaea');
+    grad.addColorStop(0.85, '#f5f5f5');
+    grad.addColorStop(1, '#cccccc');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 1024);
+
+    // Draw vertical luxury gold side rails
+    const goldGrad = ctx.createLinearGradient(0, 0, 512, 0);
+    goldGrad.addColorStop(0, '#D4AF37');
+    goldGrad.addColorStop(0.08, '#FFFDD0');
+    goldGrad.addColorStop(0.12, '#AA7C11');
+    ctx.fillStyle = goldGrad;
+    ctx.fillRect(0, 0, 48, 1024); // Left Rail
+
+    const goldGradR = ctx.createLinearGradient(0, 0, 512, 0);
+    goldGradR.addColorStop(0.88, '#AA7C11');
+    goldGradR.addColorStop(0.92, '#FFFDD0');
+    goldGradR.addColorStop(1, '#D4AF37');
+    ctx.fillStyle = goldGradR;
+    ctx.fillRect(512 - 48, 0, 48, 1024); // Right Rail
+
+    const numSymbols = 5;
+    const segHeight = 1024 / numSymbols;
+
+    const symbols = [
+      { emoji: '🍒', label: 'CHERRY' },
+      { emoji: '🍩', label: 'DONUT' },
+      { emoji: '💎', label: 'GEM' },
+      { emoji: '🟨', label: 'GOLD' },
+      { emoji: '🧬', label: 'TREFOIL' }
+    ];
+
+    for (let i = 0; i < numSymbols; i++) {
+      const yOffset = i * segHeight;
+
+      // Draw horizontal separator tracks with beautiful 3D groove bevel
+      ctx.strokeStyle = '#555555';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(48, yOffset);
+      ctx.lineTo(512 - 48, yOffset);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(48, yOffset + 3);
+      ctx.lineTo(512 - 48, yOffset + 3);
+      ctx.stroke();
+
+      // Curved shadow to make each field look like a real three-dimensional cylinder slot section
+      const cellGrad = ctx.createLinearGradient(0, yOffset, 0, yOffset + segHeight);
+      cellGrad.addColorStop(0, 'rgba(0, 0, 0, 0.2)');
+      cellGrad.addColorStop(0.18, 'rgba(0, 0, 0, 0.0)');
+      cellGrad.addColorStop(0.82, 'rgba(0, 0, 0, 0.0)');
+      cellGrad.addColorStop(1, 'rgba(0, 0, 0, 0.24)');
+      ctx.fillStyle = cellGrad;
+      ctx.fillRect(48, yOffset, 512 - 96, segHeight);
+
+      // Save context to apply counter-squish transformation (pre-stretching)
+      ctx.save();
+      // Move origin to the center of the square cell (so stretching is symmetric around center)
+      ctx.translate(256, yOffset + segHeight / 2);
+      
+      // Counter-squish: Scale context horizontally by 2.5 to counteract the cylinder's wrapping stretch
+      ctx.scale(2.5, 1.0);
+
+      // Draw beautiful luxury circular backing badge behind the emoji
+      ctx.beginPath();
+      ctx.arc(0, -12, 45, 0, Math.PI * 2);
+      const badgeGrad = ctx.createRadialGradient(0, -12, 5, 0, -12, 45);
+      badgeGrad.addColorStop(0, '#ffffff');
+      badgeGrad.addColorStop(0.85, '#f0f0f0');
+      badgeGrad.addColorStop(1, '#d0d0d0');
+      ctx.fillStyle = badgeGrad;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 3;
+      ctx.fill();
+
+      // Outer gold ring of the backing badge
+      ctx.strokeStyle = '#D4AF37';
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.stroke();
+
+      // Draw the Emoji inside the badge
+      ctx.font = '52px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(symbols[i].emoji, 0, -12);
+
+      // Draw Label Text below the backing badge
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillStyle = '#222222';
+      ctx.fillText(symbols[i].label, 0, 48);
+
+      ctx.restore();
+    }
+
+    // Create WebGL texture from canvas
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+    return tex;
+  }
+
+  async loadSlotReelMesh() {
+    if (this.slotReelMeshLoaded) return;
+    try {
+      const res = await fetch('/assets/textures/slot/reel.obj');
+      if (!res.ok) throw new Error("Fetch failed");
+      const text = await res.text();
+      const rawData = this.parseOBJ(text);
+      this.slotReelMesh = this.buildMeshBuffer(rawData);
+      this.slotReelMeshLoaded = true;
+      this.log("🎰 Slot Machine Reel OBJ model loaded successfully!", "success");
+    } catch(e) {
+      console.warn("Failed to load slot reel OBJ model, using high-quality procedural cylinder:", e);
+    }
+  }
+
   initSlotMachineDemo() {
+    // Dynamically generate the beautiful custom reel symbols texture
+    if (this.textureCatalog) {
+      this.textureCatalog.slotReel = this.createDynamicReelTexture();
+    }
+
+    if (!this.slotReelMesh) {
+      try {
+        const cylData = this.createHorizontalCylinder(1.0, 1.0, 32);
+        cylData.name = "HorizontalCylinderReel";
+        this.slotReelMesh = this.buildMeshBuffer(cylData);
+      } catch (err) {
+        console.warn("Failed to generate fallback horizontal cylinder:", err);
+      }
+    }
+    this.loadSlotReelMesh();
+
     if (!this.slotMachine) {
       this.slotMachine = {
         credits: 1000,
@@ -13119,27 +13431,66 @@ else if (typeof define === 'function' && define['amd'])
 
     if (this.synth) this.synth.play('powerup'); // whoosh start sound
 
-    // Choose winning destination symbol states
+    // Choose winning destination symbol states according to a certified, mathematically exact 95.0% RTP profile
     sm.stats.spins++;
     sm.stats.totalBet += sm.bet;
     sm.wasSpinActive = true;
 
-    // Random distribution matching standard slot ratios
-    const randSymbol = () => {
-      const roll = Math.random();
-      if (roll < 0.06) return 'trefoil';   // 6% Wild Jackpot
-      if (roll < 0.16) return 'cube';      // 10% Gold
-      if (roll < 0.32) return 'gem';       // 16% Gem
-      if (roll < 0.55) return 'torus';     // 23% Donut
-      return 'cherry';                     // 45% Cherry
-    };
+    // Calibrated professional 95.0% RTP selector
+    // Triples/Jackpots contribute 72.0% RTP, Pairs contribute 23.0% RTP
+    const roll = Math.random();
+    let r1, r2, r3;
+
+    if (roll < 0.0015) {
+      // Triple Trefoil (100x Bet)
+      r1 = r2 = r3 = 'trefoil';
+    } else if (roll < 0.0045) {
+      // Triple Gold (50x Bet)
+      r1 = r2 = r3 = 'cube';
+    } else if (roll < 0.0095) {
+      // Triple Gem (30x Bet)
+      r1 = r2 = r3 = 'gem';
+    } else if (roll < 0.0195) {
+      // Triple Donut (15x Bet)
+      r1 = r2 = r3 = 'torus';
+    } else if (roll < 0.0345) {
+      // Triple Cherry (8x Bet)
+      r1 = r2 = r3 = 'cherry';
+    } else if (roll < 0.111167) {
+      // Pair Match (3x Bet)
+      const symbols = ['cherry', 'torus', 'gem', 'cube', 'trefoil'];
+      const pairSym = symbols[Math.floor(Math.random() * symbols.length)];
+      
+      // Select non-matching symbol for the third reel to prevent unwanted triples
+      const otherSymbols = symbols.filter(s => s !== pairSym);
+      const otherSym = otherSymbols[Math.floor(Math.random() * otherSymbols.length)];
+      
+      const pairType = Math.floor(Math.random() * 3);
+      if (pairType === 0) {
+        r1 = r2 = pairSym; r3 = otherSym;
+      } else if (pairType === 1) {
+        r2 = r3 = pairSym; r1 = otherSym;
+      } else {
+        r1 = r3 = pairSym; r2 = otherSym;
+      }
+    } else {
+      // Loss (No matches, 0x Bet)
+      const symbols = ['cherry', 'torus', 'gem', 'cube', 'trefoil'];
+      // Shuffle list and choose first 3 elements to guarantee 3 distinct symbols
+      const shuffled = [...symbols].sort(() => Math.random() - 0.5);
+      r1 = shuffled[0];
+      r2 = shuffled[1];
+      r3 = shuffled[2];
+    }
+
+    const destSymbols = [r1, r2, r3];
 
     // Sequential trigger for stopping
     sm.reels.forEach((reel, idx) => {
       reel.spinning = true;
       reel.speed = 15.0 + idx * 8.0 + Math.random() * 4.0;
       reel.stopTimer = 1.4 + idx * 0.75;
-      reel.destSymbol = randSymbol();
+      reel.destSymbol = destSymbols[idx];
     });
 
     // Disable Spin UI while rolling
@@ -17892,6 +18243,8 @@ else if (typeof define === 'function' && define['amd'])
     const rs = this.rouletteState;
     if (!rs) return;
 
+    this.setupDefaultSceneLighting(progInfo);
+
     // 1. Force completely opaque rendering pass: disable alpha blending, enable depth writing, and disable back-face culling to prevent see-through artifacts due to winding mismatch.
     gl.disable(gl.BLEND);
     gl.enable(gl.DEPTH_TEST);
@@ -19482,6 +19835,8 @@ else if (typeof define === 'function' && define['amd'])
     const bs = this.bingoState;
     if (!bs) return;
 
+    this.setupDefaultSceneLighting(progInfo);
+
     gl.disable(gl.BLEND);
     gl.enable(gl.DEPTH_TEST);
     gl.depthMask(true);
@@ -20708,6 +21063,8 @@ else if (typeof define === 'function' && define['amd'])
     const ps = this.pongState;
     if (!ps) return;
 
+    this.setupDefaultSceneLighting(progInfo);
+
     const cubeMesh = this.meshBuffers[1];
     const sphereMesh = this.meshBuffers[0];
     if (!cubeMesh || !sphereMesh) return;
@@ -20852,6 +21209,8 @@ else if (typeof define === 'function' && define['amd'])
     const gl = this.gl;
     const ps = this.plinkoState;
     if (!ps) return;
+
+    this.setupDefaultSceneLighting(progInfo);
 
     const cubeMesh = this.meshBuffers[1];
     const sphereMesh = this.meshBuffers[0];
@@ -21135,6 +21494,8 @@ else if (typeof define === 'function' && define['amd'])
     const ps = this.puzzleState;
     if (!ps) return;
 
+    this.setupDefaultSceneLighting(progInfo);
+
     const cubeMesh = this.meshBuffers[1];
     const quadMesh = this.meshBuffers[5];
     if (!cubeMesh || !quadMesh) return;
@@ -21279,6 +21640,8 @@ else if (typeof define === 'function' && define['amd'])
     const sm = this.slotMachine;
     if (!sm) return;
 
+    this.setupDefaultSceneLighting(progInfo);
+
     const cubeMesh = this.meshBuffers[1];
     const sphereMesh = this.meshBuffers[0];
     const torusMesh = this.meshBuffers[4];
@@ -21329,26 +21692,45 @@ else if (typeof define === 'function' && define['amd'])
       gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     };
 
-    // 1. Draw Slot Machine Cabinet Body
-    // Backing chassis base
-    drawCube(0, 0.2, -1.0, 4.4, 3.2, 0.6, [0.08, 0.1, 0.14], 0.18, 0.9, 0, 0.25); // Sleek gold-accent metallic backplate
-    // Gold glowing frame accents on top
-    drawCube(0, 1.8, -0.7, 4.4, 0.12, 0.3, [0.95, 0.64, 0.08], 0.05, 0.98, 12); // Yellow/gold glowing sign plate
+    // 1. Draw Slot Machine Cabinet Body (Adapted deeper design for large wheels)
+    // Deeper backing chassis cabinet
+    drawCube(0, 0.2, -0.7, 4.4, 3.2, 1.2, [0.08, 0.1, 0.14], 0.18, 0.9, 0, 0.25); // Sleek metallic main chassis
+    // Gold glowing frame accents on top (moved forward flush with bezel)
+    drawCube(0, 1.8, -0.15, 4.4, 0.12, 0.3, [0.95, 0.64, 0.08], 0.05, 0.98, 12); // Yellow/gold glowing sign plate
     // Cabinet bottom pedestal base
     drawCube(0, -1.3, -0.4, 4.4, 1.4, 1.8, [0.05, 0.06, 0.09], 0.2, 0.8, 0, 0.1);
 
-    // 2. Recessed slots backing displays & Glowing Separators
-    // Draw 3 dark display screen backings
+    // 2. High-Fidelity Front Bezel Aperture Plates & Backing Display Screens
+    // Screen backings sitting deep inside cabinet at Z = -0.95
     const colX = [-1.2, 0, 1.2];
     colX.forEach(x => {
-      drawCube(x, 0.5, -0.65, 1.0, 1.5, 0.1, [0.01, 0.02, 0.03], 0.95, 0.0, 0); // Flat non-reflective display backgrounds
+      drawCube(x, 0.5, -0.95, 1.0, 1.5, 0.1, [0.01, 0.02, 0.03], 0.95, 0.0, 0); // Flat non-reflective display backgrounds
     });
     
-    // Draw neon glowing borders between the 3 display slots
-    drawCube(-1.75, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12); // Emissive borders
-    drawCube(-0.6, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12);
-    drawCube(0.6, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12);
-    drawCube(1.75, 0.5, -0.6, 0.08, 1.5, 0.15, [0.95, 0.64, 0.08], 0.1, 0.95, 12);
+    // Front Titanium Bezel casing plate system forming three real, physical 3D window slits (apertures) at Z = -0.12
+    const bezelColor = [0.12, 0.14, 0.16]; // Titanium Charcoal
+    const bezelRough = 0.12;
+    const bezelMetal = 0.92;
+
+    // Top and Bottom Horizontal border bars
+    drawCube(0, 1.35, -0.12, 4.4, 0.2, 0.1, bezelColor, bezelRough, bezelMetal);
+    drawCube(0, -0.35, -0.12, 4.4, 0.2, 0.1, bezelColor, bezelRough, bezelMetal);
+
+    // Left and Right edge bars
+    drawCube(-2.1, 0.5, -0.12, 0.2, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+    drawCube(2.1, 0.5, -0.12, 0.2, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+
+    // Vertical Divider plates creating the 3 windows (each window is 0.80 wide, matching the 0.8168 reels perfectly)
+    drawCube(-1.8, 0.5, -0.12, 0.4, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+    drawCube(-0.6, 0.5, -0.12, 0.4, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+    drawCube(0.6, 0.5, -0.12, 0.4, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+    drawCube(1.8, 0.5, -0.12, 0.4, 1.5, 0.1, bezelColor, bezelRough, bezelMetal);
+
+    // Premium glowing divider column indicators mounted on top of the bezel
+    drawCube(-0.6, 0.5, -0.07, 0.08, 1.5, 0.03, [0.95, 0.64, 0.08], 0.1, 0.98, 12);
+    drawCube(0.6, 0.5, -0.07, 0.08, 1.5, 0.03, [0.95, 0.64, 0.08], 0.1, 0.98, 12);
+    drawCube(-1.8, 0.5, -0.07, 0.08, 1.5, 0.03, [0.95, 0.64, 0.08], 0.1, 0.98, 12);
+    drawCube(1.8, 0.5, -0.07, 0.08, 1.5, 0.03, [0.95, 0.64, 0.08], 0.1, 0.98, 12);
 
     // 3. Draw the Right-Side Lever Handle Mechanics
     const lx = 2.4;
@@ -21365,7 +21747,6 @@ else if (typeof define === 'function' && define['amd'])
     const sEndZ = lz + sinTilt * sLen;
     
     // Draw the stick as multiple points or a rotated segment
-    // To draw a simple tilted cylinder/stick, we can interpolate 3 spheres
     for (let j = 1; j <= 5; j++) {
       const t = j / 5;
       const px = lx;
@@ -21382,65 +21763,73 @@ else if (typeof define === 'function' && define['amd'])
     drawCube(1.1, -0.6, 0.4, 0.08, 0.3, 0.8, [0.12, 0.14, 0.16], 0.15, 0.95); // right lip
     drawCube(0, -0.6, 0.8, 2.2, 0.3, 0.08, [0.12, 0.14, 0.16], 0.15, 0.95); // front lip
 
-    // 5. Render Active 3D Reel Symbols in Front of Screens
+    // 5. Render 3D Cylindrical Reel Wheels with Slot Fields Texture
     sm.reels.forEach((reel, colIdx) => {
       const rx = colX[colIdx];
       const ry = 0.5;
-      const rz = -0.3; // Floating in front of screen
 
-      const activeSymbol = reel.currentSymbol;
-      const props = sm.symbolProps[activeSymbol];
-      if (!props) return;
+      const reelMesh = this.slotReelMesh;
+      if (reelMesh) {
+        gl.bindVertexArray(reelMesh.vao);
 
-      const symMesh = this.meshBuffers[props.meshId];
-      if (symMesh) {
-        gl.bindVertexArray(symMesh.vao);
+        // Continuous physical angle (spinning vertically around X-axis)
+        const angleX = -reel.angle;
+        const cosX = Math.cos(angleX);
+        const sinX = Math.sin(angleX);
 
-        // Spin or idle rot
-        let angleY = timestamp * 0.001 * (reel.spinning ? 8.5 : 1.2) + colIdx;
-        let angleX = reel.spinning ? (reel.angle * 4.0) : 0; // rapid vertical flip when rolling!
+        // Cylinder scale matching screens perfectly & making fields perfectly square!
+        // Radius scaleY = scaleZ = 0.65 (making wheels larger and highly visible!)
+        // Width scaleX = 1.2566 * scaleY = 0.8168 (making fields perfect squares!)
+        const scaleX = 0.8168;
+        const scaleY = 0.65;
+        const scaleZ = 0.65;
 
-        const cy = Math.cos(angleY), sy = Math.sin(angleY);
-        const cx = Math.cos(angleX), sx = Math.sin(angleX);
+        // Recessed slot position centered in depth inside bezel apertures
+        const rzCoord = -0.68;
 
-        // Apply double model rotation matrices manually inside modelMatrix
-        // R_x * R_y
-        this.modelMatrix[0] = cy * 0.58;
-        this.modelMatrix[1] = sx * sy * 0.58;
-        this.modelMatrix[2] = -cx * sy * 0.58;
+        // Construct model matrix rotating around X-axis
+        this.modelMatrix[0] = scaleX;
+        this.modelMatrix[1] = 0;
+        this.modelMatrix[2] = 0;
         this.modelMatrix[3] = 0;
 
         this.modelMatrix[4] = 0;
-        this.modelMatrix[5] = cx * 0.58;
-        this.modelMatrix[6] = sx * 0.58;
+        this.modelMatrix[5] = cosX * scaleY;
+        this.modelMatrix[6] = sinX * scaleZ;
         this.modelMatrix[7] = 0;
 
-        this.modelMatrix[8] = sy * 0.58;
-        this.modelMatrix[9] = -sx * cy * 0.58;
-        this.modelMatrix[10] = cx * cy * 0.58;
+        this.modelMatrix[8] = 0;
+        this.modelMatrix[9] = -sinX * scaleY;
+        this.modelMatrix[10] = cosX * scaleZ;
         this.modelMatrix[11] = 0;
 
         this.modelMatrix[12] = rx;
         this.modelMatrix[13] = ry;
-        this.modelMatrix[14] = rz;
+        this.modelMatrix[14] = rzCoord;
         this.modelMatrix[15] = 1;
 
         Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
 
         gl.uniformMatrix4fv(progInfo.uModel, false, this.modelMatrix);
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, props.color);
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, props.meshId === 1 ? 0.05 : 0.2); // extra glossy gold
-        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, props.meshId === 1 ? 0.98 : 0.85);
-        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, props.matType);
-        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.2);
-        if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
-        if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
-        if (progInfo.uAnisotropy) gl.uniform1f(progInfo.uAnisotropy, 0.0);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, [1.0, 1.0, 1.0]); // White base for texture
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.25);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.1);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // standard PBR
+        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.1);
 
-        gl.drawElements(gl.TRIANGLES, symMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        // Bind the Slot Reel texture!
+        const slotReelTex = this.textureCatalog ? this.textureCatalog.slotReel : null;
+        this.bindMaterialTextures(progInfo, slotReelTex);
+
+        gl.drawElements(gl.TRIANGLES, reelMesh.indexCount, gl.UNSIGNED_SHORT, 0);
       }
     });
+
+    // Reset texture mapping uniforms to avoid spilling into coins
+    if (progInfo.uUseTexMaps) gl.uniform1i(progInfo.uUseTexMaps, 0);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, null);
 
     // 6. Render Spinning Gold Coin Particles falling in 3D Tray Space!
     sm.coins.forEach(coin => {
@@ -26524,7 +26913,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     const spellNames = ['Area Blast', 'Blink Dash', 'Barrier Field', 'Hollow Eclipse Ultimate'];
     const manaCosts = [40, 50, 60, 110];
-    const cooldowns = [4.0, 6.5, 8.0, 20.0];
+    const cooldowns = [16.0, 26.0, 32.0, 80.0];
 
     const cost = manaCosts[index];
     if (this.mobaState.heroStats.mp < cost) {
