@@ -569,6 +569,422 @@ export class ProceduralGeometryFactory {
 
     return { positions, normals, uvs, barys, indices };
   }
+
+  /**
+   * Generates a wetland river reed / cattail tuft with extra aquatic geometry
+   * Distinct from normal grass: tall tubular stalks with 3D cylindrical brown cattail heads & broad base leaves
+   */
+  static createRiverReedTuft(stalkCount = 5) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    const rng = new PRNG(88123);
+
+    for (let s = 0; s < stalkCount; s++) {
+      const angle = (s / stalkCount) * Math.PI * 2 + rng.range(-0.25, 0.25);
+      const radOffset = rng.range(0.08, 0.22);
+      const baseX = Math.cos(angle) * radOffset;
+      const baseZ = Math.sin(angle) * radOffset;
+
+      const totalH = rng.range(1.9, 2.6); // Taller than normal grass
+      const curveX = Math.cos(angle) * rng.range(0.2, 0.45);
+      const curveZ = Math.sin(angle) * rng.range(0.2, 0.45);
+
+      // 1. Slender Reed Stalk (tapered cylinder segments)
+      const stalkSegs = 6;
+      const radialSegs = 5;
+      const stalkBaseIdx = positions.length / 3;
+
+      for (let y = 0; y <= stalkSegs; y++) {
+        const t = y / stalkSegs;
+        const curY = t * totalH;
+        const offX = baseX + curveX * (t * t);
+        const offZ = baseZ + curveZ * (t * t);
+        const r = 0.032 * (1.0 - t * 0.45);
+
+        for (let rIdx = 0; rIdx <= radialSegs; rIdx++) {
+          const theta = (rIdx / radialSegs) * Math.PI * 2;
+          const px = offX + Math.cos(theta) * r;
+          const pz = offZ + Math.sin(theta) * r;
+
+          positions.push(px, curY, pz);
+          normals.push(Math.cos(theta), 0.25, Math.sin(theta));
+          uvs.push(rIdx / radialSegs, t * 0.7); // v in [0, 0.7] = green stalk
+          barys.push(rIdx % 2 === 0 ? 1 : 0, rIdx % 2 === 1 ? 1 : 0, 0);
+        }
+      }
+
+      const rowStride = radialSegs + 1;
+      for (let y = 0; y < stalkSegs; y++) {
+        for (let rIdx = 0; rIdx < radialSegs; rIdx++) {
+          const i0 = stalkBaseIdx + y * rowStride + rIdx;
+          const i1 = i0 + 1;
+          const i2 = stalkBaseIdx + (y + 1) * rowStride + rIdx;
+          const i3 = i2 + 1;
+
+          indices.push(i0, i2, i1);
+          indices.push(i1, i2, i3);
+        }
+      }
+
+      // 2. 3D Cattail Cylinder Head (Brown velvety bulrush head near the top)
+      const catStartT = 0.68;
+      const catEndT = 0.88;
+      const catStartY = totalH * catStartT;
+      const catEndY = totalH * catEndT;
+      const catHeight = catEndY - catStartY;
+      const catRad = 0.055;
+      const catSegs = 4;
+      const catBaseIdx = positions.length / 3;
+
+      for (let cy = 0; cy <= catSegs; cy++) {
+        const ct = cy / catSegs;
+        const py = catStartY + ct * catHeight;
+        const blendT = catStartT + ct * (catEndT - catStartT);
+        const offX = baseX + curveX * (blendT * blendT);
+        const offZ = baseZ + curveZ * (blendT * blendT);
+        // Bulge in center of cattail
+        const bulge = Math.sin(ct * Math.PI) * 0.02 + catRad;
+
+        for (let rIdx = 0; rIdx <= radialSegs; rIdx++) {
+          const theta = (rIdx / radialSegs) * Math.PI * 2;
+          positions.push(offX + Math.cos(theta) * bulge, py, offZ + Math.sin(theta) * bulge);
+          normals.push(Math.cos(theta), 0.1, Math.sin(theta));
+          uvs.push(rIdx / radialSegs, 0.85 + ct * 0.15); // v in [0.85, 1.0] = brown cattail head
+          barys.push(0, 1, 0);
+        }
+      }
+
+      for (let cy = 0; cy < catSegs; cy++) {
+        for (let rIdx = 0; rIdx < radialSegs; rIdx++) {
+          const i0 = catBaseIdx + cy * rowStride + rIdx;
+          const i1 = i0 + 1;
+          const i2 = catBaseIdx + (cy + 1) * rowStride + rIdx;
+          const i3 = i2 + 1;
+
+          indices.push(i0, i2, i1);
+          indices.push(i1, i2, i3);
+        }
+      }
+
+      // 3. Broad arching aquatic blade leaves at waterline
+      const leafCount = 2;
+      for (let l = 0; l < leafCount; l++) {
+        const leafAngle = angle + (l === 0 ? 0.8 : -0.8);
+        const leafH = totalH * rng.range(0.45, 0.65);
+        const leafCurve = rng.range(0.45, 0.7);
+        const leafWidth = 0.065;
+        const leafSegs = 4;
+        const leafBaseIdx = positions.length / 3;
+
+        for (let ly = 0; ly <= leafSegs; ly++) {
+          const lt = ly / leafSegs;
+          const py = lt * leafH;
+          const lx = baseX + Math.cos(leafAngle) * (leafCurve * lt * lt);
+          const lz = baseZ + Math.sin(leafAngle) * (leafCurve * lt * lt);
+          const curW = leafWidth * (1.0 - lt * 0.85);
+
+          const orthX = -Math.sin(leafAngle) * curW;
+          const orthZ = Math.cos(leafAngle) * curW;
+
+          positions.push(lx - orthX, py, lz - orthZ);
+          positions.push(lx + orthX, py, lz + orthZ);
+          normals.push(0, 0.9, 0);
+          normals.push(0, 0.9, 0);
+          uvs.push(0.0, lt * 0.5);
+          uvs.push(1.0, lt * 0.5);
+          barys.push(1, 0, 0, 0, 1, 0);
+        }
+
+        for (let ly = 0; ly < leafSegs; ly++) {
+          const i0 = leafBaseIdx + ly * 2;
+          const i1 = i0 + 1;
+          const i2 = i0 + 2;
+          const i3 = i0 + 3;
+          indices.push(i0, i2, i1);
+          indices.push(i1, i2, i3);
+        }
+      }
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates a floating Water Lily Pad with a delicate lotus blossom
+   */
+  static createWaterLilyPad() {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    // 1. Lily Pad Disc with V-notch slice
+    const padRad = 0.42;
+    const radialSegs = 14;
+    const padCenterIdx = 0;
+    positions.push(0, 0.015, 0);
+    normals.push(0, 1, 0);
+    uvs.push(0.5, 0.5);
+    barys.push(1, 0, 0);
+
+    // Leave a 35-degree slit for realistic water lily notch
+    const startAngle = 0.35;
+    const endAngle = Math.PI * 2 - 0.35;
+
+    for (let i = 0; i <= radialSegs; i++) {
+      const theta = startAngle + (i / radialSegs) * (endAngle - startAngle);
+      const px = Math.cos(theta) * padRad;
+      const pz = Math.sin(theta) * padRad;
+      positions.push(px, 0.015, pz);
+      normals.push(0, 1, 0);
+      uvs.push(0.5 + Math.cos(theta) * 0.45, 0.5 + Math.sin(theta) * 0.45);
+      barys.push(i % 2 === 0 ? 1 : 0, i % 2 === 1 ? 1 : 0, 0);
+    }
+
+    for (let i = 1; i <= radialSegs; i++) {
+      indices.push(padCenterIdx, i, i + 1);
+    }
+
+    // 2. Lotus Blossom at center (Layered angled petals)
+    const petalCount = 8;
+    const petalBaseRad = 0.03;
+    const petalTipRad = 0.16;
+    const petalH = 0.09;
+
+    for (let p = 0; p < petalCount; p++) {
+      const pAngle = (p / petalCount) * Math.PI * 2;
+      const pBaseIdx = positions.length / 3;
+
+      const c = Math.cos(pAngle), s = Math.sin(pAngle);
+      const orthX = -s * 0.045, orthZ = c * 0.045;
+
+      // Base
+      positions.push(c * petalBaseRad, 0.018, s * petalBaseRad);
+      normals.push(c * 0.5, 0.86, s * 0.5);
+      uvs.push(0.5, 0.5);
+      barys.push(1, 0, 0);
+
+      // Left petal edge
+      positions.push(c * (petalTipRad * 0.6) + orthX, 0.018 + petalH * 0.6, s * (petalTipRad * 0.6) + orthZ);
+      normals.push(c * 0.7, 0.6, s * 0.7);
+      uvs.push(0.2, 0.8);
+      barys.push(0, 1, 0);
+
+      // Right petal edge
+      positions.push(c * (petalTipRad * 0.6) - orthX, 0.018 + petalH * 0.6, s * (petalTipRad * 0.6) - orthZ);
+      normals.push(c * 0.7, 0.6, s * 0.7);
+      uvs.push(0.8, 0.8);
+      barys.push(0, 0, 1);
+
+      // Petal Tip
+      positions.push(c * petalTipRad, 0.018 + petalH, s * petalTipRad);
+      normals.push(c * 0.8, 0.5, s * 0.8);
+      uvs.push(0.5, 1.0);
+      barys.push(1, 0, 0);
+
+      indices.push(pBaseIdx, pBaseIdx + 1, pBaseIdx + 2);
+      indices.push(pBaseIdx + 1, pBaseIdx + 3, pBaseIdx + 2);
+    }
+
+    // 3. Central golden pistil/stamen dome
+    const stamenCenter = positions.length / 3;
+    positions.push(0, 0.018 + petalH * 0.75, 0);
+    normals.push(0, 1, 0);
+    uvs.push(0.5, 0.5);
+    barys.push(1, 1, 0);
+
+    const sSegs = 6;
+    for (let s = 0; s <= sSegs; s++) {
+      const theta = (s / sSegs) * Math.PI * 2;
+      positions.push(Math.cos(theta) * 0.038, 0.018 + petalH * 0.55, Math.sin(theta) * 0.038);
+      normals.push(Math.cos(theta), 0.7, Math.sin(theta));
+      uvs.push(0.5, 0.5);
+      barys.push(0, 1, 0);
+    }
+    for (let s = 1; s <= sSegs; s++) {
+      indices.push(stamenCenter, stamenCenter + s, stamenCenter + s + 1);
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates a multi-stem Wildflower Tuft with blooming blossoms
+   */
+  static createWildFlowerTuft(flowerCount = 4) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    const rng = new PRNG(77331);
+
+    for (let f = 0; f < flowerCount; f++) {
+      const fAngle = (f / flowerCount) * Math.PI * 2 + rng.range(-0.3, 0.3);
+      const rad = rng.range(0.08, 0.22);
+      const fx = Math.cos(fAngle) * rad;
+      const fz = Math.sin(fAngle) * rad;
+      const h = rng.range(0.45, 0.75);
+
+      // Flower Stem
+      const stemBaseIdx = positions.length / 3;
+      const tiltX = Math.cos(fAngle) * 0.08;
+      const tiltZ = Math.sin(fAngle) * 0.08;
+
+      positions.push(fx - 0.018, 0, fz);
+      positions.push(fx + 0.018, 0, fz);
+      positions.push(fx + tiltX - 0.012, h, fz + tiltZ);
+      positions.push(fx + tiltX + 0.012, h, fz + tiltZ);
+
+      normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
+      uvs.push(0, 0, 1, 0, 0, 0.5, 1, 0.5);
+      barys.push(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0);
+      indices.push(stemBaseIdx, stemBaseIdx + 2, stemBaseIdx + 1);
+      indices.push(stemBaseIdx + 1, stemBaseIdx + 2, stemBaseIdx + 3);
+
+      // 5 Petals blossom atop the stem
+      const blossomCenter = [fx + tiltX, h + 0.02, fz + tiltZ];
+      const petalPetals = 5;
+      const petalRad = rng.range(0.07, 0.11);
+
+      for (let p = 0; p < petalPetals; p++) {
+        const pAng = (p / petalPetals) * Math.PI * 2;
+        const pIdx = positions.length / 3;
+
+        const c = Math.cos(pAng), s = Math.sin(pAng);
+        const orthX = -s * 0.035, orthZ = c * 0.035;
+
+        positions.push(blossomCenter[0], blossomCenter[1], blossomCenter[2]);
+        positions.push(blossomCenter[0] + c * (petalRad * 0.6) + orthX, blossomCenter[1] + 0.02, blossomCenter[2] + s * (petalRad * 0.6) + orthZ);
+        positions.push(blossomCenter[0] + c * (petalRad * 0.6) - orthX, blossomCenter[1] + 0.02, blossomCenter[2] + s * (petalRad * 0.6) - orthZ);
+        positions.push(blossomCenter[0] + c * petalRad, blossomCenter[1] + 0.01, blossomCenter[2] + s * petalRad);
+
+        normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
+        uvs.push(0.5, 0.5, 0.2, 0.8, 0.8, 0.8, 0.5, 1.0);
+        barys.push(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0);
+
+        indices.push(pIdx, pIdx + 1, pIdx + 2);
+        indices.push(pIdx + 1, pIdx + 3, pIdx + 2);
+      }
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates a cute 3D low-poly Frog geometry with perched eyes & folded legs
+   */
+  static createLittleFrog() {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    // 1. Rounded low-poly Frog Torso (ellipsoid)
+    const latSegs = 6;
+    const lonSegs = 10;
+    const rx = 0.22, ry = 0.16, rz = 0.28;
+
+    for (let y = 0; y <= latSegs; y++) {
+      const v = y / latSegs;
+      const theta = v * Math.PI;
+      const sinT = Math.sin(theta), cosT = Math.cos(theta);
+
+      for (let x = 0; x <= lonSegs; x++) {
+        const u = x / lonSegs;
+        const phi = u * Math.PI * 2;
+        const sinP = Math.sin(phi), cosP = Math.cos(phi);
+
+        // Pear shape: slightly wider at rear (negative Z) and lower
+        const taper = 1.0 - (cosP * 0.18);
+        const px = cosP * rx * sinT * taper;
+        const py = cosT * ry + 0.14; // resting on ground
+        const pz = sinP * rz * sinT;
+
+        positions.push(px, py, pz);
+        const nx = px / rx, ny = (py - 0.14) / ry, nz = pz / rz;
+        const nl = Math.hypot(nx, ny, nz) || 1;
+        normals.push(nx / nl, ny / nl, nz / nl);
+        uvs.push(u, v);
+        barys.push((x + y) % 3 === 0 ? 1 : 0, (x + y) % 3 === 1 ? 1 : 0, (x + y) % 3 === 2 ? 1 : 0);
+      }
+    }
+
+    const stride = lonSegs + 1;
+    for (let y = 0; y < latSegs; y++) {
+      for (let x = 0; x < lonSegs; x++) {
+        const i0 = y * stride + x;
+        const i1 = i0 + 1;
+        const i2 = (y + 1) * stride + x;
+        const i3 = i2 + 1;
+        indices.push(i0, i2, i1);
+        indices.push(i1, i2, i3);
+      }
+    }
+
+    // 2. Perched Bulging Eyes (Left and Right)
+    const eyeCenters = [
+      [-0.09, 0.23, 0.14],
+      [0.09, 0.23, 0.14]
+    ];
+    const eyeRad = 0.052;
+    const eyeSegs = 6;
+
+    for (const ec of eyeCenters) {
+      const eyeBase = positions.length / 3;
+      positions.push(ec[0], ec[1] + eyeRad, ec[2]);
+      normals.push(0, 1, 0);
+      uvs.push(0.5, 0.5);
+      barys.push(1, 0, 0);
+
+      for (let s = 0; s <= eyeSegs; s++) {
+        const ang = (s / eyeSegs) * Math.PI * 2;
+        const px = ec[0] + Math.cos(ang) * eyeRad;
+        const pz = ec[2] + Math.sin(ang) * eyeRad;
+        positions.push(px, ec[1], pz);
+        normals.push(Math.cos(ang), 0.5, Math.sin(ang));
+        uvs.push(0.5 + Math.cos(ang) * 0.4, 0.5 + Math.sin(ang) * 0.4);
+        barys.push(0, 1, 0);
+      }
+      for (let s = 1; s <= eyeSegs; s++) {
+        indices.push(eyeBase, eyeBase + s, eyeBase + s + 1);
+      }
+    }
+
+    // 3. Folded Hind Legs (Left and Right side flanks)
+    const hindLegs = [
+      { side: -1, offset: [-0.19, 0.09, -0.09] },
+      { side: 1, offset: [0.19, 0.09, -0.09] }
+    ];
+
+    for (const leg of hindLegs) {
+      const lBase = positions.length / 3;
+      const ox = leg.offset[0], oy = leg.offset[1], oz = leg.offset[2];
+      const s = leg.side;
+
+      // Leg joint pyramid/prism
+      positions.push(ox, oy + 0.08, oz);
+      positions.push(ox + s * 0.12, oy + 0.04, oz - 0.08);
+      positions.push(ox + s * 0.08, 0.02, oz + 0.06);
+      positions.push(ox + s * 0.14, 0.02, oz + 0.12); // Foot forward
+
+      normals.push(s * 0.5, 0.8, -0.3, s * 0.8, 0.5, -0.3, s * 0.5, 0.8, 0.3, 0, 1, 0);
+      uvs.push(0, 0, 1, 0, 0, 1, 1, 1);
+      barys.push(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0);
+
+      indices.push(lBase, lBase + 1, lBase + 2);
+      indices.push(lBase + 1, lBase + 3, lBase + 2);
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
 }
 
 /**
@@ -580,6 +996,10 @@ export class ProceduralForestLayoutEngine {
     this.boulders = [];
     this.bushes = [];
     this.grass = [];
+    this.riverReeds = [];
+    this.waterLilies = [];
+    this.wildFlowers = [];
+    this.frogs = [];
     this.towers = [];
     this.lanePaths = {
       top: [],
@@ -857,6 +1277,123 @@ export class ProceduralForestLayoutEngine {
           color
         });
       }
+    }
+
+    // 1. Procedural River Reeds (Aquatic grass with extra Cattail & aquatic leaf geometry in water/river)
+    this.riverReeds = [];
+    const reedRng = new PRNG(339911);
+    for (let d = -45.0; d <= 45.0; d += 1.4) {
+      // Along river diagonal (-d, d)
+      const riverCenter = [-d, d];
+      // Lateral offset across river bed (-3.2 to 3.2 m from centerline)
+      const lateralOff = reedRng.range(-3.6, 3.6);
+      // Unit normal perpendicular to river diagonal (-1, 1) is (1, 1) / sqrt(2)
+      const invSqrt2 = 0.7071;
+      const rx = riverCenter[0] + lateralOff * invSqrt2 + reedRng.range(-0.35, 0.35);
+      const rz = riverCenter[1] + lateralOff * invSqrt2 + reedRng.range(-0.35, 0.35);
+
+      // Keep center rune shrine clear
+      if (Math.hypot(rx, rz) < 4.2) continue;
+
+      this.riverReeds.push({
+        x: rx,
+        z: rz,
+        scaleX: reedRng.range(0.35, 0.55),
+        scaleY: reedRng.range(0.85, 1.35),
+        rotY: reedRng.range(0, Math.PI * 2),
+        color: [0.14, 0.46, 0.18] // Aquatic wetland green
+      });
+    }
+
+    // 2. Floating Water Lily Pads with blooming Lotus Blossoms
+    this.waterLilies = [];
+    const lilyRng = new PRNG(552277);
+    const lilyBlossomColors = [
+      [0.98, 0.65, 0.82], // Lotus Pink
+      [0.96, 0.96, 0.98], // Pure White
+      [0.85, 0.72, 0.98], // Soft Lavender
+      [0.99, 0.85, 0.55]  // Sunrise Golden
+    ];
+    for (let d = -40.0; d <= 40.0; d += 2.2) {
+      const riverCenter = [-d, d];
+      const lateralOff = lilyRng.range(-2.8, 2.8);
+      const invSqrt2 = 0.7071;
+      const lx = riverCenter[0] + lateralOff * invSqrt2 + lilyRng.range(-0.4, 0.4);
+      const lz = riverCenter[1] + lateralOff * invSqrt2 + lilyRng.range(-0.4, 0.4);
+
+      if (Math.hypot(lx, lz) < 4.5) continue;
+
+      const blossomCol = lilyBlossomColors[Math.floor(lilyRng.next() * lilyBlossomColors.length)];
+      this.waterLilies.push({
+        x: lx,
+        z: lz,
+        scale: lilyRng.range(0.65, 1.15),
+        rotY: lilyRng.range(0, Math.PI * 2),
+        color: [0.12, 0.52, 0.22], // Pad deep green
+        blossomColor: blossomCol
+      });
+    }
+
+    // 3. Blooming Wildflower Clusters (Delicate colorful blossoms throughout forest)
+    this.wildFlowers = [];
+    const flowerRng = new PRNG(114488);
+    const flowerPalettes = [
+      [0.95, 0.22, 0.24], // Poppy Red
+      [0.98, 0.85, 0.15], // Sunflower Gold
+      [0.32, 0.55, 0.95], // Cornflower Blue
+      [0.88, 0.35, 0.82], // Orchid Purple
+      [0.95, 0.95, 0.98]  // Mountain Edelweiss White
+    ];
+
+    for (let gx = -42.0; gx <= 42.0; gx += 3.8) {
+      for (let gz = -42.0; gz <= 42.0; gz += 3.8) {
+        if (flowerRng.next() > 0.55) continue;
+        const fx = gx + flowerRng.range(-1.4, 1.4);
+        const fz = gz + flowerRng.range(-1.4, 1.4);
+
+        if (this.isPointInLaneOrSanctuary(fx, fz, 2.2)) continue;
+        // Don't place in deep river
+        const distDiag = Math.abs(fx + fz) * 0.7071;
+        if (distDiag < 3.2) continue;
+
+        const fColor = flowerPalettes[Math.floor(flowerRng.next() * flowerPalettes.length)];
+        this.wildFlowers.push({
+          x: fx,
+          z: fz,
+          scale: flowerRng.range(0.7, 1.25),
+          rotY: flowerRng.range(0, Math.PI * 2),
+          color: fColor
+        });
+      }
+    }
+
+    // 4. Neutral Riverbank Frogs (Low-poly cute animated frogs)
+    this.frogs = [];
+    const frogRng = new PRNG(661144);
+    for (let d = -38.0; d <= 38.0; d += 4.5) {
+      // Place near riverbanks or shallows
+      const riverCenter = [-d, d];
+      // Place on left or right bank
+      const side = frogRng.next() > 0.5 ? 1 : -1;
+      const bankDist = side * frogRng.range(3.1, 4.8);
+      const invSqrt2 = 0.7071;
+      const frogX = riverCenter[0] + bankDist * invSqrt2 + frogRng.range(-0.5, 0.5);
+      const frogZ = riverCenter[1] + bankDist * invSqrt2 + frogRng.range(-0.5, 0.5);
+
+      if (this.isPointInLaneOrSanctuary(frogX, frogZ, 2.5)) continue;
+
+      // Face towards river water
+      const toWaterX = -frogX - frogZ;
+      const rotY = Math.atan2(toWaterX, -frogX) + frogRng.range(-0.35, 0.35);
+
+      this.frogs.push({
+        id: `frog_${this.frogs.length}`,
+        x: frogX,
+        z: frogZ,
+        scale: frogRng.range(0.65, 0.95),
+        rotY,
+        color: [0.18, 0.56, 0.16] // Vibrant moss frog green
+      });
     }
   }
 
