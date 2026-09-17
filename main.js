@@ -4396,7 +4396,7 @@ class RetroSoundSynth {
       if (!this.bgMusic) {
         this.bgMusic = new Audio('assets/audio/audionautix-black-fly.mp3');
         this.bgMusic.loop = true;
-        this.bgMusic.volume = 0.45; // balanced background volume
+        this.bgMusic.volume = 0.04; // lowered background music volume for clear voice dialog
       }
 
       if (this.gunshotPool.length === 0) {
@@ -4424,6 +4424,14 @@ class RetroSoundSynth {
     }
   }
 
+  setMusicVolume(vol) {
+    const v = Math.max(0.0, Math.min(1.0, vol));
+    this.musicVolume = v;
+    if (this.bgMusic) {
+      this.bgMusic.volume = v;
+    }
+  }
+
   updateSettings(musicOn, sfxOn, zombieDensity) {
     this.musicOn = musicOn;
     this.sfxOn = sfxOn;
@@ -4443,6 +4451,7 @@ class RetroSoundSynth {
   startMusic() {
     this.init();
     if (this.bgMusic && this.musicOn) {
+      this.bgMusic.volume = this.musicVolume !== undefined ? this.musicVolume : 0.04; // Maintain subtle ambient background volume
       this.bgMusic.play().catch(e => console.log("Music play deferred: ", e));
     }
   }
@@ -4488,6 +4497,37 @@ class RetroSoundSynth {
           this.gunshotPoolIndex = (this.gunshotPoolIndex + 1) % this.gunshotPool.length;
           return;
         }
+      }
+
+      // Legacy electronic synthesizer beeps are removed and routed to 4-case voice announcer
+      const beepToVoiceAction = {
+        'health': 'health',
+        'health_small': 'health',
+        'health_medium': 'health',
+        'health_mega': 'health',
+        'armor': 'armor',
+        'armor_green': 'armor',
+        'armor_yellow': 'armor',
+        'armor_red': 'armor',
+        'armor_heavy': 'armor',
+        'ammo': 'ammo',
+        'powerup': 'powerup',
+        'powerup_quad': 'powerup',
+        'powerup_haste': 'powerup',
+        'powerup_regen': 'powerup',
+        'teleport': 'teleport',
+        'elevator': 'elevator',
+        'damage': 'damage',
+        'hit': 'damage',
+        'pickup': 'ammo',
+        'kill_major': 'kill'
+      };
+
+      if (beepToVoiceAction[type]) {
+        if (window.app && window.app.speechAnnouncer) {
+          window.app.speechAnnouncer.triggerActionVoice(beepToVoiceAction[type]);
+        }
+        return; // Eliminates legacy synthesizer beeps completely!
       }
 
       if (!this.ctx) return;
@@ -4579,10 +4619,1285 @@ class RetroSoundSynth {
         gain.connect(this.ctx.destination);
         osc.start(t);
         osc.stop(t + 0.22);
+      } else if (type === 'announcer_gong') {
+        // Deep fantasy mystic temple gong for speech announcer intro
+        const osc1 = this.ctx.createOscillator();
+        const osc2 = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc1.type = 'sine';
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(110, t);
+        osc1.frequency.exponentialRampToValueAtTime(73.42, t + 0.8);
+        osc2.frequency.setValueAtTime(220, t);
+        osc2.frequency.exponentialRampToValueAtTime(146.8, t + 0.8);
+        gain.gain.setValueAtTime(0.35, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc1.start(t);
+        osc2.start(t);
+        osc1.stop(t + 0.85);
+        osc2.stop(t + 0.85);
+      } else if (type === 'announcer_chime') {
+        // Crystalline ethereal arpeggio chord (C5 - E5 - G5)
+        [523.25, 659.25, 783.99].forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          const tOffset = t + idx * 0.07;
+          osc.frequency.setValueAtTime(freq, tOffset);
+          gain.gain.setValueAtTime(0.18, tOffset);
+          gain.gain.exponentialRampToValueAtTime(0.001, tOffset + 0.4);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(tOffset);
+          osc.stop(tOffset + 0.4);
+        });
       }
     } catch(e) {}
   }
 }
+
+// Cross-Platform Web Speech API Announcer & Dynamic Voice Studio
+class WebSpeechAnnouncer {
+  constructor(game) {
+    this.game = game;
+    this.isSupported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+    this.synth = this.isSupported ? window.speechSynthesis : null;
+    this.voices = [];
+    this.activeProfileId = 1; // 1: Fantasy Narrator, 2: Arena Combat
+    this.activeUtterance = null;
+    this.telemetryTimer = null;
+    this.spokenStartTime = 0;
+    this.isPaused = false;
+    this.voiceFilterLang = 'en';
+    this.voiceFilterSearch = '';
+    this.keepAliveInterval = null;
+    this.killCount = 0;
+    this.lastKillTime = 0;
+
+    // Dual Voice Profiles (Voice 1: Fantasy Lore, Voice 2: Arena Combat)
+    this.profiles = {
+      1: {
+        id: 1,
+        name: "Fantasy Narrator",
+        voiceURI: "",
+        voiceName: "",
+        lang: "en-US",
+        pitch: 0.75,
+        rate: 0.90,
+        volume: 1.0,
+        introChime: true,
+        chimeType: "announcer_gong",
+        chimeDelay: 150
+      },
+      2: {
+        id: 2,
+        name: "Arena Combat",
+        voiceURI: "",
+        voiceName: "",
+        lang: "en-US",
+        pitch: 1.15,
+        rate: 1.15,
+        volume: 1.0,
+        introChime: false,
+        chimeType: "announcer_chime",
+        chimeDelay: 0
+      }
+    };
+
+    this.settings = {
+      enabled: true,
+      announceKills: true,
+      announceStart: true,
+      announceElevators: true,
+      announcePowerups: true
+    };
+
+    // Default 4 cases of spoken words for each single in-game action
+    this.defaultActionVoiceCases = {
+      move: [
+        "ok lets go",
+        "I smell fight",
+        "time for hero",
+        "advancing into battle"
+      ],
+      jump: [
+        "Heads up!",
+        "Leap of faith!",
+        "To the skies!",
+        "Airborne!"
+      ],
+      attack: [
+        "Take that!",
+        "Eat plasma!",
+        "Target locked!",
+        "Fire in the hole!"
+      ],
+      damage: [
+        "Ouch, direct hit!",
+        "Armor breached!",
+        "I'm hit!",
+        "They will pay for that!"
+      ],
+      health: [
+        "Vitality restored!",
+        "I feel the healing light!",
+        "Health replenished!",
+        "Recharged and ready!"
+      ],
+      armor: [
+        "Shields fortified!",
+        "Battle armor locked!",
+        "Plates reinforced!",
+        "Defense maximized!"
+      ],
+      ammo: [
+        "Loaded and lethal!",
+        "Locked and stocked!",
+        "Fresh rounds ready!",
+        "More ammunition acquired!"
+      ],
+      powerup: [
+        "Godlike power surges!",
+        "Power overwhelming!",
+        "Unlimited wrath!",
+        "Feel the unstoppable surge!"
+      ],
+      teleport: [
+        "Phase shifting!",
+        "Into the rift!",
+        "Warp complete!",
+        "Through the void!"
+      ],
+      kill: [
+        "Enemy eliminated!",
+        "Down you go!",
+        "Target obliterated!",
+        "Another one bites the dust!"
+      ],
+      elevator: [
+        "Elevator platform rising!",
+        "Going up to the arena!",
+        "Ascending to the heights!",
+        "Platform in motion!"
+      ],
+      matchStart: [
+        "Welcome to the Forest of Hollow Blood!",
+        "The arena awaits your wrath!",
+        "Prepare for glorious combat!",
+        "Enter the battlefield and conquer!"
+      ],
+      hero_Arissa: [
+        "Arissa, Bowmaster! Swift as the wind, deadly from afar.",
+        "My arrows never miss their mark!",
+        "I strike from the shadows before they even hear the bowstring.",
+        "Arissa chosen! Ready to rain death upon our enemies."
+      ],
+      hero_Bot: [
+        "Tactical Android Bot initialized. Defensive protocols engaged.",
+        "Shields active. Heavy armor integrity at maximum.",
+        "Tactical analysis complete: victory probability ninety-nine percent.",
+        "Bot selected! Frontline bastion ready for combat."
+      ],
+      hero_Erika: [
+        "Erika, the Sorceress! Elements bend to my command.",
+        "Behold the fury of arcane sorcery!",
+        "Spells woven and mana surging through my veins.",
+        "Erika selected! Let the battlefield burn with mystic fire."
+      ],
+      hero_Monster: [
+        "Colossus Monster awoken! None can stand against my fury!",
+        "Crush them! Tear them apart!",
+        "Raw power, unstoppable chaos!",
+        "Monster selected! Heavy brute force unleashed upon the arena!"
+      ],
+      hero_Skeletonz: [
+        "Skeletonz risen! My twin blades thirst for souls.",
+        "Death walks silently in the hollow forest.",
+        "Swift gladiator strikes from the dark!",
+        "Skeletonz chosen! They will feel the chill of the grave."
+      ],
+      'hero_Woman Mobile': [
+        "Woman Mobile, Savage Skirmisher! Ready for the hunt!",
+        "Speed is lethal! Slash through their defenses!",
+        "Agility and blade in deadly harmony.",
+        "Woman Mobile chosen! Charge into the fray without fear!"
+      ],
+      lockHero: [
+        "Champion locked in! Prepare for glorious combat!",
+        "Hero confirmed! Enter the Forest of Hollow Blood!",
+        "Your champion stands ready! To the battlefield!",
+        "Lock-in confirmed! Victory awaits in the arena!"
+      ],
+      spell: [
+        "Feel the power of my ability!",
+        "Special attack engaged!",
+        "Unleashing devastation!",
+        "Taste true arcane wrath!"
+      ]
+    };
+
+    this.actionVoiceCases = JSON.parse(JSON.stringify(this.defaultActionVoiceCases));
+
+    this.actionCooldowns = {
+      move: 3500,
+      jump: 2500,
+      attack: 2000,
+      spell: 2000,
+      damage: 1800,
+      health: 1200,
+      armor: 1200,
+      ammo: 1500,
+      powerup: 0,
+      teleport: 1500,
+      kill: 0,
+      elevator: 3000,
+      matchStart: 0,
+      hero_Arissa: 400,
+      hero_Bot: 400,
+      hero_Erika: 400,
+      hero_Monster: 400,
+      hero_Skeletonz: 400,
+      'hero_Woman Mobile': 400,
+      lockHero: 0
+    };
+    this.lastActionVoiceTimes = {};
+
+    this.loadFromStorage();
+    this.initVoices();
+  }
+
+  loadFromStorage() {
+    try {
+      const stored = localStorage.getItem('killer_speech_announcer_profiles');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed[1]) this.profiles[1] = { ...this.profiles[1], ...parsed[1] };
+        if (parsed[2]) this.profiles[2] = { ...this.profiles[2], ...parsed[2] };
+      }
+      const storedSettings = localStorage.getItem('killer_speech_announcer_settings');
+      if (storedSettings) {
+        this.settings = { ...this.settings, ...JSON.parse(storedSettings) };
+      }
+      const storedActions = localStorage.getItem('killer_action_voice_cases');
+      if (storedActions) {
+        this.actionVoiceCases = { ...this.defaultActionVoiceCases, ...JSON.parse(storedActions) };
+      }
+    } catch(e) {}
+  }
+
+  saveToStorage() {
+    try {
+      localStorage.setItem('killer_speech_announcer_profiles', JSON.stringify(this.profiles));
+      localStorage.setItem('killer_speech_announcer_settings', JSON.stringify(this.settings));
+      localStorage.setItem('killer_action_voice_cases', JSON.stringify(this.actionVoiceCases));
+    } catch(e) {}
+  }
+
+  initVoices() {
+    if (!this.isSupported) return;
+
+    // Global user-interaction unlocker to ensure browser autoplay policy permits TTS audio output
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      const unlockSpeech = () => {
+        try {
+          if (window.speechSynthesis && window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
+        } catch(e) {}
+      };
+      ['click', 'pointerdown', 'keydown', 'touchstart'].forEach(evt => {
+        window.addEventListener(evt, unlockSpeech, { passive: true });
+      });
+    }
+
+    const fetchVoices = () => {
+      const list = this.synth.getVoices() || [];
+      if (list && list.length > 0) {
+        this.voices = list;
+        this.updateVoiceDropdown();
+        this.updateCppBridgeSnippet();
+      }
+    };
+
+    fetchVoices();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        fetchVoices();
+      };
+    }
+    setTimeout(fetchVoices, 250);
+    setTimeout(fetchVoices, 1000);
+    setTimeout(fetchVoices, 2500);
+  }
+
+  getFilteredVoices() {
+    if (!this.voices || this.voices.length === 0) return [];
+    return this.voices.filter(v => {
+      if (this.voiceFilterLang === 'en') {
+        if (!v.lang.toLowerCase().startsWith('en')) return false;
+      } else if (this.voiceFilterLang === 'local') {
+        if (!v.localService) return false;
+      }
+      if (this.voiceFilterSearch) {
+        const q = this.voiceFilterSearch.toLowerCase();
+        if (!v.name.toLowerCase().includes(q) && !v.lang.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  updateVoiceDropdown() {
+    const select = document.getElementById('voice-select');
+    const infoPill = document.getElementById('voice-count-info');
+    const typeInfo = document.getElementById('voice-type-info');
+    if (!select) return;
+
+    const currentProfile = this.profiles[this.activeProfileId];
+    const filtered = this.getFilteredVoices();
+
+    select.innerHTML = '';
+
+    if (filtered.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = "";
+      opt.textContent = this.voices.length > 0 ? "No voices match current filter" : "Default System Voice (Loading...)";
+      select.appendChild(opt);
+    } else {
+      filtered.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.voiceURI || v.name;
+        const tag = v.localService ? "[Offline]" : "[Cloud]";
+        opt.textContent = `${v.name} (${v.lang}) ${tag}`;
+        if (currentProfile && (v.voiceURI === currentProfile.voiceURI || v.name === currentProfile.voiceName)) {
+          opt.selected = true;
+        }
+        select.appendChild(opt);
+      });
+    }
+
+    if (infoPill) {
+      infoPill.textContent = `${filtered.length} of ${this.voices.length} voices visible`;
+    }
+    if (typeInfo) {
+      const selectedVoice = this.getSelectedVoice();
+      if (selectedVoice) {
+        typeInfo.textContent = selectedVoice.localService ? "✓ Local / Zero Latency" : "☁ High Quality Natural";
+      } else {
+        typeInfo.textContent = "Default OS Synthesizer";
+      }
+    }
+  }
+
+  getSelectedVoice() {
+    const select = document.getElementById('voice-select');
+    const uri = select ? select.value : (this.profiles[this.activeProfileId]?.voiceURI || "");
+    if (!uri && this.voices.length > 0) return this.voices[0];
+    return this.voices.find(v => v.voiceURI === uri || v.name === uri) || this.voices[0] || null;
+  }
+
+  loadProfile(id) {
+    if (!this.profiles[id]) return;
+    this.activeProfileId = id;
+
+    // Update profile button states
+    const btn1 = document.getElementById('btn-load-profile-1');
+    const btn2 = document.getElementById('btn-load-profile-2');
+    if (btn1) {
+      btn1.style.background = id === 1 ? '#0284c7' : 'rgba(15,23,42,0.8)';
+      btn1.style.borderColor = id === 1 ? '#38bdf8' : 'rgba(255,255,255,0.15)';
+      btn1.style.color = id === 1 ? '#fff' : '#cbd5e1';
+    }
+    if (btn2) {
+      btn2.style.background = id === 2 ? '#0284c7' : 'rgba(15,23,42,0.8)';
+      btn2.style.borderColor = id === 2 ? '#38bdf8' : 'rgba(255,255,255,0.15)';
+      btn2.style.color = id === 2 ? '#fff' : '#cbd5e1';
+    }
+
+    const p = this.profiles[id];
+
+    // Update voice select
+    this.updateVoiceDropdown();
+    const select = document.getElementById('voice-select');
+    if (select && p.voiceURI) {
+      select.value = p.voiceURI;
+    }
+
+    // Update inputs
+    const langInput = document.getElementById('voice-lang-override');
+    if (langInput) langInput.value = p.lang || "en-US";
+
+    const sPitch = document.getElementById('slider-voice-pitch');
+    const nPitch = document.getElementById('num-voice-pitch');
+    const vPitch = document.getElementById('val-voice-pitch');
+    if (sPitch) sPitch.value = p.pitch;
+    if (nPitch) nPitch.value = p.pitch;
+    if (vPitch) vPitch.textContent = Number(p.pitch).toFixed(2);
+
+    const sRate = document.getElementById('slider-voice-rate');
+    const nRate = document.getElementById('num-voice-rate');
+    const vRate = document.getElementById('val-voice-rate');
+    if (sRate) sRate.value = p.rate;
+    if (nRate) nRate.value = p.rate;
+    if (vRate) vRate.textContent = Number(p.rate).toFixed(2);
+
+    const sVol = document.getElementById('slider-voice-volume');
+    const nVol = document.getElementById('num-voice-volume');
+    const vVol = document.getElementById('val-voice-volume');
+    if (sVol) sVol.value = p.volume;
+    if (nVol) nVol.value = p.volume;
+    if (vVol) vVol.textContent = Number(p.volume).toFixed(2);
+
+    const chkChime = document.getElementById('chk-voice-chime');
+    if (chkChime) chkChime.checked = !!p.introChime;
+
+    const selChimeType = document.getElementById('select-voice-chime-type');
+    if (selChimeType && p.chimeType) selChimeType.value = p.chimeType;
+
+    const selChimeDelay = document.getElementById('select-voice-chime-delay');
+    if (selChimeDelay && p.chimeDelay !== undefined) selChimeDelay.value = p.chimeDelay;
+
+    this.logTelemetry(`Loaded Voice Profile ${id}: "${p.name}" (Pitch: ${p.pitch}, Rate: ${p.rate})`);
+    this.updateCppBridgeSnippet();
+  }
+
+  saveActiveProfile() {
+    const id = this.activeProfileId;
+    const voice = this.getSelectedVoice();
+    const langInput = document.getElementById('voice-lang-override');
+    const sPitch = document.getElementById('slider-voice-pitch');
+    const sRate = document.getElementById('slider-voice-rate');
+    const sVol = document.getElementById('slider-voice-volume');
+    const chkChime = document.getElementById('chk-voice-chime');
+    const selChimeType = document.getElementById('select-voice-chime-type');
+    const selChimeDelay = document.getElementById('select-voice-chime-delay');
+
+    this.profiles[id] = {
+      ...this.profiles[id],
+      voiceURI: voice ? voice.voiceURI : "",
+      voiceName: voice ? voice.name : "System Default",
+      lang: langInput ? langInput.value.trim() : (voice ? voice.lang : "en-US"),
+      pitch: sPitch ? parseFloat(sPitch.value) : 1.0,
+      rate: sRate ? parseFloat(sRate.value) : 1.0,
+      volume: sVol ? parseFloat(sVol.value) : 1.0,
+      introChime: chkChime ? chkChime.checked : false,
+      chimeType: selChimeType ? selChimeType.value : "announcer_gong",
+      chimeDelay: selChimeDelay ? parseInt(selChimeDelay.value, 10) : 0
+    };
+
+    this.saveToStorage();
+    this.logTelemetry(`✓ Saved settings to Profile ${id} (${this.profiles[id].name})!`);
+    this.updateCppBridgeSnippet();
+
+    if (this.game && this.game.showPickupToast) {
+      this.game.showPickupToast("Voice Profile Saved", `Updated Profile ${id}: ${this.profiles[id].name}`, "powerup");
+    }
+  }
+
+  resetDefaults() {
+    const id = this.activeProfileId;
+    if (id === 1) {
+      this.profiles[1] = {
+        id: 1,
+        name: "Fantasy Narrator",
+        voiceURI: "",
+        voiceName: "",
+        lang: "en-US",
+        pitch: 0.75,
+        rate: 0.90,
+        volume: 1.0,
+        introChime: true,
+        chimeType: "announcer_gong",
+        chimeDelay: 150
+      };
+    } else {
+      this.profiles[2] = {
+        id: 2,
+        name: "Arena Combat",
+        voiceURI: "",
+        voiceName: "",
+        lang: "en-US",
+        pitch: 1.15,
+        rate: 1.15,
+        volume: 1.0,
+        introChime: false,
+        chimeType: "announcer_chime",
+        chimeDelay: 0
+      };
+    }
+    this.loadProfile(id);
+    this.saveToStorage();
+    this.logTelemetry(`Reset Profile ${id} to factory defaults.`);
+  }
+
+  setTelemetryStatus(status, text) {
+    const pill = document.getElementById('speech-live-status-pill');
+    const label = document.getElementById('speech-status-text');
+    if (!pill || !label) return;
+
+    label.textContent = text || `Status: ${status}`;
+    if (status === 'SPEAKING') {
+      pill.style.background = 'rgba(34,197,94,0.2)';
+      pill.style.borderColor = 'rgba(34,197,94,0.4)';
+      pill.style.color = '#4ade80';
+    } else if (status === 'PAUSED') {
+      pill.style.background = 'rgba(234,179,8,0.2)';
+      pill.style.borderColor = 'rgba(234,179,8,0.4)';
+      pill.style.color = '#fde047';
+    } else if (status === 'ERROR') {
+      pill.style.background = 'rgba(239,68,68,0.2)';
+      pill.style.borderColor = 'rgba(239,68,68,0.4)';
+      pill.style.color = '#f87171';
+    } else {
+      pill.style.background = 'rgba(100,116,139,0.2)';
+      pill.style.borderColor = 'rgba(100,116,139,0.4)';
+      pill.style.color = '#94a3b8';
+    }
+  }
+
+  logTelemetry(msg) {
+    const logBox = document.getElementById('speech-telemetry-log');
+    if (!logBox) return;
+    const time = new Date().toLocaleTimeString();
+    logBox.innerHTML = `[${time}] ${msg}<br>` + logBox.innerHTML;
+  }
+
+  speak(text, options = {}) {
+    if (!this.isSupported) {
+      this.setTelemetryStatus('ERROR', 'Web Speech API Not Supported');
+      return;
+    }
+
+    if (!text || text.trim() === '') return;
+
+    // Fallback/profile resolution
+    const profileId = options.profileId || this.activeProfileId;
+    const p = this.profiles[profileId] || this.profiles[1];
+
+    const voice = options.voice || this.getSelectedVoice();
+    const pitch = options.pitch !== undefined ? options.pitch : (document.getElementById('slider-voice-pitch') ? parseFloat(document.getElementById('slider-voice-pitch').value) : p.pitch);
+    const rate = options.rate !== undefined ? options.rate : (document.getElementById('slider-voice-rate') ? parseFloat(document.getElementById('slider-voice-rate').value) : p.rate);
+    const volume = options.volume !== undefined ? options.volume : (document.getElementById('slider-voice-volume') ? parseFloat(document.getElementById('slider-voice-volume').value) : p.volume);
+    const lang = options.lang || (document.getElementById('voice-lang-override') ? document.getElementById('voice-lang-override').value.trim() : p.lang) || "en-US";
+    const playChime = options.introChime !== undefined ? options.introChime : (document.getElementById('chk-voice-chime') ? document.getElementById('chk-voice-chime').checked : p.introChime);
+    const chimeType = options.chimeType || (document.getElementById('select-voice-chime-type') ? document.getElementById('select-voice-chime-type').value : p.chimeType) || "announcer_gong";
+    const chimeDelay = options.chimeDelay !== undefined ? options.chimeDelay : (document.getElementById('select-voice-chime-delay') ? parseInt(document.getElementById('select-voice-chime-delay').value, 10) : p.chimeDelay) || 0;
+
+    // Cancel active speech to prevent overlap or queue stalling
+    const executeSpeech = () => {
+      try {
+        const utterance = new SpeechSynthesisUtterance(text);
+        if (voice && typeof voice === 'object' && voice.voiceURI) {
+          utterance.voice = voice;
+        }
+        utterance.pitch = Math.max(0.0, Math.min(2.0, pitch));
+        utterance.rate = Math.max(0.1, Math.min(3.0, rate));
+        utterance.volume = Math.max(0.0, Math.min(1.0, volume));
+        utterance.lang = lang || "en-US";
+
+        this.activeUtterance = utterance;
+        this.spokenStartTime = performance.now();
+        this.isPaused = false;
+
+        // UI Telemetry bindings
+        utterance.onstart = () => {
+          this.setTelemetryStatus('SPEAKING', 'Status: Speaking...');
+          const activeVoiceName = (utterance.voice && utterance.voice.name) ? utterance.voice.name : "System Default";
+          const voiceBadge = document.getElementById('speech-telemetry-voice');
+          if (voiceBadge) voiceBadge.textContent = `${activeVoiceName} (${utterance.lang})`;
+
+          if (this.telemetryTimer) clearInterval(this.telemetryTimer);
+          this.telemetryTimer = setInterval(() => {
+            if (this.spokenStartTime) {
+              const elapsed = ((performance.now() - this.spokenStartTime) / 1000).toFixed(2);
+              const timeEl = document.getElementById('speech-telemetry-time');
+              if (timeEl) timeEl.textContent = `Elapsed: ${elapsed}s`;
+            }
+          }, 60);
+
+          this.logTelemetry(`▶ Speaking: "${text.substring(0, 42)}${text.length > 42 ? '...' : ''}"`);
+        };
+
+        utterance.onboundary = (e) => {
+          const boundaryEl = document.getElementById('speech-telemetry-boundary');
+          if (boundaryEl && text) {
+            const charIdx = e.charIndex || 0;
+            const sub = text.substring(charIdx);
+            const word = sub.split(/\s+/)[0] || '';
+            boundaryEl.textContent = `Word: "${word}" (Char: ${charIdx})`;
+          }
+        };
+
+        utterance.onpause = () => {
+          this.isPaused = true;
+          this.setTelemetryStatus('PAUSED', 'Status: Paused');
+        };
+
+        utterance.onresume = () => {
+          this.isPaused = false;
+          this.setTelemetryStatus('SPEAKING', 'Status: Speaking...');
+        };
+
+        utterance.onend = () => {
+          const elapsed = ((performance.now() - this.spokenStartTime) / 1000).toFixed(2);
+          if (this.telemetryTimer) clearInterval(this.telemetryTimer);
+          this.setTelemetryStatus('IDLE', 'Status: Finished');
+          this.logTelemetry(`✓ Speech completed in ${elapsed}s`);
+          this.activeUtterance = null;
+        };
+
+        utterance.onerror = (e) => {
+          if (this.telemetryTimer) clearInterval(this.telemetryTimer);
+          if (e.error === 'interrupted' || e.error === 'canceled') {
+            this.setTelemetryStatus('IDLE', 'Status: Idle');
+          } else {
+            this.setTelemetryStatus('ERROR', `Error: ${e.error || 'Speech failed'}`);
+            this.logTelemetry(`❌ Speech error: ${e.error || 'Unknown error'}`);
+          }
+          this.activeUtterance = null;
+        };
+
+        // Workaround for Chrome long-utterance freeze bug
+        if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
+        this.keepAliveInterval = setInterval(() => {
+          if (this.synth.speaking && !this.synth.paused) {
+            this.synth.pause();
+            this.synth.resume();
+          } else {
+            clearInterval(this.keepAliveInterval);
+          }
+        }, 12000);
+
+        if (this.synth.paused) {
+          this.synth.resume();
+        }
+        this.synth.speak(utterance);
+      } catch(err) {
+        console.warn("Speech synthesis trigger failed: ", err);
+        this.setTelemetryStatus('ERROR', 'Exception occurred');
+      }
+    };
+
+    const doSpeak = () => {
+      if (playChime && this.game && this.game.synth) {
+        this.game.synth.init();
+        this.game.synth.play(chimeType);
+        if (chimeDelay > 0) {
+          setTimeout(executeSpeech, chimeDelay);
+        } else {
+          executeSpeech();
+        }
+      } else {
+        executeSpeech();
+      }
+    };
+
+    if (this.synth.speaking || this.synth.pending) {
+      this.synth.cancel();
+      // Tick delay allows Chrome to flush the cancelled utterance
+      setTimeout(doSpeak, 40);
+    } else {
+      doSpeak();
+    }
+  }
+
+  pause() {
+    if (!this.synth) return;
+    if (this.synth.speaking && !this.synth.paused) {
+      this.synth.pause();
+      this.setTelemetryStatus('PAUSED', 'Status: Paused');
+      this.logTelemetry("⏸ Speech paused.");
+    }
+  }
+
+  resume() {
+    if (!this.synth) return;
+    if (this.synth.paused) {
+      this.synth.resume();
+      this.setTelemetryStatus('SPEAKING', 'Status: Resumed');
+      this.logTelemetry("⏯ Speech resumed.");
+    }
+  }
+
+  stop() {
+    if (!this.synth) return;
+    this.synth.cancel();
+    if (this.telemetryTimer) clearInterval(this.telemetryTimer);
+    if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
+    this.setTelemetryStatus('IDLE', 'Status: Cancelled / IDLE');
+    this.logTelemetry("⏹ Speech cancelled by user.");
+  }
+
+  updateCppBridgeSnippet() {
+    const codeEl = document.getElementById('voice-cpp-snippet');
+    if (!codeEl) return;
+
+    const p1 = this.profiles[1];
+    const p2 = this.profiles[2];
+
+    codeEl.textContent = `// =========================================================================
+// Native C++ / WebAssembly Speech Engine Configuration
+// Target Engine: Google Filament Audio Bridge / Native TTS Subsystem
+// =========================================================================
+#include <string>
+#include <vector>
+
+struct VoiceProfileConfig {
+    const char* profileId;
+    const char* profileName;
+    const char* voiceName;
+    const char* langCode;
+    float pitch;        // Range 0.0f - 2.0f (0.75f = Fantasy Lore, 1.15f = Combat)
+    float rate;         // Range 0.1f - 3.0f (0.90f = Solemn, 1.15f = Combat)
+    float volume;       // Range 0.0f - 1.0f
+    bool  enableChime;
+    const char* chimeType;
+    int   chimeLeadMs;
+};
+
+// Dual Fantasy Game Voice Profiles
+static const VoiceProfileConfig g_VoiceProfiles[2] = {
+    {
+        /* [0] Voice 1: Fantasy Narrator */
+        .profileId   = "profile_1",
+        .profileName = "${p1.name}",
+        .voiceName   = "${p1.voiceName || 'System Default'}",
+        .langCode    = "${p1.lang || 'en-US'}",
+        .pitch       = ${Number(p1.pitch).toFixed(2)}f,
+        .rate        = ${Number(p1.rate).toFixed(2)}f,
+        .volume      = ${Number(p1.volume).toFixed(2)}f,
+        .enableChime = ${p1.introChime ? 'true' : 'false'},
+        .chimeType   = "${p1.chimeType}",
+        .chimeLeadMs = ${p1.chimeDelay}
+    },
+    {
+        /* [1] Voice 2: Arena Combat Announcer */
+        .profileId   = "profile_2",
+        .profileName = "${p2.name}",
+        .voiceName   = "${p2.voiceName || 'System Default'}",
+        .langCode    = "${p2.lang || 'en-US'}",
+        .pitch       = ${Number(p2.pitch).toFixed(2)}f,
+        .rate        = ${Number(p2.rate).toFixed(2)}f,
+        .volume      = ${Number(p2.volume).toFixed(2)}f,
+        .enableChime = ${p2.introChime ? 'true' : 'false'},
+        .chimeType   = "${p2.chimeType}",
+        .chimeLeadMs = ${p2.chimeDelay}
+    }
+};
+
+void AnnounceGameVoice(int profileIndex, const char* textUtterance) {
+    if (profileIndex < 0 || profileIndex >= 2) profileIndex = 0;
+    const VoiceProfileConfig& cfg = g_VoiceProfiles[profileIndex];
+    if (cfg.enableChime) {
+        AudioSubsystem::PlayProceduralSound(cfg.chimeType, cfg.chimeLeadMs);
+    }
+    SpeechSynthesisEngine::DispatchUtterance(
+        textUtterance,
+        cfg.voiceName,
+        cfg.langCode,
+        cfg.pitch,
+        cfg.rate,
+        cfg.volume
+    );
+}`;
+  }
+
+  initWorkspace() {
+    // Check Web Speech API Support
+    const badge = document.getElementById('speech-support-badge');
+    if (badge) {
+      if (this.isSupported) {
+        badge.textContent = "Web Speech API Ready";
+        badge.style.background = "rgba(34,197,94,0.2)";
+        badge.style.color = "#4ade80";
+      } else {
+        badge.textContent = "Web Speech API Unsupported in Browser";
+        badge.style.background = "rgba(239,68,68,0.2)";
+        badge.style.color = "#f87171";
+      }
+    }
+
+    // Profile Load Buttons
+    const btnP1 = document.getElementById('btn-load-profile-1');
+    if (btnP1) btnP1.addEventListener('click', () => this.loadProfile(1));
+
+    const btnP2 = document.getElementById('btn-load-profile-2');
+    if (btnP2) btnP2.addEventListener('click', () => this.loadProfile(2));
+
+    // Save Profile Button
+    const btnSave = document.getElementById('btn-save-active-profile');
+    if (btnSave) btnSave.addEventListener('click', () => this.saveActiveProfile());
+
+    // Reset Defaults Button
+    const btnReset = document.getElementById('btn-reset-voice-defaults');
+    if (btnReset) btnReset.addEventListener('click', () => this.resetDefaults());
+
+    // Reload Voices Button
+    const btnReload = document.getElementById('btn-refresh-voices');
+    if (btnReload) btnReload.addEventListener('click', () => {
+      this.initVoices();
+      this.logTelemetry("Refreshing system voice registry...");
+    });
+
+    // Language Filter
+    const selFilterLang = document.getElementById('voice-filter-lang');
+    if (selFilterLang) {
+      selFilterLang.addEventListener('change', (e) => {
+        this.voiceFilterLang = e.target.value;
+        this.updateVoiceDropdown();
+      });
+    }
+
+    // Search Voice Input
+    const searchInput = document.getElementById('voice-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        this.voiceFilterSearch = e.target.value.trim();
+        this.updateVoiceDropdown();
+      });
+    }
+
+    // Voice Selection Dropdown Change
+    const voiceSelect = document.getElementById('voice-select');
+    if (voiceSelect) {
+      voiceSelect.addEventListener('change', () => {
+        const v = this.getSelectedVoice();
+        if (v) {
+          const langInput = document.getElementById('voice-lang-override');
+          if (langInput && v.lang) langInput.value = v.lang;
+          const typeInfo = document.getElementById('voice-type-info');
+          if (typeInfo) {
+            typeInfo.textContent = v.localService ? "✓ Local / Zero Latency" : "☁ High Quality Natural";
+          }
+          this.logTelemetry(`Selected voice: ${v.name} (${v.lang})`);
+          this.updateCppBridgeSnippet();
+        }
+      });
+    }
+
+    // Language Override Input
+    const langInput = document.getElementById('voice-lang-override');
+    if (langInput) {
+      langInput.addEventListener('input', () => this.updateCppBridgeSnippet());
+    }
+
+    // Pitch Controls (Slider & Number)
+    const sPitch = document.getElementById('slider-voice-pitch');
+    const nPitch = document.getElementById('num-voice-pitch');
+    const vPitch = document.getElementById('val-voice-pitch');
+    if (sPitch && nPitch && vPitch) {
+      sPitch.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        nPitch.value = val;
+        vPitch.textContent = val.toFixed(2);
+        this.updateCppBridgeSnippet();
+      });
+      nPitch.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        sPitch.value = val;
+        vPitch.textContent = val.toFixed(2);
+        this.updateCppBridgeSnippet();
+      });
+    }
+
+    // Pitch Presets
+    document.querySelectorAll('.btn-pitch-preset').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const p = parseFloat(e.currentTarget.dataset.pitch);
+        if (sPitch) sPitch.value = p;
+        if (nPitch) nPitch.value = p;
+        if (vPitch) vPitch.textContent = p.toFixed(2);
+        this.updateCppBridgeSnippet();
+      });
+    });
+
+    // Rate Controls (Slider & Number)
+    const sRate = document.getElementById('slider-voice-rate');
+    const nRate = document.getElementById('num-voice-rate');
+    const vRate = document.getElementById('val-voice-rate');
+    if (sRate && nRate && vRate) {
+      sRate.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        nRate.value = val;
+        vRate.textContent = val.toFixed(2);
+        this.updateCppBridgeSnippet();
+      });
+      nRate.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        sRate.value = val;
+        vRate.textContent = val.toFixed(2);
+        this.updateCppBridgeSnippet();
+      });
+    }
+
+    // Rate Presets
+    document.querySelectorAll('.btn-rate-preset').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const r = parseFloat(e.currentTarget.dataset.rate);
+        if (sRate) sRate.value = r;
+        if (nRate) nRate.value = r;
+        if (vRate) vRate.textContent = r.toFixed(2);
+        this.updateCppBridgeSnippet();
+      });
+    });
+
+    // Volume Controls (Slider & Number)
+    const sVol = document.getElementById('slider-voice-volume');
+    const nVol = document.getElementById('num-voice-volume');
+    const vVol = document.getElementById('val-voice-volume');
+    if (sVol && nVol && vVol) {
+      sVol.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        nVol.value = val;
+        vVol.textContent = val.toFixed(2);
+        this.updateCppBridgeSnippet();
+      });
+      nVol.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        sVol.value = val;
+        vVol.textContent = val.toFixed(2);
+        this.updateCppBridgeSnippet();
+      });
+    }
+
+    // Chime Settings
+    const chkChime = document.getElementById('chk-voice-chime');
+    const selChimeType = document.getElementById('select-voice-chime-type');
+    const selChimeDelay = document.getElementById('select-voice-chime-delay');
+    if (chkChime) chkChime.addEventListener('change', () => this.updateCppBridgeSnippet());
+    if (selChimeType) selChimeType.addEventListener('change', () => this.updateCppBridgeSnippet());
+    if (selChimeDelay) selChimeDelay.addEventListener('change', () => this.updateCppBridgeSnippet());
+
+    // Textarea Char/Word Counter
+    const testText = document.getElementById('voice-test-text');
+    const counter = document.getElementById('voice-text-counter');
+    if (testText && counter) {
+      const updateCount = () => {
+        const str = testText.value || '';
+        const words = str.trim() ? str.trim().split(/\s+/).length : 0;
+        counter.textContent = `${str.length} chars | ${words} words`;
+      };
+      testText.addEventListener('input', updateCount);
+      updateCount();
+    }
+
+    // Preset Phrase Buttons
+    document.querySelectorAll('.btn-voice-preset').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const txt = e.currentTarget.dataset.text;
+        if (testText && txt) {
+          testText.value = txt;
+          if (counter) {
+            const words = txt.trim().split(/\s+/).length;
+            counter.textContent = `${txt.length} chars | ${words} words`;
+          }
+        }
+      });
+    });
+
+    // Transport Buttons
+    const btnSpeak = document.getElementById('btn-voice-speak');
+    if (btnSpeak) {
+      btnSpeak.addEventListener('click', () => {
+        const text = testText ? testText.value.trim() : "Testing voice announcer.";
+        this.speak(text);
+      });
+    }
+
+    const btnPause = document.getElementById('btn-voice-pause');
+    if (btnPause) btnPause.addEventListener('click', () => this.pause());
+
+    const btnResume = document.getElementById('btn-voice-resume');
+    if (btnResume) btnResume.addEventListener('click', () => this.resume());
+
+    const btnStop = document.getElementById('btn-voice-stop');
+    if (btnStop) btnStop.addEventListener('click', () => this.stop());
+
+    // In-Game Announcer Settings Checkboxes
+    const chkMain = document.getElementById('chk-ingame-announcer-enable');
+    const chkKills = document.getElementById('chk-announce-kills');
+    const chkStart = document.getElementById('chk-announce-start');
+    const chkElev = document.getElementById('chk-announce-elevators');
+    const chkPow = document.getElementById('chk-announce-powerups');
+
+    if (chkMain) {
+      chkMain.checked = this.settings.enabled;
+      chkMain.addEventListener('change', (e) => {
+        this.settings.enabled = e.target.checked;
+        this.saveToStorage();
+      });
+    }
+    if (chkKills) {
+      chkKills.checked = this.settings.announceKills;
+      chkKills.addEventListener('change', (e) => {
+        this.settings.announceKills = e.target.checked;
+        this.saveToStorage();
+      });
+    }
+    if (chkStart) {
+      chkStart.checked = this.settings.announceStart;
+      chkStart.addEventListener('change', (e) => {
+        this.settings.announceStart = e.target.checked;
+        this.saveToStorage();
+      });
+    }
+    if (chkElev) {
+      chkElev.checked = this.settings.announceElevators;
+      chkElev.addEventListener('change', (e) => {
+        this.settings.announceElevators = e.target.checked;
+        this.saveToStorage();
+      });
+    }
+    if (chkPow) {
+      chkPow.checked = this.settings.announcePowerups;
+      chkPow.addEventListener('change', (e) => {
+        this.settings.announcePowerups = e.target.checked;
+        this.saveToStorage();
+      });
+    }
+
+    // Copy C++ Code Button
+    const btnCopyCpp = document.getElementById('btn-copy-voice-cpp');
+    if (btnCopyCpp) {
+      btnCopyCpp.addEventListener('click', () => {
+        const snippet = document.getElementById('voice-cpp-snippet');
+        if (snippet && navigator.clipboard) {
+          navigator.clipboard.writeText(snippet.textContent).then(() => {
+            btnCopyCpp.textContent = "✓ Copied!";
+            setTimeout(() => { btnCopyCpp.textContent = "Copy C++ Config"; }, 2000);
+          });
+        }
+      });
+    }
+
+    // Background Music Volume Slider
+    const sMusicVol = document.getElementById('slider-bg-music-volume');
+    const vMusicVol = document.getElementById('val-bg-music-volume');
+    if (sMusicVol) {
+      sMusicVol.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (vMusicVol) vMusicVol.textContent = Math.round(v * 100) + '%';
+        if (this.game) {
+          if (this.game.setMasterMusicVolume) {
+            this.game.setMasterMusicVolume(v);
+          } else {
+            if (this.game.synth) this.game.synth.setMusicVolume(v);
+            if (this.game.mobaAudioElement) this.game.mobaAudioElement.volume = v;
+          }
+        }
+      });
+    }
+
+    // Save & Reset Action Voice Cases Buttons
+    const btnSaveCases = document.getElementById('btn-save-action-voice-cases');
+    if (btnSaveCases) {
+      btnSaveCases.addEventListener('click', () => this.saveActionVoiceCasesFromUI());
+    }
+    const btnResetCases = document.getElementById('btn-reset-action-voice-cases');
+    if (btnResetCases) {
+      btnResetCases.addEventListener('click', () => this.resetActionVoiceCasesToDefault());
+    }
+
+    // Render the 4-case voice lines matrix
+    this.renderActionVoiceCasesUI();
+
+    // Initial population
+    this.loadProfile(1);
+  }
+
+  notifyPlayerMove() {
+    this.triggerActionVoice('move', false);
+  }
+
+  triggerActionVoice(actionName, force = false) {
+    if (!this.settings.enabled) return;
+    if (actionName === 'pickup') actionName = 'ammo';
+    const cases = this.actionVoiceCases[actionName];
+    if (!cases || cases.length === 0) return;
+
+    const now = performance.now();
+    const cooldown = this.actionCooldowns[actionName] || 0;
+    const last = this.lastActionVoiceTimes[actionName] || 0;
+
+    if (!force && cooldown > 0 && (now - last < cooldown)) {
+      return;
+    }
+    this.lastActionVoiceTimes[actionName] = now;
+
+    // Pick 1 of 4 cases randomly
+    const randomIndex = Math.floor(Math.random() * cases.length);
+    const spokenText = cases[randomIndex];
+
+    // Profile 1 (Fantasy Lore / Player) or Profile 2 (Arena Announcer)
+    const profileId = (actionName === 'kill' || actionName === 'powerup' || actionName === 'matchStart' || actionName === 'lockHero') ? 2 : 1;
+
+    this.logTelemetry(`[ACTION: ${actionName.toUpperCase()}] Random Case ${randomIndex + 1}/4: "${spokenText}"`);
+
+    // Live action display element in UI
+    const lastActionEl = document.getElementById('voice-last-action-text');
+    if (lastActionEl) {
+      lastActionEl.innerHTML = `<span style="color:#38bdf8; font-weight:700;">[${actionName.toUpperCase()}] Case #${randomIndex + 1}:</span> "${spokenText}"`;
+    }
+
+    this.speak(spokenText, { profileId, introChime: false });
+  }
+
+  saveActionVoiceCasesFromUI() {
+    const actionKeys = Object.keys(this.actionVoiceCases);
+    actionKeys.forEach(action => {
+      for (let i = 0; i < 4; i++) {
+        const input = document.getElementById(`voice-case-${action}-${i}`);
+        if (input && input.value.trim()) {
+          this.actionVoiceCases[action][i] = input.value.trim();
+        }
+      }
+    });
+    this.saveToStorage();
+    if (this.game && this.game.showPickupToast) {
+      this.game.showPickupToast("Voice Cases Saved", "Updated custom 4-case voice lines matrix", "powerup");
+    }
+    this.logTelemetry("Saved custom 4-case voice action lines to storage.");
+  }
+
+  resetActionVoiceCasesToDefault() {
+    this.actionVoiceCases = JSON.parse(JSON.stringify(this.defaultActionVoiceCases));
+    this.saveToStorage();
+    this.renderActionVoiceCasesUI();
+    if (this.game && this.game.showPickupToast) {
+      this.game.showPickupToast("Voice Cases Reset", "Restored default 4-case action lines", "ammo");
+    }
+    this.logTelemetry("Restored default 4-case action voice lines.");
+  }
+
+  renderActionVoiceCasesUI() {
+    const container = document.getElementById('action-voice-matrix-container');
+    if (!container) return;
+
+    const actionMeta = [
+      { key: 'move', label: '🏃 Moving Player', desc: 'Locomotion via WASD / Mobile Joystick' },
+      { key: 'jump', label: '🦘 Player Jump', desc: 'Spacebar / Jump kinematics' },
+      { key: 'attack', label: '🎯 Weapon Attack', desc: 'Firing projectile plasma / weapon' },
+      { key: 'damage', label: '💥 Taking Damage', desc: 'Struck by enemy fire / hazards' },
+      { key: 'health', label: '❤️ Health Restored', desc: 'Health kit / vial pickups' },
+      { key: 'armor', label: '🛡️ Armor Equipped', desc: 'Battle armor / shield pickups' },
+      { key: 'ammo', label: '📦 Ammo Restocked', desc: 'Ammunition restock pickups' },
+      { key: 'powerup', label: '⚡ Powerup Surge', desc: 'Quad Damage / Haste / Regen' },
+      { key: 'teleport', label: '🌀 Teleport Warp', desc: 'Quantum portal step-in' },
+      { key: 'kill', label: '💀 Enemy Elimination', desc: 'Eliminating bot in combat' },
+      { key: 'elevator', label: '🛗 Elevator Platform', desc: 'Platform vertical ascent / descent' },
+      { key: 'matchStart', label: '⚔️ Match Start', desc: 'Match initiation & arena entry' },
+      { key: 'spell', label: '✨ Hero Ability / Spell', desc: 'Casting Q, W, E, R MOBA abilities' },
+      { key: 'hero_Arissa', label: '🏹 Hero Select: Arissa', desc: 'Selecting Bowmaster champion' },
+      { key: 'hero_Bot', label: '🤖 Hero Select: Bot', desc: 'Selecting Android Guardian champion' },
+      { key: 'hero_Erika', label: '🔮 Hero Select: Erika', desc: 'Selecting Sorceress champion' },
+      { key: 'hero_Monster', label: '👹 Hero Select: Monster', desc: 'Selecting Colossus Brute champion' },
+      { key: 'hero_Skeletonz', label: '💀 Hero Select: Skeletonz', desc: 'Selecting Dual Blade champion' },
+      { key: 'hero_Woman Mobile', label: '🗡️ Hero Select: Woman Mobile', desc: 'Selecting Savage Skirmisher champion' },
+      { key: 'lockHero', label: '🔒 Hero Locked In', desc: 'Confirming champion selection in lobby' }
+    ];
+
+    container.innerHTML = '';
+
+    actionMeta.forEach(meta => {
+      const cases = this.actionVoiceCases[meta.key] || ["", "", "", ""];
+      const card = document.createElement('div');
+      card.style.background = 'rgba(15,23,42,0.65)';
+      card.style.border = '1px solid rgba(56,189,248,0.2)';
+      card.style.borderRadius = '8px';
+      card.style.padding = '10px 12px';
+      card.style.display = 'flex';
+      card.style.flexDirection = 'column';
+      card.style.gap = '6px';
+
+      card.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <span style="font-weight:700; font-size:12px; color:#f8fafc;">${meta.label}</span>
+            <span style="font-size:10px; color:#64748b; margin-left:6px;">(${meta.desc})</span>
+          </div>
+          <button class="btn-xs btn-test-action-rnd" data-action="${meta.key}" style="font-size:10px; padding:3px 8px; background:rgba(2,132,199,0.3); border:1px solid #38bdf8; color:#38bdf8; cursor:pointer; border-radius:4px;">
+            🎲 Test Random Case
+          </button>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:2px;">
+          ${cases.map((c, idx) => `
+            <div style="display:flex; align-items:center; gap:4px; background:rgba(10,15,26,0.6); padding:4px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.06);">
+              <span style="font-size:10px; color:#38bdf8; font-weight:700; width:16px;">#${idx+1}:</span>
+              <input type="text" id="voice-case-${meta.key}-${idx}" class="action-case-input" data-action="${meta.key}" data-idx="${idx}" value="${c.replace(/"/g, '&quot;')}" style="width:100%; background:transparent; border:none; color:#e2e8f0; font-size:11px; outline:none;">
+            </div>
+          `).join('')}
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+    // Bind Test Random buttons
+    container.querySelectorAll('.btn-test-action-rnd').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const action = e.currentTarget.dataset.action;
+        this.triggerActionVoice(action, true);
+      });
+    });
+
+    // Bind real-time input change updates
+    container.querySelectorAll('.action-case-input').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const act = e.currentTarget.dataset.action;
+        const idx = parseInt(e.currentTarget.dataset.idx, 10);
+        if (this.actionVoiceCases[act]) {
+          this.actionVoiceCases[act][idx] = e.currentTarget.value;
+          this.saveToStorage();
+        }
+      });
+    });
+  }
+
+  // In-Game Automatic Event Announcements
+  announceMatchStart() {
+    if (!this.settings.enabled || !this.settings.announceStart) return;
+    this.killCount = 0;
+    this.triggerActionVoice('matchStart', true);
+  }
+
+  announceBotKill(alias) {
+    if (!this.settings.enabled || !this.settings.announceKills) return;
+    const now = performance.now();
+    if (now - this.lastKillTime < 6000) {
+      this.killCount++;
+    } else {
+      this.killCount = 1;
+    }
+    this.lastKillTime = now;
+
+    if (this.killCount >= 2) {
+      let phrase = "Double Kill! Unstoppable fury!";
+      if (this.killCount === 3) phrase = "Triple Kill! A legend is born!";
+      if (this.killCount >= 4) phrase = "Rampage! Slaughter in the hollow blood!";
+      this.speak(phrase, { profileId: 2 });
+    } else {
+      this.triggerActionVoice('kill', true);
+    }
+  }
+
+  announcePlayerDeath(attacker) {
+    if (!this.settings.enabled || !this.settings.announceKills) return;
+    this.killCount = 0;
+    this.speak("Humiliation! You have fallen in combat.", { profileId: 1 });
+  }
+
+  announceElevator(name) {
+    if (!this.settings.enabled || !this.settings.announceElevators) return;
+    this.triggerActionVoice('elevator', false);
+  }
+
+  announcePowerup(pickupName) {
+    if (!this.settings.enabled || !this.settings.announcePowerups) return;
+    this.triggerActionVoice('powerup', true);
+  }
+}
+
 
 // generateStairs, MAP_DEFINITIONS, ELEMENTAL_ITEMS_CATALOG, and FILAMENT_MATERIALS_CATALOG
 // are imported from ./maps/index.js (AAA architecture)
@@ -4878,6 +6193,13 @@ class NativeApp {
 
     // Web Audio Synthesizer for FPS Sound FX
     this.synth = new RetroSoundSynth();
+
+    // Background music master volume (soft 4% default so voices are crystal clear)
+    this.masterMusicVolume = 0.04;
+
+    // Cross-Platform Web Speech Voice Announcer Subsystem
+    this.speechAnnouncer = new WebSpeechAnnouncer(this);
+    this.announcedMatchStart = false;
 
     // Map & Items Systems State
     this.currentMapId = 'q3dm17';
@@ -8725,11 +10047,68 @@ void main() {
   }
 
   preventBrowserZoom() {
-    // 1. Prevent Safari iOS gesture zoom events on window/document
-    const stopGesture = (e) => e.preventDefault();
-    document.addEventListener('gesturestart', stopGesture, { passive: false });
-    document.addEventListener('gesturechange', stopGesture, { passive: false });
-    document.addEventListener('gestureend', stopGesture, { passive: false });
+    // 1. Handle Safari iOS gesture zoom events on window/document for two-finger pinch-to-zoom
+    let lastGestureScale = 1.0;
+    const onGestureStart = (e) => {
+      e.preventDefault();
+      lastGestureScale = 1.0;
+      if (this.pinchZoomState) {
+        this.pinchZoomState.active = true;
+        this.pinchZoomState.lastPinchTime = Date.now();
+      }
+    };
+    const onGestureChange = (e) => {
+      e.preventDefault();
+      const scaleDelta = e.scale - lastGestureScale;
+      lastGestureScale = e.scale;
+      if (this.pinchZoomState) {
+        this.pinchZoomState.active = true;
+        this.pinchZoomState.lastPinchTime = Date.now();
+      }
+
+      const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba') && this.mobaState && this.mobaState.playing;
+      if (isMoba) {
+        if (this.mobaState.zoomLevel === undefined) {
+          this.mobaState.zoomLevel = this.isMobileDevice() ? 18.5 : 16.5;
+        }
+        // scale > 1 (scaleDelta > 0) is spreading fingers -> ZOOM IN (lower zoomLevel)
+        // scale < 1 (scaleDelta < 0) is pinching fingers together -> ZOOM OUT (higher zoomLevel)
+        const zoomSens = Math.max(0.02, 0.05 * (this.mobaState.zoomLevel / 16.0));
+        this.mobaState.zoomLevel = Math.max(1.8, Math.min(32.0, this.mobaState.zoomLevel - scaleDelta * 12.0));
+        this.showMobileZoomIndicator(this.mobaState.zoomLevel);
+        return;
+      }
+
+      if (this.state.cameraMode === 0 || (this.state.demoScene && this.state.demoScene.includes('11_plinko'))) {
+        const zoomSens = 0.014 * Math.max(0.4, this.state.camRadius * 0.22);
+        this.state.camRadius = Math.max(0.4, Math.min(26.0, this.state.camRadius - scaleDelta * 4.0));
+        if (this.state.camRadius <= 0.6 && scaleDelta > 0.08) {
+          this.state.cameraMode = 1;
+          const camSelect = document.getElementById('camera-mode-select');
+          if (camSelect) camSelect.value = "1";
+          this.showMobileZoomIndicator(this.state.camRadius, 'First-Person Mode');
+        } else {
+          this.showMobileZoomIndicator(this.state.camRadius, `Orbit View (${this.state.camRadius.toFixed(1)}m)`);
+        }
+      } else if (this.state.cameraMode === 1 && scaleDelta < -0.08) {
+        this.state.cameraMode = 0;
+        this.state.camRadius = 1.3;
+        const camSelect = document.getElementById('camera-mode-select');
+        if (camSelect) camSelect.value = "0";
+        this.showMobileZoomIndicator(this.state.camRadius, 'Orbit View');
+      }
+    };
+    const onGestureEnd = (e) => {
+      e.preventDefault();
+      if (this.pinchZoomState) {
+        this.pinchZoomState.active = false;
+        this.pinchZoomState.lastPinchTime = Date.now();
+      }
+    };
+
+    document.addEventListener('gesturestart', onGestureStart, { passive: false });
+    document.addEventListener('gesturechange', onGestureChange, { passive: false });
+    document.addEventListener('gestureend', onGestureEnd, { passive: false });
 
     // 2. Prevent Ctrl + Wheel browser zooming on desktop browsers and touchpads
     window.addEventListener('wheel', (e) => {
@@ -8968,10 +10347,26 @@ void main() {
 
       canvasContainer.addEventListener('touchstart', (e) => {
         // If touch occurred inside any overlay dialog, buttons, or scrollable panels, do NOT preventDefault or trigger camera orbit!
-        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea')) {
+        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal')) {
           return;
         }
         e.preventDefault();
+
+        // ✌️ Universal Two-Finger Pinch-to-Zoom Gesture across all modes
+        if (e.touches && e.touches.length >= 2) {
+          const t0 = e.touches[0];
+          const t1 = e.touches[1];
+          const dist = getTouchDist(t0, t1);
+          this.pinchZoomState.active = true;
+          this.pinchZoomState.startDist = dist;
+          this.pinchZoomState.lastDist = dist;
+          this.pinchZoomState.lastPinchTime = Date.now();
+          this.pinchZoomState.lastCenterX = (t0.clientX + t1.clientX) / 2;
+          this.pinchZoomState.lastCenterY = (t0.clientY + t1.clientY) / 2;
+          // Temporarily pause single-finger look to prevent jumpy camera yaw/pitch
+          this.touchLookState.active = false;
+          return;
+        }
 
         const isFPS = checkIsFPS();
         const now = Date.now();
@@ -9078,6 +10473,96 @@ void main() {
       }, { passive: false });
 
       const handleTouchMove = (e) => {
+        // ✌️ Universal Two-Finger Pinch-to-Zoom / Translation Gestures across all modes
+        if (e.touches && e.touches.length >= 2) {
+          if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal')) {
+            return;
+          }
+          e.preventDefault();
+
+          const t0 = e.touches[0];
+          const t1 = e.touches[1];
+          const currentDist = getTouchDist(t0, t1);
+          const currentCenterX = (t0.clientX + t1.clientX) / 2;
+          const currentCenterY = (t0.clientY + t1.clientY) / 2;
+
+          if (!this.pinchZoomState.active) {
+            this.pinchZoomState.active = true;
+            this.pinchZoomState.startDist = currentDist;
+            this.pinchZoomState.lastDist = currentDist;
+            this.pinchZoomState.lastCenterX = currentCenterX;
+            this.pinchZoomState.lastCenterY = currentCenterY;
+          }
+
+          const deltaDist = currentDist - this.pinchZoomState.lastDist;
+          this.pinchZoomState.lastDist = currentDist;
+          this.pinchZoomState.lastPinchTime = Date.now();
+
+          // Two-Finger swipe translation (left-right panning) for Roulette
+          const ds = this.state.demoScene || '';
+          const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
+
+          if (isRoulette) {
+            if (this.pinchZoomState.lastCenterX !== undefined && this.pinchZoomState.lastCenterY !== undefined) {
+              const dx = currentCenterX - this.pinchZoomState.lastCenterX;
+              const dy = currentCenterY - this.pinchZoomState.lastCenterY;
+
+              const panSens = 0.003 * this.state.camRadius;
+              this.state.camTarget[0] -= dx * panSens;
+              this.state.camTarget[2] -= dy * panSens;
+            }
+          }
+
+          this.pinchZoomState.lastCenterX = currentCenterX;
+          this.pinchZoomState.lastCenterY = currentCenterY;
+
+          if (Math.abs(deltaDist) > 0.05) {
+            const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba') && this.mobaState && this.mobaState.playing;
+            if (isMoba) {
+              if (this.mobaState.zoomLevel === undefined) {
+                this.mobaState.zoomLevel = this.isMobileDevice() ? 18.5 : 16.5;
+              }
+              // Standard two finger zoom gesture:
+              // Fingers spreading apart (pinch out / deltaDist > 0) -> zoom in (lower zoomLevel, down to 1.8 for First-Person view)
+              // Fingers pinching together (pinch in / deltaDist < 0) -> zoom out (higher zoomLevel, up to 32.0 for RTS view)
+              const zoomSens = Math.max(0.018, 0.05 * (this.mobaState.zoomLevel / 16.0));
+              this.mobaState.zoomLevel = Math.max(1.8, Math.min(32.0, this.mobaState.zoomLevel - deltaDist * zoomSens));
+              this.showMobileZoomIndicator(this.mobaState.zoomLevel);
+              return;
+            }
+
+            // In 3D Plinko table / Orbit Camera mode:
+            // Fingers spread (deltaDist > 0) -> zoom in (lower radius)
+            // Fingers pinch together (deltaDist < 0) -> zoom out (higher radius)
+            if (this.state.cameraMode === 0 || this.state.demoScene.includes('11_plinko')) {
+              const zoomSens = 0.014 * Math.max(0.4, this.state.camRadius * 0.22);
+              this.state.camRadius = Math.max(0.4, Math.min(26.0, this.state.camRadius - deltaDist * zoomSens));
+              if (this.state.camRadius <= 0.6 && deltaDist > 0.4 && !this.state.demoScene.includes('11_plinko')) {
+                // Smooth transition into First-Person view
+                this.state.cameraMode = 1;
+                const camSelect = document.getElementById('camera-mode-select');
+                if (camSelect) camSelect.value = "1";
+                this.showMobileZoomIndicator(this.state.camRadius, 'First-Person Mode');
+              } else {
+                this.showMobileZoomIndicator(this.state.camRadius, `Orbit View (${this.state.camRadius.toFixed(1)}m)`);
+              }
+            } else if (this.state.cameraMode === 1) {
+              // In First Person: pinch fingers together to zoom back out to Orbit
+              if (deltaDist < -0.4) {
+                this.state.cameraMode = 0;
+                this.state.camRadius = 1.3;
+                const camSelect = document.getElementById('camera-mode-select');
+                if (camSelect) camSelect.value = "0";
+                this.showMobileZoomIndicator(this.state.camRadius, 'Orbit View');
+              }
+            } else {
+              this.state.moveSpeed = Math.max(0.5, Math.min(30.0, this.state.moveSpeed + deltaDist * 0.02));
+              this.showMobileZoomIndicator(this.state.moveSpeed, `Cam Speed: ${this.state.moveSpeed.toFixed(1)} u/s`);
+            }
+          }
+          return;
+        }
+
         const isFPS = checkIsFPS();
 
         if (isFPS) {
@@ -9104,61 +10589,10 @@ void main() {
         }
 
         // NON-FPS MODES:
-        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea')) {
+        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal')) {
           return;
         }
         e.preventDefault();
-
-        // ✌️ Handle Two-Finger Pinch-To-Zoom / 2-Finger Translation Gestures
-        if (e.touches.length >= 2) {
-          const t0 = e.touches[0];
-          const t1 = e.touches[1];
-          const currentDist = getTouchDist(t0, t1);
-          const currentCenterX = (t0.clientX + t1.clientX) / 2;
-          const currentCenterY = (t0.clientY + t1.clientY) / 2;
-
-          if (!this.pinchZoomState.active) {
-            this.pinchZoomState.active = true;
-            this.pinchZoomState.startDist = currentDist;
-            this.pinchZoomState.lastDist = currentDist;
-            this.pinchZoomState.lastCenterX = currentCenterX;
-            this.pinchZoomState.lastCenterY = currentCenterY;
-          }
-
-          const deltaDist = currentDist - this.pinchZoomState.lastDist;
-          this.pinchZoomState.lastDist = currentDist;
-
-          // Two-Finger swipe translation (left-right panning) for Roulette
-          const ds = this.state.demoScene || '';
-          const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
-
-          if (isRoulette) {
-            if (this.pinchZoomState.lastCenterX !== undefined && this.pinchZoomState.lastCenterY !== undefined) {
-              const dx = currentCenterX - this.pinchZoomState.lastCenterX;
-              const dy = currentCenterY - this.pinchZoomState.lastCenterY;
-
-              const panSens = 0.003 * this.state.camRadius;
-              this.state.camTarget[0] -= dx * panSens;
-              this.state.camTarget[2] -= dy * panSens;
-            }
-          }
-
-          this.pinchZoomState.lastCenterX = currentCenterX;
-          this.pinchZoomState.lastCenterY = currentCenterY;
-
-          if (Math.abs(deltaDist) > 0.05) {
-            // In 3D Plinko table / Orbit Camera mode:
-            // Fingers spread (deltaDist > 0) -> zoom in (lower radius)
-            // Fingers pinch together (deltaDist < 0) -> zoom out (higher radius)
-            if (this.state.cameraMode === 0 || this.state.demoScene.includes('11_plinko')) {
-              const zoomSens = 0.014 * Math.max(0.4, this.state.camRadius * 0.22);
-              this.state.camRadius = Math.max(0.5, Math.min(26.0, this.state.camRadius - deltaDist * zoomSens));
-            } else {
-              this.state.moveSpeed = Math.max(0.5, Math.min(30.0, this.state.moveSpeed + deltaDist * 0.02));
-            }
-          }
-          return;
-        }
 
         // In Pong demo, touch dragging moves the player paddle ("player pin") directly, NOT the camera orbit!
         if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
@@ -9438,6 +10872,20 @@ void main() {
     if (btnCam) {
       btnCam.addEventListener('click', (e) => {
         e.preventDefault();
+        const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba') && this.mobaState && this.mobaState.playing;
+        if (isMoba) {
+          if (this.mobaState.zoomLevel === undefined) {
+            this.mobaState.zoomLevel = this.isMobileDevice() ? 18.5 : 16.5;
+          }
+          if (this.mobaState.zoomLevel <= 3.5) {
+            this.mobaState.zoomLevel = this.isMobileDevice() ? 18.5 : 16.5;
+          } else {
+            this.mobaState.zoomLevel = 2.2;
+          }
+          this.showMobileZoomIndicator(this.mobaState.zoomLevel);
+          return;
+        }
+
         this.state.cameraMode = (this.state.cameraMode + 1) % 3;
         const camSelect = document.getElementById('camera-mode-select');
         if (camSelect) camSelect.value = String(this.state.cameraMode);
@@ -9445,6 +10893,7 @@ void main() {
         this.log(`Camera switched to [${modeNames[this.state.cameraMode]}]`, "cpp");
         const fpHelp = document.getElementById('fp-help');
         if (fpHelp) fpHelp.style.display = this.state.cameraMode !== 0 ? 'block' : 'none';
+        this.showMobileZoomIndicator(this.state.camRadius, `Mode: ${modeNames[this.state.cameraMode]}`);
       });
     }
 
@@ -9458,9 +10907,54 @@ void main() {
         this.state.camPos[0] = 0; this.state.camPos[1] = 1.2; this.state.camPos[2] = this.state.camRadius;
         this.state.camTarget[0] = 0; this.state.camTarget[1] = 0; this.state.camTarget[2] = 0;
         this.log("Mobile camera pose reset.", "info");
+        this.showMobileZoomIndicator(this.state.camRadius, 'Camera Reset');
       });
     }
     this.updateMobileActionButtonsVisibility();
+  }
+
+  showMobileZoomIndicator(zoomVal, customLabel = null) {
+    let el = document.getElementById('mobile-zoom-indicator');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'mobile-zoom-indicator';
+      el.className = 'pointer-events-none fixed top-14 left-1/2 -translate-x-1/2 z-50 bg-black/85 backdrop-blur-md border border-cyan-400/50 text-cyan-300 px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide shadow-2xl transition-opacity duration-300 opacity-0 flex items-center space-x-2';
+      document.body.appendChild(el);
+    }
+    const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba');
+    let text = '';
+    let icon = '🔍';
+    if (customLabel) {
+      text = customLabel;
+      icon = customLabel.toLowerCase().includes('first') ? '🎥' : '🔄';
+    } else if (isMoba) {
+      if (zoomVal <= 3.5) {
+        text = `First-Person View (${zoomVal.toFixed(1)}x)`;
+        icon = '🎥';
+      } else {
+        text = `RTS Bird's-Eye View (${zoomVal.toFixed(1)}x)`;
+        icon = '🗺️';
+      }
+    } else {
+      text = `Zoom: ${zoomVal.toFixed(1)}m`;
+    }
+    el.innerHTML = `<span>${icon}</span> <span>${text}</span>`;
+    el.style.opacity = '1';
+
+    // Sync HUD button in MOBA overlay
+    const camLabel = document.getElementById('moba-cam-label');
+    const camIcon = document.getElementById('moba-cam-icon');
+    if (camLabel && isMoba) {
+      camLabel.textContent = zoomVal <= 3.5 ? 'CAM: 1ST PERSON' : 'CAM: RTS';
+    }
+    if (camIcon && isMoba) {
+      camIcon.textContent = zoomVal <= 3.5 ? '🎥' : '🗺️';
+    }
+
+    if (this._zoomIndicatorTimer) clearTimeout(this._zoomIndicatorTimer);
+    this._zoomIndicatorTimer = setTimeout(() => {
+      if (el) el.style.opacity = '0';
+    }, 1300);
   }
 
   populateUnifiedSelects() {
@@ -10008,6 +11502,9 @@ else if (typeof define === 'function' && define['amd'])
     this.initItemsWorkspace();
     this.initMaterialsWorkspace();
     this.initHzbWorkspace();
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.initWorkspace();
+    }
     this.loadQuakeMap('q3dm17', false);
   }
 
@@ -11031,6 +12528,9 @@ else if (typeof define === 'function' && define['amd'])
     // Play weapon fire sound
     if (this.synth) {
       this.synth.play('fire');
+    }
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.triggerActionVoice('attack');
     }
 
     // Check Quad Damage
@@ -12097,6 +13597,7 @@ else if (typeof define === 'function' && define['amd'])
 
     if (isDestroyed) {
       if (this.synth) this.synth.play('megahealth');
+      if (this.speechAnnouncer) this.speechAnnouncer.announceBotKill(bot.alias);
       this.showPickupToast("🎯 BOT ELIMINATED", `You killed ${bot.alias}! (+100 PTS)`, "powerup");
       this.log(`💥 [ELIMINATION] You eliminated AI Combat Bot "${bot.alias}"! Respawning in 4s...`, "success");
     }
@@ -12140,6 +13641,7 @@ else if (typeof define === 'function' && define['amd'])
 
   handlePlayerDeath(attackerName) {
     if (this.synth) this.synth.play('teleport');
+    if (this.speechAnnouncer) this.speechAnnouncer.announcePlayerDeath(attackerName);
     this.showPickupToast("💥 YOU WERE ELIMINATED", `Killed by [${attackerName}]! Respawning...`, "health");
     this.log(`💀 [PLAYER DIED] Slain in combat by ${attackerName}! Respawning at spawn pad...`, "danger");
 
@@ -12673,6 +14175,10 @@ else if (typeof define === 'function' && define['amd'])
     if (this.synth) {
       this.synth.updateSettings(musicOn, sfxOn, density);
       this.synth.startMusic();
+    }
+
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.announceMatchStart();
     }
 
     this.sync3DBotsFromLobby();
@@ -24293,6 +25799,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (this.state.keys.space && pc.isGrounded) {
         pc.velocity[1] = pc.jumpForce;
         pc.isGrounded = false;
+        if (this.speechAnnouncer) {
+          this.speechAnnouncer.triggerActionVoice('jump');
+        }
       } else {
         pc.velocity[1] += pc.gravity * dt;
       }
@@ -24314,9 +25823,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       } else if (horizontalSpeed > 6.0) {
         pc.state = 'SPRINTING';
         pc.activeAnim = 'Run';
+        if (this.speechAnnouncer) {
+          this.speechAnnouncer.notifyPlayerMove();
+        }
       } else if (horizontalSpeed > 0.2) {
         pc.state = 'WALKING';
         pc.activeAnim = 'Walk';
+        if (this.speechAnnouncer) {
+          this.speechAnnouncer.notifyPlayerMove();
+        }
       } else {
         pc.state = 'IDLE';
         pc.activeAnim = 'Idle';
@@ -24493,6 +26008,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.state.camPos[0] -= this.state.camRight[0] * moveSpeed;
         this.state.camPos[2] -= this.state.camRight[2] * moveSpeed;
       }
+
+      const isPlayerMoving = this.state.keys.w || this.state.keys.s || this.state.keys.a || this.state.keys.d ||
+                             (this.joystickState && this.joystickState.active && (Math.abs(joyF) > 0.15 || Math.abs(joyR) > 0.15));
+      if (isPlayerMoving && this.speechAnnouncer) {
+        this.speechAnnouncer.notifyPlayerMove();
+      }
+
       // Vertical movement & jump physics
       if (this.state.cameraMode === 2) {
         // 6-DOF Free-Fly Camera: Q / E ascend and descend
@@ -24512,6 +26034,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (this.state.keys.space && this.state.fpsIsGrounded) {
           this.state.fpsVelocityY = jumpForce;
           this.state.fpsIsGrounded = false;
+          if (this.speechAnnouncer) {
+            this.speechAnnouncer.triggerActionVoice('jump');
+          }
         } else if (!this.state.fpsIsGrounded) {
           this.state.fpsVelocityY += gravity * dt;
         }
@@ -26226,7 +27751,25 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       };
     }
 
-    // Set up Shop Modal toggle buttons
+    // Set up Shop & Camera Toggle buttons
+    const btnCamToggle = document.getElementById('moba-btn-cam-toggle');
+    if (btnCamToggle) {
+      btnCamToggle.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (this.mobaState.zoomLevel === undefined) {
+          this.mobaState.zoomLevel = this.isMobileDevice() ? 18.5 : 16.5;
+        }
+        if (this.mobaState.zoomLevel <= 3.5) {
+          this.mobaState.zoomLevel = this.isMobileDevice() ? 18.5 : 16.5;
+        } else {
+          this.mobaState.zoomLevel = 2.2;
+        }
+        this.mobaPlaySound('select');
+        this.showMobileZoomIndicator(this.mobaState.zoomLevel);
+      };
+    }
+
     const btnShop = document.getElementById('moba-btn-shop');
     const modalShop = document.getElementById('moba-shop-modal');
     if (btnShop && modalShop) {
@@ -26339,7 +27882,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (this._mobaTouchHandler) this.canvas.removeEventListener('touchstart', this._mobaTouchHandler);
     this._mobaTouchHandler = (e) => {
       if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
-      if (e.touches && e.touches.length > 0) {
+      // Do not trigger ground movement if a two-finger pinch gesture is occurring or just concluded
+      if (e.touches && e.touches.length >= 2) return;
+      if (this.pinchZoomState && this.pinchZoomState.active) return;
+      if (this.pinchZoomState && this.pinchZoomState.lastPinchTime && (Date.now() - this.pinchZoomState.lastPinchTime < 400)) return;
+
+      if (e.touches && e.touches.length === 1) {
         const touch = e.touches[0];
         const rect = this.canvas.getBoundingClientRect();
         const mx = touch.clientX - rect.left;
@@ -26476,6 +28024,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
   }
 
+  setMasterMusicVolume(vol) {
+    const v = Math.max(0.0, Math.min(1.0, vol));
+    this.masterMusicVolume = v;
+    if (this.synth) {
+      this.synth.setMusicVolume(v);
+    }
+    if (this.mobaAudioElement) {
+      this.mobaAudioElement.volume = v;
+    }
+  }
+
   initMobaMusic() {
     if (this._mobaMusicInitialized) return;
     this._mobaMusicInitialized = true;
@@ -26506,15 +28065,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     const trackUrl = this.mobaPlaylist[this.mobaCurrentTrackIndex];
+    const targetVol = this.masterMusicVolume !== undefined ? this.masterMusicVolume : 0.04;
 
     if (!this.mobaAudioElement) {
       this.mobaAudioElement = new Audio();
-      this.mobaAudioElement.volume = 0.40;
+      this.mobaAudioElement.volume = targetVol;
       
       this.mobaAudioElement.addEventListener('ended', () => {
         this.mobaCurrentTrackPlayCount++;
         if (this.mobaCurrentTrackPlayCount < 3) {
           this.mobaAudioElement.currentTime = 0;
+          this.mobaAudioElement.volume = this.masterMusicVolume !== undefined ? this.masterMusicVolume : 0.04;
           this.mobaAudioElement.play().catch(err => console.log("Music play failed:", err));
         } else {
           this.mobaCurrentTrackPlayCount = 0;
@@ -26524,6 +28085,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       });
     }
 
+    this.mobaAudioElement.volume = targetVol;
     this.mobaAudioElement.src = trackUrl;
     this.mobaAudioElement.load();
     this.mobaAudioElement.play()
@@ -26661,8 +28223,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
     }
 
-    // Play selection sound
-    this.mobaPlaySound('select');
+    // Announce selected hero with random 4-case spoken voice lines
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.triggerActionVoice('hero_' + heroName, true);
+    }
 
     // Sync preview selection to remote players
     if (this.mobaState.activePartyId) {
@@ -26705,6 +28269,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       lockBtn.disabled = true;
       lockBtn.textContent = 'LOCKED-IN';
       lockBtn.className = 'w-full py-2 bg-emerald-600 font-bold text-xs text-slate-100 rounded-lg cursor-not-allowed';
+    }
+
+    // Announce hero lock-in
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.triggerActionVoice('lockHero', true);
     }
 
     // Apply the active base hero stats to local state for the 6 approved heroes
@@ -26909,7 +28478,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // Spend Mana and trigger cooldown
     this.mobaState.heroStats.mp -= cost;
     this.mobaState.spellsCooldown[index] = cooldowns[index];
-    this.mobaPlaySound('spell');
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.triggerActionVoice('spell');
+    }
     this.log(`🔮 Cast ${spellNames[index]}!`, "info");
 
     const playerPos = this.mobaState.currentPos;
@@ -27070,8 +28641,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
 
     if (zoom <= 3.5) {
+      // First-Person / Over-the-shoulder hero camera
       const playerYaw = this.mobaState.currentYaw || this.mobaState.rotation || 0;
-      // Position camera target slightly ahead of player to offset shoulder view
       this.state.camTarget[0] = playerPos[0] + Math.sin(playerYaw) * 2.2;
       this.state.camTarget[1] = playerPos[1] + 1.25;
       this.state.camTarget[2] = playerPos[2] + Math.cos(playerYaw) * 2.2;
@@ -27079,7 +28650,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.state.camRadius = zoom;
       this.state.camPitch = 0.15; // Ground-level view
       this.state.camYaw = playerYaw + Math.PI; // Face the direction hero is moving
+    } else if (zoom < 6.0) {
+      // Smooth intermediate blend between First-Person and RTS perspective
+      const t = (zoom - 3.5) / (6.0 - 3.5); // 0 at 3.5, 1 at 6.0
+      const playerYaw = this.mobaState.currentYaw || this.mobaState.rotation || 0;
+      const targetX = playerPos[0] + (1 - t) * Math.sin(playerYaw) * 2.2;
+      const targetY = playerPos[1] + (1 - t) * 0.25 + 1.0;
+      const targetZ = playerPos[2] + (1 - t) * Math.cos(playerYaw) * 2.2;
+
+      this.state.camTarget[0] = targetX;
+      this.state.camTarget[1] = targetY;
+      this.state.camTarget[2] = targetZ;
+
+      this.state.camRadius = zoom;
+      this.state.camPitch = 0.15 + t * (0.98 - 0.15);
+      this.state.camYaw = (1 - t) * (playerYaw + Math.PI);
     } else {
+      // Classic top-down / RTS MOBA perspective
       this.state.camTarget[0] = playerPos[0];
       this.state.camTarget[1] = 1.0;
       this.state.camTarget[2] = playerPos[2];
@@ -27207,6 +28794,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.mobaState.currentYaw = this.mobaState.rotation;
           this.mobaState.velocity = [(dx / dist) * speed, 0, (dz / dist) * speed];
           this.mobaState.isWalking = true;
+          if (this.speechAnnouncer) {
+            this.speechAnnouncer.notifyPlayerMove();
+          }
         } else {
           // In range: stop and attack!
           this.mobaState.velocity = [0, 0, 0];
@@ -27217,7 +28807,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (this.mobaState.attackTimer <= 0) {
             this.mobaState.attackTimer = this.mobaState.heroStats.attackCooldown || 0.85;
             this.mobaState.lastAttackTime = performance.now();
-            this.mobaPlaySound('attack');
+            if (this.speechAnnouncer) {
+              this.speechAnnouncer.triggerActionVoice('attack');
+            }
 
             const isRanged = attackRange > 3.0;
             if (isRanged) {
@@ -27254,6 +28846,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.mobaState.currentYaw = this.mobaState.rotation;
         this.mobaState.velocity = [(dx / dist) * speed, 0, (dz / dist) * speed];
         this.mobaState.isWalking = true;
+        if (this.speechAnnouncer) {
+          this.speechAnnouncer.notifyPlayerMove();
+        }
       } else {
         this.mobaState.velocity = [0, 0, 0];
         this.mobaState.isWalking = false;
@@ -29223,6 +30818,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.currentTargetId = null;
       this.mobaState.targetPos = [intersect[0], 0, intersect[2]];
       this.mobaState.isWalking = true;
+      if (this.speechAnnouncer) {
+        this.speechAnnouncer.notifyPlayerMove();
+      }
     }
 
     // Send move or attack command to the server if online
@@ -29427,7 +31025,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     this.mobaUpdateAbilitiesUI();
     this.updateFPSOverlays();
-    this.mobaPlaySound('victory');
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.triggerActionVoice('matchStart', true);
+    }
     this.showMobaAlert("⚔️ BATTLE HAS BEGUN! DEFEND YOUR LANES & SLAY THE ENEMY TRON!");
   }
 
@@ -30047,7 +31647,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.attackTimer = stats.attackCooldown || 0.85;
       this.mobaState.lastAttackTime = performance.now();
       this.mobaState.currentYaw = Math.atan2(dx, dz);
-      this.mobaPlaySound('attack');
+      if (this.speechAnnouncer) {
+        this.speechAnnouncer.triggerActionVoice('attack');
+      }
 
       const isRanged = stats.attackRange > 3.0;
       if (isRanged) {
@@ -30069,6 +31671,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // Step closer to attack target
       this.mobaState.targetPos = [tPos[0], 0, tPos[2]];
       this.mobaState.isWalking = true;
+      if (this.speechAnnouncer) {
+        this.speechAnnouncer.notifyPlayerMove();
+      }
     }
   }
 
@@ -30170,10 +31775,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (finalDmg > 0) {
         stats.hp = Math.max(0, stats.hp - finalDmg);
         this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], `-${finalDmg}`, '#f87171');
+        if (this.speechAnnouncer) {
+          this.speechAnnouncer.triggerActionVoice('damage');
+        }
       }
 
       if (stats.hp <= 0) {
-        this.mobaPlaySound('kill');
+        if (this.speechAnnouncer) {
+          this.speechAnnouncer.speak("Hero fallen! Respawning at base...", { profileId: 1, introChime: false });
+        }
         this._playerRespawnRemaining = 20.0;
         this.mobaState.targetPos = null;
         this.mobaState.targetEntity = null;
@@ -30200,8 +31810,6 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.addMobaCombatText(targetPos[0], 1.8, targetPos[2], `-${finalDmg}`, isCrit ? '#fbbf24' : '#ef4444');
 
     if (target.hp <= 0) {
-      this.mobaPlaySound('kill');
-
       // Bot champion kill
       if (target.isBot) {
         if (this.mobaState.kills && this.mobaState.kills[attackerTeam] !== undefined) {
@@ -30210,6 +31818,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (attackerTeam === this.mobaState.team) {
           this.mobaState.gold = (this.mobaState.gold || 0) + 120;
           this.showMobaAlert(`⚔️ ENEMY CHAMPION SLAIN! +120 GOLD`, 'text-emerald-400');
+          if (this.speechAnnouncer) {
+            this.speechAnnouncer.triggerActionVoice('kill');
+          }
         } else {
           this.showMobaAlert(`💀 ALLY ${target.name} HAS FALLEN!`, 'text-rose-400');
         }
@@ -30245,7 +31856,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (target.id && target.id.startsWith('tron_')) {
         this.mobaState.winner = attackerTeam;
         const isVictory = attackerTeam === this.mobaState.team;
-        this.mobaPlaySound(isVictory ? 'victory' : 'back');
+        if (this.speechAnnouncer) {
+          this.speechAnnouncer.speak(isVictory ? "Victory is yours! Flawless triumph in the arena!" : "Defeat! Your Tron has fallen.", { profileId: 2, introChime: false });
+        }
         this.showMobaAlert(isVictory ? '🏆 VICTORY! ENEMY TRON DESTROYED!' : '💀 DEFEAT! OUR TRON WAS OBLITERATED!');
 
         // Show game over modal

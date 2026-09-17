@@ -1039,11 +1039,23 @@
                   ARISSA SLAYS ENEMY CREEP!
                 </div>
 
-                <!-- Shop button on screen (pointer-events-none to let click navigation propagate through empty space) -->
+                <!-- Floating Zoom Indicator for Two-Finger Pinch Gesture -->
+                <div id="mobile-zoom-indicator" class="pointer-events-none fixed top-14 left-1/2 -translate-x-1/2 z-50 bg-black/85 backdrop-blur-md border border-cyan-400/50 text-cyan-300 px-3.5 py-1.5 rounded-full text-xs font-bold tracking-wide shadow-2xl transition-opacity duration-300 opacity-0 flex items-center space-x-2">
+                  <span id="mobile-zoom-icon">🔍</span>
+                  <span id="mobile-zoom-text">Zoom: 18.5x (RTS)</span>
+                </div>
+
+                <!-- Shop & Camera Toggle buttons on screen (pointer-events-none to let click navigation propagate through empty space) -->
                 <div class="w-full flex justify-between items-end pointer-events-none mb-[11vh] sm:mb-28 md:mb-32 lg:mb-36 px-2 sm:px-4 z-30">
-                  <button id="moba-btn-shop" class="flex items-center space-x-1.5 bg-gradient-to-r from-amber-600/90 to-amber-500/90 hover:from-amber-600 hover:to-amber-500 border border-amber-400/40 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-lg transition-all text-white font-bold text-[11px] sm:text-xs cursor-pointer active:scale-95 pointer-events-auto">
-                    <span>🛒 BASE SHOP</span>
-                  </button>
+                  <div class="flex items-center space-x-1.5 sm:space-x-2 pointer-events-auto">
+                    <button id="moba-btn-cam-toggle" class="flex items-center space-x-1 bg-black/70 hover:bg-black/90 border border-cyan-400/40 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl shadow-lg transition-all text-cyan-300 font-bold text-[11px] sm:text-xs cursor-pointer active:scale-95" title="Toggle First Person / RTS View (or pinch with 2 fingers to zoom)">
+                      <span id="moba-cam-icon">🗺️</span>
+                      <span id="moba-cam-label">CAM: RTS</span>
+                    </button>
+                    <button id="moba-btn-shop" class="flex items-center space-x-1.5 bg-gradient-to-r from-amber-600/90 to-amber-500/90 hover:from-amber-600 hover:to-amber-500 border border-amber-400/40 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-lg transition-all text-white font-bold text-[11px] sm:text-xs cursor-pointer active:scale-95 pointer-events-auto">
+                      <span>🛒 BASE SHOP</span>
+                    </button>
+                  </div>
 
                   <div class="flex items-center space-x-2 pointer-events-auto">
                     <button id="moba-btn-attack" class="flex items-center space-x-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 border border-red-400/50 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-[0_0_12px_rgba(239,68,68,0.5)] transition-all text-white font-black text-[11px] sm:text-xs cursor-pointer active:scale-95">
@@ -2538,6 +2550,10 @@
                 <span class="subtab-icon">🎯</span>
                 <span>FPS Damage Group</span>
               </button>
+              <button class="proj-subtab-btn" data-subtab="voice-announcer" id="btn-subtab-voice-announcer">
+                <span class="subtab-icon">🎙️</span>
+                <span>Voice Announcer &amp; Speech</span>
+              </button>
               <button class="proj-subtab-btn" data-subtab="cpp-bridge">
                 <span class="subtab-icon">⚡</span>
                 <span>C++ Code Bridge</span>
@@ -3650,6 +3666,320 @@
                       </tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subtab 4.5: Voice Announcer & Speech Studio -->
+            <div class="proj-subcontent" id="subtab-voice-announcer">
+              <div class="map-settings-layout">
+                <!-- Header Banner with Dual Profile Switcher -->
+                <div class="panel-section" style="background: linear-gradient(135deg, rgba(15,23,42,0.95), rgba(30,41,59,0.85)); border: 1px solid rgba(56,189,248,0.3); border-radius: 10px; padding: 18px; margin-bottom: 16px;">
+                  <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+                    <div>
+                      <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 24px;">🎙️</span>
+                        <h3 class="section-title" style="margin: 0; font-size: 16px; color: #38bdf8;">Web Speech Announcer &amp; Voice Studio</h3>
+                        <span class="status-pill" style="padding: 2px 8px; font-size: 11px; background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.4); color: #38bdf8;">HTML5 Web Speech API</span>
+                      </div>
+                      <p class="section-desc" style="margin-top: 4px; font-size: 12px; color: #94a3b8;">
+                        Cross-platform speech synthesis engine. Configure dual fantasy voice profiles, fine-tune pitch/rate/volume parameters, and test interactive voice phrases with real-time telemetry.
+                      </p>
+                    </div>
+
+                    <!-- Dual Profile Quick Switcher -->
+                    <div style="display: flex; align-items: center; gap: 8px; background: rgba(15,23,42,0.8); padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); flex-wrap: wrap;">
+                      <span style="font-size: 11px; font-weight: 600; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.5px;">Active Profile:</span>
+                      <button id="btn-load-profile-1" class="btn-xs active" style="padding: 4px 10px; border-radius: 4px; font-size: 11px; background: #0284c7; border-color: #38bdf8; color: #fff;">🧙 Voice 1: Fantasy Narrator</button>
+                      <button id="btn-load-profile-2" class="btn-xs" style="padding: 4px 10px; border-radius: 4px; font-size: 11px;">⚔️ Voice 2: Arena Combat</button>
+                      <button id="btn-save-active-profile" class="btn-xs" style="padding: 4px 8px; border-radius: 4px; font-size: 11px; background: rgba(34,197,94,0.2); border-color: rgba(34,197,94,0.4); color: #86efac;" title="Save current settings to active profile slot">💾 Save Profile</button>
+                      <button id="btn-reset-voice-defaults" class="btn-xs" style="padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #94a3b8;" title="Reset active profile to defaults">↺ Reset</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Two Column Configuration Grid -->
+                <div class="player-controller-grid">
+                  <!-- Left Column: Voice Engine & Parameter Setup Form -->
+                  <div class="panel-section">
+                    <h3 class="section-title" style="display: flex; align-items: center; gap: 8px;">
+                      <span>🎛️ Synthesis Acoustic Parameters</span>
+                      <span id="speech-support-badge" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(34,197,94,0.2); color: #4ade80; border: 1px solid rgba(34,197,94,0.4);">Web Speech API Ready</span>
+                    </h3>
+                    <p class="section-desc">Select installed device/browser voices and modulate speech acoustics.</p>
+
+                    <!-- Voice Selection Dropdown with Search & Filters -->
+                    <div class="select-group" style="margin-top: 14px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label for="voice-select" class="hud-label" style="margin: 0; font-weight: 600;">System Voice Model:</label>
+                        <button id="btn-refresh-voices" class="btn-xs" style="font-size: 10px; padding: 2px 6px;">↻ Reload Voices</button>
+                      </div>
+                      <select id="voice-select" class="input-select" style="font-family: monospace; font-size: 12px;"></select>
+                      <div id="voice-info-pill" style="margin-top: 4px; font-size: 11px; color: #64748b; display: flex; justify-content: space-between;">
+                        <span id="voice-count-info">Scanning available voices...</span>
+                        <span id="voice-type-info"></span>
+                      </div>
+                    </div>
+
+                    <!-- Voice Filter & Search Row -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+                      <div>
+                        <label for="voice-filter-lang" class="hud-label" style="font-size: 11px;">Language Filter:</label>
+                        <select id="voice-filter-lang" class="input-select" style="font-size: 11px; padding: 4px 8px;">
+                          <option value="all">All Languages</option>
+                          <option value="en" selected>English (en)</option>
+                          <option value="local">Local/Offline Only</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="voice-search-input" class="hud-label" style="font-size: 11px;">Search Voice by Name:</label>
+                        <input type="text" id="voice-search-input" class="range-input" style="padding: 4px 8px; font-size: 11px; height: 28px; background: rgba(15,23,42,0.6);" placeholder="e.g. David, Zira, Google, Natural...">
+                      </div>
+                    </div>
+
+                    <!-- BCP 47 Language Tag Override -->
+                    <div style="margin-top: 12px;">
+                      <label for="voice-lang-override" class="hud-label" style="font-size: 11px;">Language Code Override (BCP 47):</label>
+                      <input type="text" id="voice-lang-override" class="range-input" style="padding: 4px 8px; font-size: 12px; height: 28px; font-family: monospace;" value="en-US" placeholder="en-US">
+                    </div>
+
+                    <!-- Pitch Control (Slider + Number + Quick Presets) -->
+                    <div class="slider-group" style="margin-top: 16px;">
+                      <div class="slider-row">
+                        <span class="slider-label">Pitch Multiplier (pitch)</span>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                          <span class="slider-val" id="val-voice-pitch">0.75</span>
+                          <input type="number" id="num-voice-pitch" min="0.0" max="2.0" step="0.05" value="0.75" style="width: 58px; height: 22px; background: rgba(15,23,42,0.8); border: 1px solid rgba(56,189,248,0.3); color: #38bdf8; font-size: 11px; border-radius: 4px; text-align: center;">
+                        </div>
+                      </div>
+                      <input type="range" id="slider-voice-pitch" min="0.0" max="2.0" step="0.01" value="0.75" class="range-input">
+                      <!-- Pitch Presets -->
+                      <div style="display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap;">
+                        <button class="btn-xs btn-pitch-preset" data-pitch="0.45" style="font-size: 10px; padding: 2px 6px;">👹 Demonic / Titan (0.45)</button>
+                        <button class="btn-xs btn-pitch-preset" data-pitch="0.75" style="font-size: 10px; padding: 2px 6px;">🧙 Fantasy Elder (0.75)</button>
+                        <button class="btn-xs btn-pitch-preset" data-pitch="1.00" style="font-size: 10px; padding: 2px 6px;">👤 Normal (1.00)</button>
+                        <button class="btn-xs btn-pitch-preset" data-pitch="1.35" style="font-size: 10px; padding: 2px 6px;">🧝 Ethereal Elf (1.35)</button>
+                        <button class="btn-xs btn-pitch-preset" data-pitch="1.75" style="font-size: 10px; padding: 2px 6px;">🧚 Pixie / Goblin (1.75)</button>
+                      </div>
+                    </div>
+
+                    <!-- Rate / Speed Control (Slider + Number + Quick Presets) -->
+                    <div class="slider-group" style="margin-top: 14px;">
+                      <div class="slider-row">
+                        <span class="slider-label">Speech Speed / Tempo (rate)</span>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                          <span class="slider-val" id="val-voice-rate">0.90</span>
+                          <input type="number" id="num-voice-rate" min="0.1" max="3.0" step="0.05" value="0.90" style="width: 58px; height: 22px; background: rgba(15,23,42,0.8); border: 1px solid rgba(56,189,248,0.3); color: #38bdf8; font-size: 11px; border-radius: 4px; text-align: center;">
+                        </div>
+                      </div>
+                      <input type="range" id="slider-voice-rate" min="0.1" max="3.0" step="0.01" value="0.90" class="range-input">
+                      <!-- Rate Presets -->
+                      <div style="display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap;">
+                        <button class="btn-xs btn-rate-preset" data-rate="0.75" style="font-size: 10px; padding: 2px 6px;">📜 Solemn Epic (0.75)</button>
+                        <button class="btn-xs btn-rate-preset" data-rate="1.00" style="font-size: 10px; padding: 2px 6px;">⏳ Standard (1.00)</button>
+                        <button class="btn-xs btn-rate-preset" data-rate="1.15" style="font-size: 10px; padding: 2px 6px;">⚡ Combat Alert (1.15)</button>
+                        <button class="btn-xs btn-rate-preset" data-rate="1.60" style="font-size: 10px; padding: 2px 6px;">🚀 Hyper Speed (1.60)</button>
+                      </div>
+                    </div>
+
+                    <!-- Volume Control (Slider + Number) -->
+                    <div class="slider-group" style="margin-top: 14px;">
+                      <div class="slider-row">
+                        <span class="slider-label">Master Volume (volume)</span>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                          <span class="slider-val" id="val-voice-volume">1.00</span>
+                          <input type="number" id="num-voice-volume" min="0.0" max="1.0" step="0.05" value="1.00" style="width: 58px; height: 22px; background: rgba(15,23,42,0.8); border: 1px solid rgba(56,189,248,0.3); color: #38bdf8; font-size: 11px; border-radius: 4px; text-align: center;">
+                        </div>
+                      </div>
+                      <input type="range" id="slider-voice-volume" min="0.0" max="1.0" step="0.01" value="1.00" class="range-input">
+                    </div>
+
+                    <!-- Web Audio Procedural FX Chime / Cue -->
+                    <div style="margin-top: 14px; background: rgba(15,23,42,0.5); padding: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #e2e8f0; cursor: pointer; margin: 0;">
+                          <input type="checkbox" id="chk-voice-chime" checked style="accent-color: #38bdf8;">
+                          <span>Play Procedural Intro Sound FX before speech</span>
+                        </label>
+                      </div>
+                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                        <select id="select-voice-chime-type" class="input-select" style="font-size: 11px; padding: 4px 6px;">
+                          <option value="announcer_gong" selected>🔔 Mystic Temple Gong</option>
+                          <option value="announcer_chime">✨ Fantasy Crystal Chime</option>
+                          <option value="elevator">⚡ Elevator Hydraulic Whine</option>
+                          <option value="teleport">🌀 Void Portal Resonance</option>
+                        </select>
+                        <select id="select-voice-chime-delay" class="input-select" style="font-size: 11px; padding: 4px 6px;">
+                          <option value="0">0ms delay (Instant)</option>
+                          <option value="150" selected>150ms lead chime</option>
+                          <option value="300">300ms dramatic lead</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Right Column: Interactive Test Workbench, Event Monitor & Presets -->
+                  <div class="panel-section">
+                    <h3 class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                      <span>🧪 Test Voice Workbench &amp; Preset Lines</span>
+                      <span id="speech-live-status-pill" class="status-pill" style="background: rgba(100,116,139,0.2); border-color: rgba(100,116,139,0.4); color: #94a3b8;">
+                        <span class="status-dot" style="background: #94a3b8;"></span>
+                        <span id="speech-status-text">Status: IDLE</span>
+                      </span>
+                    </h3>
+                    <p class="section-desc">Type custom dialogue or choose quick preset fantasy and arena combat phrases.</p>
+
+                    <!-- Textarea for custom phrase -->
+                    <div style="margin-top: 10px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label for="voice-test-text" class="hud-label" style="margin: 0; font-size: 11px; font-weight: 600;">Custom Utterance Text:</label>
+                        <span id="voice-text-counter" style="font-size: 10px; color: #64748b;">93 chars | 13 words</span>
+                      </div>
+                      <textarea id="voice-test-text" style="width: 100%; min-height: 84px; background: rgba(15,23,42,0.85); border: 1px solid rgba(56,189,248,0.3); border-radius: 6px; padding: 10px; color: #f8fafc; font-size: 13px; line-height: 1.5; resize: vertical;">Welcome to the Forest of Hollow Blood, Champion. Defend your sanctuary and conquer the arena.</textarea>
+                    </div>
+
+                    <!-- Transport Buttons: Speak, Pause, Resume, Stop -->
+                    <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+                      <button id="btn-voice-speak" class="btn-action" style="padding: 8px 18px; font-weight: 600; display: flex; align-items: center; gap: 6px; background: #0284c7; border-color: #38bdf8;">
+                        <span>▶</span>
+                        <span>Test Voice (Speak)</span>
+                      </button>
+                      <button id="btn-voice-pause" class="btn-action" style="padding: 8px 14px; background: rgba(30,41,59,0.8); border-color: rgba(255,255,255,0.15);">
+                        <span>⏸</span>
+                        <span>Pause</span>
+                      </button>
+                      <button id="btn-voice-resume" class="btn-action" style="padding: 8px 14px; background: rgba(30,41,59,0.8); border-color: rgba(255,255,255,0.15);">
+                        <span>⏯</span>
+                        <span>Resume</span>
+                      </button>
+                      <button id="btn-voice-stop" class="btn-action" style="padding: 8px 14px; background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.4); color: #fca5a5;">
+                        <span>⏹</span>
+                        <span>Stop / Cancel</span>
+                      </button>
+                    </div>
+
+                    <!-- Quick Preset Fantasy & Arena Voice Lines -->
+                    <div style="margin-top: 14px;">
+                      <div class="hud-label" style="font-size: 11px; margin-bottom: 6px; font-weight: 600;">Quick Fantasy &amp; Arena Line Presets:</div>
+                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                        <button class="btn-xs btn-voice-preset" data-text="First Blood! The battle has begun!" style="text-align: left; padding: 6px 8px; font-size: 11px;">⚔️ First Blood!</button>
+                        <button class="btn-xs btn-voice-preset" data-text="Double Kill! Unstoppable fury!" style="text-align: left; padding: 6px 8px; font-size: 11px;">🔥 Double Kill!</button>
+                        <button class="btn-xs btn-voice-preset" data-text="Triple Kill! A legend is born!" style="text-align: left; padding: 6px 8px; font-size: 11px;">⚡ Triple Kill!</button>
+                        <button class="btn-xs btn-voice-preset" data-text="Humiliation! A warrior has been defeated!" style="text-align: left; padding: 6px 8px; font-size: 11px;">💀 Humiliation!</button>
+                        <button class="btn-xs btn-voice-preset" data-text="Welcome to the Forest of Hollow Blood, Champion." style="text-align: left; padding: 6px 8px; font-size: 11px;">👑 Welcome Champion</button>
+                        <button class="btn-xs btn-voice-preset" data-text="Your base sanctuary is under attack!" style="text-align: left; padding: 6px 8px; font-size: 11px;">🛡️ Sanctuary Under Attack</button>
+                        <button class="btn-xs btn-voice-preset" data-text="A mystical rune has materialized in the sacred river." style="text-align: left; padding: 6px 8px; font-size: 11px;">🔮 Mystic Rune Spawned</button>
+                        <button class="btn-xs btn-voice-preset" data-text="The ancient hydraulic elevator is now descending to Floor 1." style="text-align: left; padding: 6px 8px; font-size: 11px;">🚀 Elevator Descending</button>
+                        <button class="btn-xs btn-voice-preset" data-text="Mega Health acquired! Immortality surges through your veins." style="text-align: left; padding: 6px 8px; font-size: 11px;">💎 Mega Health Acquired</button>
+                        <button class="btn-xs btn-voice-preset" data-text="Victory is yours! Flawless triumph in the arena!" style="text-align: left; padding: 6px 8px; font-size: 11px;">🏆 Victory Triumph</button>
+                      </div>
+                    </div>
+
+                    <!-- Live Telemetry & Event Log -->
+                    <div style="margin-top: 14px; background: rgba(10,15,26,0.9); padding: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06); font-family: monospace; font-size: 11px;">
+                      <div style="display: flex; justify-content: space-between; color: #94a3b8; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 4px; margin-bottom: 6px;">
+                        <span>Speech Telemetry Monitor:</span>
+                        <span id="speech-telemetry-time">Elapsed: 0.00s</span>
+                      </div>
+                      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="color: #64748b;">Word Boundary:</span>
+                        <span id="speech-telemetry-boundary" style="color: #38bdf8;">--</span>
+                      </div>
+                      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="color: #64748b;">Active Voice:</span>
+                        <span id="speech-telemetry-voice" style="color: #a78bfa;">Default System Voice</span>
+                      </div>
+                      <div id="speech-telemetry-log" style="color: #475569; font-size: 10px; height: 32px; overflow-y: auto;">
+                        [Log] Speech Announcer ready. Select parameters and click 'Test Voice'.
+                      </div>
+                    </div>
+
+                    <!-- In-Game Announcer Auto-Trigger Settings -->
+                    <div style="margin-top: 14px; background: rgba(15,23,42,0.5); padding: 10px; border-radius: 6px; border: 1px solid rgba(56,189,248,0.2);">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: #38bdf8; cursor: pointer; margin: 0;">
+                          <input type="checkbox" id="chk-ingame-announcer-enable" checked style="accent-color: #38bdf8;">
+                          <span>Enable In-Game Dynamic Voice Announcements</span>
+                        </label>
+                      </div>
+                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px; color: #94a3b8; margin-top: 6px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                          <input type="checkbox" id="chk-announce-kills" checked style="accent-color: #38bdf8;">
+                          <span>Combat Kills &amp; Streaks (Voice 2)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                          <input type="checkbox" id="chk-announce-start" checked style="accent-color: #38bdf8;">
+                          <span>Match Start &amp; Victory (Voice 1)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                          <input type="checkbox" id="chk-announce-elevators" checked style="accent-color: #38bdf8;">
+                          <span>Elevator Activations</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                          <input type="checkbox" id="chk-announce-powerups" checked style="accent-color: #38bdf8;">
+                          <span>MegaHealth &amp; Powerups</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <!-- Background Music Master Volume Control -->
+                    <div style="margin-top: 14px; background: rgba(15,23,42,0.5); padding: 12px; border-radius: 6px; border: 1px solid rgba(56,189,248,0.2);">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div>
+                          <span style="font-size: 12px; font-weight: 600; color: #38bdf8;">🎵 Background Music Master Volume</span>
+                          <span style="font-size: 10px; color: #64748b; margin-left: 6px;">(Subtle ambient volume for clear spoken voice lines)</span>
+                        </div>
+                        <span id="val-bg-music-volume" style="font-size: 12px; font-weight: 700; color: #38bdf8; font-family: monospace;">12%</span>
+                      </div>
+                      <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 11px; color: #64748b;">0%</span>
+                        <input type="range" id="slider-bg-music-volume" min="0" max="1" step="0.01" value="0.12" style="flex: 1; accent-color: #38bdf8; cursor: pointer;">
+                        <span style="font-size: 11px; color: #64748b;">100%</span>
+                      </div>
+                    </div>
+
+                    <!-- Single-Action 4-Case Voice Lines Matrix & Test Form -->
+                    <div style="margin-top: 16px; background: rgba(15,23,42,0.4); padding: 14px; border-radius: 8px; border: 1px solid rgba(56,189,248,0.25);">
+                      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                        <div>
+                          <h4 style="margin: 0; font-size: 13px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 6px;">
+                            <span>🗣️ Single-Action 4-Case Voice Lines Matrix</span>
+                            <span style="font-size: 10px; padding: 2px 6px; background: rgba(56,189,248,0.15); color: #38bdf8; border-radius: 4px; border: 1px solid rgba(56,189,248,0.3);">Beeps Replaced With Voice</span>
+                          </h4>
+                          <p style="margin: 4px 0 0 0; font-size: 11px; color: #94a3b8;">
+                            Synthesizer beeps have been eliminated. Each in-game action randomly speaks 1 of 4 custom lines. Click '🎲 Test Random Case' to audition any action, or tweak the lines below.
+                          </p>
+                        </div>
+                        <div style="display: flex; gap: 6px;">
+                          <button class="btn-xs" id="btn-save-action-voice-cases" style="background: rgba(34,197,94,0.2); border: 1px solid #22c55e; color: #4ade80; cursor: pointer;">💾 Save Voice Lines</button>
+                          <button class="btn-xs" id="btn-reset-action-voice-cases" style="background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #f87171; cursor: pointer;">↺ Reset Defaults</button>
+                        </div>
+                      </div>
+
+                      <!-- Live Last Spoken Action Telemetry Bar -->
+                      <div style="background: rgba(10,15,26,0.85); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(56,189,248,0.15); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 11px; color: #64748b;">Last Action Dispatched:</span>
+                        <span id="voice-last-action-text" style="font-size: 11px; color: #e2e8f0; font-family: monospace;">Awaiting action trigger...</span>
+                      </div>
+
+                      <!-- 4-Case Action Cards Container -->
+                      <div id="action-voice-matrix-container" style="display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; padding-right: 4px;">
+                        <!-- Dynamically populated by renderActionVoiceCasesUI -->
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- C++ Code Equivalent Panel -->
+                <div class="panel-section" style="margin-top: 16px;">
+                  <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div>
+                      <h3 class="section-title" style="margin: 0;">Native C++ / WASM Speech Engine Configuration</h3>
+                      <p class="section-desc" style="margin: 0;">Exact C++ struct representation of your active voice configuration for native export.</p>
+                    </div>
+                    <button class="btn-xs" id="btn-copy-voice-cpp">Copy C++ Config</button>
+                  </div>
+                  <pre class="code-view font-mono" style="padding: 12px; background: rgba(10,15,26,0.9); border-radius: 6px; font-size: 11px; color: #38bdf8;"><code id="voice-cpp-snippet"></code></pre>
                 </div>
               </div>
             </div>
