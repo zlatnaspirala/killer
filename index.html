@@ -852,6 +852,13 @@
                 <div id="pong-hud-status" class="pong-hud-status">Serve in 2s...</div>
               </div>
               <div style="display: flex; gap: 6px; align-items: center;">
+                <div id="pong-proffi-badge" class="pong-hud-proffi-tag" title="Professional Rotating Table: Use Joystick or Q/E to rotate table 360° and tilt">
+                  <span style="color: #fbbf24; font-weight: 900;">🏆 PRO</span>
+                  <span id="pong-table-rot-info" style="color: #38bdf8; font-size: 11px; margin-left: 2px;">0°</span>
+                </div>
+                <button id="btn-pong-reset-table" class="pong-hud-btn" title="Reset Table Rotation & Tilt (0°)">
+                  <span>🎯 0° TABLE</span>
+                </button>
                 <button id="btn-pong-open-mode" class="pong-hud-btn" title="Choose Pong Game Mode">
                   <span>⚙️ MODE</span>
                 </button>
@@ -899,7 +906,7 @@
             </div>
 
             <!-- 🏓 Pong Mode Selection Ask Popup Modal -->
-            <div id="pong-mode-modal" class="pong-modal-backdrop" style="display: none;">
+            <div id="pong-mode-modal" class="pong-modal-backdrop" style="display: none !important;">
               <div class="pong-modal-card">
                 <div class="pong-modal-header">
                   <div class="pong-modal-title">🏓 RETRO 3D ARCADE PONG</div>

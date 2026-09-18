@@ -6911,7 +6911,13 @@ void main() {
 
     globalForestLayoutEngine.initMapLayout();
 
-    // 1. Procedural fluted trunk (cylinder with logarithmic root flare - made thinner)
+    // 1. Procedural branched tree trunk with root flares and 6 spreading limbs
+    const branchedTrunkData = ProceduralGeometryFactory.createBranchedTreeTrunk();
+    branchedTrunkData.name = "ProceduralBranchedTreeTrunk";
+    this.mobaBranchedTrunkMesh = this.buildMeshBuffer(branchedTrunkData);
+    this.mobaBranchTips = branchedTrunkData.branchTips || [];
+
+    // Fallback simple trunk
     const trunkData = ProceduralGeometryFactory.createCylinder(0.11, 0.22, 2.2, 12, 4, true);
     trunkData.name = "ProceduralTreeTrunk";
     this.mobaTreeTrunkMesh = this.buildMeshBuffer(trunkData);
@@ -6931,20 +6937,59 @@ void main() {
     boulderData.name = "ProceduralBoulder";
     this.mobaBoulderMesh = this.buildMeshBuffer(boulderData);
 
-    // 5. Procedural curved grass tuft
+    // 5a. Procedural curved blade grass tuft
     const grassData = ProceduralGeometryFactory.createCurvedGrassTuft(5);
     grassData.name = "ProceduralCurvedGrass";
     this.mobaGrassMesh = this.buildMeshBuffer(grassData);
 
-    // 6. Procedural continuous organic road ribbon with wavy, natural edges (NO straight lines)
+    // 5b. Procedural tall wheat/steppe grass with feathery seed plumes
+    const wheatGrassData = ProceduralGeometryFactory.createWheatGrassTuft(6);
+    wheatGrassData.name = "ProceduralWheatGrass";
+    this.mobaWheatGrassMesh = this.buildMeshBuffer(wheatGrassData);
+
+    // 5c. Procedural lush three-leaf clover ground carpet
+    const cloverData = ProceduralGeometryFactory.createCloverGroundPatch(5);
+    cloverData.name = "ProceduralCloverGround";
+    this.mobaCloverMesh = this.buildMeshBuffer(cloverData);
+
+    // 6. Procedural wetland river reeds & cattails
+    const reedData = ProceduralGeometryFactory.createRiverReedTuft(5);
+    reedData.name = "ProceduralRiverReed";
+    this.mobaRiverReedMesh = this.buildMeshBuffer(reedData);
+
+    // 7. Procedural floating water lily pads with lotus blossoms
+    const waterLilyData = ProceduralGeometryFactory.createWaterLilyPad();
+    waterLilyData.name = "ProceduralWaterLily";
+    this.mobaWaterLilyMesh = this.buildMeshBuffer(waterLilyData);
+
+    // 8. Procedural blooming wildflowers
+    const wildFlowerData = ProceduralGeometryFactory.createWildFlowerTuft(4);
+    wildFlowerData.name = "ProceduralWildflower";
+    this.mobaWildflowerMesh = this.buildMeshBuffer(wildFlowerData);
+
+    // 9. Procedural neutral frogs
+    const frogData = ProceduralGeometryFactory.createLittleFrog();
+    frogData.name = "ProceduralLittleFrog";
+    this.mobaFrogMesh = this.buildMeshBuffer(frogData);
+
+    // 10. Procedural continuous organic road ribbon with wavy, natural edges (NO straight lines)
     const roadData = ProceduralGeometryFactory.createProceduralRoadRibbon(globalForestLayoutEngine.lanePaths);
     roadData.name = "ProceduralOrganicRoad";
     this.mobaRoadMesh = this.buildMeshBuffer(roadData);
 
-    // 7. Procedural undulating river ribbon with flowing banks for water simulation
+    // 11. Procedural undulating river ribbon with flowing banks for water simulation
     const riverData = ProceduralGeometryFactory.createProceduralRiverRibbon(globalForestLayoutEngine.riverPath);
     riverData.name = "ProceduralRiverRibbon";
     this.mobaRiverMesh = this.buildMeshBuffer(riverData);
+
+    // 12. Procedural undulating terrain grid with small hills and river bed depression
+    const terrainData = ProceduralGeometryFactory.createProceduralTerrainGrid(
+      150,
+      75,
+      (x, z) => globalForestLayoutEngine.getTerrainHeight(x, z)
+    );
+    terrainData.name = "ProceduralTerrainGrid";
+    this.mobaTerrainMesh = this.buildMeshBuffer(terrainData);
   }
 
   slerpQuat(out, q0, q1, t) {
@@ -8652,6 +8697,7 @@ void main() {
     }
     if (exportDisplay) exportDisplay.textContent = SOURCE_FILES['build_wasm.sh'];
     if (headerDisplay) headerDisplay.textContent = SOURCE_FILES['Engine.hpp'];
+    this.initPongDOMEvents();
   }
 
   bindEvents() {
@@ -8784,10 +8830,24 @@ void main() {
       const pongBannerEl = document.getElementById('pong-banner');
       const pongSeatsEl = document.getElementById('pong-video-seats-container');
       const pongModalEl = document.getElementById('pong-mode-modal');
-      if (pongBannerEl) pongBannerEl.style.display = isPong ? 'flex' : 'none';
+      if (pongBannerEl) {
+        if (isPong) {
+          pongBannerEl.style.removeProperty('display');
+          pongBannerEl.style.display = 'flex';
+        } else {
+          pongBannerEl.style.setProperty('display', 'none', 'important');
+        }
+      }
       if (!isPong) {
-        if (pongSeatsEl) pongSeatsEl.style.display = 'none';
-        if (pongModalEl) pongModalEl.style.display = 'none';
+        if (pongSeatsEl) pongSeatsEl.style.setProperty('display', 'none', 'important');
+        if (pongModalEl) {
+          pongModalEl.classList.remove('active');
+          pongModalEl.style.setProperty('display', 'none', 'important');
+        }
+        if (this.pongState) {
+          this.pongState.active = false;
+          this.pongState.isModalOpen = false;
+        }
       }
 
       if (isSlotMachine || isSlidingPuzzle || isPlinko || isRoulette || isBingo || isPong) {
@@ -8967,7 +9027,10 @@ void main() {
 
       if (!this.state.isDragging) {
         if (this.state.demoScene.includes('14_pong')) {
-          this.updatePongPointerMove(e);
+          const pongModal = document.getElementById('pong-mode-modal');
+          if (!pongModal || pongModal.style.display === 'none') {
+            this.updatePongPointerMove(e);
+          }
         } else if (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active)) {
           this.updateRouletteHover(e.clientX, e.clientY);
         } else if (this.state.demoScene.includes('10_sliding_puzzle') && this.puzzleState) {
@@ -8976,7 +9039,10 @@ void main() {
         return;
       }
       if (this.state.demoScene.includes('14_pong')) {
-        this.updatePongPointerMove(e);
+        const pongModal = document.getElementById('pong-mode-modal');
+        if (!pongModal || pongModal.style.display === 'none') {
+          this.updatePongPointerMove(e);
+        }
       }
       const dx = e.clientX - this.state.lastMouseX;
       const dy = e.clientY - this.state.lastMouseY;
@@ -8987,7 +9053,10 @@ void main() {
         // Orbit Arc Mode
         if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
           if (this.state.mouseButton === 0) {
-            this.updatePongPointerMove(e);
+            const pongModal = document.getElementById('pong-mode-modal');
+            if (!pongModal || pongModal.style.display === 'none') {
+              this.updatePongPointerMove(e);
+            }
             return;
           }
         }
@@ -9070,6 +9139,14 @@ void main() {
         this.state.keys.arrowDown = true;
         if (this.state.demoScene && this.state.demoScene.includes('14_pong')) e.preventDefault();
       }
+      if (e.key === 'ArrowLeft') {
+        this.state.keys.arrowLeft = true;
+        if (this.state.demoScene && this.state.demoScene.includes('14_pong')) e.preventDefault();
+      }
+      if (e.key === 'ArrowRight') {
+        this.state.keys.arrowRight = true;
+        if (this.state.demoScene && this.state.demoScene.includes('14_pong')) e.preventDefault();
+      }
       if (k === 'w') this.state.keys.w = true;
       if (k === 'a') this.state.keys.a = true;
       if (k === 's') this.state.keys.s = true;
@@ -9082,6 +9159,19 @@ void main() {
       if (e.shiftKey) this.state.keys.shift = true;
       if (k === 'f' && !e.repeat) {
         this.toggleFlashlight();
+      }
+
+      // Pong: 'r' or 't' resets table rotation & tilt in pro mode
+      const isPongDemo = this.state.demoScene && this.state.demoScene.includes('14_pong');
+      if (isPongDemo && (k === 'r' || k === 't') && !e.repeat) {
+        if (this.pongState) {
+          this.pongState.tableRotY = 0.0;
+          this.pongState.tableTiltX = 0.0;
+          this.pongState.tableTiltZ = 0.0;
+          this.pongState.tableRotVelY = 0.0;
+          this.updatePongHUD();
+          this.log("Proffi Pong: Table rotation & tilt reset to 0°.", "info");
+        }
       }
 
       // Shoot on keypress [E], [Enter], or [Ctrl] in FPS mode
@@ -9126,6 +9216,8 @@ void main() {
       const k = e.key.toLowerCase();
       if (e.key === 'ArrowUp') this.state.keys.arrowUp = false;
       if (e.key === 'ArrowDown') this.state.keys.arrowDown = false;
+      if (e.key === 'ArrowLeft') this.state.keys.arrowLeft = false;
+      if (e.key === 'ArrowRight') this.state.keys.arrowRight = false;
       if (k === 'w') this.state.keys.w = false;
       if (k === 'a') this.state.keys.a = false;
       if (k === 's') this.state.keys.s = false;
@@ -10180,9 +10272,11 @@ void main() {
       const ds = this.state.demoScene || '';
       const isMoba = Boolean(ds && ds.includes('15_moba'));
       const isRoulette = Boolean(ds && (ds.includes('12_roulette') || ds.includes('09_roulette')));
+      const isPong = Boolean(ds && ds.includes('14_pong'));
 
       document.body.classList.toggle('moba-active', isMoba);
       document.body.classList.toggle('roulette-active', isRoulette);
+      document.body.classList.toggle('pong-active', isPong);
 
       const joyLeftContainer = document.getElementById('joystick-left-container');
 
@@ -10202,6 +10296,17 @@ void main() {
       }
 
       if (joyLeftContainer) joyLeftContainer.style.display = '';
+
+      // In Pong mode, always make the joystick available for rotating & tilting the 3D table (Proffi Pong)
+      if (isPong) {
+        overlay.classList.remove('hidden');
+        if (btnToggleJoy) {
+          btnToggleJoy.style.display = '';
+          btnToggleJoy.textContent = '🕹️ Table Joystick: ON';
+        }
+        this.updateMobileActionButtonsVisibility();
+        return;
+      }
 
       if (this.mobileControlsMode === 'always') {
         overlay.classList.remove('hidden');
@@ -10347,7 +10452,7 @@ void main() {
 
       canvasContainer.addEventListener('touchstart', (e) => {
         // If touch occurred inside any overlay dialog, buttons, or scrollable panels, do NOT preventDefault or trigger camera orbit!
-        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal')) {
+        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal, #pong-mode-modal, .pong-modal-backdrop, .pong-modal-card')) {
           return;
         }
         e.preventDefault();
@@ -10450,6 +10555,10 @@ void main() {
           this.pinchZoomState.lastTapTime = now;
 
           if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
+            const pongModal = document.getElementById('pong-mode-modal');
+            if (pongModal && pongModal.style.display !== 'none') {
+              return;
+            }
             for (let i = 0; i < e.changedTouches.length; i++) {
               const t = e.changedTouches[i];
               if (t.identifier !== this.joystickState.touchId) {
@@ -10589,13 +10698,17 @@ void main() {
         }
 
         // NON-FPS MODES:
-        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal')) {
+        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal, #pong-mode-modal, .pong-modal-backdrop, .pong-modal-card')) {
           return;
         }
         e.preventDefault();
 
         // In Pong demo, touch dragging moves the player paddle ("player pin") directly, NOT the camera orbit!
         if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
+          const pongModal = document.getElementById('pong-mode-modal');
+          if (pongModal && pongModal.style.display !== 'none') {
+            return;
+          }
           for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
             if (touch.identifier !== this.joystickState.touchId) {
@@ -21750,6 +21863,72 @@ else if (typeof define === 'function' && define['amd'])
   // =========================================================================
   // DEMO 09: RETRO 3D ARCADE PONG (SOLO BOT, LOCAL 2P, ONLINE MULTIPLAYER)
   // =========================================================================
+  initPongState() {
+    if (this.pongState) return;
+    this.pongState = {
+      active: true,
+      gameStarted: false, // Gameplay and Bot wait for UI validation (Start Match button)
+      isModalOpen: true,
+      mode: 'solo', // 'solo', 'local_2p', 'online'
+      botDifficulty: 'medium', // 'easy', 'medium', 'hard'
+      soundEnabled: true,
+      isHost: true,
+      serving: true,
+      serveTimer: 1.8,
+      serveDirection: 1, // 1: towards right, -1: towards left
+      rallyCount: 0,
+      highScore: 0,
+      winner: null,
+      paddles: {
+        left: {
+          x: -3.2,
+          z: 0.0,
+          targetZ: 0.0,
+          width: 0.22,
+          length: 1.0,
+          speed: 10.5,
+          score: 0,
+          name: "Player 1",
+          hitFlash: 0
+        },
+        right: {
+          x: 3.2,
+          z: 0.0,
+          targetZ: 0.0,
+          width: 0.22,
+          length: 1.0,
+          speed: 10.5,
+          score: 0,
+          name: "AI Bot",
+          hitFlash: 0
+        }
+      },
+      ball: {
+        x: 0.0,
+        y: 0.15,
+        z: 0.0,
+        vx: 0.0,
+        vy: 0.0,
+        vz: 0.0,
+        radius: 0.14,
+        speedMult: 1.0,
+        maxSpeed: 14.0,
+        trail: [],
+        wallBounceFlash: 0
+      },
+      particles: [],
+      online: {
+        connected: false,
+        roomId: 'pong-main',
+        playerId: 'p_' + Math.random().toString(36).substr(2, 6),
+        remotePlayerId: null,
+        remotePlayerName: 'Opponent',
+        hasVideo: false,
+        remoteHasVideo: false
+      }
+    };
+  }
+
   initPongDemo() {
     // Hide other HUDs and overlays
     const bingoHUD = document.getElementById('bingo-banner');
@@ -21760,76 +21939,29 @@ else if (typeof define === 'function' && define['amd'])
     if (rouletteHUD) rouletteHUD.style.display = 'none';
     const plinkoHUD = document.getElementById('plinko-banner');
     if (plinkoHUD) plinkoHUD.style.display = 'none';
+    const mobaOverlay = document.getElementById('moba-overlay');
+    if (mobaOverlay) mobaOverlay.style.setProperty('display', 'none', 'important');
+    const mobaStartupMenu = document.getElementById('moba-startup-menu');
+    if (mobaStartupMenu) mobaStartupMenu.style.setProperty('display', 'none', 'important');
 
     // Show Pong banner HUD
     const pongBanner = document.getElementById('pong-banner');
-    if (pongBanner) pongBanner.style.display = 'flex';
+    if (pongBanner) pongBanner.style.setProperty('display', 'flex', 'important');
 
     if (!this.pongState) {
-      this.pongState = {
-        active: true,
-        mode: 'solo', // 'solo', 'local_2p', 'online'
-        botDifficulty: 'medium', // 'easy', 'medium', 'hard'
-        soundEnabled: true,
-        isHost: true,
-        serving: true,
-        serveTimer: 1.8,
-        serveDirection: 1, // 1: towards right, -1: towards left
-        rallyCount: 0,
-        highScore: 0,
-        winner: null,
-        paddles: {
-          left: {
-            x: -3.2,
-            z: 0.0,
-            targetZ: 0.0,
-            width: 0.22,
-            length: 1.0,
-            speed: 10.5,
-            score: 0,
-            name: "Player 1",
-            hitFlash: 0
-          },
-          right: {
-            x: 3.2,
-            z: 0.0,
-            targetZ: 0.0,
-            width: 0.22,
-            length: 1.0,
-            speed: 10.5,
-            score: 0,
-            name: "AI Bot",
-            hitFlash: 0
-          }
-        },
-        ball: {
-          x: 0.0,
-          y: 0.15,
-          z: 0.0,
-          vx: 4.8,
-          vy: 0.0,
-          vz: 1.5,
-          radius: 0.14,
-          speedMult: 1.0,
-          maxSpeed: 14.0,
-          trail: [],
-          wallBounceFlash: 0
-        },
-        particles: [],
-        online: {
-          connected: false,
-          roomId: 'pong-main',
-          playerId: 'p_' + Math.random().toString(36).substr(2, 6),
-          remotePlayerId: null,
-          remotePlayerName: 'Opponent',
-          hasVideo: false,
-          remoteHasVideo: false
-        }
-      };
-
+      this.initPongState();
       this.initPongDOMEvents();
     } else {
       this.pongState.active = true;
+      this.pongState.gameStarted = false;
+      this.pongState.isModalOpen = true;
+      this.pongState.ball.x = 0.0;
+      this.pongState.ball.y = 0.15;
+      this.pongState.ball.z = 0.0;
+      this.pongState.ball.vx = 0.0;
+      this.pongState.ball.vz = 0.0;
+      this.pongState.paddles.left.z = 0.0;
+      this.pongState.paddles.right.z = 0.0;
     }
 
     // Always pop up the Mode Selection modal when entering the demo
@@ -21839,90 +21971,182 @@ else if (typeof define === 'function' && define['amd'])
   }
 
   initPongDOMEvents() {
+    if (this._pongDOMInitialized) return;
+    this._pongDOMInitialized = true;
+
     // Mode card clicks in modal
     const modeCards = document.querySelectorAll('.pong-mode-card');
     const diffRow = document.getElementById('pong-bot-diff-row');
 
     modeCards.forEach(card => {
-      card.addEventListener('click', () => {
+      const handleModeSelect = (e) => {
+        if (e) e.stopPropagation();
         modeCards.forEach(c => c.classList.remove('active'));
         card.classList.add('active');
         const mode = card.dataset.mode;
         if (diffRow) {
           diffRow.style.display = mode === 'solo' ? 'flex' : 'none';
         }
-      });
+        if (this.pongState) {
+          this.pongState.mode = mode;
+        }
+      };
+      card.addEventListener('click', handleModeSelect);
+      card.addEventListener('pointerdown', handleModeSelect);
     });
 
     // Bot difficulty button clicks
     const diffButtons = document.querySelectorAll('.pong-diff-btn');
     diffButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
+      const handleDiffSelect = (e) => {
+        if (e) e.stopPropagation();
         diffButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         if (this.pongState) {
           this.pongState.botDifficulty = btn.dataset.diff;
         }
-      });
+      };
+      btn.addEventListener('click', handleDiffSelect);
+      btn.addEventListener('pointerdown', handleDiffSelect);
     });
 
-    // Modal START MATCH button
+    // Modal START MATCH button (UI validation step)
     const startBtn = document.getElementById('btn-pong-start-match');
     if (startBtn) {
-      startBtn.addEventListener('click', () => {
+      const handleStart = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        if (!this.pongState) {
+          this.initPongState();
+        }
         const activeCard = document.querySelector('.pong-mode-card.active');
-        const mode = activeCard ? activeCard.dataset.mode : 'solo';
+        const mode = activeCard ? activeCard.dataset.mode : (this.pongState.mode || 'solo');
         const camChk = document.getElementById('pong-enable-cam-chk');
         const wantsCam = camChk ? camChk.checked : false;
         const activeDiffBtn = document.querySelector('.pong-diff-btn.active');
-        const diff = activeDiffBtn ? activeDiffBtn.dataset.diff : 'medium';
+        const diff = activeDiffBtn ? activeDiffBtn.dataset.diff : (this.pongState.botDifficulty || 'medium');
 
         this.selectPongMode(mode, wantsCam, diff);
-      });
+        this.closePongModeModal();
+      };
+      startBtn.addEventListener('click', handleStart);
+      startBtn.addEventListener('pointerdown', handleStart);
     }
 
     // Modal Close button
     const closeBtn = document.getElementById('btn-pong-modal-close');
     if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
+      const handleClose = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         this.closePongModeModal();
-      });
+        if (!this.pongState) {
+          this.initPongState();
+        }
+        if (!this.pongState.gameStarted) {
+          const activeCard = document.querySelector('.pong-mode-card.active');
+          const mode = activeCard ? activeCard.dataset.mode : (this.pongState.mode || 'solo');
+          const camChk = document.getElementById('pong-enable-cam-chk');
+          const wantsCam = camChk ? camChk.checked : false;
+          const activeDiffBtn = document.querySelector('.pong-diff-btn.active');
+          const diff = activeDiffBtn ? activeDiffBtn.dataset.diff : (this.pongState.botDifficulty || 'medium');
+          this.selectPongMode(mode, wantsCam, diff);
+        }
+      };
+      closeBtn.addEventListener('click', handleClose);
+      closeBtn.addEventListener('pointerdown', handleClose);
     }
 
     // Banner HUD Buttons
     const btnOpenMode = document.getElementById('btn-pong-open-mode');
     if (btnOpenMode) {
-      btnOpenMode.addEventListener('click', () => {
+      const handleOpenMode = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         this.openPongModeModal();
-      });
+      };
+      btnOpenMode.addEventListener('click', handleOpenMode);
+      btnOpenMode.addEventListener('pointerdown', handleOpenMode);
     }
 
     const btnToggleVideo = document.getElementById('btn-pong-toggle-video');
     if (btnToggleVideo) {
-      btnToggleVideo.addEventListener('click', () => {
+      const handleToggleVideo = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         const seatsContainer = document.getElementById('pong-video-seats-container');
         if (seatsContainer) {
           const isVisible = seatsContainer.style.display !== 'none';
-          seatsContainer.style.display = isVisible ? 'none' : 'flex';
-          if (!isVisible && !this.pongLocalStream) {
-            this.startPongLocalMedia();
+          if (isVisible) {
+            seatsContainer.style.setProperty('display', 'none', 'important');
+          } else {
+            seatsContainer.style.setProperty('display', 'flex', 'important');
+            if (!this.pongLocalStream) {
+              this.startPongLocalMedia();
+            }
           }
         }
-      });
+      };
+      btnToggleVideo.addEventListener('click', handleToggleVideo);
+      btnToggleVideo.addEventListener('pointerdown', handleToggleVideo);
     }
 
     const btnReset = document.getElementById('btn-pong-reset');
     if (btnReset) {
-      btnReset.addEventListener('click', () => {
+      const handleReset = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        if (!this.pongState) {
+          this.initPongState();
+        }
+        this.pongState.gameStarted = true;
+        this.pongState.isModalOpen = false;
+        this.closePongModeModal();
         this.resetPongMatch();
         this.log("Pong match scores reset.", "info");
-      });
+      };
+      btnReset.addEventListener('click', handleReset);
+      btnReset.addEventListener('pointerdown', handleReset);
+    }
+
+    const btnResetTable = document.getElementById('btn-pong-reset-table');
+    if (btnResetTable) {
+      const handleResetTable = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        if (this.pongState) {
+          this.pongState.tableRotY = 0.0;
+          this.pongState.tableTiltX = 0.0;
+          this.pongState.tableTiltZ = 0.0;
+          this.pongState.tableRotVelY = 0.0;
+          this.updatePongHUD();
+          this.log("Proffi Pong: Table rotation & tilt reset to 0°.", "info");
+        }
+      };
+      btnResetTable.addEventListener('click', handleResetTable);
+      btnResetTable.addEventListener('pointerdown', handleResetTable);
     }
 
     // Video Seat Controls (Cam / Mic toggle)
     const btnCam = document.getElementById('btn-pong-toggle-cam');
     if (btnCam) {
-      btnCam.addEventListener('click', () => {
+      const handleCam = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         if (this.pongLocalStream) {
           const vTrack = this.pongLocalStream.getVideoTracks()[0];
           if (vTrack) {
@@ -21933,12 +22157,18 @@ else if (typeof define === 'function' && define['amd'])
         } else {
           this.startPongLocalMedia();
         }
-      });
+      };
+      btnCam.addEventListener('click', handleCam);
+      btnCam.addEventListener('pointerdown', handleCam);
     }
 
     const btnMic = document.getElementById('btn-pong-toggle-mic');
     if (btnMic) {
-      btnMic.addEventListener('click', () => {
+      const handleMic = (e) => {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         if (this.pongLocalStream) {
           const aTrack = this.pongLocalStream.getAudioTracks()[0];
           if (aTrack) {
@@ -21947,14 +22177,20 @@ else if (typeof define === 'function' && define['amd'])
             btnMic.textContent = aTrack.enabled ? '🎤 MIC' : '🔇 MUTE';
           }
         }
-      });
+      };
+      btnMic.addEventListener('click', handleMic);
+      btnMic.addEventListener('pointerdown', handleMic);
     }
   }
 
   openPongModeModal() {
     const modal = document.getElementById('pong-mode-modal');
     if (modal) {
-      modal.style.display = 'flex';
+      modal.classList.add('active');
+      modal.style.setProperty('display', 'flex', 'important');
+      if (this.pongState) {
+        this.pongState.isModalOpen = true;
+      }
       const curMode = this.pongState ? this.pongState.mode : 'solo';
       document.querySelectorAll('.pong-mode-card').forEach(card => {
         card.classList.toggle('active', card.dataset.mode === curMode);
@@ -21972,13 +22208,24 @@ else if (typeof define === 'function' && define['amd'])
 
   closePongModeModal() {
     const modal = document.getElementById('pong-mode-modal');
-    if (modal) modal.style.display = 'none';
+    if (modal) {
+      modal.classList.remove('active');
+      modal.style.setProperty('display', 'none', 'important');
+    }
+    if (this.pongState) {
+      this.pongState.isModalOpen = false;
+    }
   }
 
   selectPongMode(mode, wantsCamera, diff) {
-    if (!this.pongState) return;
+    if (!this.pongState) {
+      this.initPongState();
+    }
     this.pongState.mode = mode;
     if (diff) this.pongState.botDifficulty = diff;
+    this.pongState.gameStarted = true;
+    this.pongState.isModalOpen = false;
+    this.closePongModeModal();
 
     this.resetPongMatch();
 
@@ -22079,6 +22326,9 @@ else if (typeof define === 'function' && define['amd'])
       if (this.pongState.winner) {
         statusEl.textContent = `🏆 ${this.pongState.winner} WINS!`;
         statusEl.style.color = "#fbbf24";
+      } else if (!this.pongState.gameStarted || this.pongState.isModalOpen) {
+        statusEl.textContent = `Select mode & press START MATCH`;
+        statusEl.style.color = "#38bdf8";
       } else if (this.pongState.serving) {
         statusEl.textContent = `Serve in ${this.pongState.serveTimer.toFixed(1)}s...`;
         statusEl.style.color = "#94a3b8";
@@ -22086,6 +22336,13 @@ else if (typeof define === 'function' && define['amd'])
         statusEl.textContent = `Rally: ${this.pongState.rallyCount} hits`;
         statusEl.style.color = "#f8fafc";
       }
+    }
+
+    const rotInfoEl = document.getElementById('pong-table-rot-info');
+    if (rotInfoEl) {
+      const rotDeg = Math.round((((this.pongState.tableRotY || 0) * 180 / Math.PI) % 360 + 360) % 360);
+      const tiltDeg = Math.round((this.pongState.tableTiltX || 0) * 180 / Math.PI);
+      rotInfoEl.textContent = `${rotDeg}° (${tiltDeg >= 0 ? '+' : ''}${tiltDeg}°)`;
     }
   }
 
@@ -22383,18 +22640,25 @@ else if (typeof define === 'function' && define['amd'])
 
   updatePongPointerMove(e) {
     if (!this.pongState) return;
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.height <= 0) return;
+    const modal = document.getElementById('pong-mode-modal');
+    if (modal && modal.style.display !== 'none') return;
 
-    // Normalizing cursor/pointer Y position (top = -Z, bottom = +Z)
-    // Stronger sensitivity range (4.6) for effortless full-reach paddle control
-    const normY = (e.clientY - rect.top) / rect.height;
-    const targetZ = Math.max(-1.65, Math.min(1.65, (normY - 0.5) * 4.6));
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.height <= 0 || rect.width <= 0) return;
+
+    // Normalizing cursor/pointer position relative to canvas center
+    const normX = (e.clientX - rect.left) / rect.width - 0.5;
+    const normY = (e.clientY - rect.top) / rect.height - 0.5;
+
+    // Compensate for table rotation so dragging up/down tracks table length at any rotation angle
+    const rot = this.pongState.tableRotY || 0;
+    const effectiveScreenCoord = normY * Math.cos(rot) - normX * Math.sin(rot);
+    const targetZ = Math.max(-1.65, Math.min(1.65, effectiveScreenCoord * 4.6));
 
     if (this.pongState.mode === 'online' && !this.pongState.isHost) {
       this.pongState.paddles.right.targetZ = targetZ;
     } else if (this.pongState.mode === 'local_2p') {
-      const isRightSide = (e.clientX - rect.left) > (rect.width * 0.5);
+      const isRightSide = (normX * Math.cos(rot) + normY * Math.sin(rot)) > 0;
       if (isRightSide) {
         this.pongState.paddles.right.targetZ = targetZ;
       } else {
@@ -22408,6 +22672,24 @@ else if (typeof define === 'function' && define['amd'])
   updatePongPhysics(dt) {
     const ps = this.pongState;
     if (!ps || !ps.active) return;
+
+    // Check if game is waiting for UI validation (mode modal open or match not started yet)
+    const modal = document.getElementById('pong-mode-modal');
+    const isModalOpen = (modal && modal.style.display !== 'none') || ps.isModalOpen;
+    if (!ps.gameStarted || isModalOpen) {
+      // Gameplay and Bot wait: keep ball centered at rest, zero velocity, paddles at zero rest
+      ps.ball.x = 0.0;
+      ps.ball.y = 0.15;
+      ps.ball.z = 0.0;
+      ps.ball.vx = 0.0;
+      ps.ball.vy = 0.0;
+      ps.ball.vz = 0.0;
+      ps.paddles.left.z = 0.0;
+      ps.paddles.left.targetZ = 0.0;
+      ps.paddles.right.z = 0.0;
+      ps.paddles.right.targetZ = 0.0;
+      return;
+    }
 
     const boundedDt = Math.min(0.04, Math.max(0.001, dt));
 
@@ -27468,6 +27750,26 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
   initMobaDemo() {
     this.log("🎮 Initializing MOBA Forest of Hollow Blood Simulation Layer...", "info");
+
+    // Strictly remove and hide all Pong UI elements and state
+    if (this.pongState) {
+      this.pongState.active = false;
+      this.pongState.isModalOpen = false;
+      this.pongState.gameStarted = false;
+    }
+    const pongBannerEl = document.getElementById('pong-banner');
+    if (pongBannerEl) pongBannerEl.style.setProperty('display', 'none', 'important');
+    const pongSeatsEl = document.getElementById('pong-video-seats-container');
+    if (pongSeatsEl) pongSeatsEl.style.setProperty('display', 'none', 'important');
+    const pongModalEl = document.getElementById('pong-mode-modal');
+    if (pongModalEl) {
+      pongModalEl.classList.remove('active');
+      pongModalEl.style.setProperty('display', 'none', 'important');
+    }
+    if (typeof this.closePongModeModal === 'function') {
+      this.closePongModeModal();
+    }
+
     this.preloadAllMobaHeroes();
     this.loadTowerGLB();
     this.initSacredGeometryMeshes();
@@ -27865,37 +28167,251 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     };
     this.canvas.addEventListener('contextmenu', this._mobaCtxMenuHandler);
 
+    // Desktop Mouse Drag / Click Handler for MOBA
+    this._mobaMouseState = { isDown: false, startX: 0, startY: 0, lastX: 0, lastY: 0, hasDragged: false };
     if (this._mobaMouseDownHandler) this.canvas.removeEventListener('mousedown', this._mobaMouseDownHandler);
     this._mobaMouseDownHandler = (e) => {
       if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
-      if (e.button === 2 || e.button === 0) { // Right or Left Click on canvas
-        if (e.target !== this.canvas) return;
-        const rect = this.canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-        this.mobaHandleGroundClick(mx, my);
+      if (e.target !== this.canvas) return;
+      if (e.button === 0 || e.button === 2) { // Left or Right click
+        const isMobile = this.isMobileDevice();
+        const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
+        const isFirstPerson = zoom <= 3.5;
+
+        this._mobaMouseState.isDown = true;
+        this._mobaMouseState.startX = e.clientX;
+        this._mobaMouseState.startY = e.clientY;
+        this._mobaMouseState.lastX = e.clientX;
+        this._mobaMouseState.lastY = e.clientY;
+        this._mobaMouseState.hasDragged = false;
+
+        if (!isFirstPerson) {
+          // In RTS top-down mode: immediate response on click
+          const rect = this.canvas.getBoundingClientRect();
+          const mx = e.clientX - rect.left;
+          const my = e.clientY - rect.top;
+          this.mobaHandleGroundClick(mx, my);
+        }
       }
     };
     this.canvas.addEventListener('mousedown', this._mobaMouseDownHandler);
 
-    // Mobile touch tap listener on canvas
-    if (this._mobaTouchHandler) this.canvas.removeEventListener('touchstart', this._mobaTouchHandler);
-    this._mobaTouchHandler = (e) => {
+    if (this._mobaMouseMoveHandler) window.removeEventListener('mousemove', this._mobaMouseMoveHandler);
+    this._mobaMouseMoveHandler = (e) => {
+      if (!this._mobaMouseState || !this._mobaMouseState.isDown) return;
       if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
-      // Do not trigger ground movement if a two-finger pinch gesture is occurring or just concluded
-      if (e.touches && e.touches.length >= 2) return;
-      if (this.pinchZoomState && this.pinchZoomState.active) return;
-      if (this.pinchZoomState && this.pinchZoomState.lastPinchTime && (Date.now() - this.pinchZoomState.lastPinchTime < 400)) return;
+
+      const isMobile = this.isMobileDevice();
+      const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
+      const isFirstPerson = zoom <= 3.5;
+
+      if (isFirstPerson) {
+        const dx = e.clientX - this._mobaMouseState.lastX;
+        this._mobaMouseState.lastX = e.clientX;
+        this._mobaMouseState.lastY = e.clientY;
+
+        const totalDist = Math.hypot(e.clientX - this._mobaMouseState.startX, e.clientY - this._mobaMouseState.startY);
+        if (totalDist > 4 || this._mobaMouseState.hasDragged) {
+          this._mobaMouseState.hasDragged = true;
+          this._mobaLastManualRotateTime = Date.now();
+
+          const invX = this.state.invertMouseX ? -1 : 1;
+          const sens = 0.0065;
+          const deltaYaw = dx * sens * invX;
+
+          this.mobaState.currentYaw = (this.mobaState.currentYaw || 0) + deltaYaw;
+          while (this.mobaState.currentYaw > Math.PI) this.mobaState.currentYaw -= Math.PI * 2;
+          while (this.mobaState.currentYaw < -Math.PI) this.mobaState.currentYaw += Math.PI * 2;
+          this.mobaState.rotation = this.mobaState.currentYaw;
+
+          this.mobaState.targetPos = null;
+          this.mobaState.targetEntity = null;
+          this.updateMobaCamera();
+        }
+      }
+    };
+    window.addEventListener('mousemove', this._mobaMouseMoveHandler);
+
+    if (this._mobaMouseUpHandler) window.removeEventListener('mouseup', this._mobaMouseUpHandler);
+    this._mobaMouseUpHandler = (e) => {
+      if (!this._mobaMouseState || !this._mobaMouseState.isDown) return;
+      const isMobile = this.isMobileDevice();
+      const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
+      const isFirstPerson = zoom <= 3.5;
+
+      if (isFirstPerson && !this._mobaMouseState.hasDragged) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mx = this._mobaMouseState.startX - rect.left;
+        const my = this._mobaMouseState.startY - rect.top;
+        this.mobaHandleGroundClick(mx, my);
+      }
+      this._mobaMouseState.isDown = false;
+      this._mobaMouseState.hasDragged = false;
+    };
+    window.addEventListener('mouseup', this._mobaMouseUpHandler);
+
+    // Mobile Touch Controllers: Touchstart, Touchmove (Swipe to Rotate in First-Person), Touchend
+    this._mobaTouchState = {
+      active: false,
+      touchId: null,
+      startX: 0,
+      startY: 0,
+      lastX: 0,
+      lastY: 0,
+      startTime: 0,
+      hasRotated: false
+    };
+
+    if (this._mobaTouchStartHandler) this.canvas.removeEventListener('touchstart', this._mobaTouchStartHandler);
+    if (this._mobaTouchHandler) this.canvas.removeEventListener('touchstart', this._mobaTouchHandler);
+    this._mobaTouchStartHandler = (e) => {
+      if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
+      if (e.target !== this.canvas) return;
+
+      // Two-finger pinch to zoom gesture handled by pinchZoomState
+      if (e.touches && e.touches.length >= 2) {
+        this._mobaTouchState.active = false;
+        return;
+      }
+      if (this.pinchZoomState && this.pinchZoomState.active) {
+        this._mobaTouchState.active = false;
+        return;
+      }
+      if (this.pinchZoomState && this.pinchZoomState.lastPinchTime && (Date.now() - this.pinchZoomState.lastPinchTime < 400)) {
+        this._mobaTouchState.active = false;
+        return;
+      }
 
       if (e.touches && e.touches.length === 1) {
         const touch = e.touches[0];
-        const rect = this.canvas.getBoundingClientRect();
-        const mx = touch.clientX - rect.left;
-        const my = touch.clientY - rect.top;
-        this.mobaHandleGroundClick(mx, my);
+        const isMobile = this.isMobileDevice();
+        const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
+        const isFirstPerson = zoom <= 3.5;
+
+        this._mobaTouchState.active = true;
+        this._mobaTouchState.touchId = touch.identifier;
+        this._mobaTouchState.startX = touch.clientX;
+        this._mobaTouchState.startY = touch.clientY;
+        this._mobaTouchState.lastX = touch.clientX;
+        this._mobaTouchState.lastY = touch.clientY;
+        this._mobaTouchState.startTime = Date.now();
+        this._mobaTouchState.hasRotated = false;
+
+        if (!isFirstPerson) {
+          // Classic top-down RTS view: immediate click response
+          const rect = this.canvas.getBoundingClientRect();
+          const mx = touch.clientX - rect.left;
+          const my = touch.clientY - rect.top;
+          this.mobaHandleGroundClick(mx, my);
+        }
       }
     };
-    this.canvas.addEventListener('touchstart', this._mobaTouchHandler, { passive: true });
+    this.canvas.addEventListener('touchstart', this._mobaTouchStartHandler, { passive: true });
+
+    if (this._mobaTouchMoveHandler) {
+      this.canvas.removeEventListener('touchmove', this._mobaTouchMoveHandler);
+      window.removeEventListener('touchmove', this._mobaTouchMoveHandler);
+    }
+    this._mobaTouchMoveHandler = (e) => {
+      if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
+      if (!this._mobaTouchState || !this._mobaTouchState.active) return;
+      if (this.pinchZoomState && this.pinchZoomState.active) return;
+      if (e.touches && e.touches.length >= 2) return;
+
+      let currentTouch = null;
+      for (let i = 0; i < e.touches.length; i++) {
+        if (e.touches[i].identifier === this._mobaTouchState.touchId) {
+          currentTouch = e.touches[i];
+          break;
+        }
+      }
+      if (!currentTouch) return;
+
+      const dx = currentTouch.clientX - this._mobaTouchState.lastX;
+      const dy = currentTouch.clientY - this._mobaTouchState.lastY;
+      this._mobaTouchState.lastX = currentTouch.clientX;
+      this._mobaTouchState.lastY = currentTouch.clientY;
+
+      const totalDist = Math.hypot(
+        currentTouch.clientX - this._mobaTouchState.startX,
+        currentTouch.clientY - this._mobaTouchState.startY
+      );
+
+      const isMobile = this.isMobileDevice();
+      const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
+      const isFirstPerson = zoom <= 3.5;
+
+      if (isFirstPerson) {
+        // Simple moving touchmove to rotate left or right
+        if (totalDist > 5 || this._mobaTouchState.hasRotated) {
+          this._mobaTouchState.hasRotated = true;
+          this._mobaLastManualRotateTime = Date.now();
+
+          const invX = this.state.invertMouseX ? -1 : 1;
+          const sens = 0.0075;
+          const deltaYaw = dx * sens * invX;
+
+          this.mobaState.currentYaw = (this.mobaState.currentYaw || 0) + deltaYaw;
+          while (this.mobaState.currentYaw > Math.PI) this.mobaState.currentYaw -= Math.PI * 2;
+          while (this.mobaState.currentYaw < -Math.PI) this.mobaState.currentYaw += Math.PI * 2;
+          this.mobaState.rotation = this.mobaState.currentYaw;
+
+          // Free up target coordinates so hero steers directly into player's rotation
+          this.mobaState.targetPos = null;
+          this.mobaState.targetEntity = null;
+
+          // Real-time camera matrix update
+          this.updateMobaCamera();
+
+          if (e.cancelable) {
+            e.preventDefault();
+          }
+        }
+      }
+    };
+    this.canvas.addEventListener('touchmove', this._mobaTouchMoveHandler, { passive: false });
+    window.addEventListener('touchmove', this._mobaTouchMoveHandler, { passive: false });
+
+    if (this._mobaTouchEndHandler) {
+      this.canvas.removeEventListener('touchend', this._mobaTouchEndHandler);
+      this.canvas.removeEventListener('touchcancel', this._mobaTouchEndHandler);
+      window.removeEventListener('touchend', this._mobaTouchEndHandler);
+      window.removeEventListener('touchcancel', this._mobaTouchEndHandler);
+    }
+    this._mobaTouchEndHandler = (e) => {
+      if (!this._mobaTouchState || !this._mobaTouchState.active) return;
+
+      let endedTouch = null;
+      if (e.changedTouches) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === this._mobaTouchState.touchId) {
+            endedTouch = e.changedTouches[i];
+            break;
+          }
+        }
+      }
+      if (!endedTouch && e.type !== 'touchcancel') return;
+
+      const isMobile = this.isMobileDevice();
+      const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
+      const isFirstPerson = zoom <= 3.5;
+
+      // If in First-Person mode and finger was not dragged/swiped: clean stationary tap!
+      if (isFirstPerson && !this._mobaTouchState.hasRotated) {
+        const rect = this.canvas.getBoundingClientRect();
+        const mx = this._mobaTouchState.startX - rect.left;
+        const my = this._mobaTouchState.startY - rect.top;
+        this.mobaHandleGroundClick(mx, my);
+      }
+
+      this._mobaTouchState.active = false;
+      this._mobaTouchState.touchId = null;
+      this._mobaTouchState.hasRotated = false;
+    };
+    this.canvas.addEventListener('touchend', this._mobaTouchEndHandler, { passive: true });
+    this.canvas.addEventListener('touchcancel', this._mobaTouchEndHandler, { passive: true });
+    window.addEventListener('touchend', this._mobaTouchEndHandler, { passive: true });
+    window.addEventListener('touchcancel', this._mobaTouchEndHandler, { passive: true });
 
     // Register WebSockets event listeners
     if (this._unsubMobaList) this._unsubMobaList();
@@ -28633,48 +29149,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // Hero is ALWAYS locked in exact middle center of screen
     const playerPos = this.mobaState.currentPos;
-    this.state.camTarget[0] = playerPos[0];
-    this.state.camTarget[1] = 1.0;
-    this.state.camTarget[2] = playerPos[2];
-
-    const isMobile = this.isMobileDevice();
-    const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
-
-    if (zoom <= 3.5) {
-      // First-Person / Over-the-shoulder hero camera
-      const playerYaw = this.mobaState.currentYaw || this.mobaState.rotation || 0;
-      this.state.camTarget[0] = playerPos[0] + Math.sin(playerYaw) * 2.2;
-      this.state.camTarget[1] = playerPos[1] + 1.25;
-      this.state.camTarget[2] = playerPos[2] + Math.cos(playerYaw) * 2.2;
-
-      this.state.camRadius = zoom;
-      this.state.camPitch = 0.15; // Ground-level view
-      this.state.camYaw = playerYaw + Math.PI; // Face the direction hero is moving
-    } else if (zoom < 6.0) {
-      // Smooth intermediate blend between First-Person and RTS perspective
-      const t = (zoom - 3.5) / (6.0 - 3.5); // 0 at 3.5, 1 at 6.0
-      const playerYaw = this.mobaState.currentYaw || this.mobaState.rotation || 0;
-      const targetX = playerPos[0] + (1 - t) * Math.sin(playerYaw) * 2.2;
-      const targetY = playerPos[1] + (1 - t) * 0.25 + 1.0;
-      const targetZ = playerPos[2] + (1 - t) * Math.cos(playerYaw) * 2.2;
-
-      this.state.camTarget[0] = targetX;
-      this.state.camTarget[1] = targetY;
-      this.state.camTarget[2] = targetZ;
-
-      this.state.camRadius = zoom;
-      this.state.camPitch = 0.15 + t * (0.98 - 0.15);
-      this.state.camYaw = (1 - t) * (playerYaw + Math.PI);
-    } else {
-      // Classic top-down / RTS MOBA perspective
-      this.state.camTarget[0] = playerPos[0];
-      this.state.camTarget[1] = 1.0;
-      this.state.camTarget[2] = playerPos[2];
-
-      this.state.camRadius = zoom;
-      this.state.camPitch = 0.98; // Traditional MOBA steep tilt angle
-      this.state.camYaw = 0.0;
-    }
+    this.updateMobaCamera();
 
     // Ensure Main Light follows the player hero (exact middle of screen) with big radius covering whole screen
     if (this.sceneEntities) {
@@ -29018,8 +29493,63 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       });
     }
 
-    // 12. Redraw HUD floating elements
+    // 12. Final camera update after player movement & rotation
+    this.updateMobaCamera();
+
+    // 13. Redraw HUD floating elements
     this.mobaUpdateInGameHUD();
+  }
+
+  updateMobaCamera() {
+    if (!this.mobaState || !this.mobaState.playing) return;
+    const playerPos = this.mobaState.currentPos;
+    const isMobile = this.isMobileDevice();
+    const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
+
+    if (zoom <= 3.5) {
+      // First-Person hero camera: positioned in front and upper to avoid clipping into hero model during locomotion & anims
+      const playerYaw = this.mobaState.currentYaw || this.mobaState.rotation || 0;
+      const forwardOffset = 0.85; // Placed comfortably ahead of character mesh
+      const eyeHeight = 1.95;     // Upper at eye-level above character mesh
+      const lookPitch = 0.08;     // Natural forward line-of-sight
+      const radius = zoom;
+
+      this.state.camTarget[0] = playerPos[0] + Math.sin(playerYaw) * (forwardOffset + radius * Math.cos(lookPitch));
+      this.state.camTarget[1] = playerPos[1] + eyeHeight - radius * Math.sin(lookPitch);
+      this.state.camTarget[2] = playerPos[2] + Math.cos(playerYaw) * (forwardOffset + radius * Math.cos(lookPitch));
+
+      this.state.camRadius = radius;
+      this.state.camPitch = lookPitch;
+      this.state.camYaw = playerYaw + Math.PI;
+    } else if (zoom < 6.0) {
+      // Smooth intermediate blend between First-Person and RTS perspective
+      const t = (zoom - 3.5) / (6.0 - 3.5); // 0 at 3.5, 1 at 6.0
+      const playerYaw = this.mobaState.currentYaw || this.mobaState.rotation || 0;
+      const forwardOffset = 0.85;
+      const eyeHeight = 1.95;
+      const lookPitch = 0.08;
+
+      const fpTargetX = playerPos[0] + Math.sin(playerYaw) * (forwardOffset + zoom * Math.cos(lookPitch));
+      const fpTargetY = playerPos[1] + eyeHeight - zoom * Math.sin(lookPitch);
+      const fpTargetZ = playerPos[2] + Math.cos(playerYaw) * (forwardOffset + zoom * Math.cos(lookPitch));
+
+      this.state.camTarget[0] = fpTargetX + t * (playerPos[0] - fpTargetX);
+      this.state.camTarget[1] = fpTargetY + t * (1.0 - fpTargetY);
+      this.state.camTarget[2] = fpTargetZ + t * (playerPos[2] - fpTargetZ);
+
+      this.state.camRadius = zoom;
+      this.state.camPitch = lookPitch + t * (0.98 - lookPitch);
+      this.state.camYaw = (1 - t) * (playerYaw + Math.PI);
+    } else {
+      // Classic top-down / RTS MOBA perspective
+      this.state.camTarget[0] = playerPos[0];
+      this.state.camTarget[1] = 1.0;
+      this.state.camTarget[2] = playerPos[2];
+
+      this.state.camRadius = zoom;
+      this.state.camPitch = 0.98; // Traditional MOBA steep tilt angle
+      this.state.camYaw = 0.0;
+    }
   }
 
   mobaUpdateInGameHUD() {
@@ -29409,16 +29939,24 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
     }
 
-    // Render Ground plate (forest terrain during gameplay only; removed in lobby for pure pitch-black abyss)
-    const groundMesh = this.meshBuffers[1]; // Use cube scaled wide for terrain
+    // Render Ground plate (undulating forest terrain with small hills during gameplay only; removed in lobby for pure pitch-black abyss)
+    const groundMesh = this.mobaTerrainMesh || this.meshBuffers[1];
     if (groundMesh && !isLobby) {
       gl.bindVertexArray(groundMesh.vao);
-      
-      // Scale to cover 160x160 forest plateau for enlarged map
-      this.instanceMatrix[0] = 160.0; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 160.0; this.instanceMatrix[11] = 0;
-      this.instanceMatrix[12] = 0; this.instanceMatrix[13] = -0.05; this.instanceMatrix[14] = 0; this.instanceMatrix[15] = 1.0;
+
+      if (this.mobaTerrainMesh && groundMesh === this.mobaTerrainMesh) {
+        // Procedural terrain mesh has baked 3D coordinates and heights for the entire map
+        this.instanceMatrix[0] = 1.0; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 1.0; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 1.0; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = 0; this.instanceMatrix[13] = 0; this.instanceMatrix[14] = 0; this.instanceMatrix[15] = 1.0;
+      } else {
+        // Fallback cube scaled wide for terrain
+        this.instanceMatrix[0] = 160.0; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 160.0; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = 0; this.instanceMatrix[13] = -0.05; this.instanceMatrix[14] = 0; this.instanceMatrix[15] = 1.0;
+      }
 
       Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
 
@@ -29830,13 +30368,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     // 0.1 Render Procedural Forest Trees (Trunks & Natural Canopies)
-    const trunkMesh = this.mobaTreeTrunkMesh || this.meshBuffers[1];
+    const trunkMesh = this.mobaBranchedTrunkMesh || this.mobaTreeTrunkMesh || this.meshBuffers[1];
     const oakMesh = this.mobaOakCanopyMesh || this.meshBuffers[0];
     const pineMesh = this.mobaPineCanopyMesh || this.meshBuffers[0];
     const boulderMesh = this.mobaBoulderMesh || this.meshBuffers[1];
 
     if (globalForestLayoutEngine.trees && globalForestLayoutEngine.trees.length > 0) {
-      // Draw Tree Trunks
+      // Draw Tree Trunks (with branched trunks where enabled)
       if (trunkMesh) {
         gl.bindVertexArray(trunkMesh.vao);
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
@@ -29845,10 +30383,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         for (let i = 0; i < globalForestLayoutEngine.trees.length; i++) {
           const t = globalForestLayoutEngine.trees[i];
           const sc = t.scale;
-          this.instanceMatrix[0] = sc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sc; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sc; this.instanceMatrix[11] = 0;
-          this.instanceMatrix[12] = t.x; this.instanceMatrix[13] = 0; this.instanceMatrix[14] = t.z; this.instanceMatrix[15] = 1.0;
+          const cosY = Math.cos(t.rotY || 0);
+          const sinY = Math.sin(t.rotY || 0);
+          this.instanceMatrix[0] = cosY * sc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinY * sc; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sc * (t.heightScale || 1.0); this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sinY * sc; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosY * sc; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = t.x; this.instanceMatrix[13] = t.y || 0.0; this.instanceMatrix[14] = t.z; this.instanceMatrix[15] = 1.0;
 
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(t.trunkColor));
@@ -29864,6 +30404,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       for (let i = 0; i < globalForestLayoutEngine.trees.length; i++) {
         const t = globalForestLayoutEngine.trees[i];
         const sc = t.scale;
+        const groundY = t.y || 0.0;
 
         // Calculate custom wind sway offset unique to each tree's coordinate position
         const treePhase = t.x * 0.22 + t.z * 0.18;
@@ -29891,7 +30432,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             this.instanceMatrix[0] = tier.rSc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
             this.instanceMatrix[4] = 0; this.instanceMatrix[5] = tier.hSc; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
             this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = tier.rSc; this.instanceMatrix[11] = 0;
-            this.instanceMatrix[12] = t.x + tSwayX; this.instanceMatrix[13] = tier.yOff; this.instanceMatrix[14] = t.z + tSwayZ; this.instanceMatrix[15] = 1.0;
+            this.instanceMatrix[12] = t.x + tSwayX; this.instanceMatrix[13] = groundY + tier.yOff; this.instanceMatrix[14] = t.z + tSwayZ; this.instanceMatrix[15] = 1.0;
 
             gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
             gl.drawElements(gl.TRIANGLES, pineMesh.indexCount, gl.UNSIGNED_SHORT, 0);
@@ -29902,7 +30443,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(t.foliageColor));
 
-          const canopyY = 1.8 * sc;
+          // Central oak crown
+          const canopyY = groundY + 1.8 * sc;
           this.instanceMatrix[0] = sc * 1.1; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
           this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sc * 1.05; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
           this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sc * 1.1; this.instanceMatrix[11] = 0;
@@ -29910,6 +30452,29 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           gl.drawElements(gl.TRIANGLES, oakMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+          // Secondary foliage clusters on spreading branch tips
+          if (this.mobaBranchTips && this.mobaBranchTips.length > 0) {
+            const cosT = Math.cos(t.rotY || 0);
+            const sinT = Math.sin(t.rotY || 0);
+            for (let bIdx = 0; bIdx < this.mobaBranchTips.length; bIdx++) {
+              const tip = this.mobaBranchTips[bIdx];
+              const rx = tip[0] * cosT - tip[2] * sinT;
+              const rz = tip[0] * sinT + tip[2] * cosT;
+              const tipX = t.x + rx * sc + swayX * 0.7;
+              const tipY = groundY + tip[1] * sc;
+              const tipZ = t.z + rz * sc + swayZ * 0.7;
+              const cSc = sc * 0.48;
+
+              this.instanceMatrix[0] = cSc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+              this.instanceMatrix[4] = 0; this.instanceMatrix[5] = cSc * 0.92; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+              this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cSc; this.instanceMatrix[11] = 0;
+              this.instanceMatrix[12] = tipX; this.instanceMatrix[13] = tipY; this.instanceMatrix[14] = tipZ; this.instanceMatrix[15] = 1.0;
+
+              gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+              gl.drawElements(gl.TRIANGLES, oakMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+            }
+          }
         }
       }
 
@@ -29930,38 +30495,168 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.instanceMatrix[0] = bSc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
           this.instanceMatrix[4] = 0; this.instanceMatrix[5] = bSc * 0.7; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
           this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = bSc; this.instanceMatrix[11] = 0;
-          this.instanceMatrix[12] = b.x; this.instanceMatrix[13] = bSc * 0.25; this.instanceMatrix[14] = b.z; this.instanceMatrix[15] = 1.0;
+          this.instanceMatrix[12] = b.x; this.instanceMatrix[13] = (b.y || 0.0) + bSc * 0.25; this.instanceMatrix[14] = b.z; this.instanceMatrix[15] = 1.0;
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           gl.drawElements(gl.TRIANGLES, boulderMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
       }
 
-      // Draw Procedural Grass Tufts (with wind sway)
-      const targetGrassMesh = this.mobaGrassMesh || pineMesh;
-      if (targetGrassMesh && globalForestLayoutEngine.grass) {
-        gl.bindVertexArray(targetGrassMesh.vao);
-        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 19); // Use gradient grass shader!
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.95);
-        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
-        
+      // Draw Procedural Diverse Grass Tufts (curved blades, tall nodding wheat, and lush clover carpets)
+      const wheatMesh = this.mobaWheatGrassMesh;
+      const cloverMesh = this.mobaCloverMesh;
+      const curvedMesh = this.mobaGrassMesh || pineMesh;
+
+      if (globalForestLayoutEngine.grass) {
         const swayTime = timestamp * 0.0022;
 
         for (let i = 0; i < globalForestLayoutEngine.grass.length; i++) {
           const g = globalForestLayoutEngine.grass[i];
+          let activeMesh = curvedMesh;
+          let matType = 19; // Gradient swaying grass shader
+
+          if (g.variety === 'wheat' && wheatMesh) {
+            activeMesh = wheatMesh;
+            matType = 19;
+          } else if (g.variety === 'clover' && cloverMesh) {
+            activeMesh = cloverMesh;
+            matType = 0; // standard shaded foliage
+          }
+
+          if (!activeMesh) continue;
+
+          gl.bindVertexArray(activeMesh.vao);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, matType);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.95);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
+
           const swayPhase = g.x * 0.45 + g.z * 0.35;
           const grassSway = Math.sin(swayTime + swayPhase) * 0.09 * g.scaleY;
 
           this.instanceMatrix[0] = g.scaleX; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
           this.instanceMatrix[4] = grassSway; this.instanceMatrix[5] = g.scaleY; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
           this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = g.scaleX; this.instanceMatrix[11] = 0;
-          this.instanceMatrix[12] = g.x; this.instanceMatrix[13] = -0.05; this.instanceMatrix[14] = g.z; this.instanceMatrix[15] = 1.0;
+          this.instanceMatrix[12] = g.x; this.instanceMatrix[13] = (g.y || 0.0) - 0.02; this.instanceMatrix[14] = g.z; this.instanceMatrix[15] = 1.0;
 
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(g.color));
-          gl.drawElements(gl.TRIANGLES, targetGrassMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          gl.drawElements(gl.TRIANGLES, activeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+      }
+
+      // Draw Blooming Wildflower Clusters throughout the forest
+      const flowerMesh = this.mobaWildflowerMesh;
+      if (flowerMesh && globalForestLayoutEngine.wildFlowers) {
+        gl.bindVertexArray(flowerMesh.vao);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+
+        for (let i = 0; i < globalForestLayoutEngine.wildFlowers.length; i++) {
+          const f = globalForestLayoutEngine.wildFlowers[i];
+          const fSc = f.scale;
+          const cosF = Math.cos(f.rotY || 0);
+          const sinF = Math.sin(f.rotY || 0);
+
+          this.instanceMatrix[0] = cosF * fSc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinF * fSc; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = fSc; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sinF * fSc; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosF * fSc; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = f.x; this.instanceMatrix[13] = f.y || 0.0; this.instanceMatrix[14] = f.z; this.instanceMatrix[15] = 1.0;
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(f.color));
+          gl.drawElements(gl.TRIANGLES, flowerMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+      }
+
+      // Draw Floating Water Lilies and Lotus Blossoms on the river
+      const lilyMesh = this.mobaWaterLilyMesh;
+      if (lilyMesh && globalForestLayoutEngine.waterLilies) {
+        gl.bindVertexArray(lilyMesh.vao);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.6);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.05);
+
+        for (let i = 0; i < globalForestLayoutEngine.waterLilies.length; i++) {
+          const l = globalForestLayoutEngine.waterLilies[i];
+          const lSc = l.scale;
+          const cosL = Math.cos(l.rotY || 0);
+          const sinL = Math.sin(l.rotY || 0);
+          const bob = Math.sin(timestamp * 0.002 + l.x * 0.4) * 0.015;
+
+          this.instanceMatrix[0] = cosL * lSc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinL * lSc; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = lSc; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sinL * lSc; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosL * lSc; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = l.x; this.instanceMatrix[13] = (l.y || 0.02) + bob; this.instanceMatrix[14] = l.z; this.instanceMatrix[15] = 1.0;
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(l.color));
+          gl.drawElements(gl.TRIANGLES, lilyMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+      }
+
+      // Draw Wetland River Reeds & Cattails along riverbanks
+      const reedMesh = this.mobaRiverReedMesh;
+      if (reedMesh && globalForestLayoutEngine.riverReeds) {
+        gl.bindVertexArray(reedMesh.vao);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 19);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.9);
+
+        const reedTime = timestamp * 0.0018;
+        for (let i = 0; i < globalForestLayoutEngine.riverReeds.length; i++) {
+          const r = globalForestLayoutEngine.riverReeds[i];
+          const rSway = Math.sin(reedTime + r.x * 0.3 + r.z * 0.3) * 0.06 * r.scaleY;
+
+          this.instanceMatrix[0] = r.scaleX; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = rSway; this.instanceMatrix[5] = r.scaleY; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = r.scaleX; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = r.x; this.instanceMatrix[13] = r.y || 0.0; this.instanceMatrix[14] = r.z; this.instanceMatrix[15] = 1.0;
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(r.color));
+          gl.drawElements(gl.TRIANGLES, reedMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+      }
+
+      // Draw Neutral Riverbank Frogs (with hop & breathing animation)
+      const frogMesh = this.mobaFrogMesh;
+      if (frogMesh && globalForestLayoutEngine.frogs) {
+        gl.bindVertexArray(frogMesh.vao);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.7);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
+
+        for (let i = 0; i < globalForestLayoutEngine.frogs.length; i++) {
+          const fr = globalForestLayoutEngine.frogs[i];
+          const frSc = fr.scale;
+
+          // Periodic hop every 3.5 seconds
+          const hopCycle = (timestamp * 0.001 + fr.phase) % 3.5;
+          let hopY = 0.0;
+          let hopForward = 0.0;
+          if (hopCycle < 0.55) {
+            const normHop = hopCycle / 0.55;
+            hopY = Math.sin(normHop * Math.PI) * 0.38;
+            hopForward = Math.sin(normHop * Math.PI * 0.5) * 0.25;
+          }
+          // Subtle breathing / ribbit expansion
+          const breathe = 1.0 + Math.sin(timestamp * 0.005 + fr.phase * 2.0) * 0.06;
+
+          const cosFr = Math.cos(fr.rotY || 0);
+          const sinFr = Math.sin(fr.rotY || 0);
+          const posX = fr.x + sinFr * hopForward;
+          const posZ = fr.z + cosFr * hopForward;
+          const posY = (fr.baseY || 0.0) + hopY;
+
+          this.instanceMatrix[0] = cosFr * frSc * breathe; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinFr * frSc * breathe; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = frSc * breathe; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sinFr * frSc * breathe; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosFr * frSc * breathe; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = posX; this.instanceMatrix[13] = posY; this.instanceMatrix[14] = posZ; this.instanceMatrix[15] = 1.0;
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(fr.color));
+          gl.drawElements(gl.TRIANGLES, frogMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
       }
     }
 
@@ -30720,121 +31415,318 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   mobaIntersectGroundPlane(ray) {
-    if (!ray || Math.abs(ray.dir[1]) < 1e-5) return null;
-    const t = -ray.origin[1] / ray.dir[1];
-    if (t < 0) return null;
-    return [
-      ray.origin[0] + ray.dir[0] * t,
-      0.0,
-      ray.origin[2] + ray.dir[2] * t
-    ];
+    if (!ray) return null;
+    const ox = ray.origin[0], oy = ray.origin[1], oz = ray.origin[2];
+    const dx = ray.dir[0], dy = ray.dir[1], dz = ray.dir[2];
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-6) return null;
+    const nx = dx / len, ny = dy / len, nz = dz / len;
+
+    // Raymarch through procedural terrain elevation heightfield
+    let t = 0.5;
+    const maxT = 160.0;
+    const step = 0.8;
+    while (t < maxT) {
+      const rx = ox + nx * t;
+      const ry = oy + ny * t;
+      const rz = oz + nz * t;
+      const groundH = globalForestLayoutEngine ? globalForestLayoutEngine.getTerrainHeight(rx, rz) : 0.0;
+      if (ry <= groundH) {
+        // Binary search refinement for sub-millimeter landing accuracy
+        let t0 = t - step, t1 = t;
+        for (let iter = 0; iter < 4; iter++) {
+          const midT = (t0 + t1) * 0.5;
+          const mx = ox + nx * midT;
+          const my = oy + ny * midT;
+          const mz = oz + nz * midT;
+          const mh = globalForestLayoutEngine ? globalForestLayoutEngine.getTerrainHeight(mx, mz) : 0.0;
+          if (my <= mh) t1 = midT;
+          else t0 = midT;
+        }
+        const finalT = (t0 + t1) * 0.5;
+        const fx = ox + nx * finalT;
+        const fz = oz + nz * finalT;
+        const fy = globalForestLayoutEngine ? globalForestLayoutEngine.getTerrainHeight(fx, fz) : 0.0;
+        return [fx, fy, fz];
+      }
+      t += step;
+    }
+
+    // Flat plane fallback if ray didn't hit terrain hills directly
+    if (Math.abs(ny) > 1e-5) {
+      const planeT = -oy / ny;
+      if (planeT > 0) {
+        const fx = ox + nx * planeT;
+        const fz = oz + nz * planeT;
+        const fy = globalForestLayoutEngine ? globalForestLayoutEngine.getTerrainHeight(fx, fz) : 0.0;
+        return [fx, fy, fz];
+      }
+    }
+    return null;
+  }
+
+  mobaRaycastEntity(ray, pos, radius, height = 1.6) {
+    if (!ray || !pos) return null;
+    const ox = ray.origin[0], oy = ray.origin[1], oz = ray.origin[2];
+    const dx = ray.dir[0], dy = ray.dir[1], dz = ray.dir[2];
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-6) return null;
+    const nx = dx / len, ny = dy / len, nz = dz / len;
+
+    const ex = pos[0], ey = pos[1] || 0.0, ez = pos[2];
+
+    // 1. Vertical cylinder / capsule test (optimal for character models, creeps & towers)
+    const v2x = ex - ox;
+    const v2z = ez - oz;
+    const dir2LenSq = nx * nx + nz * nz;
+    if (dir2LenSq > 1e-6) {
+      const t2 = (v2x * nx + v2z * nz) / dir2LenSq;
+      if (t2 > 0.1) {
+        const px = ox + nx * t2;
+        const py = oy + ny * t2;
+        const pz = oz + nz * t2;
+        const distXZ_sq = (px - ex) * (px - ex) + (pz - ez) * (pz - ez);
+        if (distXZ_sq <= radius * radius && py >= ey - 0.35 && py <= ey + height + 0.45) {
+          return { t: t2, distSq: distXZ_sq };
+        }
+      }
+    }
+
+    // 2. Center-point sphere fallback (for steep/low angle views)
+    const centerY = ey + height * 0.5;
+    const vx = ex - ox, vy = centerY - oy, vz = ez - oz;
+    const t = vx * nx + vy * ny + vz * nz;
+    if (t > 0.1) {
+      const px = ox + nx * t;
+      const py = oy + ny * t;
+      const pz = oz + nz * t;
+      const distSq = (px - ex) * (px - ex) + (py - centerY) * (py - centerY) + (pz - ez) * (pz - ez);
+      const effRadius = Math.max(radius, height * 0.55);
+      if (distSq <= effRadius * effRadius) {
+        return { t, distSq };
+      }
+    }
+
+    return null;
   }
 
   mobaHandleGroundClick(mx, my) {
     if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
     const ray = this.mobaRaycastGround(mx, my);
-    const intersect = this.mobaIntersectGroundPlane(ray);
-    if (!intersect) return;
+    if (!ray) return;
+
+    const playerPos = this.mobaState.currentPos;
+    const isMobile = this.isMobileDevice();
+    const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
+    const isFirstPerson = zoom <= 3.5;
 
     let clickedTarget = null;
     let targetId = null;
+    let closestHitDist = Infinity;
 
-    // 1. Check enemy creeps
+    // Helper to evaluate hostile candidates via direct 3D raycast and screen-space proximity
+    const testCandidate = (entity, id, radius, height, screenRadiusPx) => {
+      if (!entity || entity.hp <= 0 || !entity.pos) return;
+      const ePos = entity.pos;
+
+      // 1. Direct 3D Ray-to-Entity collision
+      const rayHit = this.mobaRaycastEntity(ray, ePos, radius, height);
+      if (rayHit && rayHit.t > 0.1 && rayHit.t < closestHitDist) {
+        closestHitDist = rayHit.t;
+        clickedTarget = entity;
+        targetId = id;
+        return;
+      }
+
+      // 2. Screen-space touch tolerance (essential for touchscreens on mobile & precise clicks)
+      const centerY = (ePos[1] || 0) + height * 0.5;
+      const scr = this.mobaWorldToScreen(ePos[0], centerY, ePos[2]);
+      if (scr) {
+        const pxDist = Math.hypot(scr[0] - mx, scr[1] - my);
+        const maxPx = isMobile ? (screenRadiusPx * 1.35) : screenRadiusPx;
+        if (pxDist <= maxPx) {
+          const camDist = Math.hypot(ePos[0] - this.state.camPos[0], centerY - this.state.camPos[1], ePos[2] - this.state.camPos[2]);
+          if (camDist < closestHitDist) {
+            closestHitDist = camDist;
+            clickedTarget = entity;
+            targetId = id;
+          }
+        }
+      }
+    };
+
+    // A. Check Enemy Creeps (Priority 1 for farming & laning)
     if (this.mobaState.creeps) {
       for (const creep of this.mobaState.creeps) {
         if (creep.team !== this.mobaState.team && creep.hp > 0 && creep.pos) {
-          const dx = creep.pos[0] - intersect[0];
-          const dz = creep.pos[2] - intersect[2];
-          if (dx * dx + dz * dz < 2.5) {
-            clickedTarget = creep;
-            targetId = creep.id;
-            break;
-          }
+          testCandidate(creep, creep.id, 1.15, 1.25, 42);
         }
       }
     }
 
-    // 2. Check enemy bots / champions
-    if (!clickedTarget && this.mobaState.players) {
+    // B. Check Enemy Champions / Bots
+    if (this.mobaState.players) {
       for (const p of this.mobaState.players) {
         if (p.id !== this.net.localPlayerId && p.team !== this.mobaState.team && p.hp > 0 && p.pos) {
-          const dx = p.pos[0] - intersect[0];
-          const dz = p.pos[2] - intersect[2];
-          if (dx * dx + dz * dz < 3.2) {
-            clickedTarget = p;
-            targetId = p.id;
-            break;
-          }
+          testCandidate(p, p.id, 1.45, 2.0, 48);
         }
       }
     }
 
-    // 3. Check enemy towers
-    if (!clickedTarget && this.mobaState.towers) {
+    // C. Check Enemy Towers
+    if (this.mobaState.towers) {
       for (const t of this.mobaState.towers) {
         if (t.team !== this.mobaState.team && t.hp > 0 && t.pos) {
-          const dx = t.pos[0] - intersect[0];
-          const dz = t.pos[2] - intersect[2];
-          if (dx * dx + dz * dz < 4.0) {
-            clickedTarget = t;
-            targetId = t.id;
-            break;
-          }
+          testCandidate(t, t.id, 2.3, 5.5, 52);
         }
       }
     }
 
-    // 4. Check enemy Tron base
-    if (!clickedTarget && this.mobaState.trons) {
+    // D. Check Enemy Tron Base
+    if (this.mobaState.trons) {
       const enemyTronTeam = this.mobaState.team === 'RED' ? 'BLACK' : 'RED';
       const enemyTron = this.mobaState.trons[enemyTronTeam];
       if (enemyTron && enemyTron.hp > 0 && enemyTron.pos) {
-        const dx = enemyTron.pos[0] - intersect[0];
-        const dz = enemyTron.pos[2] - intersect[2];
-        if (dx * dx + dz * dz < 5.0) {
-          clickedTarget = enemyTron;
-          targetId = `tron_${enemyTronTeam.toLowerCase()}`;
+        testCandidate(enemyTron, `tron_${enemyTronTeam.toLowerCase()}`, 3.6, 4.0, 58);
+      }
+    }
+
+    // E. Secondary Ground Proximity Fallback (Top-down RTS camera only, for clicking ground right next to unit)
+    if (!clickedTarget && !isFirstPerson) {
+      const groundIntersect = this.mobaIntersectGroundPlane(ray);
+      if (groundIntersect) {
+        if (this.mobaState.creeps) {
+          for (const creep of this.mobaState.creeps) {
+            if (creep.team !== this.mobaState.team && creep.hp > 0 && creep.pos) {
+              const dx = creep.pos[0] - groundIntersect[0];
+              const dz = creep.pos[2] - groundIntersect[2];
+              if (dx * dx + dz * dz < 2.2) {
+                clickedTarget = creep;
+                targetId = creep.id;
+                break;
+              }
+            }
+          }
+        }
+        if (!clickedTarget && this.mobaState.players) {
+          for (const p of this.mobaState.players) {
+            if (p.id !== this.net.localPlayerId && p.team !== this.mobaState.team && p.hp > 0 && p.pos) {
+              const dx = p.pos[0] - groundIntersect[0];
+              const dz = p.pos[2] - groundIntersect[2];
+              if (dx * dx + dz * dz < 2.8) {
+                clickedTarget = p;
+                targetId = p.id;
+                break;
+              }
+            }
+          }
         }
       }
     }
 
-    // Draw fading green or red click ripple
-    if (!this.mobaState.clickRipples) this.mobaState.clickRipples = [];
-    this.mobaState.clickRipples.push({
-      x: intersect[0],
-      z: intersect[2],
-      timer: 0.5,
-      color: clickedTarget ? [1.0, 0.15, 0.15] : [0.15, 0.95, 0.25]
-    });
-
-    this.mobaPlaySound('ping');
+    // Process Action (Attack Entity vs Move Ground)
+    let rippleX, rippleZ;
 
     if (clickedTarget) {
+      // Direct Attack Order on Target Entity
       this.mobaState.targetEntity = clickedTarget;
       this.mobaState.currentTargetId = targetId;
+      this.mobaState.targetPos = null; // Clear manual move coordinate so hero focuses 100% on closing distance & attacking target
+      this.mobaState.isWalking = true;
+
+      rippleX = clickedTarget.pos[0];
+      rippleZ = clickedTarget.pos[2];
+
+      // Play attack ping sound
+      this.mobaPlaySound('ping');
+
+      // Attempt immediate attack if within range
       this.mobaTriggerPlayerAttack();
+
+      // Send attack command to server if online
+      if (this.mobaState.activePartyId) {
+        this.net.send('moba:action', {
+          partyId: this.mobaState.activePartyId,
+          action: {
+            type: 'attack',
+            x: clickedTarget.pos[0],
+            z: clickedTarget.pos[2],
+            targetId: targetId
+          }
+        });
+      }
     } else {
+      // Manual Move Order to Ground Destination
+      let walkX, walkZ;
+      const groundIntersect = this.mobaIntersectGroundPlane(ray);
+
+      if (isFirstPerson) {
+        // In First-Person mode, avoid shooting waypoints 50-200m away due to shallow grazing angle!
+        if (groundIntersect) {
+          const gdx = groundIntersect[0] - playerPos[0];
+          const gdz = groundIntersect[2] - playerPos[2];
+          const gDist = Math.hypot(gdx, gdz);
+          if (gDist > 18.0) {
+            const scale = 18.0 / gDist;
+            walkX = playerPos[0] + gdx * scale;
+            walkZ = playerPos[2] + gdz * scale;
+          } else {
+            walkX = groundIntersect[0];
+            walkZ = groundIntersect[2];
+          }
+        } else {
+          // Clicked at or slightly above horizon in First-Person: walk 15m in that forward direction
+          const dirLen2D = Math.hypot(ray.dir[0], ray.dir[2]);
+          if (dirLen2D > 1e-4) {
+            walkX = playerPos[0] + (ray.dir[0] / dirLen2D) * 15.0;
+            walkZ = playerPos[2] + (ray.dir[2] / dirLen2D) * 15.0;
+          } else {
+            walkX = playerPos[0];
+            walkZ = playerPos[2];
+          }
+        }
+      } else {
+        // Standard RTS top-down ground click
+        if (!groundIntersect) return;
+        walkX = groundIntersect[0];
+        walkZ = groundIntersect[2];
+      }
+
       this.mobaState.targetEntity = null;
       this.mobaState.currentTargetId = null;
-      this.mobaState.targetPos = [intersect[0], 0, intersect[2]];
+      this.mobaState.targetPos = [walkX, 0, walkZ];
       this.mobaState.isWalking = true;
+
+      rippleX = walkX;
+      rippleZ = walkZ;
+
       if (this.speechAnnouncer) {
         this.speechAnnouncer.notifyPlayerMove();
       }
+
+      this.mobaPlaySound('ping');
+
+      if (this.mobaState.activePartyId) {
+        this.net.send('moba:action', {
+          partyId: this.mobaState.activePartyId,
+          action: {
+            type: 'move',
+            x: walkX,
+            z: walkZ,
+            targetId: null
+          }
+        });
+      }
     }
 
-    // Send move or attack command to the server if online
-    if (this.mobaState.activePartyId) {
-      this.net.send('moba:action', {
-        partyId: this.mobaState.activePartyId,
-        action: {
-          type: clickedTarget ? 'attack' : 'move',
-          x: intersect[0],
-          z: intersect[2],
-          targetId: targetId
-        }
-      });
-    }
+    // Draw fading green (move) or red (attack) click ripple
+    if (!this.mobaState.clickRipples) this.mobaState.clickRipples = [];
+    this.mobaState.clickRipples.push({
+      x: rippleX,
+      z: rippleZ,
+      timer: 0.5,
+      color: clickedTarget ? [1.0, 0.15, 0.15] : [0.15, 0.95, 0.25]
+    });
   }
 
   setMobaMobileView(view) {
@@ -31679,6 +32571,33 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
   mobaAutoAcquireTarget() {
     if (!this.mobaState) return null;
+    const isMobile = this.isMobileDevice();
+    const zoom = this.mobaState.zoomLevel !== undefined ? this.mobaState.zoomLevel : (isMobile ? 18.5 : 16.5);
+    const isFirstPerson = zoom <= 3.5;
+
+    // In first-person mode, do not auto-snap hero orientation if player is actively rotating or rotated recently
+    if (isFirstPerson) {
+      if (this._mobaTouchState && (this._mobaTouchState.hasRotated || this._mobaTouchState.active)) {
+        return null;
+      }
+      if (this._mobaMouseState && (this._mobaMouseState.hasDragged || this._mobaMouseState.isDown)) {
+        return null;
+      }
+      if (this._mobaLastManualRotateTime && (Date.now() - this._mobaLastManualRotateTime < 1000)) {
+        return null;
+      }
+    }
+
+    const isInForwardVision = (pos) => {
+      if (!isFirstPerson) return true;
+      const dx = pos[0] - this.mobaState.currentPos[0];
+      const dz = pos[2] - this.mobaState.currentPos[2];
+      const toAngle = Math.atan2(dx, dz);
+      let diff = Math.abs(toAngle - (this.mobaState.currentYaw || 0));
+      while (diff > Math.PI) diff = Math.abs(diff - Math.PI * 2);
+      return diff < Math.PI * 0.45; // ~81 degrees forward vision arc
+    };
+
     let closest = null;
     let minDist = (this.mobaState.heroStats.attackRange || 6.0) + 4.0;
 
@@ -31687,7 +32606,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.creeps.forEach(c => {
         if (c.team !== this.mobaState.team && c.hp > 0 && c.pos) {
           const d = Math.hypot(c.pos[0] - this.mobaState.currentPos[0], c.pos[2] - this.mobaState.currentPos[2]);
-          if (d < minDist) {
+          if (d < minDist && isInForwardVision(c.pos)) {
             minDist = d;
             closest = c;
           }
@@ -31700,7 +32619,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.players.forEach(p => {
         if (p.team !== this.mobaState.team && p.hp > 0 && p.pos) {
           const d = Math.hypot(p.pos[0] - this.mobaState.currentPos[0], p.pos[2] - this.mobaState.currentPos[2]);
-          if (d < minDist) {
+          if (d < minDist && isInForwardVision(p.pos)) {
             minDist = d;
             closest = p;
           }
@@ -31713,7 +32632,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.towers.forEach(t => {
         if (t.team !== this.mobaState.team && t.hp > 0 && t.pos) {
           const d = Math.hypot(t.pos[0] - this.mobaState.currentPos[0], t.pos[2] - this.mobaState.currentPos[2]);
-          if (d < minDist) {
+          if (d < minDist && isInForwardVision(t.pos)) {
             minDist = d;
             closest = t;
           }
@@ -31726,7 +32645,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const enemyTron = this.mobaState.trons && this.mobaState.trons[enemyTronTeam];
     if (enemyTron && enemyTron.hp > 0 && enemyTron.pos) {
       const d = Math.hypot(enemyTron.pos[0] - this.mobaState.currentPos[0], enemyTron.pos[2] - this.mobaState.currentPos[2]);
-      if (d < minDist) {
+      if (d < minDist && isInForwardVision(enemyTron.pos)) {
         closest = enemyTron;
       }
     }

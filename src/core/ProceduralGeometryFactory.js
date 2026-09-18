@@ -80,6 +80,182 @@ export class ProceduralGeometryFactory {
   }
 
   /**
+   * Helper to append a 3D tubular branch mesh along 3D centerline control points
+   */
+  static addTubeBranch(positions, normals, uvs, barys, indices, points, radii, radialSegs = 6) {
+    const ringStride = radialSegs + 1;
+    const baseVertexIdx = positions.length / 3;
+
+    for (let pIdx = 0; pIdx < points.length; pIdx++) {
+      const p = points[pIdx];
+      const r = radii[pIdx];
+      const v = pIdx / (points.length - 1);
+
+      // Compute forward tangent vector
+      let tangent = [0, 1, 0];
+      if (pIdx < points.length - 1) {
+        tangent = [points[pIdx + 1][0] - p[0], points[pIdx + 1][1] - p[1], points[pIdx + 1][2] - p[2]];
+      } else {
+        tangent = [p[0] - points[pIdx - 1][0], p[1] - points[pIdx - 1][1], p[2] - points[pIdx - 1][2]];
+      }
+      const tLen = Math.hypot(...tangent) || 1;
+      tangent = [tangent[0] / tLen, tangent[1] / tLen, tangent[2] / tLen];
+
+      // Compute orthonormal basis
+      let up = [0, 1, 0];
+      if (Math.abs(tangent[1]) > 0.92) up = [1, 0, 0];
+      let right = [
+        tangent[1] * up[2] - tangent[2] * up[1],
+        tangent[2] * up[0] - tangent[0] * up[2],
+        tangent[0] * up[1] - tangent[1] * up[0]
+      ];
+      const rLen = Math.hypot(...right) || 1;
+      right = [right[0] / rLen, right[1] / rLen, right[2] / rLen];
+
+      const normUp = [
+        right[1] * tangent[2] - right[2] * tangent[1],
+        right[2] * tangent[0] - right[0] * tangent[2],
+        right[0] * tangent[1] - right[1] * tangent[0]
+      ];
+
+      for (let s = 0; s <= radialSegs; s++) {
+        const u = s / radialSegs;
+        const theta = u * Math.PI * 2;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
+
+        const nx = right[0] * cosT + normUp[0] * sinT;
+        const ny = right[1] * cosT + normUp[1] * sinT;
+        const nz = right[2] * cosT + normUp[2] * sinT;
+
+        positions.push(p[0] + nx * r, p[1] + ny * r, p[2] + nz * r);
+        normals.push(nx, ny, nz);
+        uvs.push(u, v);
+        barys.push((s + pIdx) % 3 === 0 ? 1 : 0, (s + pIdx) % 3 === 1 ? 1 : 0, (s + pIdx) % 3 === 2 ? 1 : 0);
+      }
+    }
+
+    for (let pIdx = 0; pIdx < points.length - 1; pIdx++) {
+      for (let s = 0; s < radialSegs; s++) {
+        const i0 = baseVertexIdx + pIdx * ringStride + s;
+        const i1 = i0 + 1;
+        const i2 = baseVertexIdx + (pIdx + 1) * ringStride + s;
+        const i3 = i2 + 1;
+
+        indices.push(i0, i2, i1);
+        indices.push(i1, i2, i3);
+      }
+    }
+  }
+
+  /**
+   * Generates an authentic branched tree trunk with root flares, main trunk, and 6 spreading curved branches
+   */
+  static createBranchedTreeTrunk() {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    // 1. Basal Root Flares spreading into soil
+    const rootCount = 5;
+    for (let r = 0; r < rootCount; r++) {
+      const angle = (r / rootCount) * Math.PI * 2 + 0.2;
+      const c = Math.cos(angle);
+      const s = Math.sin(angle);
+      const rootPts = [
+        [c * 0.42, -0.06, s * 0.42],
+        [c * 0.28, 0.08, s * 0.28],
+        [c * 0.18, 0.32, s * 0.18]
+      ];
+      const rootRadii = [0.075, 0.095, 0.12];
+      this.addTubeBranch(positions, normals, uvs, barys, indices, rootPts, rootRadii, 5);
+    }
+
+    // 2. Main Central Trunk
+    const trunkPts = [
+      [0.0, 0.0, 0.0],
+      [0.01, 0.45, 0.01],
+      [-0.02, 0.95, 0.02],
+      [0.0, 1.42, 0.0]
+    ];
+    const trunkRadii = [0.22, 0.17, 0.14, 0.12];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, trunkPts, trunkRadii, 8);
+
+    // 3. Primary Branch 1 (North-East spreading limb)
+    const b1Pts = [
+      [0.02, 1.15, 0.02],
+      [0.32, 1.48, 0.18],
+      [0.70, 1.82, 0.32],
+      [1.10, 2.15, 0.42]
+    ];
+    const b1Radii = [0.082, 0.064, 0.046, 0.030];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, b1Pts, b1Radii, 6);
+
+    // 4. Primary Branch 2 (North-West spreading limb)
+    const b2Pts = [
+      [-0.02, 1.25, 0.02],
+      [-0.35, 1.55, 0.32],
+      [-0.72, 1.88, 0.68],
+      [-1.05, 2.20, 0.95]
+    ];
+    const b2Radii = [0.078, 0.060, 0.044, 0.028];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, b2Pts, b2Radii, 6);
+
+    // 5. Primary Branch 3 (South-West spreading limb)
+    const b3Pts = [
+      [-0.01, 1.20, -0.02],
+      [-0.32, 1.50, -0.30],
+      [-0.66, 1.84, -0.62],
+      [-0.96, 2.16, -0.88]
+    ];
+    const b3Radii = [0.076, 0.058, 0.042, 0.028];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, b3Pts, b3Radii, 6);
+
+    // 6. Primary Branch 4 (South-East spreading limb)
+    const b4Pts = [
+      [0.01, 1.32, -0.01],
+      [0.26, 1.62, -0.28],
+      [0.56, 1.94, -0.56],
+      [0.82, 2.26, -0.78]
+    ];
+    const b4Radii = [0.072, 0.054, 0.038, 0.025];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, b4Pts, b4Radii, 6);
+
+    // 7. Central Crown Limbs (Fork A & Fork B)
+    const forkAPts = [
+      [0.0, 1.42, 0.0],
+      [-0.10, 1.85, 0.06],
+      [-0.20, 2.30, 0.14],
+      [-0.26, 2.65, 0.18]
+    ];
+    const forkARadii = [0.082, 0.062, 0.044, 0.028];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, forkAPts, forkARadii, 6);
+
+    const forkBPts = [
+      [0.0, 1.42, 0.0],
+      [0.12, 1.88, -0.05],
+      [0.25, 2.34, -0.10],
+      [0.35, 2.68, -0.14]
+    ];
+    const forkBRadii = [0.078, 0.058, 0.040, 0.026];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, forkBPts, forkBRadii, 6);
+
+    // Precise 3D coordinates where leafy canopy clusters perch atop branches
+    const branchTips = [
+      [1.10, 2.15, 0.42],
+      [-1.05, 2.20, 0.95],
+      [-0.96, 2.16, -0.88],
+      [0.82, 2.26, -0.78],
+      [-0.26, 2.65, 0.18],
+      [0.35, 2.68, -0.14]
+    ];
+
+    return { positions, normals, uvs, barys, indices, branchTips };
+  }
+
+  /**
    * Generates a conical foliage tier (for pines, conifers)
    */
   static createCone(radius = 1.2, height = 1.8, radialSegments = 14, heightSegments = 3, scallop = 0.15) {
@@ -356,6 +532,222 @@ export class ProceduralGeometryFactory {
         // Two triangles per segment
         indices.push(i0, i1, i2);
         indices.push(i1, i3, i2);
+      }
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates slender tall wheat/steppe grass with nodding feathery seed heads
+   */
+  static createWheatGrassTuft(stalkCount = 6) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    const rng = new PRNG(12345);
+
+    for (let b = 0; b < stalkCount; b++) {
+      const angle = (b / stalkCount) * Math.PI * 2 + rng.range(-0.3, 0.3);
+      const radOffset = rng.range(0.04, 0.16);
+      const baseX = Math.cos(angle) * radOffset;
+      const baseZ = Math.sin(angle) * radOffset;
+
+      const height = rng.range(1.1, 1.6);
+      const leanDist = rng.range(0.25, 0.55);
+      const leanAngle = angle + rng.range(-0.4, 0.4);
+      const leanX = Math.cos(leanAngle) * leanDist;
+      const leanZ = Math.sin(leanAngle) * leanDist;
+
+      const segments = 5;
+      const startIndex = positions.length / 3;
+
+      // Lower slender stalk
+      for (let s = 0; s <= segments; s++) {
+        const t = s / segments;
+        const y = t * height;
+        const bendX = baseX + leanX * (t * t);
+        const bendZ = baseZ + leanZ * (t * t);
+
+        const w = (1.0 - t * 0.4) * 0.035;
+        const orthX = -Math.sin(angle) * w;
+        const orthZ = Math.cos(angle) * w;
+
+        positions.push(bendX - orthX, y, bendZ - orthZ);
+        positions.push(bendX + orthX, y, bendZ + orthZ);
+
+        normals.push(0, 0.85, 0.15, 0, 0.85, 0.15);
+        uvs.push(0.0, t * 0.6, 1.0, t * 0.6);
+        barys.push(1, 0, 0, 0, 1, 0);
+      }
+
+      for (let s = 0; s < segments; s++) {
+        const i0 = startIndex + s * 2;
+        indices.push(i0, i0 + 1, i0 + 2);
+        indices.push(i0 + 1, i0 + 3, i0 + 2);
+      }
+
+      // Upper Wheat Plume Head (alternating seed kernels & awns)
+      const headSegs = 4;
+      const headBaseY = height * 0.68;
+      const headHeight = height * 0.32;
+      const headStartIdx = positions.length / 3;
+
+      for (let hs = 0; hs <= headSegs; hs++) {
+        const ht = hs / headSegs;
+        const y = headBaseY + ht * headHeight;
+        const t = 0.68 + ht * 0.32;
+        const bendX = baseX + leanX * (t * t);
+        const bendZ = baseZ + leanZ * (t * t);
+
+        // Bulge in the middle of the wheat plume head
+        const headW = Math.sin(ht * Math.PI) * 0.055 + 0.038;
+        const orthX = -Math.sin(angle) * headW;
+        const orthZ = Math.cos(angle) * headW;
+
+        positions.push(bendX - orthX, y, bendZ - orthZ);
+        positions.push(bendX + orthX, y, bendZ + orthZ);
+
+        normals.push(0.2, 0.7, 0.3, -0.2, 0.7, -0.3);
+        uvs.push(0.0, 0.7 + ht * 0.3, 1.0, 0.7 + ht * 0.3);
+        barys.push(0, 1, 0, 0, 0, 1);
+      }
+
+      for (let hs = 0; hs < headSegs; hs++) {
+        const i0 = headStartIdx + hs * 2;
+        indices.push(i0, i0 + 1, i0 + 2);
+        indices.push(i0 + 1, i0 + 3, i0 + 2);
+      }
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates low, lush three-leaf clover ground carpet patches
+   */
+  static createCloverGroundPatch(clustersCount = 5) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    const rng = new PRNG(98765);
+
+    for (let c = 0; c < clustersCount; c++) {
+      const cAngle = (c / clustersCount) * Math.PI * 2 + rng.range(-0.25, 0.25);
+      const cDist = rng.range(0.08, 0.28);
+      const stemX = Math.cos(cAngle) * cDist;
+      const stemZ = Math.sin(cAngle) * cDist;
+      const stemH = rng.range(0.12, 0.22);
+
+      const leafCenter = [stemX, stemH, stemZ];
+
+      // 3 Heart-shaped clover leaflets attached at the stem crown
+      const leafCount = 3;
+      for (let l = 0; l < leafCount; l++) {
+        const lAngle = (l / leafCount) * Math.PI * 2 + cAngle;
+        const leafLen = rng.range(0.09, 0.14);
+        const leafW = leafLen * 0.65;
+
+        const forwardX = Math.cos(lAngle);
+        const forwardZ = Math.sin(lAngle);
+        const rightX = -Math.sin(lAngle);
+        const rightZ = Math.cos(lAngle);
+
+        const leafBaseIdx = positions.length / 3;
+
+        // Leaf vertices (heart-shaped convex with subtle cupping)
+        positions.push(leafCenter[0], leafCenter[1], leafCenter[2]);
+        positions.push(
+          leafCenter[0] + forwardX * (leafLen * 0.55) - rightX * leafW,
+          leafCenter[1] + 0.02,
+          leafCenter[2] + forwardZ * (leafLen * 0.55) - rightZ * leafW
+        );
+        positions.push(
+          leafCenter[0] + forwardX * (leafLen * 0.55) + rightX * leafW,
+          leafCenter[1] + 0.02,
+          leafCenter[2] + forwardZ * (leafLen * 0.55) + rightZ * leafW
+        );
+        positions.push(
+          leafCenter[0] + forwardX * leafLen,
+          leafCenter[1] + 0.012,
+          leafCenter[2] + forwardZ * leafLen
+        );
+
+        normals.push(0, 1, 0, 0.1, 0.95, 0.1, -0.1, 0.95, -0.1, 0, 1, 0);
+        uvs.push(0.5, 0.0, 0.0, 0.6, 1.0, 0.6, 0.5, 1.0);
+        barys.push(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0);
+
+        indices.push(leafBaseIdx, leafBaseIdx + 1, leafBaseIdx + 3);
+        indices.push(leafBaseIdx, leafBaseIdx + 3, leafBaseIdx + 2);
+      }
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates an undulating procedural terrain grid with small hills, river depression, and analytical normals
+   */
+  static createProceduralTerrainGrid(size = 160, segments = 80, heightFn) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    const halfSize = size * 0.5;
+    const step = size / segments;
+    const eps = 0.35;
+
+    for (let iz = 0; iz <= segments; iz++) {
+      const z = -halfSize + iz * step;
+      const v = iz / segments;
+
+      for (let ix = 0; ix <= segments; ix++) {
+        const x = -halfSize + ix * step;
+        const u = ix / segments;
+
+        const y = heightFn ? heightFn(x, z) : 0.0;
+
+        // Compute analytical surface normal using finite differences of heightfield
+        let nx = 0, ny = 1, nz = 0;
+        if (heightFn) {
+          const hL = heightFn(x - eps, z);
+          const hR = heightFn(x + eps, z);
+          const hD = heightFn(x, z - eps);
+          const hU = heightFn(x, z + eps);
+          nx = (hL - hR) / (2.0 * eps);
+          nz = (hD - hU) / (2.0 * eps);
+          ny = 1.0;
+          const len = Math.hypot(nx, ny, nz) || 1.0;
+          nx /= len;
+          ny /= len;
+          nz /= len;
+        }
+
+        positions.push(x, y, z);
+        normals.push(nx, ny, nz);
+        uvs.push(u * 14.0, v * 14.0); // Detailed procedural UVs
+        barys.push((ix + iz) % 3 === 0 ? 1 : 0, (ix + iz) % 3 === 1 ? 1 : 0, (ix + iz) % 3 === 2 ? 1 : 0);
+      }
+    }
+
+    const rowStride = segments + 1;
+    for (let iz = 0; iz < segments; iz++) {
+      for (let ix = 0; ix < segments; ix++) {
+        const i0 = iz * rowStride + ix;
+        const i1 = i0 + 1;
+        const i2 = (iz + 1) * rowStride + ix;
+        const i3 = i2 + 1;
+
+        indices.push(i0, i2, i1);
+        indices.push(i1, i2, i3);
       }
     }
 
@@ -1586,6 +1978,61 @@ export class ProceduralForestLayoutEngine {
   }
 
   /**
+   * Computes smooth procedural elevation height (small hills and river bed depression)
+   * Keeps lane tracks and bases smooth while giving wild jungle areas organic knolls and rolling topography
+   */
+  getTerrainHeight(x, z) {
+    // 1. Riverbed depression along the diagonal x + z = 0
+    const distToRiver = Math.abs(x + z) * 0.7071;
+    let riverDepth = 0.0;
+    if (distToRiver < 5.8) {
+      const riverT = distToRiver / 5.8;
+      riverDepth = -0.42 * (1.0 - riverT * riverT);
+    }
+
+    // 2. Base sanctuaries and lane clearance: smooth flat ground where combat & lane towers are
+    const redBaseDist = Math.hypot(x - (-35.0), z - (-35.0));
+    const blackBaseDist = Math.hypot(x - 35.0, z - 35.0);
+    const centerRuneDist = Math.hypot(x, z);
+
+    let minLaneDist = 999.0;
+    if (this.lanePaths) {
+      const lanes = [this.lanePaths.top, this.lanePaths.mid, this.lanePaths.bot];
+      for (const path of lanes) {
+        if (!path) continue;
+        for (let i = 0; i < path.length - 1; i++) {
+          const d = this.distToSegment(x, z, path[i], path[i + 1]);
+          if (d < minLaneDist) minLaneDist = d;
+        }
+      }
+    }
+
+    let jungleWeight = 1.0;
+    if (redBaseDist < 14.0) {
+      jungleWeight = Math.min(jungleWeight, Math.max(0, (redBaseDist - 9.0) / 5.0));
+    }
+    if (blackBaseDist < 14.0) {
+      jungleWeight = Math.min(jungleWeight, Math.max(0, (blackBaseDist - 9.0) / 5.0));
+    }
+    if (centerRuneDist < 6.0) {
+      jungleWeight = Math.min(jungleWeight, Math.max(0, (centerRuneDist - 3.5) / 2.5));
+    }
+    if (minLaneDist < 6.5) {
+      jungleWeight = Math.min(jungleWeight, Math.max(0, (minLaneDist - 2.8) / 3.7));
+    }
+
+    // Smooth sinusoidal multi-octave hill heightmap
+    const hill1 = Math.sin(x * 0.082 + 0.5) * Math.cos(z * 0.074 - 0.4) * 0.78;
+    const hill2 = Math.sin(x * 0.155 - z * 0.138 + 1.2) * 0.42;
+    const hill3 = Math.cos(x * 0.038 + z * 0.045) * 0.25;
+    const microUndulation = Math.sin(x * 0.32 + z * 0.28) * 0.08;
+
+    const hillHeight = (hill1 + hill2 + hill3 + microUndulation) * jungleWeight;
+
+    return hillHeight + riverDepth;
+  }
+
+  /**
    * Checks whether [x, z] is inside any lane corridor (which must remain free of trees)
    */
   isPointInLaneOrSanctuary(x, z, laneClearance = 4.8) {
@@ -1702,15 +2149,19 @@ export class ProceduralForestLayoutEngine {
         const folColor = pList[Math.floor(rng.next() * pList.length)];
         const trColor = trunkPalette[Math.floor(rng.next() * trunkPalette.length)];
 
+        // Compute terrain height at tree position
+        const treeY = this.getTerrainHeight(jx, jz);
+
         this.trees.push({
           id: `tree_${this.trees.length}`,
           x: jx,
           z: jz,
-          y: 0.0,
+          y: treeY,
           scale,
           heightScale,
           rotY,
           type,
+          hasBranches: true,
           foliageColor: folColor,
           trunkColor: trColor,
           // Tight trunk cylinder collision radius (actual trunk base radius ~0.22 * scale)
@@ -1725,6 +2176,7 @@ export class ProceduralForestLayoutEngine {
             this.boulders.push({
               x: bx,
               z: bz,
+              y: this.getTerrainHeight(bx, bz),
               scale: rng.range(0.55, 1.25), // varied larger sizes for better env
               rotY: rng.range(0, Math.PI * 2),
               color: [0.32, 0.34, 0.36]
@@ -1734,10 +2186,10 @@ export class ProceduralForestLayoutEngine {
       }
     }
 
-    // Procedural wild forest grass generation - Much higher density and coverage across enlarged map
+    // Procedural wild forest grass generation - Much higher density and coverage with varied grass types
     const grassRng = new PRNG(445566);
     const grassExtent = 47.0;
-    const grassStep = 1.0; // ultra dense lush grass layout (3x more grass)
+    const grassStep = 1.0; // ultra dense lush grass layout
     for (let gx = -grassExtent; gx <= grassExtent; gx += grassStep) {
       for (let gz = -grassExtent; gz <= grassExtent; gz += grassStep) {
         const jx = gx + grassRng.range(-0.45, 0.45);
@@ -1750,22 +2202,43 @@ export class ProceduralForestLayoutEngine {
         const scaleY = grassRng.range(0.60, 1.45); // grass tuft height
         const rotY = grassRng.range(0, Math.PI * 2);
 
+        // Diverse grass varieties: curved blade tufts, nodding wheat grass, and lush clover carpets
+        const varRoll = grassRng.next();
+        let variety = 'curved';
+        if (varRoll < 0.36) {
+          variety = 'wheat';
+        } else if (varRoll < 0.68) {
+          variety = 'clover';
+        } else {
+          variety = 'curved';
+        }
+
         const greenRoll = grassRng.next();
         let color = [0.12, 0.42, 0.16]; // Deep forest green
-        if (greenRoll < 0.35) {
-          color = [0.22, 0.52, 0.18]; // Vibrant green
-        } else if (greenRoll < 0.70) {
-          color = [0.28, 0.45, 0.14]; // Olive mossy green
-        } else if (greenRoll < 0.85) {
-          color = [0.16, 0.58, 0.22]; // Fresh spring green
+        if (variety === 'wheat') {
+          color = greenRoll < 0.5 ? [0.38, 0.52, 0.18] : [0.45, 0.58, 0.22];
+        } else if (variety === 'clover') {
+          color = greenRoll < 0.5 ? [0.15, 0.54, 0.18] : [0.18, 0.60, 0.22];
+        } else {
+          if (greenRoll < 0.35) {
+            color = [0.22, 0.52, 0.18]; // Vibrant green
+          } else if (greenRoll < 0.70) {
+            color = [0.28, 0.45, 0.14]; // Olive mossy green
+          } else if (greenRoll < 0.85) {
+            color = [0.16, 0.58, 0.22]; // Fresh spring green
+          }
         }
+
+        const gy = this.getTerrainHeight(jx, jz);
 
         this.grass.push({
           x: jx,
           z: jz,
+          y: gy,
           scaleX,
           scaleY,
           rotY,
+          variety,
           color
         });
       }
@@ -1790,6 +2263,7 @@ export class ProceduralForestLayoutEngine {
       this.riverReeds.push({
         x: rx,
         z: rz,
+        y: this.getTerrainHeight(rx, rz),
         scaleX: reedRng.range(0.35, 0.55),
         scaleY: reedRng.range(0.85, 1.35),
         rotY: reedRng.range(0, Math.PI * 2),
@@ -1819,6 +2293,7 @@ export class ProceduralForestLayoutEngine {
       this.waterLilies.push({
         x: lx,
         z: lz,
+        y: 0.02, // Floats slightly above river water surface
         scale: lilyRng.range(0.65, 1.15),
         rotY: lilyRng.range(0, Math.PI * 2),
         color: [0.12, 0.52, 0.22], // Pad deep green
@@ -1852,6 +2327,7 @@ export class ProceduralForestLayoutEngine {
         this.wildFlowers.push({
           x: fx,
           z: fz,
+          y: this.getTerrainHeight(fx, fz),
           scale: flowerRng.range(0.7, 1.25),
           rotY: flowerRng.range(0, Math.PI * 2),
           color: fColor
@@ -1882,8 +2358,10 @@ export class ProceduralForestLayoutEngine {
         id: `frog_${this.frogs.length}`,
         x: frogX,
         z: frogZ,
+        baseY: this.getTerrainHeight(frogX, frogZ),
         scale: frogRng.range(0.65, 0.95),
         rotY,
+        phase: frogRng.range(0, 10.0),
         color: [0.18, 0.56, 0.16] // Vibrant moss frog green
       });
     }
