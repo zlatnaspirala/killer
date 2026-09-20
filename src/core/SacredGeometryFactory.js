@@ -458,4 +458,197 @@ export class SacredGeometryFactory {
 
     return { positions, normals, uvs, barys, indices };
   }
+
+  /**
+   * 10. VOLUMETRIC HOLOGRAPHIC CYLINDER
+   * Multi-slice cylindrical light column with stacked concentric rings and vertical ray fins.
+   * Produces authentic 3D volumetric light shaft holograms when rendered with additive blending.
+   */
+  static createVolumetricHoloCylinder(r = 1.0, h = 3.2, slices = 6, segs = 32, w = 0.035) {
+    const positions = [], normals = [], uvs = [], barys = [], indices = [];
+
+    // Horizontal stacked holographic rings
+    for (let s = 0; s < slices; s++) {
+      const y = (s / (slices - 1)) * h;
+      const taper = 1.0 - (s / slices) * 0.22;
+      const curR = r * taper;
+      const base = positions.length / 3;
+
+      for (let i = 0; i <= segs; i++) {
+        const theta = (i / segs) * Math.PI * 2;
+        const cosT = Math.cos(theta), sinT = Math.sin(theta);
+        // Inner and outer edge of ring
+        positions.push(cosT * curR * 0.90, y, sinT * curR * 0.90);
+        positions.push(cosT * curR, y, sinT * curR);
+        normals.push(cosT, 0.2, sinT,  cosT, 0.2, sinT);
+        uvs.push(i / segs, s / slices,  i / segs, (s + 1) / slices);
+        barys.push(1, 0, 0,  0, 1, 0);
+      }
+      for (let i = 0; i < segs; i++) {
+        const i0 = base + i * 2;
+        const o0 = base + i * 2 + 1;
+        const i1 = base + (i + 1) * 2;
+        const o1 = base + (i + 1) * 2 + 1;
+        indices.push(i0, o0, i1,  i1, o0, o1);
+      }
+    }
+
+    // Vertical holographic beam lines / light conduits
+    const numVerticalBeams = 8;
+    for (let b = 0; b < numVerticalBeams; b++) {
+      const theta = (b / numVerticalBeams) * Math.PI * 2;
+      const cosT = Math.cos(theta), sinT = Math.sin(theta);
+      const nx = -sinT * (w * 0.5);
+      const nz = cosT * (w * 0.5);
+      const base = positions.length / 3;
+
+      positions.push(
+        cosT * r + nx, 0, sinT * r + nz,
+        cosT * r - nx, 0, sinT * r - nz,
+        cosT * (r * 0.78) + nx, h, sinT * (r * 0.78) + nz,
+        cosT * (r * 0.78) - nx, h, sinT * (r * 0.78) - nz
+      );
+      normals.push(cosT, 0, sinT,  cosT, 0, sinT,  cosT, 0, sinT,  cosT, 0, sinT);
+      uvs.push(0, 0,  1, 0,  0, 1,  1, 1);
+      barys.push(1, 0, 0,  0, 1, 0,  0, 0, 1,  1, 0, 0);
+      indices.push(base, base + 1, base + 2,  base + 2, base + 1, base + 3);
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * 11. VOLUMETRIC HOLOGRAPHIC MANDALA STACK
+   * Multi-tiered ascending sacred rune platform for spells, ritual circles, and ultimate abilities.
+   */
+  static createVolumetricHoloMandala(r = 1.0, layers = 4, w = 0.038) {
+    const positions = [], normals = [], uvs = [], barys = [], indices = [];
+    const heights = [0.03, 0.35, 0.85, 1.55];
+    const scales = [1.0, 0.82, 0.64, 0.42];
+
+    for (let l = 0; l < layers; l++) {
+      const y = heights[l] || (l * 0.4);
+      const lr = r * (scales[l] || (1.0 - l * 0.18));
+      const segs = 36;
+      const base = positions.length / 3;
+
+      // Concentric ring at this elevation
+      for (let i = 0; i <= segs; i++) {
+        const theta = (i / segs) * Math.PI * 2;
+        const cosT = Math.cos(theta), sinT = Math.sin(theta);
+        positions.push(cosT * lr * 0.88, y, sinT * lr * 0.88);
+        positions.push(cosT * lr, y, sinT * lr);
+        normals.push(0, 1, 0,  0, 1, 0);
+        uvs.push(i / segs, 0,  i / segs, 1);
+        barys.push(1, 0, 0,  0, 1, 0);
+      }
+      for (let i = 0; i < segs; i++) {
+        const i0 = base + i * 2;
+        const o0 = base + i * 2 + 1;
+        const i1 = base + (i + 1) * 2;
+        const o1 = base + (i + 1) * 2 + 1;
+        indices.push(i0, o0, i1,  i1, o0, o1);
+      }
+
+      // Inscribed multi-point star on odd layers
+      if (l % 2 === 1) {
+        const pts = [];
+        const starPts = 6;
+        for (let i = 0; i < starPts; i++) {
+          const a = i * ((Math.PI * 2) / starPts) + (l * 0.4);
+          pts.push([Math.cos(a) * lr * 0.86, Math.sin(a) * lr * 0.86]);
+        }
+        for (let i = 0; i < 3; i++) {
+          const p0 = pts[i * 2], p1 = pts[(i * 2 + 2) % starPts];
+          const bQuad = positions.length / 3;
+          const dx = p1[0] - p0[0], dz = p1[1] - p0[1];
+          const len = Math.hypot(dx, dz) || 1e-4;
+          const nx = (-dz / len) * (w * 0.5), nz = (dx / len) * (w * 0.5);
+          positions.push(
+            p0[0] + nx, y, p0[1] + nz,
+            p0[0] - nx, y, p0[1] - nz,
+            p1[0] + nx, y, p1[1] + nz,
+            p1[0] - nx, y, p1[1] - nz
+          );
+          normals.push(0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0);
+          uvs.push(0, 0,  1, 0,  0, 1,  1, 1);
+          barys.push(1, 0, 0,  0, 1, 0,  0, 0, 1,  1, 0, 0);
+          indices.push(bQuad, bQuad + 1, bQuad + 2,  bQuad + 2, bQuad + 1, bQuad + 3);
+        }
+      }
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * 12. HOLOGRAPHIC GIMBAL ORBITAL RINGS
+   * Interlocking orthogonal holographic rings (XY, XZ, YZ) for magic projectiles,
+   * hero crowns, aura spheres, and volumetric shield hubs.
+   */
+  static createHolographicGimbal(r = 0.4, w = 0.024, segs = 28) {
+    const positions = [], normals = [], uvs = [], barys = [], indices = [];
+
+    // Helper for 3D oriented ring
+    const addOrientedRing = (axis) => {
+      const base = positions.length / 3;
+      for (let i = 0; i <= segs; i++) {
+        const theta = (i / segs) * Math.PI * 2;
+        const cosT = Math.cos(theta), sinT = Math.sin(theta);
+        let x0, y0, z0, x1, y1, z1, nx, ny, nz;
+        if (axis === 'xz') {
+          x0 = cosT * (r - w * 0.5); y0 = 0; z0 = sinT * (r - w * 0.5);
+          x1 = cosT * (r + w * 0.5); y1 = 0; z1 = sinT * (r + w * 0.5);
+          nx = cosT; ny = 0.5; nz = sinT;
+        } else if (axis === 'xy') {
+          x0 = cosT * (r - w * 0.5); y0 = sinT * (r - w * 0.5); z0 = 0;
+          x1 = cosT * (r + w * 0.5); y1 = sinT * (r + w * 0.5); z1 = 0;
+          nx = cosT; ny = sinT; nz = 0.5;
+        } else { // yz
+          x0 = 0; y0 = cosT * (r - w * 0.5); z0 = sinT * (r - w * 0.5);
+          x1 = 0; y1 = cosT * (r + w * 0.5); z1 = sinT * (r + w * 0.5);
+          nx = 0.5; ny = cosT; nz = sinT;
+        }
+        positions.push(x0, y0, z0,  x1, y1, z1);
+        normals.push(nx, ny, nz,  nx, ny, nz);
+        uvs.push(i / segs, 0,  i / segs, 1);
+        barys.push(1, 0, 0,  0, 1, 0);
+      }
+      for (let i = 0; i < segs; i++) {
+        const i0 = base + i * 2;
+        const o0 = base + i * 2 + 1;
+        const i1 = base + (i + 1) * 2;
+        const o1 = base + (i + 1) * 2 + 1;
+        indices.push(i0, o0, i1,  i1, o0, o1);
+      }
+    };
+
+    addOrientedRing('xz');
+    addOrientedRing('xy');
+    addOrientedRing('yz');
+
+    // 6 Pole diamond markers (+X, -X, +Y, -Y, +Z, -Z)
+    const poleDirs = [
+      [r, 0, 0], [-r, 0, 0],
+      [0, r, 0], [0, -r, 0],
+      [0, 0, r], [0, 0, -r]
+    ];
+    poleDirs.forEach(p => {
+      const s = w * 1.8;
+      const base = positions.length / 3;
+      positions.push(
+        p[0], p[1] + s, p[2],
+        p[0] + s, p[1], p[2],
+        p[0], p[1] - s, p[2],
+        p[0] - s, p[1], p[2]
+      );
+      normals.push(0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0);
+      uvs.push(0.5, 0,  1, 0.5,  0.5, 1,  0, 0.5);
+      barys.push(1, 0, 0,  0, 1, 0,  0, 0, 1,  1, 0, 0);
+      indices.push(base, base + 1, base + 2,  base, base + 2, base + 3);
+    });
+
+    return { positions, normals, uvs, barys, indices };
+  }
 }
+

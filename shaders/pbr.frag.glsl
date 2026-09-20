@@ -4,12 +4,14 @@
 // Filament Lighting Model & Material Profiling (GLES 3.0 / WebGL 2.0)
 
 precision highp float;
+precision highp int;
 
 #define PI 3.14159265358979323846
 
 in vec3 vNormal;
 in vec3 vWorldPos;
 in vec2 vUv;
+in vec3 vLocalPos;
 
 uniform vec3 uBaseColor;
 uniform float uRoughness;
@@ -22,7 +24,7 @@ uniform vec3 uFillLightColor;
 uniform float uTime;
 
 // Filament Advanced Material Controls
-uniform int uMatType;        // 0..15 material type (Wood, Rock, Metal, Marble, etc.)
+uniform highp int uMatType;        // 0..15 material type (Wood, Rock, Metal, Marble, etc.)
 uniform float uNoiseScale;   // texture frequency
 uniform float uClearCoat;    // clearcoat reflection layer
 uniform float uAnisotropy;   // anisotropic specular highlight
@@ -416,6 +418,46 @@ void main() {
         roughness = 0.9;
         metallic = 0.0;
         emissive = uBaseColor * (1.2 + corePulse * 1.5);
+    }
+    else if (uMatType == 22) {
+        // 22. COMPACT, HIGH-EMISSION PROCEDURAL FIREBALL WITH RICH YELLOW & RED GLOW
+        vec3 localP = vLocalPos;
+        float r = length(localP);
+        float t = uTime * 6.5;
+        
+        vec3 swirlCoord = localP * 3.4 + vec3(sin(t * 1.8) * 0.35, cos(t * 1.4) * 0.35, -t * 2.6);
+        float n1 = noise3d(swirlCoord);
+        float n2 = noise3d(swirlCoord * 2.2 + vec3(0.0, -t * 3.6, 0.0));
+        float flameTurb = n1 * 0.65 + n2 * 0.35;
+        
+        float coreMask = clamp(1.0 - r * 1.12 + flameTurb * 0.42, 0.0, 1.0);
+        
+        vec3 colCore = vec3(4.8, 4.2, 1.4);
+        vec3 colYellow = vec3(4.0, 2.8, 0.25);
+        vec3 colOrange = vec3(3.4, 1.2, 0.04);
+        vec3 colRed = vec3(2.4, 0.14, 0.01);
+        vec3 colSmoke = vec3(0.18, 0.02, 0.005);
+        
+        vec3 flameCol;
+        if (coreMask > 0.72) {
+            flameCol = mix(colYellow, colCore, (coreMask - 0.72) / 0.28);
+        } else if (coreMask > 0.42) {
+            flameCol = mix(colOrange, colYellow, (coreMask - 0.42) / 0.30);
+        } else if (coreMask > 0.15) {
+            flameCol = mix(colRed, colOrange, (coreMask - 0.15) / 0.27);
+        } else {
+            flameCol = mix(colSmoke, colRed, coreMask / 0.15);
+        }
+        
+        if (length(uBaseColor - vec3(1.0)) > 0.08) {
+            flameCol *= (uBaseColor * 1.25);
+        }
+        
+        albedo = flameCol * 0.28;
+        emissive = flameCol * (3.8 + sin(t * 4.2) * 0.6);
+        roughness = 0.04;
+        metallic = 0.0;
+        clearCoat = 0.6;
     }
 
     // Blend optional 2D Texture Maps if active

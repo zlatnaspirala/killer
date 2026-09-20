@@ -1933,7 +1933,7 @@ in vec3 v_localDir;
 in vec2 v_uv;
 
 uniform vec3 u_camPos;
-uniform float u_time;
+uniform highp float u_time;
 uniform float u_skyPulse;
 uniform int u_skyMode; // 0 = pristine clean, 1 = cosmic nebula, 2 = crazy cyber shield
 uniform sampler2D u_skyTex;
@@ -2092,6 +2092,8 @@ void main() {
 `;
 
 const VS_COMMON = `#version 300 es
+precision highp float;
+precision highp int;
 layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_normal;
 layout(location = 2) in vec2 a_uv;
@@ -2100,16 +2102,39 @@ layout(location = 3) in vec3 a_barycentric;
 uniform mat4 u_model;
 uniform mat4 u_viewProj;
 uniform mat3 u_normalMatrix;
+uniform highp float u_time;
+uniform highp int u_matType;
 
 out vec3 v_worldPos;
 out vec3 v_normal;
 out vec2 v_uv;
 out vec3 v_barycentric;
+out vec3 v_localPos;
 
 void main() {
-    vec4 worldPos = u_model * vec4(a_position, 1.0);
+    vec3 pos = a_position;
+    vec3 norm = a_normal;
+    v_localPos = a_position;
+
+    // Vertex animation for fire projectile (u_matType == 22)
+    if (u_matType == 22) {
+        float t = u_time * 6.5;
+        // Smooth aerodynamic flame ripples (no jerky spiky frames)
+        float disp1 = sin(pos.x * 5.0 + t * 3.5) * cos(pos.y * 4.5 - t * 2.8) * 0.07;
+        float disp2 = sin(pos.z * 6.0 + t * 4.0) * 0.05;
+        float flamePuff = disp1 + disp2;
+        
+        // Aerodynamic comet tail stretch along motion trajectory (-Z axis)
+        float tailStretch = smoothstep(-0.15, 0.85, -pos.z) * 0.22 * (sin(t * 2.2) * 0.2 + 0.8);
+        pos += norm * flamePuff;
+        pos.z -= tailStretch;
+        
+        norm = normalize(norm + vec3(disp1 * 2.0, disp2 * 2.0, -flamePuff) * 0.3);
+    }
+
+    vec4 worldPos = u_model * vec4(pos, 1.0);
     v_worldPos = worldPos.xyz;
-    v_normal = normalize(u_normalMatrix * a_normal);
+    v_normal = normalize(u_normalMatrix * norm);
     v_uv = a_uv;
     v_barycentric = a_barycentric;
     gl_Position = u_viewProj * worldPos;
@@ -2120,21 +2145,23 @@ const FS_PBR = `#version 300 es
 // Cook-Torrance GGX Specular Microfacet BRDF with Procedural PBR Texture Synthesizer
 // Filament Lighting Model & Material Profiling (GLES 3.0 / WebGL 2.0)
 precision highp float;
+precision highp int;
 
 #define PI 3.14159265358979323846
 
 in vec3 v_worldPos;
 in vec3 v_normal;
 in vec2 v_uv;
+in vec3 v_localPos;
 
 uniform vec3 u_camPos;
 uniform vec3 u_baseColor;
 uniform float u_roughness;
 uniform float u_metallic;
-uniform float u_time;
+uniform highp float u_time;
 
 // Filament Advanced Material Controls
-uniform int u_matType;        // 0..15 material type (Wood, Rock, Metal, Marble, etc.)
+uniform highp int u_matType;        // 0..15 material type (Wood, Rock, Metal, Marble, etc.)
 uniform float u_noiseScale;   // texture frequency
 uniform float u_clearCoat;    // clearcoat reflection layer
 uniform float u_anisotropy;   // anisotropic specular highlight
@@ -2595,8 +2622,9 @@ void main() {
         roadBlended = mix(mossBorderColor, roadBlended, fringeDirt);
 
         albedo = roadBlended * u_baseColor * 1.6;
-        roughness = mix(0.96, 0.76, stoneFactor * isGap);
-        metallic = 0.04;
+        roughness = mix(0.82, 0.28, stoneFactor * isGap);
+        metallic = 0.05;
+        clearCoat = 0.55 * stoneFactor;
 
         // High-fidelity normal bump for realistic stone bevels and eroded jagged edges
         float heightMap = mix(-0.25, rockDetails * 0.12, stoneFactor * isGap) - (1.0 - stoneFactor) * 0.15;
@@ -2617,8 +2645,9 @@ void main() {
         float mossFactor = smoothstep(0.25, 0.75, N.y) * smoothstep(0.3, 0.8, mossGrowth);
         
         albedo = mix(rockColor, mossColor, mossFactor) * u_baseColor * 1.4;
-        roughness = mix(0.92, 0.98, mossFactor); // rough moss and stone
-        metallic = 0.01;
+        roughness = mix(0.42, 0.88, mossFactor); // reflective slate facets beneath soft moss
+        metallic = 0.03;
+        clearCoat = mix(0.35, 0.0, mossFactor);
         
         // Rich high-resolution normal perturbation for rock facets
         float heightMapDistort = rockPattern * 0.15 - mossFactor * 0.05;
@@ -2696,8 +2725,9 @@ void main() {
         float totalFoam = clamp(bankFoam + crestFoam, 0.0, 1.0);
 
         albedo = mix(waterBase, foamColor, totalFoam);
-        roughness = mix(0.03, 0.35, totalFoam); // mirror-smooth water, slightly diffuse foam
-        metallic = 0.08;
+        roughness = mix(0.02, 0.26, totalFoam); // mirror-smooth reflective water, slightly diffuse foam
+        metallic = 0.12;
+        clearCoat = 1.0;
     }
     else if (u_matType == 21) {
         // 21. HIGH-FIDELITY PROCEDURAL FOREST FLOOR TERRAIN
@@ -2732,11 +2762,76 @@ void main() {
         float normalPerturb = voronoiGrass.x * 0.22 + colNoise1 * 0.08;
         N = perturbNormal(N, v_worldPos, normalPerturb, bumpScale * 2.8);
         
-        roughness = mix(0.96, 0.80, bladeMask);
+        roughness = mix(0.68, 0.38, bladeMask);
+        metallic = 0.02;
+        clearCoat = 0.32 * bladeMask;
+    }
+    else if (u_matType == 22) {
+        // 22. COMPACT, HIGH-EMISSION PROCEDURAL FIREBALL WITH RICH YELLOW & RED GLOW
+        vec3 localP = v_localPos;
+        float r = length(localP); // 0.0 at core, 1.0 at outer shell
+        float t = u_time * 6.5;
+        
+        // Continuous fluid organic flame noise swirling around local coordinate frame
+        vec3 swirlCoord = localP * 3.4 + vec3(sin(t * 1.8) * 0.35, cos(t * 1.4) * 0.35, -t * 2.6);
+        float n1 = noise3d(swirlCoord);
+        float n2 = noise3d(swirlCoord * 2.2 + vec3(0.0, -t * 3.6, 0.0));
+        float flameTurb = n1 * 0.65 + n2 * 0.35;
+        
+        // Heat distribution: blistering hot molten core -> vibrant fiery mid-shell -> deep crimson licking boundary
+        float coreMask = clamp(1.0 - r * 1.12 + flameTurb * 0.42, 0.0, 1.0);
+        
+        // Rich high-contrast palette:
+        // Hot White-Yellow Core: vec3(4.8, 4.2, 1.4)
+        // Blazing Golden Yellow: vec3(4.0, 2.8, 0.25)
+        // Molten Flame Orange: vec3(3.4, 1.2, 0.04)
+        // Deep Glowing Crimson Red: vec3(2.4, 0.14, 0.01)
+        // Smoky Dark Edge: vec3(0.18, 0.02, 0.005)
+        vec3 colCore = vec3(4.8, 4.2, 1.4);
+        vec3 colYellow = vec3(4.0, 2.8, 0.25);
+        vec3 colOrange = vec3(3.4, 1.2, 0.04);
+        vec3 colRed = vec3(2.4, 0.14, 0.01);
+        vec3 colSmoke = vec3(0.18, 0.02, 0.005);
+        
+        vec3 flameCol;
+        if (coreMask > 0.72) {
+            flameCol = mix(colYellow, colCore, (coreMask - 0.72) / 0.28);
+        } else if (coreMask > 0.42) {
+            flameCol = mix(colOrange, colYellow, (coreMask - 0.42) / 0.30);
+        } else if (coreMask > 0.15) {
+            flameCol = mix(colRed, colOrange, (coreMask - 0.15) / 0.27);
+        } else {
+            flameCol = mix(colSmoke, colRed, coreMask / 0.15);
+        }
+        
+        // Modulate with baseColor tint if provided (e.g. blue fire for Frost projectile)
+        if (length(u_baseColor - vec3(1.0)) > 0.08) {
+            flameCol *= (u_baseColor * 1.25);
+        }
+        
+        albedo = flameCol * 0.28;
+        // Intense emissive burst of yellow and red
+        emissive = flameCol * (3.8 + sin(t * 4.2) * 0.6);
+        roughness = 0.04;
         metallic = 0.0;
+        clearCoat = 0.6;
+    }
+    else if (u_matType == 25) {
+        // 25. VOLUMETRIC HOLOGRAPHIC MAGIC & RUNIC LATTICE (with vertical scanlines, chromatic edge fresnel, and interference)
+        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+        float scanline = sin(v_worldPos.y * 32.0 - u_time * 5.5) * 0.5 + 0.5;
+        scanline = pow(scanline, 2.5);
+        float interference = sin((v_worldPos.x + v_worldPos.z) * 16.0 + u_time * 3.5) * 0.15;
+        vec3 holoTint = (length(u_baseColor - vec3(1.0)) > 0.05) ? u_baseColor : vec3(0.12, 0.88, 0.98);
+        vec3 holoEdge = vec3(fresnel * 0.25, fresnel * 0.95, fresnel * 1.45);
+        albedo = holoTint * 0.35;
+        emissive = (holoTint * (0.95 + scanline * 0.95 + interference) + holoEdge * 1.8) * 1.65;
+        roughness = 0.08;
+        metallic = 0.95;
+        clearCoat = 0.85;
     }
 
-    // Blend optional 2D Texture Maps if active (Preserve authentic GLB UV origin & soft non-metallic response)
+    // Blend optional 2D Texture Maps if active
     if (u_useTexMaps > 0) {
         vec2 texUv = v_uv;
         if (u_uvScale.x > 0.001 && u_uvScale.y > 0.001) {
@@ -2748,7 +2843,6 @@ void main() {
         } else {
             albedo = mix(texAlb.rgb, texAlb.rgb * u_baseColor, 0.35);
         }
-        // GLB character material: less metallic reflex, gentle diffuse roughness
         if (u_clearCoat > 0.05) {
             roughness = clamp(u_roughness, 0.25, 0.95);
             metallic = clamp(u_metallic, 0.0, 0.85);
@@ -2855,6 +2949,9 @@ void main() {
         float Gs = GeometrySmith(N, V, Ls, max(roughness, 0.04));
         vec3 Fs = FresnelSchlick(max(dot(Hs, V), 0.0), F0);
         vec3 specularS = (NDFs * Gs * Fs) / (4.0 * NoV * NdotLs + 0.0001);
+        if (u_useTexMaps > 0) {
+            specularS *= 0.06;
+        }
         vec3 kSs = Fs;
         float diffuseWeightS = max(1.0 - metallic, 0.45);
         vec3 kDs = (vec3(1.0) - kSs) * diffuseWeightS;
@@ -2876,9 +2973,9 @@ void main() {
         iblSpecular += iblSpecularColor * clearCoatFresnel * 0.8;
     }
 
-    // Scale down ambient when u_lightColor is dimmed or zero (e.g. moody/dark mode mapping)
-    float ambScale = clamp(length(u_lightColor) * 2.5, 0.005, 1.0);
-    vec3 color = Lo + (iblDiffuse + iblSpecular) * 0.18 * ambScale + emissive;
+    // Atmospheric ambient + crisp specular reflections
+    float ambScale = clamp(length(u_lightColor) * 2.0, 0.15, 1.0);
+    vec3 color = Lo + iblDiffuse * 0.35 * ambScale + iblSpecular * 1.15 + emissive;
 
     // HDR Reinhard Tone Mapping & Gamma Correction
     color = color / (color + vec3(1.0));
@@ -2899,14 +2996,23 @@ uniform vec3 u_baseColor;
 out vec4 fragColor;
 
 void main() {
-    vec3 d = fwidth(v_barycentric);
-    vec3 a3 = smoothstep(vec3(0.0), d * 1.5, v_barycentric);
-    float edgeFactor = min(min(a3.x, a3.y), a3.z);
+    float baryEdge = 1.0;
+    if (length(v_barycentric) > 0.05) {
+        vec3 d = fwidth(v_barycentric);
+        vec3 a3 = smoothstep(vec3(0.0), d * 1.5, v_barycentric);
+        baryEdge = min(min(a3.x, a3.y), a3.z);
+    }
     
-    vec3 faceColor = u_baseColor * 0.25;
-    vec3 edgeColor = vec3(0.3, 0.85, 1.0);
+    // Screen-space geometric normal edge detection for all geometry
+    vec3 nD = fwidth(normalize(v_normal));
+    float normEdge = clamp(length(nD) * 1.8, 0.0, 1.0);
+    float edgeFactor = min(baryEdge, 1.0 - normEdge);
     
-    fragColor = vec4(mix(edgeColor, faceColor, edgeFactor), 1.0);
+    vec3 baseCol = (length(u_baseColor) > 0.01) ? u_baseColor : vec3(0.12, 0.25, 0.35);
+    vec3 faceColor = baseCol * 0.20;
+    vec3 edgeColor = vec3(0.25, 0.90, 1.0);
+    
+    fragColor = vec4(mix(edgeColor, faceColor, clamp(edgeFactor, 0.0, 1.0)), 1.0);
 }
 `;
 
@@ -2929,38 +3035,44 @@ in vec3 v_worldPos;
 in vec3 v_normal;
 uniform vec3 u_camPos;
 uniform vec3 u_baseColor;
-uniform float u_time;
+uniform highp float u_time;
 
 out vec4 fragColor;
 
 void main() {
     vec3 N = normalize(v_normal);
-    vec3 V = normalize(u_camPos - v_worldPos);
-    float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.5);
-    float scanline = sin(v_worldPos.y * 35.0 - u_time * 6.0) * 0.5 + 0.5;
+    vec3 V = (length(u_camPos - v_worldPos) > 0.001) ? normalize(u_camPos - v_worldPos) : vec3(0.0, 1.0, 0.0);
+    float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+    float scanline = sin(v_worldPos.y * 32.0 - u_time * 5.5) * 0.5 + 0.5;
     scanline = pow(scanline, 3.0);
     
-    vec3 glow = u_baseColor * (fresnel * 1.4 + scanline * 0.5 + 0.15);
-    fragColor = vec4(glow, 0.88);
+    vec3 baseCol = (length(u_baseColor) > 0.01) ? u_baseColor : vec3(0.05, 0.85, 0.95);
+    vec3 glow = baseCol * (fresnel * 1.6 + scanline * 0.5 + 0.2);
+    fragColor = vec4(glow, 0.92);
 }
 `;
 
 // Ultra-Fast Low-Cost Material Shader for Mobile Browsers & High FPS Arena Play (Zero Procedural Noise ALU)
 const FS_CHEAP_FPS = `#version 300 es
 precision mediump float;
+precision highp int;
 
 in vec3 v_worldPos;
 in vec3 v_normal;
 in vec2 v_uv;
+in vec3 v_localPos;
 
 uniform vec3 u_baseColor;
 uniform float u_roughness;
 uniform float u_metallic;
-uniform int u_matType;
+uniform highp int u_matType;
 uniform float u_alpha;
+uniform highp float u_time;
 uniform vec3 u_camPos;
 uniform vec3 u_lightDir;
 uniform vec3 u_lightColor;
+uniform sampler2D u_albedoMap;
+uniform int u_useTexMaps;
 
 struct PointLight {
     vec3 pos;
@@ -2986,7 +3098,13 @@ out vec4 fragColor;
 
 void main() {
     vec3 N = normalize(v_normal);
-    vec3 V = normalize(u_camPos - v_worldPos);
+    vec3 V = (length(u_camPos - v_worldPos) > 0.001) ? normalize(u_camPos - v_worldPos) : vec3(0.0, 1.0, 0.0);
+
+    vec3 baseColor = (length(u_baseColor) > 0.001) ? u_baseColor : vec3(0.8, 0.8, 0.8);
+    if (u_useTexMaps == 1) {
+        vec4 texCol = texture(u_albedoMap, v_uv);
+        baseColor *= texCol.rgb;
+    }
 
     // Directional Key Light with Smooth Half-Lambert wrap (fast, zero branching, beautiful lighting)
     vec3 L = (length(u_lightDir) > 0.001) ? normalize(u_lightDir) : normalize(vec3(0.4, 0.85, 0.35));
@@ -3002,7 +3120,7 @@ void main() {
     // Two-Tone Sky & Ground Ambient Fill
     vec3 ambient = mix(vec3(0.14, 0.16, 0.20), vec3(0.35, 0.38, 0.42), N.y * 0.5 + 0.5);
 
-    vec3 diff = u_baseColor * (lCol * (NdotL * 0.72 + 0.20) + ambient);
+    vec3 diff = baseColor * (lCol * (NdotL * 0.72 + 0.20) + ambient);
     vec3 col = diff + vec3(spec);
 
     // Dynamic Point Lights in Cheap/Mobile Shader
@@ -3016,7 +3134,7 @@ void main() {
             float pNdotL = max(dot(N, Lp) * 0.75 + 0.25, 0.0);
             vec3 Hp = normalize(V + Lp);
             float pSpec = pow(max(dot(N, Hp), 0.0), specPower) * u_metallic * 0.35;
-            col += (u_baseColor * pNdotL + vec3(pSpec)) * u_pointLights[i].color * atten;
+            col += (baseColor * pNdotL + vec3(pSpec)) * u_pointLights[i].color * atten;
         }
     }
 
@@ -3035,15 +3153,22 @@ void main() {
                 float sNdotL = max(dot(N, Ls) * 0.75 + 0.25, 0.0);
                 vec3 Hs = normalize(V + Ls);
                 float sSpec = pow(max(dot(N, Hs), 0.0), specPower) * u_metallic * 0.4;
-                col += (u_baseColor * sNdotL + vec3(sSpec)) * u_spotLights[i].color * atten;
+                col += (baseColor * sNdotL + vec3(sSpec)) * u_spotLights[i].color * atten;
             }
         }
     }
 
-    // Fast Glow / Neon Highlight for Laser bolts, Holograms, Visors, Item pickups
-    if (u_matType == 11 || u_matType == 12 || u_matType == 7) {
+    // Fast Glow / Volumetric Holographic Highlight for Magic Spells, Sacred Circles & Holograms
+    if (u_matType == 25) {
+        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+        float scanline = sin(v_worldPos.y * 32.0 - u_time * 5.5) * 0.5 + 0.5;
+        scanline = pow(scanline, 2.5);
+        float interference = sin((v_worldPos.x + v_worldPos.z) * 16.0 + u_time * 3.5) * 0.15;
+        vec3 holoEdge = vec3(fresnel * 0.25, fresnel * 0.95, fresnel * 1.45);
+        col = baseColor * (0.90 + scanline * 0.95 + interference) + holoEdge * 1.8;
+    } else if (u_matType == 11 || u_matType == 12 || u_matType == 7) {
         float fresnel = 1.0 - max(dot(N, V), 0.0);
-        col = u_baseColor * (1.15 + fresnel * 0.65);
+        col = baseColor * (1.15 + fresnel * 0.65);
     }
 
     float finalAlpha = (u_alpha > 0.0001) ? clamp(u_alpha, 0.0, 1.0) : 1.0;
@@ -3072,7 +3197,7 @@ uniform sampler2D u_sceneDepth;
 uniform vec2 u_resolution;
 uniform vec3 u_camPos;
 uniform vec3 u_sunScreenPos;
-uniform float u_time;
+uniform highp float u_time;
 
 // HZB uniforms
 uniform int u_hzbEnabled;
@@ -5871,6 +5996,23 @@ void AnnounceGameVoice(int profileIndex, const char* textUtterance) {
     }
     this.lastKillTime = now;
 
+    if (this.currentDemoType === 'fps') {
+      if (this.killCount === 2) {
+        this.speak("Double Kill! Lightning precision!", { profileId: 2, pitch: 0.82, rate: 1.15 });
+      } else if (this.killCount === 3) {
+        this.speak("Triple Kill! Dominating the arena!", { profileId: 2, pitch: 0.80, rate: 1.18 });
+      } else if (this.killCount === 4) {
+        this.speak("Mega Kill! Total destruction!", { profileId: 2, pitch: 0.78, rate: 1.20 });
+      } else if (this.killCount >= 5) {
+        this.speak("Rampage! An unstoppable slaughter in the combat zone!", { profileId: 2, pitch: 0.75, rate: 1.22 });
+      } else {
+        const phrases = ["Enemy eliminated!", "Target down!", "Frag confirmed!", "Direct kill!"];
+        const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+        this.speak(phrase, { profileId: 2, pitch: 0.84, rate: 1.15 });
+      }
+      return;
+    }
+
     if (this.killCount >= 2) {
       let phrase = "Double Kill! Unstoppable fury!";
       if (this.killCount === 3) phrase = "Triple Kill! A legend is born!";
@@ -5884,7 +6026,16 @@ void AnnounceGameVoice(int profileIndex, const char* textUtterance) {
   announcePlayerDeath(attacker) {
     if (!this.settings.enabled || !this.settings.announceKills) return;
     this.killCount = 0;
-    this.speak("Humiliation! You have fallen in combat.", { profileId: 1 });
+    if (this.currentDemoType === 'fps') {
+      const phrases = [
+        "Humiliation! You have fallen in combat.",
+        "Fragged by enemy fire! Respawning in 3, 2, 1...",
+        "Down in the arena! Get back in the fight."
+      ];
+      this.speak(phrases[Math.floor(Math.random() * phrases.length)], { profileId: 2, pitch: 0.82, rate: 1.10 });
+    } else {
+      this.speak("Humiliation! You have fallen in combat.", { profileId: 1 });
+    }
   }
 
   announceElevator(name) {
@@ -5895,6 +6046,211 @@ void AnnounceGameVoice(int profileIndex, const char* textUtterance) {
   announcePowerup(pickupName) {
     if (!this.settings.enabled || !this.settings.announcePowerups) return;
     this.triggerActionVoice('powerup', true);
+  }
+
+  adaptForDemo(demoScene) {
+    if (!demoScene) return;
+    const ds = demoScene.toLowerCase();
+    this.currentDemoScene = demoScene;
+
+    if (ds.includes('12_roulette')) {
+      this.currentDemoType = 'roulette';
+      this.activeProfileId = 1;
+      this.profiles[1].name = "Casino Croupier";
+      this.profiles[1].pitch = 1.02;
+      this.profiles[1].rate = 0.98;
+      this.profiles[1].introChime = false;
+      this.profiles[1].chimeType = "announcer_chime";
+      this.logTelemetry("🎰 Voice adapted for 3D Roulette: Casino Croupier profile active.");
+    } else if (ds.includes('07_fps')) {
+      this.currentDemoType = 'fps';
+      this.activeProfileId = 2;
+      this.profiles[2].name = "Arena Combat Announcer";
+      this.profiles[2].pitch = 0.82;
+      this.profiles[2].rate = 1.15;
+      this.profiles[2].introChime = false;
+      this.profiles[2].chimeType = "laser";
+      this.logTelemetry("🔫 Voice adapted for FPS Arena: Unreal/Quake Announcer profile active.");
+    } else if (ds.includes('15_moba')) {
+      this.currentDemoType = 'moba';
+      this.activeProfileId = 1;
+      this.profiles[1].name = "Fantasy Narrator";
+      this.profiles[1].pitch = 0.88;
+      this.profiles[1].rate = 1.02;
+      this.profiles[2].name = "Arena Combat";
+      this.profiles[2].pitch = 1.10;
+      this.profiles[2].rate = 1.12;
+      this.logTelemetry("🛡️ Voice adapted for MOBA: Forest of Hollow Blood narrator active.");
+    } else if (ds.includes('11_plinko')) {
+      this.currentDemoType = 'plinko';
+      this.activeProfileId = 2;
+      this.profiles[2].name = "Arcade Plinko Host";
+      this.profiles[2].pitch = 1.10;
+      this.profiles[2].rate = 1.06;
+      this.profiles[2].chimeType = "elevator";
+      this.logTelemetry("🎯 Voice adapted for Plinko: Arcade Host profile active.");
+    } else if (ds.includes('09_slot_machine')) {
+      this.currentDemoType = 'slots';
+      this.activeProfileId = 1;
+      this.profiles[1].name = "Vegas Slots Host";
+      this.profiles[1].pitch = 1.05;
+      this.profiles[1].rate = 1.05;
+      this.profiles[1].chimeType = "pickup";
+      this.logTelemetry("🎰 Voice adapted for Slot Machine: Vegas Host profile active.");
+    } else if (ds.includes('10_sliding_puzzle')) {
+      this.currentDemoType = 'puzzle';
+      this.activeProfileId = 1;
+      this.profiles[1].name = "Puzzle Master";
+      this.profiles[1].pitch = 0.92;
+      this.profiles[1].rate = 0.92;
+      this.logTelemetry("🧩 Voice adapted for Sliding Puzzle: Puzzle Master profile active.");
+    } else if (ds.includes('13_bingo')) {
+      this.currentDemoType = 'bingo';
+      this.activeProfileId = 1;
+      this.profiles[1].name = "Bingo Caller";
+      this.profiles[1].pitch = 1.0;
+      this.profiles[1].rate = 0.96;
+      this.logTelemetry("🎱 Voice adapted for 3D Bingo: Bingo Caller profile active.");
+    } else if (ds.includes('14_pong')) {
+      this.currentDemoType = 'pong';
+      this.activeProfileId = 2;
+      this.profiles[2].name = "Retro Referee";
+      this.profiles[2].pitch = 1.08;
+      this.profiles[2].rate = 1.12;
+      this.logTelemetry("🏓 Voice adapted for Retro Pong: Arcade Referee profile active.");
+    } else {
+      this.currentDemoType = 'studio';
+      this.activeProfileId = 1;
+      this.profiles[1].name = "Studio Curator";
+      this.profiles[1].pitch = 0.95;
+      this.profiles[1].rate = 0.95;
+    }
+  }
+
+  announceRouletteSpin() {
+    if (!this.settings.enabled) return;
+    const phrases = [
+      "No more bets! Bets are closed!",
+      "Ball is spinning! Bets are closed, ladies and gentlemen!",
+      "Rien ne va plus! All bets are locked!",
+      "Wheel in motion! Bets are closed!"
+    ];
+    const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+    this.speak(phrase, { profileId: 1, pitch: 1.02, rate: 0.98, introChime: false });
+  }
+
+  announceRouletteBettingOpen() {
+    if (!this.settings.enabled) return;
+    const phrases = [
+      "Place your bets, ladies and gentlemen.",
+      "Betting is now open. Place your chips.",
+      "New round started. Place your wagers."
+    ];
+    const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+    this.speak(phrase, { profileId: 1, pitch: 1.02, rate: 0.98, introChime: false });
+  }
+
+  announceRouletteBetPlaced() {
+    if (!this.settings.enabled) return;
+    const now = performance.now();
+    if (this.lastRouletteBetSpoken && (now - this.lastRouletteBetSpoken < 2500)) return;
+    this.lastRouletteBetSpoken = now;
+    const phrases = [
+      "Bet placed.",
+      "Chips down on the table.",
+      "Wager accepted."
+    ];
+    const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+    this.speak(phrase, { profileId: 1, pitch: 1.02, rate: 1.02, introChime: false });
+  }
+
+  announceRouletteOutcome(winningNum, color, isWon, payout) {
+    if (!this.settings.enabled) return;
+    let text = "";
+    if (winningNum === 0) {
+      text = isWon ? `Green Zero! Outstanding win! Payout of $${payout} credited to your stack!` : "Green Zero. House takes this spin. Place your bets for the next round.";
+    } else {
+      const col = (color || "").toUpperCase();
+      text = isWon ? `Number ${winningNum}, ${col}! Winner! Payout of $${payout} credited to your balance!` : `Number ${winningNum}, ${col}. Better luck on the next spin.`;
+    }
+    this.speak(text, { profileId: 1, pitch: 1.02, rate: 0.98, introChime: true, chimeType: "announcer_chime" });
+  }
+
+  announcePlinkoDrop() {
+    if (!this.settings.enabled) return;
+    const now = performance.now();
+    if (this.lastPlinkoDropSpoken && (now - this.lastPlinkoDropSpoken < 2500)) return;
+    this.lastPlinkoDropSpoken = now;
+    const phrases = ["Ball dropped!", "Down through the pins!", "Rolling the pyramid!"];
+    this.speak(phrases[Math.floor(Math.random() * phrases.length)], { profileId: 2, pitch: 1.10, rate: 1.08 });
+  }
+
+  announcePlinkoWin(multiplier, winAmount) {
+    if (!this.settings.enabled) return;
+    if (multiplier >= 12.0) {
+      this.speak(`Massive 12X Jackpot! Awarded ${winAmount} credits!`, { profileId: 2, pitch: 1.15, rate: 1.12 });
+    } else if (multiplier >= 4.0) {
+      this.speak(`Big multiplier! 4X scored!`, { profileId: 2, pitch: 1.12, rate: 1.10 });
+    }
+  }
+
+  announceSlotsSpin() {
+    if (!this.settings.enabled) return;
+    const now = performance.now();
+    if (this.lastSlotSpinSpoken && (now - this.lastSlotSpinSpoken < 2500)) return;
+    this.lastSlotSpinSpoken = now;
+    const phrases = ["Pulling the lever! Spin to win!", "Reels spinning! Good luck!"];
+    this.speak(phrases[Math.floor(Math.random() * phrases.length)], { profileId: 1, pitch: 1.05, rate: 1.05 });
+  }
+
+  announceSlotsWin(amount) {
+    if (!this.settings.enabled) return;
+    this.speak(`Jackpot! Golden coins overflowing! ${amount} credits won!`, { profileId: 1, pitch: 1.10, rate: 1.08 });
+  }
+
+  announceBingoDraw(ballNum, letter, phrase) {
+    if (!this.settings.enabled) return;
+    const callerText = phrase ? `${letter} ${ballNum}, ${phrase}!` : `${letter} ${ballNum}!`;
+    this.speak(callerText, { profileId: 1, pitch: 1.0, rate: 0.95 });
+  }
+
+  announcePongScore(scorer) {
+    if (!this.settings.enabled) return;
+    const now = performance.now();
+    if (this.lastPongScoreSpoken && (now - this.lastPongScoreSpoken < 2000)) return;
+    this.lastPongScoreSpoken = now;
+    const phrases = ["Point scored!", "Ace return!", "Past the paddle!"];
+    this.speak(phrases[Math.floor(Math.random() * phrases.length)], { profileId: 2, pitch: 1.08, rate: 1.12 });
+  }
+
+  announceDemoLoad(demoScene) {
+    if (!this.settings.enabled) return;
+    const ds = (demoScene || "").toLowerCase();
+    let text = "";
+    let profileId = 1;
+    if (ds.includes('12_roulette')) {
+      text = "Welcome to 3D Real-Physics Roulette. Place your bets, ladies and gentlemen.";
+    } else if (ds.includes('07_fps')) {
+      text = "Combat Arena active. Lock and load! Eliminate all enemy combatants.";
+      profileId = 2;
+    } else if (ds.includes('11_plinko')) {
+      text = "Plinko Cascade active. Drop your balls and hit the maximum multipliers.";
+      profileId = 2;
+    } else if (ds.includes('09_slot_machine')) {
+      text = "3D Casino Slot Machine active. Spin the reels to win!";
+    } else if (ds.includes('10_sliding_puzzle')) {
+      text = "3D Sliding Puzzle initialized. Rearrange the tiles.";
+    } else if (ds.includes('13_bingo')) {
+      text = "3D Physics Bingo ready. The diamond drum awaits.";
+    } else if (ds.includes('14_pong')) {
+      text = "Retro 3D Arcade Pong active. Serve the ball!";
+      profileId = 2;
+    } else if (ds.includes('15_moba')) {
+      text = "Welcome to the Forest of Hollow Blood!";
+    }
+    if (text) {
+      this.speak(text, { profileId, introChime: false });
+    }
   }
 }
 
@@ -6010,8 +6366,8 @@ class NativeApp {
       lodTier: detectedTier,
       demoScene: '15_moba.cpp', // Default to MOBA
       activeMesh: 0,
-      activeShader: 0, // Default to Full PBR Filament Shader
-      fpsCheapMaterial: false,
+      activeShader: 4, // Default to Mobile Cheap Material for MOBA
+      fpsCheapMaterial: true,
       fpsSkyFX: 'crazy',
       roughness: 0.25,
       metallic: 0.15,
@@ -6337,6 +6693,9 @@ class NativeApp {
     this.initShowroomUI();
     this.initNetworkSystem();
     this.initFpsStartupMenu();
+    if (this.speechAnnouncer && this.state.demoScene) {
+      this.speechAnnouncer.adaptForDemo(this.state.demoScene);
+    }
     if (this.state.demoScene && this.state.demoScene.includes('15_moba')) {
       this.initMobaDemo();
     } else if (this.state.demoScene && this.state.demoScene.includes('14_pong')) {
@@ -6355,7 +6714,67 @@ class NativeApp {
     this.log("Mobile virtual joystick & touch controller pipeline ACTIVE.", "success");
     this.log("Filament PBR examples & WASM export procedures loaded.", "info");
     
+    this.initWebGpuBackend();
     requestAnimationFrame(this._renderLoopBound);
+  }
+
+  async initWebGpuBackend() {
+    this.webgpu = {
+      supported: false,
+      adapter: null,
+      device: null,
+      info: null
+    };
+
+    if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+        if (adapter) {
+          const device = await adapter.requestDevice();
+          let adapterInfo = null;
+          try {
+            adapterInfo = adapter.info || (await adapter.requestAdapterInfo?.()) || null;
+          } catch (e) {
+            adapterInfo = null;
+          }
+
+          this.webgpu.supported = true;
+          this.webgpu.adapter = adapter;
+          this.webgpu.device = device;
+          this.webgpu.info = adapterInfo;
+          this.graphicsBackend = 'webgpu';
+          window.webgpu = this.webgpu;
+
+          const gpuDesc = (adapterInfo && (adapterInfo.description || adapterInfo.architecture || adapterInfo.vendor)) || 'Hardware GPU';
+          this.log(`🚀 WebGPU Initialized as DEFAULT Hardware Backend: ${gpuDesc}`, "success");
+          this.updateBackendDisplay('WebGPU (Default)');
+          return;
+        }
+      } catch (err) {
+        console.warn('[WebGPU] Hardware init note, falling back to WebGL2:', err);
+      }
+    }
+
+    this.graphicsBackend = 'webgl2';
+    this.log("WebGL2 / GLES3.0 backend active (WebGPU not supported on current browser environment).", "info");
+    this.updateBackendDisplay('WebGL2 / GLES3');
+  }
+
+  updateBackendDisplay(backendName) {
+    const hudPipeline = document.getElementById('hud-pipeline');
+    if (hudPipeline) {
+      hudPipeline.textContent = backendName;
+      if (backendName.includes('WebGPU')) {
+        hudPipeline.style.color = '#38bdf8';
+        hudPipeline.style.textShadow = '0 0 8px rgba(56, 189, 248, 0.6)';
+      }
+    }
+    const enginePerfDesc = document.getElementById('engine-perf-desc');
+    if (enginePerfDesc) {
+      enginePerfDesc.textContent = backendName.includes('WebGPU')
+        ? 'Real-time frames rendered with WebGPU default hardware backend.'
+        : 'Real-time frames per second rendered by the WebGL2 C++ backend.';
+    }
   }
 
   log(msg, type = "info") {
@@ -7877,9 +8296,26 @@ void main() {
 
       let characterTexture = null;
       if (jsonChunk.images && jsonChunk.images.length > 0 && binChunk) {
+        // Resolve the authentic baseColorTexture image index rather than blindly picking index 0 (which was specular/normal map!)
+        let baseColorImgIdx = -1;
+        if (jsonChunk.materials && jsonChunk.materials.length > 0) {
+          for (const mat of jsonChunk.materials) {
+            if (mat.pbrMetallicRoughness && mat.pbrMetallicRoughness.baseColorTexture) {
+              const texIdx = mat.pbrMetallicRoughness.baseColorTexture.index;
+              if (jsonChunk.textures && jsonChunk.textures[texIdx] && jsonChunk.textures[texIdx].source !== undefined) {
+                baseColorImgIdx = jsonChunk.textures[texIdx].source;
+                break;
+              }
+            }
+          }
+        }
+        if (baseColorImgIdx < 0 || baseColorImgIdx >= jsonChunk.images.length) {
+          baseColorImgIdx = 0;
+        }
+
         await new Promise((resolve) => {
           try {
-            const imgDef = jsonChunk.images[0];
+            const imgDef = jsonChunk.images[baseColorImgIdx];
             if (imgDef.bufferView !== undefined) {
               const bv = jsonChunk.bufferViews[imgDef.bufferView];
               const bOffset = (bv.byteOffset || 0);
@@ -8038,7 +8474,10 @@ void main() {
       this.sacredSpellMeshes = {
         nova: this.buildMeshBuffer(SacredGeometryFactory.createSacredNovaMesh(1.0)),
         shieldDome: this.buildMeshBuffer(SacredGeometryFactory.createSacredShieldDome(1.6)),
-        ultimateCircle: this.buildMeshBuffer(SacredGeometryFactory.createSacredUltimateCircle(1.0))
+        ultimateCircle: this.buildMeshBuffer(SacredGeometryFactory.createSacredUltimateCircle(1.0)),
+        volumetricCylinder: this.buildMeshBuffer(SacredGeometryFactory.createVolumetricHoloCylinder(1.0, 3.4, 7, 32)),
+        volumetricMandala: this.buildMeshBuffer(SacredGeometryFactory.createVolumetricHoloMandala(1.2, 4)),
+        holoGimbal: this.buildMeshBuffer(SacredGeometryFactory.createHolographicGimbal(0.52, 0.026))
       };
       this.log("✨ Sacred Geometry mathematical glyphs and ritual circles initialized!", "success");
     } catch (err) {
@@ -9316,16 +9755,16 @@ void main() {
 
     if (demoSelect) {
       demoSelect.addEventListener('change', (e) => {
-        if (viewportDemoSelect && viewportDemoSelect.value !== e.target.value) {
-          viewportDemoSelect.value = e.target.value;
+        const previousDemo = this.state.demoScene;
+        const newDemo = e.target.value;
+
+        // Destroy and purge memory, workers, intervals, audio, and state of previous demo
+        this.destroyDemoMemory(previousDemo, newDemo);
+
+        if (viewportDemoSelect && viewportDemoSelect.value !== newDemo) {
+          viewportDemoSelect.value = newDemo;
         }
-        if (typeof this.leaveRouletteMultiplayer === 'function') {
-          this.leaveRouletteMultiplayer();
-        }
-        if (typeof this.leavePlinkoMultiplayer === 'function') {
-          this.leavePlinkoMultiplayer();
-        }
-        this.state.demoScene = e.target.value;
+        this.state.demoScene = newDemo;
         if (this.state.demoScene.includes('07_fps')) {
           this.state.cameraMode = 3;
           const camSelect = document.getElementById('camera-mode-select');
@@ -9460,6 +9899,7 @@ void main() {
           this.state.camTarget[1] = 0.0;
           this.state.camTarget[2] = 0.0;
           updateFPSOverlays();
+          this.setShaderProgram(4);
           this.log("Loaded Demo 10: MOBA Forest of Hollow Blood", "cpp");
           this.initMobaDemo();
         } else if (this.state.demoScene.includes('14_pong')) {
@@ -9478,6 +9918,10 @@ void main() {
           this.initPongDemo();
         } else {
           this.log(`Loaded Demo: ${this.state.demoScene}`, "cpp");
+        }
+        if (this.speechAnnouncer) {
+          this.speechAnnouncer.adaptForDemo(newDemo);
+          this.speechAnnouncer.announceDemoLoad(newDemo);
         }
         this.updateHUDStats();
         this.updateSceneEntitiesForActiveDemo();
@@ -9532,10 +9976,7 @@ void main() {
     if (shaderSelect) {
       shaderSelect.value = String(this.state.activeShader);
       shaderSelect.addEventListener('change', (e) => {
-        this.state.activeShader = parseInt(e.target.value, 10);
-        this.state.fpsCheapMaterial = (this.state.activeShader === 4);
-        this.toggleCheapMaterial(this.state.fpsCheapMaterial);
-        this.log(`Switched active Shader Program to #${this.state.activeShader}`, "info");
+        this.setShaderProgram(e.target.value);
       });
     }
 
@@ -14326,38 +14767,64 @@ else if (typeof define === 'function' && define['amd'])
     }
   }
 
+  setShaderProgram(shaderIdx) {
+    const idx = parseInt(shaderIdx, 10);
+    this.state.activeShader = (!isNaN(idx) && idx >= 0 && idx < this.programs.length) ? idx : 0;
+    this.state.fpsCheapMaterial = (this.state.activeShader === 4);
+    this.updateShaderUI();
+    const names = [
+      "Filament Standard PBR",
+      "GLES3 Standard Derivatives Wireframe",
+      "Normal Vector Visualizer",
+      "Fresnel Hologram Pulse",
+      "Mobile Cheap Material (Blinn-Lambert)"
+    ];
+    this.log(`Switched active Shader Program to #${this.state.activeShader} (${names[this.state.activeShader] || 'Active'})`, "info");
+  }
+
   toggleCheapMaterial(forceState) {
+    let targetShader;
     if (forceState !== undefined) {
-      this.state.fpsCheapMaterial = forceState;
+      targetShader = forceState ? 4 : 0;
     } else {
-      this.state.fpsCheapMaterial = !this.state.fpsCheapMaterial;
+      targetShader = (this.state.activeShader === 4) ? 0 : 4;
     }
-    this.state.activeShader = this.state.fpsCheapMaterial ? 4 : 0;
-    
+    this.setShaderProgram(targetShader);
+  }
+
+  updateShaderUI() {
     // Update HUD toggle button
     const btnCheap = document.getElementById('btn-fps-cheap-mat-toggle');
     if (btnCheap) {
-      if (this.state.fpsCheapMaterial) {
+      if (this.state.activeShader === 4) {
         btnCheap.textContent = "⚡ Cheap Mat: ON (Mobile 60-120 FPS)";
         btnCheap.style.background = "rgba(16, 185, 129, 0.25)";
         btnCheap.style.borderColor = "#10b981";
         btnCheap.style.color = "#34d399";
-      } else {
+      } else if (this.state.activeShader === 0) {
         btnCheap.textContent = "✨ Filament PBR: ON (Studio Mode)";
         btnCheap.style.background = "rgba(147, 51, 234, 0.25)";
         btnCheap.style.borderColor = "#a855f7";
         btnCheap.style.color = "#c084fc";
+      } else {
+        const names = ["Filament PBR", "Wireframe HUD", "Normals Vis", "Hologram FX", "Cheap Mat"];
+        btnCheap.textContent = `🎨 ${names[this.state.activeShader] || 'Shader Active'}`;
+        btnCheap.style.background = "rgba(56, 189, 248, 0.25)";
+        btnCheap.style.borderColor = "#38bdf8";
+        btnCheap.style.color = "#38bdf8";
       }
     }
     
     // Update Select Dropdowns
     const shaderSelect = document.getElementById('shader-select');
-    if (shaderSelect) shaderSelect.value = String(this.state.activeShader);
+    if (shaderSelect && shaderSelect.value !== String(this.state.activeShader)) {
+      shaderSelect.value = String(this.state.activeShader);
+    }
     
     const matProfileSelect = document.getElementById('fps-material-profile-select');
-    if (matProfileSelect) matProfileSelect.value = this.state.fpsCheapMaterial ? 'cheap' : 'filament_pbr';
-    
-    this.log(`Material Engine: ${this.state.fpsCheapMaterial ? '⚡ Ultra-Fast Cheap Material (Optimized for Mobile 60-120 FPS)' : '✨ Filament Studio PBR'}`, 'info');
+    if (matProfileSelect) {
+      matProfileSelect.value = (this.state.activeShader === 4) ? 'cheap' : 'filament_pbr';
+    }
   }
 
   toggleSkyFX(mode) {
@@ -14534,19 +15001,14 @@ else if (typeof define === 'function' && define['amd'])
       gl.uniform1i(progInfo.uAlbedoMap, 2);
       gl.uniform1i(progInfo.uUseTexMaps, 1);
       
-      const isMobaLobby = this.mobaState && !this.mobaState.playing;
-      if (isMobaLobby) {
-        // Start menu scene: Allow the full richness of textures to pop!
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, Math.max(rough, 0.28));
-        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, Math.max(metal, 0.45));
-        if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.65);
-      } else {
-        // Gameplay scene: Original exact parameters untouched
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, Math.max(rough, 0.82));
-        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, Math.min(metal, 0.02));
+      // Authentic GLB model textures: only apply to MOBA heroes/units so other examples preserve their own shaders/materials
+      const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba');
+      if (isMoba) {
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.90);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
         if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, 0.0);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 1.0, 1.0]));
       }
-      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 1.0, 1.0]));
     }
 
     const idxType = mesh.indexType || gl.UNSIGNED_SHORT;
@@ -15158,6 +15620,9 @@ else if (typeof define === 'function' && define['amd'])
     }
 
     this.log(`Spin #${sm.stats.spins} Triggered! Bet: ${sm.bet} Credits | Remaining: ${sm.credits}`, "cpp");
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.announceSlotsSpin();
+    }
   }
 
   evaluateSlotResult() {
@@ -15209,6 +15674,9 @@ else if (typeof define === 'function' && define['amd'])
         setTimeout(() => winEl.classList.remove('win-animate'), 800);
       }
       this.log(`🎉 Payout Won: +${payout} Credits! (${description})`, "success");
+      if (this.speechAnnouncer) {
+        this.speechAnnouncer.announceSlotsWin(payout);
+      }
     } else {
       this.log(`💀 Spin Outcome: Missed.`, "cpp");
     }
@@ -16727,6 +17195,9 @@ else if (typeof define === 'function' && define['amd'])
     ps.credits -= 10;
     ps.totalDropped++;
     this.updatePlinkoUI();
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.announcePlinkoDrop();
+    }
 
     // On mobile devices, auto-hide UI popup when playing so board is unobstructed (unless user explicitly opened it)
     if (this.isMobileDevice() && !ps.userOpenedOnMobile) {
@@ -16939,6 +17410,9 @@ else if (typeof define === 'function' && define['amd'])
               // 4. Force state UI redraw
               this.updateRouletteUI();
               this.log("Betting is now OPEN again!", "success");
+              if (this.speechAnnouncer) {
+                this.speechAnnouncer.announceRouletteBettingOpen();
+              }
             }, 2000);
           }
         } else {
@@ -17062,6 +17536,9 @@ else if (typeof define === 'function' && define['amd'])
 
     this.updatePlinkoUI();
     this.log(`Ball landed in bin ${binIdx + 1} (Multiplier: ${multiplier}x). Payout: ${winAmount} credits!`, "success");
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.announcePlinkoWin(multiplier, winAmount);
+    }
     
     let binHighlightColor = [0.1, 0.8, 1.0];
     if (multiplier >= 12.0) binHighlightColor = [1.0, 0.85, 0.1];
@@ -17085,6 +17562,167 @@ else if (typeof define === 'function' && define['amd'])
         }
       }, 3000);
     }
+  }
+
+  // =========================================================================
+  // DEMO MEMORY MANAGEMENT & RESOURCE PURGE SYSTEM
+  // =========================================================================
+  destroyDemoMemory(oldDemo, newDemo) {
+    if (!oldDemo) return;
+    this.log(`🧹 Purging and releasing demo memory for [${oldDemo}]...`, "info");
+
+    // 1. Speech synthesis and Audio cancellation
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.stop();
+    }
+
+    // 2. Pause and purge MOBA Audio & sound context
+    if (this.mobaAudioElement) {
+      try {
+        this.mobaAudioElement.pause();
+        this.mobaAudioElement.src = '';
+        this.mobaAudioElement.load();
+      } catch (e) {}
+      this.mobaAudioElement = null;
+    }
+    if (this._mobaAudioCtx && this._mobaAudioCtx.state !== 'closed') {
+      try {
+        this._mobaAudioCtx.suspend?.();
+      } catch (e) {}
+    }
+
+    // 3. Stop sound synthesizers
+    if (this.synth) {
+      if (typeof this.synth.stopAll === 'function') this.synth.stopAll();
+    }
+
+    // 4. Terminate physics worker if switching away from physics demos (roulette/plinko)
+    if (this.physicsWorker) {
+      try {
+        this.physicsWorker.terminate();
+      } catch (e) {}
+      this.physicsWorker = null;
+      this._physicsWorkerTickPending = false;
+    }
+
+    // 5. Multiplayer room leaves
+    if (typeof this.leaveRouletteMultiplayer === 'function') {
+      try { this.leaveRouletteMultiplayer(); } catch(e){}
+    }
+    if (typeof this.leavePlinkoMultiplayer === 'function') {
+      try { this.leavePlinkoMultiplayer(); } catch(e){}
+    }
+    if (typeof this.leaveMobaParty === 'function') {
+      try { this.leaveMobaParty(); } catch(e){}
+    }
+    if (typeof this.leavePongMultiplayer === 'function') {
+      try { this.leavePongMultiplayer(); } catch(e){}
+    }
+
+    // 6. Demo-specific teardowns
+    // MOBA teardown
+    if (this.mobaState) {
+      this.mobaState.playing = false;
+      this.mobaState.projectiles = [];
+      this.mobaState.creeps = [];
+      this.mobaState.players = [];
+      this.mobaState.lobbyHeroes = [];
+      this.mobaState.inventory = [null, null, null, null, null, null];
+      this.mobaState = null;
+    }
+
+    // Roulette teardown
+    if (this.rouletteState) {
+      this.rouletteState.active = false;
+      this.rouletteState.spinning = false;
+      this.rouletteState.ball = null;
+      this.rouletteState.trail = [];
+      this.rouletteState = null;
+    }
+    this.rouletteChips = [];
+    if (this.rouletteActors) {
+      this.rouletteActors.forEach(a => { if (a) a.betTotal = 0; });
+    }
+    if (this.gl) {
+      if (this.rouletteTableTexture) {
+        try { this.gl.deleteTexture(this.rouletteTableTexture); } catch (e) {}
+        this.rouletteTableTexture = null;
+      }
+      if (this.rouletteWheelTexture) {
+        try { this.gl.deleteTexture(this.rouletteWheelTexture); } catch (e) {}
+        this.rouletteWheelTexture = null;
+      }
+      if (this.casinoFloorTexture) {
+        try { this.gl.deleteTexture(this.casinoFloorTexture); } catch (e) {}
+        this.casinoFloorTexture = null;
+      }
+    }
+
+    // Plinko teardown
+    if (this.plinkoState) {
+      if (this.plinkoState.restoreTimeout) {
+        clearTimeout(this.plinkoState.restoreTimeout);
+        this.plinkoState.restoreTimeout = null;
+      }
+      this.plinkoState.balls = [];
+      this.plinkoState.particles = [];
+      this.plinkoState.shockwaveRings = [];
+      this.plinkoState.pegs = [];
+      this.plinkoState = null;
+    }
+
+    // Slot Machine teardown
+    if (this.slotMachine) {
+      this.slotMachine.coins = [];
+      this.slotMachine.autoSpin = false;
+      this.slotMachine = null;
+    }
+
+    // Sliding Puzzle teardown
+    if (this.puzzleState) {
+      this.puzzleState = null;
+    }
+
+    // Bingo teardown
+    if (this.bingoState) {
+      if (this.bingoState.autoDrawTimer) {
+        clearInterval(this.bingoState.autoDrawTimer);
+        this.bingoState.autoDrawTimer = null;
+      }
+      this.bingoState.autoDraw = false;
+      this.bingoState.balls = [];
+      this.bingoState.drawnBalls = [];
+      this.bingoState = null;
+    }
+
+    // Pong teardown
+    if (this.pongState) {
+      this.pongState.active = false;
+      this.pongState.gameStarted = false;
+      this.pongState = null;
+    }
+
+    // FPS teardown
+    if (oldDemo && oldDemo.includes('07_fps')) {
+      if (document.exitPointerLock) {
+        try { document.exitPointerLock(); } catch(e){}
+      }
+      this.bots = [];
+      this.projectiles = [];
+      this.activeDecals = [];
+      this.damageNumbers = [];
+    }
+
+    // 7. Hide all overlays and reset document classes
+    this.updateFPSOverlays();
+    document.body.classList.remove('moba-active', 'roulette-active', 'plinko-active', 'fps-active', 'bingo-active', 'pong-active', 'slot-active');
+
+    // 8. Trigger V8 Garbage Collection if exposed
+    if (typeof window !== 'undefined' && window.gc) {
+      try { window.gc(); } catch (e) {}
+    }
+
+    this.log(`✨ Memory and transient state cleanly reclaimed for demo [${oldDemo}].`, "success");
   }
 
   // 🎰 Demo 12: 3D Real-Physics Roulette Wheel Implementation Methods
@@ -17319,6 +17957,10 @@ else if (typeof define === 'function' && define['amd'])
     rs.trail = [];
     this.updateRouletteUI();
 
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.announceRouletteSpin();
+    }
+
     if (this.synth) this.synth.play('teleport');
 
     const ROULETTE_NUMBERS = [
@@ -17381,6 +18023,10 @@ else if (typeof define === 'function' && define['amd'])
     rs.lastOutcomePocket = null;
     rs.trail = [];
     this.updateRouletteUI();
+
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.announceRouletteSpin();
+    }
 
     if (data.history) {
       this.updateRouletteHistoryUI(data.history);
@@ -18646,6 +19292,9 @@ else if (typeof define === 'function' && define['amd'])
 
     if (this.synth) this.synth.play('pickup');
     this.log(`Placed $${betAmt} chip on [${actor.name}] (Payout ${actor.payout}:1). Total on spot: $${actor.betTotal}.`, "info");
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.announceRouletteBetPlaced();
+    }
     this.updateRouletteUI();
   }
 
@@ -19011,6 +19660,10 @@ else if (typeof define === 'function' && define['amd'])
         rs.lastOutcomePocket = null;
         rs.trail = [];
         this.updateRouletteUI();
+
+        if (this.speechAnnouncer) {
+          this.speechAnnouncer.announceRouletteSpin();
+        }
 
         // For mobile variant hide bet ui after clicking drop
         const isMobile = this.isMobileDevice() || window.innerWidth <= 768;
@@ -19920,6 +20573,9 @@ else if (typeof define === 'function' && define['amd'])
         if (this.synth) this.synth.play('damage');
         this.log(`Round ended. Ball landed in slot ${winningNum} (${color.toUpperCase()}). No chips won. Better luck next spin!`, "info");
       }
+      if (this.speechAnnouncer) {
+        this.speechAnnouncer.announceRouletteOutcome(winningNum, color, localWon > 0, localWon);
+      }
     } else {
       // 2. Legacy DOM UI evaluation
       let won = false;
@@ -19956,6 +20612,9 @@ else if (typeof define === 'function' && define['amd'])
         rs.lastPayout = 0;
         if (this.synth) this.synth.play('damage');
         this.log(`Lost! Ball landed in slot ${winningNum} (${color.toUpperCase()}). Good luck next round!`, "info");
+      }
+      if (this.speechAnnouncer) {
+        this.speechAnnouncer.announceRouletteOutcome(winningNum, color, won, payout);
       }
     }
 
@@ -20874,6 +21533,9 @@ else if (typeof define === 'function' && define['amd'])
 
     this.playBingoSound('draw');
     this.log(`Drawn Ball: ${pick.category}-${pick.num} (${bs.callerPhrases[pick.num] || 'Called!'})`, "cpp");
+    if (this.speechAnnouncer) {
+      this.speechAnnouncer.announceBingoDraw(pick.num, pick.category, bs.callerPhrases[pick.num]);
+    }
 
     if (bs.autoDaub) {
       this.daubBingoCard(pick.num);
@@ -21879,6 +22541,13 @@ else if (typeof define === 'function' && define['amd'])
       rallyCount: 0,
       highScore: 0,
       winner: null,
+      tableRotY: 0.0,
+      tableTiltX: 0.0,
+      tableTiltZ: 0.0,
+      tableRotVelY: 0.0,
+      tableTiltVelX: 0.0,
+      proffiMode: true,
+      proffiTiltPhysics: true,
       paddles: {
         left: {
           x: -3.2,
@@ -21886,7 +22555,7 @@ else if (typeof define === 'function' && define['amd'])
           targetZ: 0.0,
           width: 0.22,
           length: 1.0,
-          speed: 10.5,
+          speed: 15.0,
           score: 0,
           name: "Player 1",
           hitFlash: 0
@@ -21897,7 +22566,7 @@ else if (typeof define === 'function' && define['amd'])
           targetZ: 0.0,
           width: 0.22,
           length: 1.0,
-          speed: 10.5,
+          speed: 15.0,
           score: 0,
           name: "AI Bot",
           hitFlash: 0
@@ -21962,6 +22631,9 @@ else if (typeof define === 'function' && define['amd'])
       this.pongState.ball.vz = 0.0;
       this.pongState.paddles.left.z = 0.0;
       this.pongState.paddles.right.z = 0.0;
+      this.pongState.tableRotY = 0.0;
+      this.pongState.tableTiltX = 0.0;
+      this.pongState.tableRotVelY = 0.0;
     }
 
     // Always pop up the Mode Selection modal when entering the demo
@@ -22653,7 +23325,8 @@ else if (typeof define === 'function' && define['amd'])
     // Compensate for table rotation so dragging up/down tracks table length at any rotation angle
     const rot = this.pongState.tableRotY || 0;
     const effectiveScreenCoord = normY * Math.cos(rot) - normX * Math.sin(rot);
-    const targetZ = Math.max(-1.65, Math.min(1.65, effectiveScreenCoord * 4.6));
+    // Increased sensitivity: 6.8x multiplier for swift, responsive paddle reach across board
+    const targetZ = Math.max(-1.65, Math.min(1.65, effectiveScreenCoord * 6.8));
 
     if (this.pongState.mode === 'online' && !this.pongState.isHost) {
       this.pongState.paddles.right.targetZ = targetZ;
@@ -22693,32 +23366,61 @@ else if (typeof define === 'function' && define['amd'])
 
     const boundedDt = Math.min(0.04, Math.max(0.001, dt));
 
-    // 1. Move Player 1 (Left Paddle / Pin)
+    // 0. TABLE ROTATION & TILT VIA JOYSTICK & KEYS (PROFFI PONG MECHANIC)
+    let joyRotY = 0;
+    let joyTiltX = 0;
+
+    if (this.joystickState && this.joystickState.active) {
+      // Horizontal Joystick (dirX) rotates table yaw (spinning table 360°)
+      if (Math.abs(this.joystickState.dirX) > 0.03) {
+        const x = this.joystickState.dirX;
+        // High-sensitivity rotation response curve
+        joyRotY = Math.sign(x) * Math.pow(Math.abs(x), 1.05) * 3.6; // rad/s
+      }
+      // Vertical Joystick (dirY) tilts table pitch (forward/backward)
+      if (Math.abs(this.joystickState.dirY) > 0.03) {
+        const y = this.joystickState.dirY;
+        joyTiltX = -y * 0.48; // max ~28 deg tilt
+      }
+    }
+
+    // Keyboard rotation shortcuts for desktop players (Q / E or A / D or Left / Right arrow)
+    let keyRotY = 0;
+    if (this.state.keys.q || this.state.keys.a) keyRotY -= 2.8;
+    if (this.state.keys.e || this.state.keys.d) keyRotY += 2.8;
+    if (ps.mode !== 'local_2p') {
+      if (this.state.keys.arrowLeft) keyRotY -= 2.8;
+      if (this.state.keys.arrowRight) keyRotY += 2.8;
+    }
+
+    const targetRotVelY = joyRotY !== 0 ? joyRotY : keyRotY;
+    if (targetRotVelY !== 0) {
+      ps.tableRotVelY = (ps.tableRotVelY || 0) + (targetRotVelY - (ps.tableRotVelY || 0)) * Math.min(1.0, boundedDt * 16.0);
+    } else {
+      // Smooth gyro deceleration when input released
+      ps.tableRotVelY = (ps.tableRotVelY || 0) * Math.max(0.0, 1.0 - boundedDt * 7.0);
+    }
+
+    ps.tableRotY = (ps.tableRotY || 0) + ps.tableRotVelY * boundedDt;
+    while (ps.tableRotY > Math.PI) ps.tableRotY -= Math.PI * 2;
+    while (ps.tableRotY < -Math.PI) ps.tableRotY += Math.PI * 2;
+
+    // Pitch Tilt: Smooth spring return when joystick is released
+    if (this.joystickState && this.joystickState.active && Math.abs(this.joystickState.dirY) > 0.03) {
+      ps.tableTiltX = (ps.tableTiltX || 0) + (joyTiltX - (ps.tableTiltX || 0)) * Math.min(1.0, boundedDt * 12.0);
+    } else {
+      ps.tableTiltX = (ps.tableTiltX || 0) * Math.max(0.0, 1.0 - boundedDt * 7.0);
+    }
+
+    // 1. Move Player 1 (Left Paddle / Pin) - Increased sensitivity and swift response
     const leftPad = ps.paddles.left;
-    const playerSpeed = leftPad.speed || 10.5;
+    const playerSpeed = leftPad.speed || 15.0;
     let moveLeft = 0;
     if (this.state.keys.w) moveLeft -= 1;
     if (this.state.keys.s) moveLeft += 1;
     if (ps.mode === 'solo' && (this.state.keys.arrowUp || this.state.keys.arrowDown)) {
       if (this.state.keys.arrowUp) moveLeft -= 1;
       if (this.state.keys.arrowDown) moveLeft += 1;
-    }
-
-    // Virtual Joystick controls Player Pin with enhanced sensitivity & power curve
-    const isPlayer1Local = (ps.mode !== 'online' || ps.isHost);
-    if (isPlayer1Local && this.joystickState && this.joystickState.active) {
-      let joyVal = 0;
-      if (Math.abs(this.joystickState.dirY) > 0.025) {
-        const y = this.joystickState.dirY;
-        // Stronger, snappy response curve (1.5x multiplier)
-        joyVal = Math.sign(y) * Math.min(1.0, Math.pow(Math.abs(y), 1.05) * 1.5);
-      } else if (Math.abs(this.joystickState.dirX) > 0.10) {
-        const x = this.joystickState.dirX;
-        joyVal = Math.sign(x) * Math.min(1.0, Math.pow(Math.abs(x), 1.05) * 1.5);
-      }
-      if (joyVal !== 0) {
-        moveLeft = joyVal;
-      }
     }
 
     // Initialize targetZ if undefined
@@ -22729,8 +23431,8 @@ else if (typeof define === 'function' && define['amd'])
       leftPad.targetZ = Math.max(-1.65, Math.min(1.65, leftPad.targetZ + moveLeft * playerSpeed * boundedDt));
     }
 
-    // Smooth LERP (linear interpolation) towards targetZ for organic, fluid paddle momentum
-    const lerpRate = 22.0; // Responsive, snappy, silky-smooth lerp
+    // High responsiveness lerp (32.0) for razor-sharp reaction time
+    const lerpRate = 32.0;
     const lerpAlpha = 1.0 - Math.exp(-lerpRate * boundedDt);
     leftPad.z += (leftPad.targetZ - leftPad.z) * lerpAlpha;
     leftPad.z = Math.max(-1.65, Math.min(1.65, leftPad.z));
@@ -22740,28 +23442,25 @@ else if (typeof define === 'function' && define['amd'])
       this.broadcastPongEvent('paddle', { side: 'left', z: leftPad.z });
     }
 
-    // 2. Move Player 2 (Right Paddle / Pin)
+    // 2. Move Player 2 (Right Paddle / Pin) - Increased sensitivity
     const rightPad = ps.paddles.right;
-    const rightSpeed = rightPad.speed || 10.5;
+    const rightSpeed = rightPad.speed || 15.0;
 
     if (rightPad.targetZ === undefined) rightPad.targetZ = rightPad.z;
 
     if (ps.mode === 'solo') {
       // Bot AI with difficulty tuning and smooth lerp tracking
       let botTargetZ = ps.ball.z;
-      let botLerpRate = 16.0;
+      let botLerpRate = 18.0;
 
       if (ps.botDifficulty === 'easy') {
-        botLerpRate = 9.0;
-        // React slower and add slight tracking error
+        botLerpRate = 10.0;
         botTargetZ = ps.ball.z + Math.sin(performance.now() * 0.003) * 0.38;
       } else if (ps.botDifficulty === 'hard') {
-        botLerpRate = 24.0;
-        // Predictive tracking: intercept where ball is traveling towards X = 3.2
+        botLerpRate = 28.0;
         if (ps.ball.vx > 0) {
           const timeToIntercept = Math.max(0, (3.2 - ps.ball.x) / ps.ball.vx);
           botTargetZ = ps.ball.z + ps.ball.vz * timeToIntercept;
-          // Account for bumper reflections
           while (botTargetZ > 2.1 || botTargetZ < -2.1) {
             if (botTargetZ > 2.1) botTargetZ = 4.2 - botTargetZ;
             if (botTargetZ < -2.1) botTargetZ = -4.2 - botTargetZ;
@@ -22789,17 +23488,6 @@ else if (typeof define === 'function' && define['amd'])
       let moveRight = 0;
       if (this.state.keys.w || this.state.keys.arrowUp) moveRight -= 1;
       if (this.state.keys.s || this.state.keys.arrowDown) moveRight += 1;
-      if (this.joystickState && this.joystickState.active) {
-        let joyVal = 0;
-        if (Math.abs(this.joystickState.dirY) > 0.025) {
-          const y = this.joystickState.dirY;
-          joyVal = Math.sign(y) * Math.min(1.0, Math.pow(Math.abs(y), 1.05) * 1.5);
-        } else if (Math.abs(this.joystickState.dirX) > 0.10) {
-          const x = this.joystickState.dirX;
-          joyVal = Math.sign(x) * Math.min(1.0, Math.pow(Math.abs(x), 1.05) * 1.5);
-        }
-        if (joyVal !== 0) moveRight = joyVal;
-      }
 
       if (moveRight !== 0) {
         rightPad.targetZ = Math.max(-1.65, Math.min(1.65, rightPad.targetZ + moveRight * rightSpeed * boundedDt));
@@ -22833,6 +23521,18 @@ else if (typeof define === 'function' && define['amd'])
         }
         this.updatePongHUD();
       } else {
+        // Proffi Pong: Gravitational acceleration along tilt Z and Coriolis spin curvature
+        if (ps.proffiTiltPhysics && !ps.serving) {
+          const tiltGravity = 7.5;
+          b.vz += Math.sin(ps.tableTiltX || 0) * tiltGravity * boundedDt;
+
+          if (Math.abs(ps.tableRotVelY || 0) > 0.04) {
+            const omega = ps.tableRotVelY;
+            b.vx += 2.2 * omega * b.vz * 0.35 * boundedDt;
+            b.vz += -2.2 * omega * b.vx * 0.35 * boundedDt;
+          }
+        }
+
         // Integrate ball position
         b.x += b.vx * b.speedMult * boundedDt;
         b.z += b.vz * b.speedMult * boundedDt;
@@ -22896,6 +23596,9 @@ else if (typeof define === 'function' && define['amd'])
           rightPad.score++;
           this.playPongTone('score');
           this.spawnPongSparks(-3.6, b.z, [1.0, 0.2, 0.3], 24);
+          if (this.speechAnnouncer) {
+            this.speechAnnouncer.announcePongScore(rightPad.name);
+          }
           if (rightPad.score >= 7) {
             ps.winner = rightPad.name;
             this.playPongTone('win');
@@ -22906,6 +23609,9 @@ else if (typeof define === 'function' && define['amd'])
           leftPad.score++;
           this.playPongTone('score');
           this.spawnPongSparks(3.6, b.z, [0.2, 0.8, 1.0], 24);
+          if (this.speechAnnouncer) {
+            this.speechAnnouncer.announcePongScore(leftPad.name);
+          }
           if (leftPad.score >= 7) {
             ps.winner = leftPad.name;
             this.playPongTone('win');
@@ -22983,13 +23689,47 @@ else if (typeof define === 'function' && define['amd'])
     const sphereMesh = this.meshBuffers[0];
     if (!cubeMesh || !sphereMesh) return;
 
-    // Zero-allocation helpers
-    const drawCube = (px, py, pz, sx, sy, sz, color, rough = 0.25, metal = 0.85, matType = 0) => {
+    // Rotation matrix for Proffi rotating & tilting table
+    const rotY = ps.tableRotY || 0.0;
+    const tiltX = ps.tableTiltX || 0.0;
+    const cy = Math.cos(rotY), sy = Math.sin(rotY);
+    const cx = Math.cos(tiltX), sx = Math.sin(tiltX);
+
+    // Matrix columns for R = R_yaw(rotY) * R_pitch(tiltX):
+    const r00 = cy,       r01 = sy * sx,      r02 = sy * cx;
+    const r10 = 0.0,      r11 = cx,           r12 = -sx;
+    const r20 = -sy,      r21 = cy * sx,      r22 = cy * cx;
+
+    // Stationary cube for arcade floor pedestal stand
+    const drawStationaryCube = (px, py, pz, sx, sy, sz, color, rough = 0.35, metal = 0.85) => {
       gl.bindVertexArray(cubeMesh.vao);
       this.modelMatrix[0] = sx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
       this.modelMatrix[4] = 0; this.modelMatrix[5] = sy; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
       this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = sz; this.modelMatrix[11] = 0;
       this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
+
+      const uModel = progInfo.uModel || progInfo.uModelMatrix;
+      if (uModel) gl.uniformMatrix4fv(uModel, false, this.modelMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+      gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+    };
+
+    // Zero-allocation rotating helpers for table components
+    const drawCube = (px, py, pz, sx, sy, sz, color, rough = 0.25, metal = 0.85, matType = 0) => {
+      gl.bindVertexArray(cubeMesh.vao);
+      const wx = px * r00 + py * r01 + pz * r02;
+      const wy = px * r10 + py * r11 + pz * r12;
+      const wz = px * r20 + py * r21 + pz * r22;
+
+      this.modelMatrix[0] = r00 * sx; this.modelMatrix[1] = r10 * sx; this.modelMatrix[2] = r20 * sx; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = r01 * sy; this.modelMatrix[5] = r11 * sy; this.modelMatrix[6] = r21 * sy; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = r02 * sz; this.modelMatrix[9] = r12 * sz; this.modelMatrix[10] = r22 * sz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = wx; this.modelMatrix[13] = wy; this.modelMatrix[14] = wz; this.modelMatrix[15] = 1;
       Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
 
       const uModel = progInfo.uModel || progInfo.uModelMatrix;
@@ -23008,10 +23748,14 @@ else if (typeof define === 'function' && define['amd'])
 
     const drawSphere = (px, py, pz, rx, ry, rz, color, rough = 0.15, metal = 0.90, emissive = false) => {
       gl.bindVertexArray(sphereMesh.vao);
-      this.modelMatrix[0] = rx; this.modelMatrix[1] = 0; this.modelMatrix[2] = 0; this.modelMatrix[3] = 0;
-      this.modelMatrix[4] = 0; this.modelMatrix[5] = ry; this.modelMatrix[6] = 0; this.modelMatrix[7] = 0;
-      this.modelMatrix[8] = 0; this.modelMatrix[9] = 0; this.modelMatrix[10] = rz; this.modelMatrix[11] = 0;
-      this.modelMatrix[12] = px; this.modelMatrix[13] = py; this.modelMatrix[14] = pz; this.modelMatrix[15] = 1;
+      const wx = px * r00 + py * r01 + pz * r02;
+      const wy = px * r10 + py * r11 + pz * r12;
+      const wz = px * r20 + py * r21 + pz * r22;
+
+      this.modelMatrix[0] = r00 * rx; this.modelMatrix[1] = r10 * rx; this.modelMatrix[2] = r20 * rx; this.modelMatrix[3] = 0;
+      this.modelMatrix[4] = r01 * ry; this.modelMatrix[5] = r11 * ry; this.modelMatrix[6] = r21 * ry; this.modelMatrix[7] = 0;
+      this.modelMatrix[8] = r02 * rz; this.modelMatrix[9] = r12 * rz; this.modelMatrix[10] = r22 * rz; this.modelMatrix[11] = 0;
+      this.modelMatrix[12] = wx; this.modelMatrix[13] = wy; this.modelMatrix[14] = wz; this.modelMatrix[15] = 1;
       Mat4.normalFromMat4(this.normalMatrix, this.modelMatrix);
 
       const uModel = progInfo.uModel || progInfo.uModelMatrix;
@@ -23027,6 +23771,13 @@ else if (typeof define === 'function' && define['amd'])
       if (progInfo.uNoiseScale) gl.uniform1f(progInfo.uNoiseScale, 1.0);
       gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
     };
+
+    // 0. Stationary Heavy Arcade Pedestal (Anchored to Floor)
+    drawStationaryCube(0.0, -0.36, 0.0, 4.4, 0.24, 3.2, [0.03, 0.04, 0.07], 0.65, 0.95);
+    drawStationaryCube(0.0, -0.22, 0.0, 2.6, 0.06, 2.6, [0.08, 0.12, 0.20], 0.25, 0.90);
+    // Rotating Bearing Turntable Core (Rotates with table)
+    drawCube(0.0, -0.16, 0.0, 2.3, 0.05, 2.3, [0.18, 0.65, 0.95], 0.12, 0.35, 3);
+    drawCube(0.0, -0.10, 0.0, 1.8, 0.08, 1.5, [0.05, 0.07, 0.12], 0.40, 0.85);
 
     // 1. Table Platform (Futuristic Obsidian with Beveled Outer Frame)
     drawCube(0.0, 0.0, 0.0, 7.2, 0.20, 4.4, [0.06, 0.09, 0.15], 0.28, 0.82); // Main Playing Field
@@ -25306,21 +26057,37 @@ else if (typeof define === 'function' && define['amd'])
     const btnReset = document.getElementById('btn-touch-reset');
     const pad = document.getElementById('mobile-action-pad');
 
-    // Adapt Joystick Label and Screen Touch Hint for Pong Paddle Control
+    // Adapt Joystick Label and Screen Touch Hint for Pong Table Rotation
     const joyLabel = document.querySelector('.joystick-label');
     const lookHintText = document.querySelector('.touch-look-text');
+    const jN = document.querySelector('.j-axis.j-n');
+    const jS = document.querySelector('.j-axis.j-s');
+    const jW = document.querySelector('.j-axis.j-w');
+    const jE = document.querySelector('.j-axis.j-e');
     if (joyLabel) {
       if (isPong) {
-        joyLabel.textContent = '🕹️ PLAYER PIN (UP/DOWN)';
+        joyLabel.textContent = '🕹️ ROTATE & TILT TABLE (PRO)';
+        if (jN) jN.textContent = '▲ TILT';
+        if (jS) jS.textContent = '▼ TILT';
+        if (jW) jW.textContent = '◀ ROT';
+        if (jE) jE.textContent = 'ROT ▶';
       } else if (isFPS) {
         joyLabel.textContent = 'JOYSTICK (WASD)';
+        if (jN) jN.textContent = 'W';
+        if (jS) jS.textContent = 'S';
+        if (jW) jW.textContent = 'A';
+        if (jE) jE.textContent = 'D';
       } else {
         joyLabel.textContent = 'JOYSTICK (ORBIT)';
+        if (jN) jN.textContent = '▲';
+        if (jS) jS.textContent = '▼';
+        if (jW) jW.textContent = '◀';
+        if (jE) jE.textContent = '▶';
       }
     }
     if (lookHintText) {
       if (isPong) {
-        lookHintText.textContent = '🏓 USE JOYSTICK OR TOUCH TO CONTROL PADDLE';
+        lookHintText.textContent = '🏓 JOYSTICK: ROTATE TABLE • TOUCH / DRAG: MOVE PADDLE';
       } else if (isFPS) {
         lookHintText.textContent = '👆 SWIPE CANVAS TO LOOK / ROTATE';
       } else {
@@ -25984,11 +26751,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     gl.disable(gl.BLEND);
 
     // Clear Scene
-    const isMobaLobby = this.state.demoScene && this.state.demoScene.includes('15_moba') && (!this.mobaState || !this.mobaState.playing);
+    const isMobaLobby = isMoba && (!this.mobaState || !this.mobaState.playing);
     if (isMobaLobby) {
       gl.clearColor(0.0, 0.0, 0.0, 1.0); // Pure absolute pitch-black abyss for hero select screen
+    } else if (isMoba) {
+      gl.clearColor(0.005, 0.007, 0.012, 1.0); // Dark atmospheric clear for MOBA forest
     } else {
-      gl.clearColor(0.005, 0.007, 0.012, 1.0);
+      gl.clearColor(0.04, 0.05, 0.07, 1.0); // Clean engine standard clear color for all other examples
     }
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -26353,8 +27122,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
 
     let activeShaderIdx = this.state.activeShader;
-    if (this.state.fpsCheapMaterial || activeShaderIdx === 4) {
-      activeShaderIdx = 4;
+    if (activeShaderIdx < 0 || activeShaderIdx >= this.programs.length) {
+      activeShaderIdx = 0;
     }
     const progInfo = this.programs[activeShaderIdx] || this.programs[0];
     if (!progInfo) {
@@ -26366,6 +27135,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     gl.uniformMatrix4fv(progInfo.uViewProj, false, this.viewProjMatrix);
     if (progInfo.uCamPos) gl.uniform3fv(progInfo.uCamPos, this.state.camPos);
     if (progInfo.uTime) gl.uniform1f(progInfo.uTime, timestamp * 0.001);
+
+    if (!isMoba) {
+      this.setupDefaultSceneLighting(progInfo);
+    }
 
     // Dynamic Point & Spot Light Uniform Upload (Zero Array Allocations)
     this._pointLightsList.length = 0;
@@ -27773,6 +28546,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.preloadAllMobaHeroes();
     this.loadTowerGLB();
     this.initSacredGeometryMeshes();
+    this.setShaderProgram(4);
+    this.toggleCheapMaterial(true);
 
     // Initialize/Reset MOBA Local State
     this.mobaState = {
@@ -29356,8 +30131,57 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const dz = targetPos[2] - proj.z;
         const dist = Math.hypot(dx, dy, dz);
 
+        // Initialize trail history and ember sparks
+        if (!proj.trail) proj.trail = [];
+        if (!proj.sparks) proj.sparks = [];
+
+        // Record trailing path points for continuous fire trail
+        proj.trail.unshift({ x: proj.x, y: proj.y, z: proj.z, age: 0.0 });
+        if (proj.trail.length > 14) proj.trail.pop();
+        for (let i = 0; i < proj.trail.length; i++) {
+          proj.trail[i].age += dt * 3.5;
+        }
+
+        // Spawn buoyant fiery sparks trailing in the wake of the fireball
+        const sparkCount = Math.min(3, Math.floor(Math.random() * 3) + 1);
+        for (let s = 0; s < sparkCount; s++) {
+          proj.sparks.push({
+            x: proj.x + (Math.random() - 0.5) * 0.25,
+            y: proj.y + (Math.random() - 0.5) * 0.25,
+            z: proj.z + (Math.random() - 0.5) * 0.25,
+            vx: (Math.random() - 0.5) * 3.6,
+            vy: Math.random() * 2.2 + 0.8,
+            vz: (Math.random() - 0.5) * 3.6,
+            life: 0.38 + Math.random() * 0.22,
+            maxLife: 0.6,
+            size: 0.09 + Math.random() * 0.07,
+            color: proj.color || [1.0, 0.45, 0.1]
+          });
+        }
+
+        // Advance active ember sparks
+        proj.sparks = proj.sparks.filter(spk => {
+          spk.x += spk.vx * dt;
+          spk.y += spk.vy * dt;
+          spk.z += spk.vz * dt;
+          spk.life -= dt;
+          return spk.life > 0;
+        });
+
         if (dist <= proj.speed * dt + 0.35) {
           this.applyMobaDamage(target, proj.damage, proj.attackerTeam, proj.isSpell, false);
+          // Spawn fiery impact detonation
+          if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+          this.mobaState.vfxBursts.push({
+            x: targetPos[0],
+            y: targetPos[1] || 0.8,
+            z: targetPos[2],
+            radius: proj.isTower ? 3.0 : 1.8,
+            timer: 0.45,
+            maxTimer: 0.45,
+            type: 'fireExplosion',
+            color: proj.color || [1.0, 0.45, 0.1]
+          });
           return false;
         }
 
@@ -29885,58 +30709,87 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (progInfo.uLightDir) {
       gl.uniform3fv(progInfo.uLightDir, isLobby ? [0.45, 0.85, 0.25] : [0.35, 0.92, 0.4]);
     }
-    // Slashed ambient sun and fill lights to make the entire map moody and beautifully dark (almost black) in gameplay.
-    // However, for the start menu lobby, we set a strong, gorgeous studio/showroom key and ambient fill light!
+    // Atmospheric dark night lighting for MOBA gameplay (moody moonlight), refined studio key in lobby
     if (progInfo.uLightColor) {
-      gl.uniform3fv(progInfo.uLightColor, isLobby ? [0.4, 0.4, 0.4] : [0.0015, 0.0015, 0.0015]);
+      gl.uniform3fv(progInfo.uLightColor, isLobby ? [0.62, 0.60, 0.58] : [0.242, 0.231, 0.275]);
     }
     if (progInfo.uFillLightDir) {
       gl.uniform3fv(progInfo.uFillLightDir, isLobby ? [-0.5, 0.6, -0.4] : [-0.4, 0.65, -0.35]);
     }
     if (progInfo.uFillLightColor) {
-      gl.uniform3fv(progInfo.uFillLightColor, isLobby ? [0.2, 0.2, 0.2] : [0.0015, 0.0015, 0.0015]);
+      gl.uniform3fv(progInfo.uFillLightColor, isLobby ? [0.18, 0.20, 0.24] : [0.088, 0.099, 0.132]);
     }
 
     if (progInfo.uNumPointLights && progInfo.pointLights) {
-      gl.uniform1i(progInfo.uNumPointLights, 3);
+      gl.uniform1i(progInfo.uNumPointLights, 4);
+      const activeProjectiles = (this.mobaState && this.mobaState.projectiles) ? this.mobaState.projectiles : [];
+      const proj0 = activeProjectiles[0] || null;
+      const proj1 = activeProjectiles[1] || null;
+
       const u0 = progInfo.pointLights[0];
       if (u0) {
-        // Spotlight 0: Rich Ruby Crimson Red with soft, lower intensity
-        if (u0.pos) gl.uniform3fv(u0.pos, isLobby ? [0.0, 3.2, 4.0] : [pCenterPos[0], pCenterPos[1] + 6.0, pCenterPos[2]]);
-        if (u0.color) gl.uniform3fv(u0.color, isLobby ? [1.4, 0.05, 0.05] : [1.8, 1.8, 2.0]);
-        if (u0.intensity) gl.uniform1f(u0.intensity, isLobby ? 45.0 : 30.0);
-        if (u0.radius) gl.uniform1f(u0.radius, isLobby ? 20.0 : 16.0);
+        // Spotlight 0: Studio key light in lobby (4.2), localized hero lantern in gameplay (+20% stronger: 3.84)
+        if (u0.pos) gl.uniform3fv(u0.pos, isLobby ? [0.0, 3.2, 4.0] : [pCenterPos[0], pCenterPos[1] + 4.5, pCenterPos[2]]);
+        if (u0.color) gl.uniform3fv(u0.color, isLobby ? [0.78, 0.76, 0.74] : [0.65, 0.60, 0.55]);
+        if (u0.intensity) gl.uniform1f(u0.intensity, isLobby ? 4.2 : 3.84); // Player follow light is +20% stronger (3.84 vs 3.2)
+        if (u0.radius) gl.uniform1f(u0.radius, isLobby ? 12.0 : 10.8);
       }
       const u1 = progInfo.pointLights[1];
       if (u1) {
         if (isLobby) {
-          // Spotlight 1: Vibrant Neon Sapphire Blue back rim light
+          // Spotlight 1: Balanced soft fill light in lobby menu
           if (u1.pos) gl.uniform3fv(u1.pos, [0.0, 2.5, -4.5]);
-          if (u1.color) gl.uniform3fv(u1.color, [0.05, 0.1, 1.5]);
-          if (u1.intensity) gl.uniform1f(u1.intensity, 40.0);
-          if (u1.radius) gl.uniform1f(u1.radius, 18.0);
+          if (u1.color) gl.uniform3fv(u1.color, [0.30, 0.35, 0.40]);
+          if (u1.intensity) gl.uniform1f(u1.intensity, 1.85); // Reduced menu fill to prevent over-illumination
+          if (u1.radius) gl.uniform1f(u1.radius, 10.0);
+        } else if (proj0) {
+          // Dynamic firelight attached to active projectile 0
+          const pFlicker = Math.sin(timestamp * 0.02) * 0.6;
+          if (u1.pos) gl.uniform3fv(u1.pos, [proj0.x, (proj0.y || 1.0) + 0.35, proj0.z]);
+          if (u1.color) gl.uniform3fv(u1.color, [1.6, 0.8, 0.1]);
+          if (u1.intensity) gl.uniform1f(u1.intensity, 4.5 + pFlicker);
+          if (u1.radius) gl.uniform1f(u1.radius, 6.0);
         } else {
-          if (u1.pos) gl.uniform3fv(u1.pos, [pCenterPos[0] - 18.0, pCenterPos[1] + 6.0, pCenterPos[2] - 16.0]);
-          if (u1.color) gl.uniform3fv(u1.color, [0.0, 0.0, 0.0]); // Turned off
-          if (u1.intensity) gl.uniform1f(u1.intensity, 0.0); // Completely dark edges
-          if (u1.radius) gl.uniform1f(u1.radius, 20.0);
+          // Central river/shrine area light (+10% stronger)
+          if (u1.pos) gl.uniform3fv(u1.pos, [0.0, 4.0, 0.0]);
+          if (u1.color) gl.uniform3fv(u1.color, [0.32, 0.50, 0.80]);
+          if (u1.intensity) gl.uniform1f(u1.intensity, 2.42); // 10% stronger area light
+          if (u1.radius) gl.uniform1f(u1.radius, 22.0);
         }
       }
       const u2 = progInfo.pointLights[2];
       if (u2) {
         if (isLobby) {
-          // Turned off in lobby to enforce the "MAX 2 different colors on one hero" rule
           if (u2.pos) gl.uniform3fv(u2.pos, [-4.0, 1.5, 1.0]);
           if (u2.color) gl.uniform3fv(u2.color, [0.0, 0.0, 0.0]);
           if (u2.intensity) gl.uniform1f(u2.intensity, 0.0);
           if (u2.radius) gl.uniform1f(u2.radius, 15.0);
+        } else if (proj1) {
+          // Dynamic firelight attached to active projectile 1
+          const pFlicker = Math.cos(timestamp * 0.025) * 0.6;
+          if (u2.pos) gl.uniform3fv(u2.pos, [proj1.x, (proj1.y || 1.0) + 0.35, proj1.z]);
+          if (u2.color) gl.uniform3fv(u2.color, [1.6, 0.8, 0.1]);
+          if (u2.intensity) gl.uniform1f(u2.intensity, 4.5 + pFlicker);
+          if (u2.radius) gl.uniform1f(u2.radius, 6.0);
         } else {
-          if (u2.pos) gl.uniform3fv(u2.pos, [pCenterPos[0] + 18.0, pCenterPos[1] + 6.0, pCenterPos[2] + 16.0]);
-          if (u2.color) gl.uniform3fv(u2.color, [0.0, 0.0, 0.0]); // Turned off
-          if (u2.intensity) gl.uniform1f(u2.intensity, 0.0); // Completely dark edges
-          if (u2.radius) gl.uniform1f(u2.radius, 20.0);
+          // Red team base altar area light (+10% stronger)
+          if (u2.pos) gl.uniform3fv(u2.pos, [-38.0, 4.5, -38.0]);
+          if (u2.color) gl.uniform3fv(u2.color, [0.85, 0.32, 0.15]);
+          if (u2.intensity) gl.uniform1f(u2.intensity, 2.42);
+          if (u2.radius) gl.uniform1f(u2.radius, 22.0);
         }
       }
+      const u3 = progInfo.pointLights[3];
+      if (u3 && !isLobby) {
+        // Blue team base altar area light (+10% stronger)
+        if (u3.pos) gl.uniform3fv(u3.pos, [38.0, 4.5, 38.0]);
+        if (u3.color) gl.uniform3fv(u3.color, [0.18, 0.55, 0.95]);
+        if (u3.intensity) gl.uniform1f(u3.intensity, 2.42);
+        if (u3.radius) gl.uniform1f(u3.radius, 22.0);
+      }
+    }
+    if (progInfo.uNumSpotLights) {
+      gl.uniform1i(progInfo.uNumSpotLights, 0);
     }
 
     // Render Ground plate (undulating forest terrain with small hills during gameplay only; removed in lobby for pure pitch-black abyss)
@@ -31040,15 +31893,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const ultimateMesh = this.sacredSpellMeshes && this.sacredSpellMeshes.ultimateCircle;
     const novaMesh = this.sacredSpellMeshes && this.sacredSpellMeshes.nova;
     const shieldMesh = this.sacredSpellMeshes && this.sacredSpellMeshes.shieldDome;
+    const volCylinder = this.sacredSpellMeshes && this.sacredSpellMeshes.volumetricCylinder;
+    const volMandala = this.sacredSpellMeshes && this.sacredSpellMeshes.volumetricMandala;
+    const holoGimbal = this.sacredSpellMeshes && this.sacredSpellMeshes.holoGimbal;
 
     this.mobaState.vfxBursts.forEach(vfx => {
       const maxT = vfx.maxTimer || 1.0;
       const progress = Math.max(0, Math.min(1.0, (maxT - vfx.timer) / maxT));
       const isUltimate = vfx.type === 'ultimate' || vfx.radius >= 6.0;
       const isBarrier = vfx.type === 'barrier';
+      const isBlink = vfx.type === 'blinkDepart' || vfx.type === 'blinkArrive';
 
       if (isUltimate && ultimateMesh) {
-        // Grand multi-tier sacred mandala
+        // Grand multi-tier sacred mandala on the arena ground
         gl.bindVertexArray(ultimateMesh.vao);
         const uScale = vfx.radius * (0.65 + 0.45 * progress);
         const spin = timestamp * 0.001;
@@ -31067,22 +31924,67 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
         gl.drawElements(gl.TRIANGLES, ultimateMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
-        // Ascending vertical pillar of ritual light
-        const pillarMesh = this.meshBuffers[1]; // cube scaled as column
-        if (pillarMesh) {
-          gl.bindVertexArray(pillarMesh.vao);
+        // Volumetric Holographic Trick Pillar of Ritual Light (Multi-slice vertical column)
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.depthMask(false);
+
+        if (volCylinder) {
+          gl.bindVertexArray(volCylinder.vao);
           const pSpin = -timestamp * 0.002;
-          const pRad = 0.55 * (1.0 - progress * 0.4);
+          const pRad = vfx.radius * 0.42 * (1.0 - progress * 0.25);
           const cP = Math.cos(pSpin) * pRad, sP = Math.sin(pSpin) * pRad;
           this.instanceMatrix[0] = cP; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sP; this.instanceMatrix[3] = 0;
-          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 12.0; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 5.2; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
           this.instanceMatrix[8] = sP; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cP; this.instanceMatrix[11] = 0;
-          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 6.0; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.1; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
           Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 0.35, 0.45]));
-          gl.drawElements(gl.TRIANGLES, pillarMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25); // Volumetric Holographic Shader!
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 0.25, 0.45]));
+          gl.drawElements(gl.TRIANGLES, volCylinder.indexCount, gl.UNSIGNED_SHORT, 0);
         }
+
+        // Ascending Volumetric Holographic Mandala Rings
+        if (volMandala) {
+          gl.bindVertexArray(volMandala.vao);
+          const mSpin = timestamp * 0.003;
+          const mRad = vfx.radius * 0.65;
+          const cM = Math.cos(mSpin) * mRad, sM = Math.sin(mSpin) * mRad;
+          this.instanceMatrix[0] = cM; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sM; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 2.4; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sM; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cM; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.4 + progress * 7.5; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.95, 0.35, 0.95]));
+          gl.drawElements(gl.TRIANGLES, volMandala.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+
+        // Core Gimbal Ring Vortex
+        if (holoGimbal) {
+          gl.bindVertexArray(holoGimbal.vao);
+          const gRad = vfx.radius * 0.38;
+          const gSpin = -timestamp * 0.005;
+          const cG = Math.cos(gSpin) * gRad, sG = Math.sin(gSpin) * gRad;
+          this.instanceMatrix[0] = cG; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sG; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = gRad; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sG; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cG; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 2.2; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 0.9, 0.2]));
+          gl.drawElements(gl.TRIANGLES, holoGimbal.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
       } else if (isBarrier && shieldMesh) {
         // Expanding sacred barrier dome
         gl.bindVertexArray(shieldMesh.vao);
@@ -31098,8 +32000,84 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.85);
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
         gl.drawElements(gl.TRIANGLES, shieldMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // Volumetric Holographic Shield Column & Orbital Gimbal
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.depthMask(false);
+        if (volCylinder) {
+          gl.bindVertexArray(volCylinder.vao);
+          const cScale = bScale * 0.85;
+          this.instanceMatrix[0] = cScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.8; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cScale; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.05; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.15, 0.98, 0.45]));
+          gl.drawElements(gl.TRIANGLES, volCylinder.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+        if (holoGimbal) {
+          gl.bindVertexArray(holoGimbal.vao);
+          const gScale = bScale * 0.72;
+          const gSpin = timestamp * 0.004;
+          const cG = Math.cos(gSpin) * gScale, sG = Math.sin(gSpin) * gScale;
+          this.instanceMatrix[0] = cG; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sG; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = gScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sG; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cG; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.2, 0.95, 0.85]));
+          gl.drawElements(gl.TRIANGLES, holoGimbal.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
+      } else if (isBlink) {
+        // Volumetric Holographic Warp Cylinder & Gimbal Disintegration / Reassembly
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.depthMask(false);
+        if (volCylinder) {
+          gl.bindVertexArray(volCylinder.vao);
+          const wScale = vfx.radius * (1.2 - progress * 0.4);
+          this.instanceMatrix[0] = wScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 1.2; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = wScale; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.05; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
+          gl.drawElements(gl.TRIANGLES, volCylinder.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+        if (holoGimbal) {
+          gl.bindVertexArray(holoGimbal.vao);
+          const gScale = vfx.radius * (0.8 + progress * 0.6);
+          const gSpin = timestamp * 0.008;
+          const cG = Math.cos(gSpin) * gScale, sG = Math.sin(gSpin) * gScale;
+          this.instanceMatrix[0] = cG; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sG; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = gScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sG; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cG; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.9; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.95, 0.45, 1.0]));
+          gl.drawElements(gl.TRIANGLES, holoGimbal.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
       } else if (novaMesh) {
-        // Sacred Nova expanding starburst & triangle mandala
+        // Sacred Nova expanding starburst & triangle mandala on ground
         gl.bindVertexArray(novaMesh.vao);
         const nScale = vfx.radius * (0.5 + 0.7 * progress);
         const spin = timestamp * 0.0015;
@@ -31117,6 +32095,92 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.9);
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
         gl.drawElements(gl.TRIANGLES, novaMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // Volumetric Holographic Mandala Shockwave Ascending
+        if (volMandala) {
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+          gl.depthMask(false);
+          gl.bindVertexArray(volMandala.vao);
+          const vScale = nScale * 0.95;
+          const vSpin = -timestamp * 0.0025;
+          const cV = Math.cos(vSpin) * vScale, sV = Math.sin(vSpin) * vScale;
+          this.instanceMatrix[0] = cV; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sV; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.9; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sV; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cV; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.15 + progress * 2.2; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.15, 0.95, 1.0]));
+          gl.drawElements(gl.TRIANGLES, volMandala.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+          gl.depthMask(true);
+          gl.disable(gl.BLEND);
+        }
+      } else if (vfx.type === 'fireExplosion') {
+        // High-energy fiery projectile detonation shockwave & fireball blast
+        const sphereM = this.meshBuffers[0];
+        const ringM = this.meshBuffers[6] || this.meshBuffers[0];
+        const blastScale = vfx.radius * Math.sin(progress * Math.PI * 0.5);
+        
+        // 1. Expanding fireball blast
+        if (sphereM) {
+          gl.bindVertexArray(sphereM.vao);
+          this.instanceMatrix[0] = blastScale * 0.75; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = blastScale * 0.75; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = blastScale * 0.75; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = (vfx.y || 0.8) + blastScale * 0.2; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color || [1.0, 0.4, 0.1]));
+          gl.drawElements(gl.TRIANGLES, sphereM.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        }
+        
+        // 2. Expanding fiery shockwave ring on the ground
+        if (ringM) {
+          gl.bindVertexArray(ringM.vao);
+          const shockR = vfx.radius * (0.8 + progress * 1.4);
+          this.instanceMatrix[0] = shockR; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.08; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = shockR; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.04; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.6, 0.6, 0.15]));
+          gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        }
+
+        // 3. Holographic Detonation Gimbal Scatter
+        if (holoGimbal) {
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+          gl.depthMask(false);
+          gl.bindVertexArray(holoGimbal.vao);
+          const gScale = blastScale * 1.1;
+          const gSpin = timestamp * 0.005;
+          const cG = Math.cos(gSpin) * gScale, sG = Math.sin(gSpin) * gScale;
+          this.instanceMatrix[0] = cG; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sG; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = gScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sG; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cG; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = (vfx.y || 0.8) + blastScale * 0.3; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.8, 0.8, 0.2]));
+          gl.drawElements(gl.TRIANGLES, holoGimbal.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+          gl.depthMask(true);
+          gl.disable(gl.BLEND);
+        }
       } else if (ringMesh) {
         gl.bindVertexArray(ringMesh.vao);
         const scale = vfx.radius * (2.0 - (vfx.timer / maxT));
@@ -31162,19 +32226,135 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
     }
 
-    // 7. Render In-Flight Projectiles (Spheres)
+    // 7. Render Spectacular Fire Projectiles with Vertex Animation, Coronal Aura, Trails & Ember Sparks
     const sphereMesh = this.meshBuffers[0];
+    const ringMeshForProj = this.meshBuffers[6] || sphereMesh;
     if (sphereMesh && this.mobaState.projectiles && this.mobaState.projectiles.length > 0) {
-      gl.bindVertexArray(sphereMesh.vao);
       this.mobaState.projectiles.forEach(p => {
-        this.instanceMatrix[0] = 0.22; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.22; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.22; this.instanceMatrix[11] = 0;
+        // Compact, crisp fireball core scale
+        const pCoreScale = p.isTower ? 0.34 : 0.20;
+        const pCol = p.color || [1.0, 0.45, 0.1];
+        
+        // Calculate velocity heading angle for teardrop vertex animation orientation
+        let headingAngle = 0.0;
+        if (p.targetEntity) {
+          const tPos = p.targetEntity.pos || (p.targetEntity === this.mobaState.heroStats ? this.mobaState.currentPos : null);
+          if (tPos) {
+            headingAngle = Math.atan2(tPos[0] - p.x, tPos[2] - p.z);
+          }
+        }
+        const cosH = Math.cos(headingAngle);
+        const sinH = Math.sin(headingAngle);
+
+        // A. Fiery Flame Trail Nodes (Rich yellow/red fading comets)
+        if (p.trail && p.trail.length > 0) {
+          gl.bindVertexArray(sphereMesh.vao);
+          for (let i = 0; i < p.trail.length; i++) {
+            const trNode = p.trail[i];
+            const tFrac = (i + 1) / p.trail.length;
+            const trScale = pCoreScale * (0.88 - tFrac * 0.70) * (0.85 + Math.sin(tFrac * 12.0 + timestamp * 0.015) * 0.15);
+            if (trScale <= 0.02) continue;
+
+            this.instanceMatrix[0] = trScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = trScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = trScale; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = trNode.x; this.instanceMatrix[13] = trNode.y || (p.y || 1.0); this.instanceMatrix[14] = trNode.z; this.instanceMatrix[15] = 1.0;
+
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+            if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22); // Fire shader!
+            
+            // Shifting flame trail color from glowing golden yellow to burning orange to deep crimson red
+            const trailTint = [
+              pCol[0] * (3.4 - tFrac * 1.6),
+              pCol[1] * (2.4 - tFrac * 2.1),
+              pCol[2] * (0.2 * (1.0 - tFrac))
+            ];
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(trailTint));
+            gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          }
+        }
+
+        // B. Flying Ember / Spark Particles
+        if (p.sparks && p.sparks.length > 0) {
+          gl.bindVertexArray(sphereMesh.vao);
+          for (let s = 0; s < p.sparks.length; s++) {
+            const spk = p.sparks[s];
+            const lifeFrac = Math.max(0, spk.life / spk.maxLife);
+            const spkScale = (spk.size * 0.75) * lifeFrac;
+            if (spkScale <= 0.008) continue;
+
+            this.instanceMatrix[0] = spkScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = spkScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = spkScale; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = spk.x; this.instanceMatrix[13] = spk.y; this.instanceMatrix[14] = spk.z; this.instanceMatrix[15] = 1.0;
+
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+            if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([3.6 * lifeFrac, 1.8 * lifeFrac, 0.15 * lifeFrac]));
+            gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          }
+        }
+
+        // C. Fireball Core with Fluid Aerodynamic Vertex Animation
+        gl.bindVertexArray(sphereMesh.vao);
+        this.instanceMatrix[0] = cosH * pCoreScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinH * pCoreScale; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = pCoreScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sinH * pCoreScale; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosH * pCoreScale; this.instanceMatrix[11] = 0;
         this.instanceMatrix[12] = p.x; this.instanceMatrix[13] = p.y || 1.0; this.instanceMatrix[14] = p.z; this.instanceMatrix[15] = 1.0;
 
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(p.color || [1.0, 0.5, 0.1]));
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22); // Procedural Fire + Vertex Animation
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([4.2, 3.2, 0.6])); // Incandescent yellow core
         gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // D. Secondary Coronal Swirling Flame Shell (Tight, intense yellow/red emission)
+        const coronaScale = pCoreScale * 1.25;
+        const spinA = -timestamp * 0.005;
+        const cSp = Math.cos(spinA) * coronaScale, sSp = Math.sin(spinA) * coronaScale;
+        this.instanceMatrix[0] = cSp; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sSp; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = coronaScale * 0.92; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sSp; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cSp; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = p.x; this.instanceMatrix[13] = p.y || 1.0; this.instanceMatrix[14] = p.z; this.instanceMatrix[15] = 1.0;
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([3.2, 0.85, 0.04])); // Fiery flame orange-red
+        gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // E. Volumetric Holographic Orbit Gimbal (Reserved exclusively for magic attacks, not default shoot)
+        const projHoloGimbal = this.sacredSpellMeshes && this.sacredSpellMeshes.holoGimbal;
+        if (p.isMagic && projHoloGimbal) {
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+          gl.depthMask(false);
+          gl.bindVertexArray(projHoloGimbal.vao);
+          const gScale = pCoreScale * 1.6;
+          const gSpin1 = timestamp * 0.007;
+          const gSpin2 = -timestamp * 0.005;
+          const cG1 = Math.cos(gSpin1) * gScale, sG1 = Math.sin(gSpin1) * gScale;
+          this.instanceMatrix[0] = cG1; this.instanceMatrix[1] = Math.sin(gSpin2) * 0.15 * gScale; this.instanceMatrix[2] = -sG1; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = gScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sG1; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cG1; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = p.x; this.instanceMatrix[13] = p.y || 1.0; this.instanceMatrix[14] = p.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25); // Volumetric Hologram!
+          const holoColor = p.isTower ? [1.0, 0.85, 0.2] : (pCol[0] > 0.6 ? [0.2, 0.95, 1.0] : [0.95, 0.25, 0.85]);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(holoColor));
+          gl.drawElements(gl.TRIANGLES, projHoloGimbal.indexCount, gl.UNSIGNED_SHORT, 0);
+          gl.depthMask(true);
+          gl.disable(gl.BLEND);
+        }
+
+        // Reset matType
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
       });
     }
 
@@ -31384,6 +32564,72 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
     } catch (err) {
       // Audio context block by browser gesture
+    }
+  }
+
+  initMobaZombieAudio() {
+    if (this._zombieAudioInitialized) return;
+    this._zombieAudioInitialized = true;
+    this._zombieAudioPool = {
+      damage: [],
+      dead: []
+    };
+    this._lastZombieSoundTime = {
+      damage: 0,
+      dead: 0
+    };
+
+    // Damage pool: zombie-1.mp3 to zombie-12.mp3
+    for (let i = 1; i <= 12; i++) {
+      try {
+        const aud = new Audio(`assets/audio/zombie/zombie-${i}.mp3`);
+        aud.preload = 'auto';
+        this._zombieAudioPool.damage.push(aud);
+      } catch (e) {}
+    }
+
+    // Death pool: zombie-13.mp3 to zombie-24.mp3
+    for (let i = 13; i <= 24; i++) {
+      try {
+        const aud = new Audio(`assets/audio/zombie/zombie-${i}.mp3`);
+        aud.preload = 'auto';
+        this._zombieAudioPool.dead.push(aud);
+      } catch (e) {}
+    }
+  }
+
+  playMobaZombieVoice(type = 'damage', isPlayer = false) {
+    try {
+      if (!this._zombieAudioInitialized) {
+        this.initMobaZombieAudio();
+      }
+      const now = performance.now();
+      const minInterval = (type === 'damage') ? 120 : 220;
+      if (now - (this._lastZombieSoundTime[type] || 0) < minInterval) {
+        return;
+      }
+      this._lastZombieSoundTime[type] = now;
+
+      const pool = this._zombieAudioPool && this._zombieAudioPool[type];
+      if (!pool || pool.length === 0) return;
+
+      const randIdx = Math.floor(Math.random() * pool.length);
+      const originalAudio = pool[randIdx];
+      if (!originalAudio) return;
+
+      // Clone audio element for simultaneous polyphonic audio playback
+      const sound = originalAudio.cloneNode();
+      sound.volume = isPlayer ? 0.65 : 0.40;
+      // Slight pitch variation for acoustic diversity
+      sound.playbackRate = 0.92 + Math.random() * 0.22;
+      const playPromise = sound.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          // Handled if browser gesture not yet initiated
+        });
+      }
+    } catch (err) {
+      // Audio playback safety
     }
   }
 
@@ -31802,6 +33048,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   startMobaMatch(party) {
     this.log("⚔️ MOBA Forest of Hollow Blood has BEGUN! Protect your TRON!", "success");
     if (!this.mobaState) this.initMobaEngineState();
+    this.toggleCheapMaterial(true);
 
     this.mobaState.playing = true;
     this.mobaState.winner = null;
@@ -32694,12 +33941,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (finalDmg > 0) {
         stats.hp = Math.max(0, stats.hp - finalDmg);
         this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], `-${finalDmg}`, '#f87171');
+        this.playMobaZombieVoice('damage', true);
         if (this.speechAnnouncer) {
           this.speechAnnouncer.triggerActionVoice('damage');
         }
       }
 
       if (stats.hp <= 0) {
+        this.playMobaZombieVoice('dead', true);
         if (this.speechAnnouncer) {
           this.speechAnnouncer.speak("Hero fallen! Respawning at base...", { profileId: 1, introChime: false });
         }
@@ -32727,8 +33976,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // 2. Damage to Other Entities (Bots, Creeps, Towers, Tron)
     target.hp = Math.max(0, (target.hp || 0) - finalDmg);
     this.addMobaCombatText(targetPos[0], 1.8, targetPos[2], `-${finalDmg}`, isCrit ? '#fbbf24' : '#ef4444');
+    if (!isTower && (!target.id || !target.id.startsWith('tron_'))) {
+      this.playMobaZombieVoice('damage', false);
+    }
 
     if (target.hp <= 0) {
+      if (!isTower && (!target.id || !target.id.startsWith('tron_'))) {
+        this.playMobaZombieVoice('dead', false);
+      }
       // Bot champion kill
       if (target.isBot) {
         if (this.mobaState.kills && this.mobaState.kills[attackerTeam] !== undefined) {
