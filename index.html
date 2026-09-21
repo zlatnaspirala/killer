@@ -1022,25 +1022,25 @@
                 </div>
               </div>
 
-              <!-- Floating Music Toggle during game -->
-              <div class="absolute top-16 right-3 sm:right-6 z-50 pointer-events-auto">
+              <!-- Floating Music Toggle during game (Low z-index so it stays under modals, alerts, and hero fallen popup) -->
+              <div class="absolute top-16 right-3 sm:right-6 z-10 pointer-events-auto">
                 <button id="moba-game-btn-toggle-music" class="bg-black/60 hover:bg-black/80 border border-amber-500/50 px-2.5 py-1 rounded-xl text-[10px] sm:text-xs font-bold text-amber-400 transition-all cursor-pointer flex items-center space-x-1.5 shadow-lg">
                   <span>🎵 Music:</span> <span class="font-black" id="moba-game-music-status-txt">ON</span>
                 </button>
               </div>
 
+              <!-- RESPAWN TIMER OVERLAY / HERO FALLEN POPUP (Shown when player is dead, guaranteed above all UI elements) -->
+              <div id="moba-respawn-overlay" class="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-auto z-[80] hidden transition-all duration-300">
+                <div class="bg-slate-950/95 border border-red-500/60 p-6 sm:p-8 rounded-2xl flex flex-col items-center max-w-sm text-center shadow-[0_0_40px_rgba(239,68,68,0.5)]">
+                  <span class="text-4xl sm:text-5xl">💀</span>
+                  <h2 class="text-xl sm:text-2xl font-black text-rose-500 tracking-wider mt-2 uppercase">YOU HAVE FALLEN</h2>
+                  <p class="text-[11px] sm:text-xs text-slate-300 mt-2 leading-relaxed">Wait for respawn or use <strong class="text-cyan-400">Magic Reborn</strong> potion from your inventory to half cut respawn time!</p>
+                  <div class="text-4xl sm:text-5xl font-black font-mono text-amber-400 mt-4 animate-pulse" id="moba-respawn-countdown">20s</div>
+                </div>
+              </div>
+
               <!-- HUD MIDDLE AREA (Announcements and Shop trigger) -->
               <div class="flex-1 flex flex-col justify-between items-center pointer-events-none p-2 sm:p-4 relative">
-                <!-- RESPAWN TIMER OVERLAY (Shown when player is dead) -->
-                <div id="moba-respawn-overlay" class="absolute inset-0 bg-black/75 flex flex-col items-center justify-center pointer-events-auto z-40 hidden transition-all duration-300">
-                  <div class="bg-slate-950/95 border border-red-500/50 p-6 rounded-2xl flex flex-col items-center max-w-xs text-center shadow-[0_0_30px_rgba(239,68,68,0.4)]">
-                    <span class="text-4xl">💀</span>
-                    <h2 class="text-lg font-black text-rose-500 tracking-wider mt-2 uppercase">YOU HAVE FALLEN</h2>
-                    <p class="text-[10px] text-slate-400 mt-1 leading-relaxed">Wait for respawn or use <strong class="text-cyan-400">Magic Reborn</strong> potion from your inventory to half cut respawn time!</p>
-                    <div class="text-4xl font-black font-mono text-amber-400 mt-3 animate-pulse" id="moba-respawn-countdown">20s</div>
-                  </div>
-                </div>
-
                 <!-- Kill Alerts -->
                 <div id="moba-alert" class="bg-black/60 border border-amber-500/40 text-amber-400 px-4 py-1.5 rounded-full text-xs font-bold tracking-wide shadow-xl transition-all duration-300 transform scale-0 pointer-events-auto">
                   ARISSA SLAYS ENEMY CREEP!
@@ -2858,7 +2858,7 @@
                     </div>
                     <div class="telemetry-card">
                       <span class="telemetry-label">HDR Bloom Luma</span>
-                      <span class="telemetry-val cyan" id="telem-bloom-luma">Threshold: 0.85</span>
+                      <span class="telemetry-val cyan" id="telem-bloom-luma">Threshold: 0.38</span>
                     </div>
                     <div class="telemetry-card">
                       <span class="telemetry-label">Volumetric God Rays</span>
@@ -2975,33 +2975,33 @@
                       <div class="slider-group" style="margin-top: 14px;">
                         <div class="slider-row">
                           <span class="slider-label">HDR Luminance Threshold</span>
-                          <span class="slider-val" id="val-bloom-threshold">0.85</span>
+                          <span class="slider-val" id="val-bloom-threshold">0.38</span>
                         </div>
-                        <input type="range" id="slider-bloom-threshold" min="0.2" max="2.0" step="0.05" value="0.85" class="range-input">
+                        <input type="range" id="slider-bloom-threshold" min="0.2" max="2.0" step="0.05" value="0.38" class="range-input">
                       </div>
 
                       <div class="slider-group">
                         <div class="slider-row">
                           <span class="slider-label">Bloom Brightness Sensitivity (Knee Softness)</span>
-                          <span class="slider-val" id="val-bloom-sensitivity">0.50</span>
+                          <span class="slider-val" id="val-bloom-sensitivity">0.65</span>
                         </div>
-                        <input type="range" id="slider-bloom-sensitivity" min="0.05" max="1.50" step="0.05" value="0.50" class="range-input">
+                        <input type="range" id="slider-bloom-sensitivity" min="0.05" max="1.50" step="0.05" value="0.65" class="range-input">
                       </div>
 
                       <div class="slider-group">
                         <div class="slider-row">
                           <span class="slider-label">Bloom Intensity / Glow Strength</span>
-                          <span class="slider-val" id="val-bloom-intensity">1.25x</span>
+                          <span class="slider-val" id="val-bloom-intensity">2.10x</span>
                         </div>
-                        <input type="range" id="slider-bloom-intensity" min="0.0" max="4.0" step="0.1" value="1.25" class="range-input">
+                        <input type="range" id="slider-bloom-intensity" min="0.0" max="4.0" step="0.1" value="2.10" class="range-input">
                       </div>
 
                       <div class="slider-group">
                         <div class="slider-row">
                           <span class="slider-label">Bloom Radius / Gaussian Spread</span>
-                          <span class="slider-val" id="val-bloom-radius">1.40</span>
+                          <span class="slider-val" id="val-bloom-radius">1.75</span>
                         </div>
-                        <input type="range" id="slider-bloom-radius" min="0.2" max="3.0" step="0.1" value="1.4" class="range-input">
+                        <input type="range" id="slider-bloom-radius" min="0.2" max="3.0" step="0.1" value="1.75" class="range-input">
                       </div>
 
                       <div class="slider-group">

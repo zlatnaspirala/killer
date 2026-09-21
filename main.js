@@ -2812,20 +2812,23 @@ void main() {
         albedo = flameCol * 0.28;
         // Intense emissive burst of yellow and red
         emissive = flameCol * (3.8 + sin(t * 4.2) * 0.6);
+        // Cheap, fast glowing Fresnel edge on projectile surface
+        float projFresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+        emissive += mix(flameCol, vec3(1.0, 0.95, 0.7), 0.5) * (projFresnel * 3.5);
         roughness = 0.04;
         metallic = 0.0;
         clearCoat = 0.6;
     }
     else if (u_matType == 25) {
         // 25. VOLUMETRIC HOLOGRAPHIC MAGIC & RUNIC LATTICE (with vertical scanlines, chromatic edge fresnel, and interference)
-        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.5);
         float scanline = sin(v_worldPos.y * 32.0 - u_time * 5.5) * 0.5 + 0.5;
         scanline = pow(scanline, 2.5);
         float interference = sin((v_worldPos.x + v_worldPos.z) * 16.0 + u_time * 3.5) * 0.15;
         vec3 holoTint = (length(u_baseColor - vec3(1.0)) > 0.05) ? u_baseColor : vec3(0.12, 0.88, 0.98);
-        vec3 holoEdge = vec3(fresnel * 0.25, fresnel * 0.95, fresnel * 1.45);
+        vec3 holoEdge = vec3(fresnel * 0.35, fresnel * 1.15, fresnel * 1.65);
         albedo = holoTint * 0.35;
-        emissive = (holoTint * (0.95 + scanline * 0.95 + interference) + holoEdge * 1.8) * 1.65;
+        emissive = (holoTint * (0.95 + scanline * 0.95 + interference) + holoEdge * 2.8) * 1.65;
         roughness = 0.08;
         metallic = 0.95;
         clearCoat = 0.85;
@@ -3158,14 +3161,17 @@ void main() {
         }
     }
 
-    // Fast Glow / Volumetric Holographic Highlight for Magic Spells, Sacred Circles & Holograms
+    // Fast Glow / Volumetric Holographic Highlight for Magic Spells & Projectiles
     if (u_matType == 25) {
-        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.5);
         float scanline = sin(v_worldPos.y * 32.0 - u_time * 5.5) * 0.5 + 0.5;
         scanline = pow(scanline, 2.5);
         float interference = sin((v_worldPos.x + v_worldPos.z) * 16.0 + u_time * 3.5) * 0.15;
-        vec3 holoEdge = vec3(fresnel * 0.25, fresnel * 0.95, fresnel * 1.45);
-        col = baseColor * (0.90 + scanline * 0.95 + interference) + holoEdge * 1.8;
+        vec3 holoEdge = vec3(fresnel * 0.35, fresnel * 1.15, fresnel * 1.65);
+        col = baseColor * (0.90 + scanline * 0.95 + interference) + holoEdge * 2.5;
+    } else if (u_matType == 22) {
+        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+        col += mix(baseColor, vec3(1.0, 0.95, 0.7), 0.4) * (fresnel * 3.2);
     } else if (u_matType == 11 || u_matType == 12 || u_matType == 7) {
         float fresnel = 1.0 - max(dot(N, V), 0.0);
         col = baseColor * (1.15 + fresnel * 0.65);
@@ -15025,11 +15031,11 @@ else if (typeof define === 'function' && define['amd'])
     const gl = this.gl;
     if (!gl || !progInfo) return;
 
-    // Reset standard directional lights for a clear, bright studio lighting setup
+    // Reset standard directional lights for a clear, bright studio lighting setup with luminous highlights for HDR bloom
     if (progInfo.uLightDir) gl.uniform3fv(progInfo.uLightDir, [0.4, 0.6, 1.8]);
-    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [3.2, 3.0, 2.7]);
+    if (progInfo.uLightColor) gl.uniform3fv(progInfo.uLightColor, [3.8, 3.6, 3.3]);
     if (progInfo.uFillLightDir) gl.uniform3fv(progInfo.uFillLightDir, [-0.4, -0.6, 1.2]);
-    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [1.0, 0.95, 0.90]);
+    if (progInfo.uFillLightColor) gl.uniform3fv(progInfo.uFillLightColor, [1.3, 1.25, 1.20]);
 
     // Reset point and spot lights to 0 to prevent light pollution from other demos (like MOBA)
     if (progInfo.uNumPointLights) {
@@ -24958,13 +24964,13 @@ else if (typeof define === 'function' && define['amd'])
       },
       bloom: {
         enabled: true,
-        threshold: 0.60,
-        sensitivity: 0.40,
-        intensity: 0.75,
-        radius: 1.1,
-        passes: 3,
+        threshold: 0.38,
+        sensitivity: 0.65,
+        intensity: 2.10,
+        radius: 1.75,
+        passes: 4,
         anamorphic: false,
-        chromatic: false
+        chromatic: true
       },
       volumetric: {
         enabled: false,
@@ -25078,6 +25084,8 @@ else if (typeof define === 'function' && define['amd'])
     const sliderThreshold = document.getElementById('slider-bloom-threshold');
     const valThreshold = document.getElementById('val-bloom-threshold');
     if (sliderThreshold) {
+      sliderThreshold.value = this.postProcState.bloom.threshold;
+      if (valThreshold) valThreshold.textContent = this.postProcState.bloom.threshold.toFixed(2);
       sliderThreshold.addEventListener('input', (e) => {
         this.postProcState.bloom.threshold = parseFloat(e.target.value);
         if (valThreshold) valThreshold.textContent = this.postProcState.bloom.threshold.toFixed(2);
@@ -25087,6 +25095,8 @@ else if (typeof define === 'function' && define['amd'])
     const sliderSensitivity = document.getElementById('slider-bloom-sensitivity');
     const valSensitivity = document.getElementById('val-bloom-sensitivity');
     if (sliderSensitivity) {
+      sliderSensitivity.value = this.postProcState.bloom.sensitivity;
+      if (valSensitivity) valSensitivity.textContent = this.postProcState.bloom.sensitivity.toFixed(2);
       sliderSensitivity.addEventListener('input', (e) => {
         this.postProcState.bloom.sensitivity = parseFloat(e.target.value);
         if (valSensitivity) valSensitivity.textContent = this.postProcState.bloom.sensitivity.toFixed(2);
@@ -25096,6 +25106,8 @@ else if (typeof define === 'function' && define['amd'])
     const sliderIntensity = document.getElementById('slider-bloom-intensity');
     const valIntensity = document.getElementById('val-bloom-intensity');
     if (sliderIntensity) {
+      sliderIntensity.value = this.postProcState.bloom.intensity;
+      if (valIntensity) valIntensity.textContent = `${this.postProcState.bloom.intensity.toFixed(2)}x`;
       sliderIntensity.addEventListener('input', (e) => {
         this.postProcState.bloom.intensity = parseFloat(e.target.value);
         if (valIntensity) valIntensity.textContent = `${this.postProcState.bloom.intensity.toFixed(2)}x`;
@@ -25105,6 +25117,8 @@ else if (typeof define === 'function' && define['amd'])
     const sliderRadius = document.getElementById('slider-bloom-radius');
     const valRadius = document.getElementById('val-bloom-radius');
     if (sliderRadius) {
+      sliderRadius.value = this.postProcState.bloom.radius;
+      if (valRadius) valRadius.textContent = this.postProcState.bloom.radius.toFixed(2);
       sliderRadius.addEventListener('input', (e) => {
         this.postProcState.bloom.radius = parseFloat(e.target.value);
         if (valRadius) valRadius.textContent = this.postProcState.bloom.radius.toFixed(2);
@@ -25114,6 +25128,8 @@ else if (typeof define === 'function' && define['amd'])
     const sliderPasses = document.getElementById('slider-bloom-passes');
     const valPasses = document.getElementById('val-bloom-passes');
     if (sliderPasses) {
+      sliderPasses.value = this.postProcState.bloom.passes;
+      if (valPasses) valPasses.textContent = `${this.postProcState.bloom.passes} Passes (Dual-Filter)`;
       sliderPasses.addEventListener('input', (e) => {
         this.postProcState.bloom.passes = parseInt(e.target.value);
         if (valPasses) valPasses.textContent = `${this.postProcState.bloom.passes} Passes (Dual-Filter)`;
@@ -28156,10 +28172,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
       // Bloom Uniforms
       if (this.postProcProg.uBloomEnabled) gl.uniform1i(this.postProcProg.uBloomEnabled, bloom.enabled ? 1 : 0);
-      if (this.postProcProg.uBloomThreshold) gl.uniform1f(this.postProcProg.uBloomThreshold, bloom.threshold !== undefined ? bloom.threshold : 0.85);
-      if (this.postProcProg.uBloomSensitivity) gl.uniform1f(this.postProcProg.uBloomSensitivity, bloom.sensitivity !== undefined ? bloom.sensitivity : 0.50);
-      if (this.postProcProg.uBloomIntensity) gl.uniform1f(this.postProcProg.uBloomIntensity, bloom.intensity !== undefined ? bloom.intensity : 1.25);
-      if (this.postProcProg.uBloomRadius) gl.uniform1f(this.postProcProg.uBloomRadius, bloom.radius !== undefined ? bloom.radius : 1.4);
+      if (this.postProcProg.uBloomThreshold) gl.uniform1f(this.postProcProg.uBloomThreshold, bloom.threshold !== undefined ? bloom.threshold : 0.38);
+      if (this.postProcProg.uBloomSensitivity) gl.uniform1f(this.postProcProg.uBloomSensitivity, bloom.sensitivity !== undefined ? bloom.sensitivity : 0.65);
+      if (this.postProcProg.uBloomIntensity) gl.uniform1f(this.postProcProg.uBloomIntensity, bloom.intensity !== undefined ? bloom.intensity : 2.10);
+      if (this.postProcProg.uBloomRadius) gl.uniform1f(this.postProcProg.uBloomRadius, bloom.radius !== undefined ? bloom.radius : 1.75);
       if (this.postProcProg.uBloomAnamorphic) gl.uniform1f(this.postProcProg.uBloomAnamorphic, bloom.anamorphic ? 1.0 : 0.0);
       if (this.postProcProg.uBloomChromatic) gl.uniform1f(this.postProcProg.uBloomChromatic, bloom.chromatic ? 1.0 : 0.0);
 
@@ -29214,6 +29230,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     });
 
     this._unsubMobaList = this.net.on('moba:parties_list', (data) => {
+      if (!this.mobaState) return;
       let parties = [];
       if (Array.isArray(data)) {
         parties = data;
@@ -29238,7 +29255,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     });
 
     this._unsubMobaState = this.net.on('moba:party_state', (party) => {
-      if (!party) return;
+      if (!party || !this.mobaState) return;
       
       // Ensure the teams property is built dynamically from players list if not provided by server
       if (!party.teams) {
@@ -29519,6 +29536,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.speechAnnouncer.triggerActionVoice('hero_' + heroName, true);
     }
 
+    this.mobaUpdateAbilitiesUI();
+
     // Sync preview selection to remote players
     if (this.mobaState.activePartyId) {
       this.net.send('moba:select_hero', {
@@ -29742,19 +29761,724 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
   }
 
+  getMobaHeroSpells(heroName) {
+    const raw = (heroName || (this.mobaState && this.mobaState.selectedHero) || 'Arissa').toString().trim();
+    const key = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const spellMap = {
+      arissa: [
+        {
+          key: 'Q',
+          name: 'Area Blast',
+          shortName: 'Blast',
+          cost: 40,
+          cooldown: 12.0,
+          desc: 'AOE 4.8m damage & sacred knockback shockwave',
+          icon: 'assets/textures/moba/magics/arissa-1.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.vfxBursts.push({
+              type: 'areaBlast',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 5.2,
+              timer: 0.65,
+              maxTimer: 0.65,
+              color: [0.08, 0.92, 0.98]
+            });
+            app.mobaDamageInRadius(playerPos, 4.8, 135, myTeam, true);
+          }
+        },
+        {
+          key: 'W',
+          name: 'Blink Dash',
+          shortName: 'Blink',
+          cost: 50,
+          cooldown: 16.0,
+          desc: '6.0m forward teleport with line damage & starburst',
+          icon: 'assets/textures/moba/magics/arissa-2.png',
+          cast: (app, playerPos, myTeam) => {
+            const forwardAngle = app.mobaState.currentYaw || 0.0;
+            const dx = Math.sin(forwardAngle) * 6.0;
+            const dz = Math.cos(forwardAngle) * 6.0;
+            const newPos = [playerPos[0] + dx, 0, playerPos[2] + dz];
+            app.resolveMobaCollision(newPos, 0.7);
+
+            app.mobaState.vfxBursts.push({
+              type: 'blinkDepart',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 2.2,
+              timer: 0.45,
+              maxTimer: 0.45,
+              color: [0.95, 0.25, 0.85]
+            });
+
+            playerPos[0] = newPos[0];
+            playerPos[2] = newPos[2];
+            app.mobaState.targetPos = null;
+
+            app.mobaState.vfxBursts.push({
+              type: 'blinkArrive',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 2.8,
+              timer: 0.45,
+              maxTimer: 0.45,
+              color: [0.95, 0.25, 0.85]
+            });
+
+            app.mobaDamageInRadius(playerPos, 3.2, 80, myTeam, true);
+          }
+        },
+        {
+          key: 'E',
+          name: 'Barrier Field',
+          shortName: 'Barrier',
+          cost: 60,
+          cooldown: 22.0,
+          desc: '240 HP sacred energy shield + radial pulse',
+          icon: 'assets/textures/moba/magics/arissa-3.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.heroStats.shield = (app.mobaState.heroStats.shield || 0) + 240;
+            app.mobaState.heroStats.shieldTimer = 5.0;
+            app.mobaState.vfxBursts.push({
+              type: 'barrier',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 3.8,
+              timer: 0.85,
+              maxTimer: 0.85,
+              color: [0.15, 0.98, 0.45]
+            });
+            app.mobaDamageInRadius(playerPos, 3.5, 45, myTeam, true);
+          }
+        },
+        {
+          key: 'R',
+          name: 'Hollow Eclipse Ultimate',
+          shortName: 'ECLIPSE',
+          cost: 110,
+          cooldown: 65.0,
+          desc: 'Massive 8.5m grand sacred ritual circle dealing 340 devastation',
+          icon: 'assets/textures/moba/magics/arissa-4.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.vfxBursts.push({
+              type: 'ultimate',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 8.8,
+              timer: 1.25,
+              maxTimer: 1.25,
+              color: [0.98, 0.12, 0.25]
+            });
+            app.mobaDamageInRadius(playerPos, 8.5, 340, myTeam, true, true);
+            app.showMobaAlert("🌑 HOLLOW ECLIPSE NOVA UNLEASHED!");
+          }
+        }
+      ],
+
+      erika: [
+        {
+          key: 'Q',
+          name: 'Frostbite Ice Stun',
+          shortName: 'Ice Stun',
+          cost: 45,
+          cooldown: 11.0,
+          desc: 'Freezes enemies in 4.8m with glacial ice, dealing 125 damage and STUNNING for 2.2s',
+          icon: 'assets/textures/moba/magics/erika-1.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.vfxBursts.push({
+              type: 'iceStunNova',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 5.0,
+              timer: 1.1,
+              maxTimer: 1.1,
+              color: [0.2, 0.85, 1.0]
+            });
+            app.mobaDamageInRadius(playerPos, 4.8, 125, myTeam, true, false, 'stun', 2.2);
+            app.mobaPlaySound('freeze');
+            app.showMobaAlert("❄️ GLACIAL FROSTBITE STUN!");
+          }
+        },
+        {
+          key: 'W',
+          name: 'Flame Surge',
+          shortName: 'Fire Dash',
+          cost: 45,
+          cooldown: 13.0,
+          desc: 'Dashes forward leaving a trail of blazing fire, dealing 95 burn damage',
+          icon: 'assets/textures/moba/magics/erika-2.png',
+          cast: (app, playerPos, myTeam) => {
+            const yaw = app.mobaState.currentYaw || 0;
+            const dx = Math.sin(yaw) * 6.0;
+            const dz = Math.cos(yaw) * 6.0;
+            const newPos = [playerPos[0] + dx, 0, playerPos[2] + dz];
+            app.resolveMobaCollision(newPos, 0.7);
+            
+            for (let t = 0.2; t <= 1.0; t += 0.2) {
+              app.mobaState.vfxBursts.push({
+                type: 'fireTrail',
+                x: playerPos[0] + dx * t,
+                y: 0.1,
+                z: playerPos[2] + dz * t,
+                radius: 1.6,
+                timer: 0.8,
+                maxTimer: 0.8,
+                color: [1.0, 0.45, 0.08]
+              });
+            }
+
+            playerPos[0] = newPos[0];
+            playerPos[2] = newPos[2];
+            app.mobaState.targetPos = null;
+            app.mobaDamageInRadius(playerPos, 3.5, 95, myTeam, true);
+            app.mobaPlaySound('fire');
+          }
+        },
+        {
+          key: 'E',
+          name: 'Glacial Armor',
+          shortName: 'Frost Guard',
+          cost: 55,
+          cooldown: 19.0,
+          desc: 'Envelops in crystal frost shield absorbing 260 damage',
+          icon: 'assets/textures/moba/magics/erika-3.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.heroStats.shield = (app.mobaState.heroStats.shield || 0) + 260;
+            app.mobaState.heroStats.shieldTimer = 5.5;
+            app.mobaState.vfxBursts.push({
+              type: 'iceStunNova',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 3.5,
+              timer: 0.8,
+              maxTimer: 0.8,
+              color: [0.35, 0.9, 1.0]
+            });
+            app.mobaDamageInRadius(playerPos, 3.2, 50, myTeam, true);
+            app.mobaPlaySound('freeze');
+          }
+        },
+        {
+          key: 'R',
+          name: 'Sky Fireball (Meteor Strike)',
+          shortName: 'METEOR',
+          cost: 115,
+          cooldown: 60.0,
+          desc: 'Summons a colossal fiery meteor from the sky! Smashes ground for 380 damage and 1.6s stun',
+          icon: 'assets/textures/moba/magics/erika-4.png',
+          cast: (app, playerPos, myTeam) => {
+            const forward = app.mobaState.currentYaw || 0;
+            const targetX = playerPos[0] + Math.sin(forward) * 4.5;
+            const targetZ = playerPos[2] + Math.cos(forward) * 4.5;
+
+            if (!app.mobaState.skyMeteors) app.mobaState.skyMeteors = [];
+            app.mobaState.skyMeteors.push({
+              x: targetX,
+              y: 24.0,
+              z: targetZ,
+              speed: 28.0,
+              radius: 6.2,
+              damage: 380,
+              heroTeam: myTeam,
+              statusEffect: 'stun',
+              stunDuration: 1.6,
+              color: [1.0, 0.35, 0.05],
+              title: "☄️ SKY METEOR IMPACT! -380",
+              alert: "☄️ CELESTIAL SKY FIREBALL CRASHED!"
+            });
+
+            app.mobaState.vfxBursts.push({
+              type: 'scorchFire',
+              x: targetX,
+              z: targetZ,
+              radius: 6.0,
+              timer: 1.2,
+              maxTimer: 1.2,
+              color: [1.0, 0.2, 0.05]
+            });
+
+            app.showMobaAlert("☄️ INCOMING SKY FIREBALL METEOR!");
+            app.mobaPlaySound('fire');
+          }
+        }
+      ],
+
+      monster: [
+        {
+          key: 'Q',
+          name: 'Overgrowth Tree Roots',
+          shortName: 'Tree Roots',
+          cost: 45,
+          cooldown: 11.0,
+          desc: 'Subterranean thorny tree roots erupt in 5.2m, ROOTING enemies for 3.0s with 135 damage',
+          icon: 'assets/textures/moba/magics/warrok-1.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.vfxBursts.push({
+              type: 'treeRoots',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 5.4,
+              timer: 1.3,
+              maxTimer: 1.3,
+              color: [0.18, 0.85, 0.25]
+            });
+            app.mobaDamageInRadius(playerPos, 5.2, 135, myTeam, true, false, 'root', 3.0);
+            app.showMobaAlert("🌿 OVERGROWTH ROOTS ENTANGLED ENEMIES!");
+            app.mobaPlaySound('hit');
+          }
+        },
+        {
+          key: 'W',
+          name: 'Earth Tremor Slam',
+          shortName: 'Slam',
+          cost: 40,
+          cooldown: 12.0,
+          desc: 'Smashes the ground with brute force, dealing 110 damage and slowing enemies by 60%',
+          icon: 'assets/textures/moba/magics/warrok-2.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.vfxBursts.push({
+              type: 'areaBlast',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 4.8,
+              timer: 0.7,
+              maxTimer: 0.7,
+              color: [0.65, 0.45, 0.2]
+            });
+            app.mobaDamageInRadius(playerPos, 4.5, 110, myTeam, true);
+            app.triggerMobaScreenShake(0.5);
+            app.mobaPlaySound('explosion');
+          }
+        },
+        {
+          key: 'E',
+          name: 'Barkskin Armor',
+          shortName: 'Barkskin',
+          cost: 50,
+          cooldown: 18.0,
+          desc: 'Hardens skin into ancient ironwood, absorbing 340 damage',
+          icon: 'assets/textures/moba/magics/warrok-3.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.heroStats.shield = (app.mobaState.heroStats.shield || 0) + 340;
+            app.mobaState.heroStats.shieldTimer = 6.0;
+            app.mobaState.vfxBursts.push({
+              type: 'barrier',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 3.5,
+              timer: 0.9,
+              maxTimer: 0.9,
+              color: [0.25, 0.75, 0.25]
+            });
+            app.mobaDamageInRadius(playerPos, 3.2, 45, myTeam, true);
+          }
+        },
+        {
+          key: 'R',
+          name: 'Seismic Earth Cataclysm',
+          shortName: 'CATACLYSM',
+          cost: 110,
+          cooldown: 55.0,
+          desc: 'Leaps and ruptures the earth in 7.5m, dealing 360 damage and STUNNING for 2.0s',
+          icon: 'assets/textures/moba/magics/warrok-4.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.vfxBursts.push({
+              type: 'ultimate',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 7.8,
+              timer: 1.4,
+              maxTimer: 1.4,
+              color: [0.85, 0.35, 0.1]
+            });
+            app.mobaDamageInRadius(playerPos, 7.5, 360, myTeam, true, true, 'stun', 2.0);
+            app.triggerMobaScreenShake(0.8);
+            app.showMobaAlert("🌋 SEISMIC CATACLYSM SHATTERS THE EARTH!");
+            app.mobaPlaySound('explosion');
+          }
+        }
+      ],
+
+      skeletonz: [
+        {
+          key: 'Q',
+          name: 'Shadow Walk (Invisibility)',
+          shortName: 'Invis',
+          cost: 40,
+          cooldown: 13.0,
+          desc: 'Vanishes into INVISIBILITY for 6.0s with +35% speed! Next attack deals +140 bonus backstab crit',
+          icon: 'assets/textures/moba/magics/skeletonz-1.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.invisibilityTimer = 6.0;
+            app.mobaState.vfxBursts.push({
+              type: 'shadowSmoke',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 3.0,
+              timer: 0.8,
+              maxTimer: 0.8,
+              color: [0.4, 0.1, 0.6]
+            });
+            app.showMobaAlert("👤 VANISHED INTO INVISIBILITY! (Next strike crits!)");
+            app.mobaPlaySound('teleport');
+          }
+        },
+        {
+          key: 'W',
+          name: 'Mirror Clones (Shadow Illusions)',
+          shortName: 'Clones',
+          cost: 65,
+          cooldown: 20.0,
+          desc: 'Summons 2 mirror illusion CLONES that fight alongside you for 12.0 seconds!',
+          icon: 'assets/textures/moba/magics/skeletonz-2.png',
+          cast: (app, playerPos, myTeam) => {
+            if (!app.mobaState.clones) app.mobaState.clones = [];
+            for (let offset of [-2.0, 2.0]) {
+              app.mobaState.clones.push({
+                id: 'clone_' + Math.random().toString(36).substr(2, 6),
+                hero: 'Skeletonz',
+                team: myTeam,
+                pos: [playerPos[0] + offset, 0, playerPos[2] + (Math.random() - 0.5)],
+                yaw: app.mobaState.currentYaw || 0,
+                hp: Math.round(app.mobaState.heroStats.hp * 0.65),
+                maxHp: Math.round(app.mobaState.heroStats.maxHp * 0.65),
+                damage: Math.round((app.mobaState.heroStats.damage || 55) * 0.5),
+                speed: (app.mobaState.heroStats.speed || 6.2) * 0.9,
+                duration: 12.0,
+                attackTimer: 0.4
+              });
+            }
+            app.mobaState.vfxBursts.push({
+              type: 'cloneBurst',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 3.5,
+              timer: 0.7,
+              maxTimer: 0.7,
+              color: [0.7, 0.2, 0.95]
+            });
+            app.showMobaAlert("👥 SUMMONED 2 SHADOW CLONES!");
+            app.mobaPlaySound('magic');
+          }
+        },
+        {
+          key: 'E',
+          name: 'Shadow Dagger',
+          shortName: 'Dagger',
+          cost: 45,
+          cooldown: 9.0,
+          desc: 'Flings a shadow dagger dealing 105 damage and slowing enemy by 50% for 3.0s',
+          icon: 'assets/textures/moba/magics/skeletonz-3.png',
+          cast: (app, playerPos, myTeam) => {
+            const yaw = app.mobaState.currentYaw || 0;
+            const targetX = playerPos[0] + Math.sin(yaw) * 6.5;
+            const targetZ = playerPos[2] + Math.cos(yaw) * 6.5;
+            app.mobaState.vfxBursts.push({
+              type: 'fireTrail',
+              x: targetX,
+              y: 0.8,
+              z: targetZ,
+              radius: 2.2,
+              timer: 0.5,
+              maxTimer: 0.5,
+              color: [0.65, 0.15, 0.9]
+            });
+            app.mobaDamageInRadius([targetX, 0, targetZ], 3.5, 105, myTeam, true);
+            app.mobaPlaySound('attack');
+          }
+        },
+        {
+          key: 'R',
+          name: 'Phantom Omnislash',
+          shortName: 'OMNISLASH',
+          cost: 110,
+          cooldown: 58.0,
+          desc: 'Rapidly strikes all nearby enemies in 7.0m for 420 total devastating damage',
+          icon: 'assets/textures/moba/magics/skeletonz-4.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.vfxBursts.push({
+              type: 'ultimate',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 7.5,
+              timer: 1.2,
+              maxTimer: 1.2,
+              color: [0.8, 0.1, 0.9]
+            });
+            app.mobaDamageInRadius(playerPos, 7.0, 420, myTeam, true, true);
+            app.showMobaAlert("⚔️ PHANTOM OMNISLASH FLURRY!");
+            app.mobaPlaySound('attack');
+          }
+        }
+      ],
+
+      bot: [
+        {
+          key: 'Q',
+          name: 'Proximity Mine (Deploy Boom)',
+          shortName: 'Boom Mine',
+          cost: 35,
+          cooldown: 7.0,
+          desc: 'Plants a high-explosive land mine (boom) that detonates for 195 AOE damage when enemies approach!',
+          icon: 'assets/textures/moba/magics/steelborn-1.png',
+          cast: (app, playerPos, myTeam) => {
+            if (!app.mobaState.mines) app.mobaState.mines = [];
+            app.mobaState.mines.push({
+              id: 'mine_' + Date.now() + '_' + Math.random(),
+              team: myTeam,
+              x: playerPos[0],
+              z: playerPos[2],
+              armTimer: 0.6,
+              timer: 60.0,
+              damage: 195,
+              triggerRadius: 2.8,
+              blastRadius: 4.8
+            });
+            app.mobaState.vfxBursts.push({
+              type: 'barrier',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 1.8,
+              timer: 0.4,
+              maxTimer: 0.4,
+              color: [1.0, 0.8, 0.1]
+            });
+            app.showMobaAlert("💣 PROXIMITY BOOM MINE ARMED!");
+            app.mobaPlaySound('confirm');
+          }
+        },
+        {
+          key: 'W',
+          name: 'EMP Static Shockwave',
+          shortName: 'EMP Stun',
+          cost: 45,
+          cooldown: 12.0,
+          desc: 'Discharges an electric EMP ring in 4.6m dealing 105 damage and STUNNING for 1.8s',
+          icon: 'assets/textures/moba/magics/steelborn-2.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.vfxBursts.push({
+              type: 'areaBlast',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 4.8,
+              timer: 0.6,
+              maxTimer: 0.6,
+              color: [0.1, 0.75, 1.0]
+            });
+            app.mobaDamageInRadius(playerPos, 4.6, 105, myTeam, true, false, 'stun', 1.8);
+            app.showMobaAlert("⚡ EMP STATIC STUN DISCHARGED!");
+            app.mobaPlaySound('magic');
+          }
+        },
+        {
+          key: 'E',
+          name: 'Nanite Forcefield',
+          shortName: 'Shield',
+          cost: 50,
+          cooldown: 18.0,
+          desc: 'Engages high-density energy barrier absorbing 290 damage',
+          icon: 'assets/textures/moba/magics/steelborn-3.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.heroStats.shield = (app.mobaState.heroStats.shield || 0) + 290;
+            app.mobaState.heroStats.shieldTimer = 5.5;
+            app.mobaState.vfxBursts.push({
+              type: 'barrier',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 3.6,
+              timer: 0.8,
+              maxTimer: 0.8,
+              color: [1.0, 0.85, 0.2]
+            });
+            app.mobaDamageInRadius(playerPos, 3.2, 40, myTeam, true);
+          }
+        },
+        {
+          key: 'R',
+          name: 'Sky Orbital Bombardment',
+          shortName: 'ORBITAL',
+          cost: 120,
+          cooldown: 65.0,
+          desc: 'Calls down 3 tactical sky laser strikes from orbit for 440 total damage and 1.6s stun',
+          icon: 'assets/textures/moba/magics/steelborn-4.png',
+          cast: (app, playerPos, myTeam) => {
+            const yaw = app.mobaState.currentYaw || 0;
+            const targetX = playerPos[0] + Math.sin(yaw) * 5.0;
+            const targetZ = playerPos[2] + Math.cos(yaw) * 5.0;
+
+            if (!app.mobaState.skyMeteors) app.mobaState.skyMeteors = [];
+            for (let k = 0; k < 3; k++) {
+              const offsetX = (k - 1) * 2.2;
+              app.mobaState.skyMeteors.push({
+                x: targetX + offsetX,
+                y: 22.0 + k * 4.0,
+                z: targetZ,
+                speed: 30.0,
+                radius: 5.5,
+                damage: 150,
+                heroTeam: myTeam,
+                statusEffect: 'stun',
+                stunDuration: 1.5,
+                color: [0.15, 0.85, 1.0],
+                title: "🛰️ ORBITAL STRIKE! -150",
+                alert: "🛰️ SKY ORBITAL BOMBARDMENT IMPACT!"
+              });
+            }
+            app.showMobaAlert("🛰️ ORBITAL SKY BOMBARDMENT COMMENCED!");
+            app.mobaPlaySound('explosion');
+          }
+        }
+      ],
+
+      womanmobile: [
+        {
+          key: 'Q',
+          name: 'Decoy Illusion Clone',
+          shortName: 'Decoy',
+          cost: 40,
+          cooldown: 11.0,
+          desc: 'Dashes 5.5m leaving an illusion CLONE that attacks enemies for 10.0s!',
+          icon: 'assets/textures/moba/magics/mariasword-1.png',
+          cast: (app, playerPos, myTeam) => {
+            const oldPos = [...playerPos];
+            const yaw = app.mobaState.currentYaw || 0;
+            const dx = Math.sin(yaw) * 5.5;
+            const dz = Math.cos(yaw) * 5.5;
+            const newPos = [playerPos[0] + dx, 0, playerPos[2] + dz];
+            app.resolveMobaCollision(newPos, 0.7);
+
+            playerPos[0] = newPos[0];
+            playerPos[2] = newPos[2];
+            app.mobaState.targetPos = null;
+
+            if (!app.mobaState.clones) app.mobaState.clones = [];
+            app.mobaState.clones.push({
+              id: 'clone_' + Math.random().toString(36).substr(2, 6),
+              hero: 'Woman Mobile',
+              team: myTeam,
+              pos: [...oldPos],
+              yaw: yaw,
+              hp: Math.round(app.mobaState.heroStats.hp * 0.6),
+              maxHp: Math.round(app.mobaState.heroStats.maxHp * 0.6),
+              damage: Math.round((app.mobaState.heroStats.damage || 55) * 0.5),
+              speed: (app.mobaState.heroStats.speed || 6.2),
+              duration: 10.0,
+              attackTimer: 0.3
+            });
+
+            app.mobaState.vfxBursts.push({
+              type: 'cloneBurst',
+              x: oldPos[0],
+              z: oldPos[2],
+              radius: 3.0,
+              timer: 0.6,
+              maxTimer: 0.6,
+              color: [0.25, 0.6, 1.0]
+            });
+            app.showMobaAlert("👥 DEPLOYED DECOY ILLUSION CLONE!");
+            app.mobaPlaySound('teleport');
+          }
+        },
+        {
+          key: 'W',
+          name: 'Smoke Cloak (Invisibility)',
+          shortName: 'Cloak',
+          cost: 45,
+          cooldown: 14.0,
+          desc: 'Drops smoke bomb entering INVISIBILITY for 5.0s with +35% speed and backstab crit!',
+          icon: 'assets/textures/moba/magics/mariasword-2.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.invisibilityTimer = 5.0;
+            app.mobaState.vfxBursts.push({
+              type: 'shadowSmoke',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 3.2,
+              timer: 0.8,
+              maxTimer: 0.8,
+              color: [0.2, 0.4, 0.7]
+            });
+            app.showMobaAlert("💨 INVISIBLE IN SMOKE! (Next attack crits!)");
+            app.mobaPlaySound('teleport');
+          }
+        },
+        {
+          key: 'E',
+          name: 'Whirlwind Slashes',
+          shortName: 'Flurry',
+          cost: 50,
+          cooldown: 8.5,
+          desc: 'Spins in a lethal blade flurry dealing 130 damage in 4.0m radius',
+          icon: 'assets/textures/moba/magics/mariasword-3.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.vfxBursts.push({
+              type: 'areaBlast',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 4.2,
+              timer: 0.55,
+              maxTimer: 0.55,
+              color: [0.4, 0.7, 1.0]
+            });
+            app.mobaDamageInRadius(playerPos, 4.0, 130, myTeam, true);
+            app.mobaPlaySound('attack');
+          }
+        },
+        {
+          key: 'R',
+          name: 'Blade Dance Execution',
+          shortName: 'DANCE',
+          cost: 105,
+          cooldown: 55.0,
+          desc: 'Supersonic multi-slash execution striking all nearby enemies for 370 damage!',
+          icon: 'assets/textures/moba/magics/mariasword-4.png',
+          cast: (app, playerPos, myTeam) => {
+            app.mobaState.vfxBursts.push({
+              type: 'ultimate',
+              x: playerPos[0],
+              z: playerPos[2],
+              radius: 7.2,
+              timer: 1.2,
+              maxTimer: 1.2,
+              color: [0.15, 0.5, 1.0]
+            });
+            app.mobaDamageInRadius(playerPos, 7.0, 370, myTeam, true, true);
+            app.showMobaAlert("⚡ BLADE DANCE SUPERSONIC STRIKE!");
+            app.mobaPlaySound('attack');
+          }
+        }
+      ]
+    };
+
+    // Aliases
+    spellMap.warrok = spellMap.monster;
+    spellMap.slayzer = spellMap.bot;
+    spellMap.steelborn = spellMap.bot;
+    spellMap.mariasword = spellMap.womanmobile;
+    spellMap.woman = spellMap.womanmobile;
+
+    return spellMap[key] || spellMap.arissa;
+  }
+
   castMobaSpell(index) {
     if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
     if (this._playerRespawnRemaining !== undefined && this._playerRespawnRemaining > 0) {
       this.log("💀 You are dead! Cannot cast abilities.", "error");
       return;
     }
+    if (this.mobaState.stunnedTimer && this.mobaState.stunnedTimer > 0) {
+      this.log("❄️ You are STUNNED! Cannot cast abilities.", "error");
+      return;
+    }
 
-    const spellNames = ['Area Blast', 'Blink Dash', 'Barrier Field', 'Hollow Eclipse Ultimate'];
-    const manaCosts = [40, 50, 60, 110];
-    const cooldowns = [16.0, 26.0, 32.0, 80.0];
+    const heroName = this.mobaState.selectedHero || 'Arissa';
+    const spells = this.getMobaHeroSpells(heroName);
+    const spell = spells[index];
+    if (!spell) return;
 
-    const cost = manaCosts[index];
-    if (this.mobaState.heroStats.mp < cost) {
+    if (this.mobaState.heroStats.mp < spell.cost) {
       this.log("🔮 Insufficient Mana!", "error");
       this.mobaPlaySound('back');
       return;
@@ -29767,88 +30491,18 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     // Spend Mana and trigger cooldown
-    this.mobaState.heroStats.mp -= cost;
-    this.mobaState.spellsCooldown[index] = cooldowns[index];
+    this.mobaState.heroStats.mp -= spell.cost;
+    this.mobaState.spellsCooldown[index] = spell.cooldown;
     if (this.speechAnnouncer) {
       this.speechAnnouncer.triggerActionVoice('spell');
     }
-    this.log(`🔮 Cast ${spellNames[index]}!`, "info");
+    this.log(`🔮 Cast ${spell.name}!`, "info");
 
     const playerPos = this.mobaState.currentPos;
     const myTeam = this.mobaState.team;
 
-    if (index === 0) {
-      // Q: Area Blast - AOE 4.8m damage & knockback with Sacred Nova Shockwave
-      this.mobaState.vfxBursts.push({
-        type: 'areaBlast',
-        x: playerPos[0],
-        z: playerPos[2],
-        radius: 5.2,
-        timer: 0.65,
-        maxTimer: 0.65,
-        color: [0.08, 0.92, 0.98]
-      });
-      this.mobaDamageInRadius(playerPos, 4.8, 135, myTeam, true);
-    } else if (index === 1) {
-      // W: Blink Dash - 6.0m forward teleport with line damage & sacred starburst
-      const forwardAngle = this.mobaState.currentYaw || 0.0;
-      const dx = Math.sin(forwardAngle) * 6.0;
-      const dz = Math.cos(forwardAngle) * 6.0;
-      const newPos = [playerPos[0] + dx, 0, playerPos[2] + dz];
-      this.resolveMobaCollision(newPos, 0.7);
-
-      this.mobaState.vfxBursts.push({
-        type: 'blinkDepart',
-        x: playerPos[0],
-        z: playerPos[2],
-        radius: 2.2,
-        timer: 0.45,
-        maxTimer: 0.45,
-        color: [0.95, 0.25, 0.85]
-      });
-
-      playerPos[0] = newPos[0];
-      playerPos[2] = newPos[2];
-      this.mobaState.targetPos = null;
-
-      this.mobaState.vfxBursts.push({
-        type: 'blinkArrive',
-        x: playerPos[0],
-        z: playerPos[2],
-        radius: 2.8,
-        timer: 0.45,
-        maxTimer: 0.45,
-        color: [0.95, 0.25, 0.85]
-      });
-
-      this.mobaDamageInRadius(playerPos, 3.2, 80, myTeam, true);
-    } else if (index === 2) {
-      // E: Barrier Field - 240 HP shield + sacred geodesic dome + radial pulse
-      this.mobaState.heroStats.shield = (this.mobaState.heroStats.shield || 0) + 240;
-      this.mobaState.heroStats.shieldTimer = 5.0;
-      this.mobaState.vfxBursts.push({
-        type: 'barrier',
-        x: playerPos[0],
-        z: playerPos[2],
-        radius: 3.8,
-        timer: 0.85,
-        maxTimer: 0.85,
-        color: [0.15, 0.98, 0.45]
-      });
-      this.mobaDamageInRadius(playerPos, 3.5, 45, myTeam, true);
-    } else if (index === 3) {
-      // R: Hollow Eclipse Ultimate - Massive 8.5m grand sacred ritual circle
-      this.mobaState.vfxBursts.push({
-        type: 'ultimate',
-        x: playerPos[0],
-        z: playerPos[2],
-        radius: 8.8,
-        timer: 1.25,
-        maxTimer: 1.25,
-        color: [0.98, 0.12, 0.25]
-      });
-      this.mobaDamageInRadius(playerPos, 8.5, 340, myTeam, true, true);
-      this.showMobaAlert("🌑 HOLLOW ECLIPSE NOVA UNLEASHED!");
+    if (spell.cast) {
+      spell.cast(this, playerPos, myTeam);
     }
 
     // Broadcast cast spell to remote peers
@@ -29857,6 +30511,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         partyId: this.mobaState.activePartyId,
         action: {
           type: 'spell',
+          hero: heroName,
           index: index,
           x: playerPos[0],
           z: playerPos[2]
@@ -29976,6 +30631,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // Advance match clock
     this.mobaState.matchTimer = (this.mobaState.matchTimer || 0) + dt;
 
+    // Advance screen shake timer
+    if (this._mobaScreenShakeTimer && this._mobaScreenShakeTimer > 0) {
+      this._mobaScreenShakeTimer = Math.max(0, this._mobaScreenShakeTimer - dt);
+    }
+
     // Handle player respawn timer & countdown update
     if (this._playerRespawnRemaining !== undefined && this._playerRespawnRemaining > 0) {
       this._playerRespawnRemaining -= dt;
@@ -30015,15 +30675,39 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.targetEntity = null;
     }
 
+    // Status effects and invisibility timers
+    if (this.mobaState.stunnedTimer && this.mobaState.stunnedTimer > 0) {
+      this.mobaState.stunnedTimer = Math.max(0, this.mobaState.stunnedTimer - dt);
+      this.mobaState.velocity = [0, 0, 0];
+      this.mobaState.isWalking = false;
+    }
+    if (this.mobaState.rootedTimer && this.mobaState.rootedTimer > 0) {
+      this.mobaState.rootedTimer = Math.max(0, this.mobaState.rootedTimer - dt);
+      this.mobaState.velocity = [0, 0, 0];
+      this.mobaState.isWalking = false;
+    }
+    if (this.mobaState.invisibilityTimer && this.mobaState.invisibilityTimer > 0) {
+      this.mobaState.invisibilityTimer = Math.max(0, this.mobaState.invisibilityTimer - dt);
+    }
+
+    const isStunned = (this.mobaState.stunnedTimer || 0) > 0;
+    const isRooted = (this.mobaState.rootedTimer || 0) > 0;
+    const isStealthed = (this.mobaState.invisibilityTimer || 0) > 0;
+
     // Cooldown on player basic attack
     this.mobaState.attackTimer = Math.max(0, (this.mobaState.attackTimer || 0) - dt);
 
-    const speed = (this.mobaState.heroStats && this.mobaState.heroStats.speed) || 6.2;
+    const baseSpeed = (this.mobaState.heroStats && this.mobaState.heroStats.speed) || 6.2;
+    const speed = baseSpeed * (isStealthed ? 1.35 : 1.0);
     const attackRange = (this.mobaState.heroStats && this.mobaState.heroStats.attackRange) || 5.0;
 
     // 1. Player targeting & combat movement
     if (this._playerRespawnRemaining !== undefined && this._playerRespawnRemaining > 0) {
       // Do nothing, player is dead
+    } else if (isStunned) {
+      // Stunned: completely immobilized and silenced
+      this.mobaState.velocity = [0, 0, 0];
+      this.mobaState.isWalking = false;
     } else if (this.mobaState.targetEntity) {
       const target = this.mobaState.targetEntity;
       if (target.hp <= 0) {
@@ -30035,17 +30719,22 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const targetRad = this.getMobaTargetRadius(target);
 
         if (dist > attackRange + targetRad) {
-          // Walk into range
-          const moveDist = Math.min(dist, speed * dt);
-          playerPos[0] += (dx / dist) * moveDist;
-          playerPos[2] += (dz / dist) * moveDist;
-          this.resolveMobaCollision(playerPos, 0.7);
-          this.mobaState.rotation = Math.atan2(dx, dz);
-          this.mobaState.currentYaw = this.mobaState.rotation;
-          this.mobaState.velocity = [(dx / dist) * speed, 0, (dz / dist) * speed];
-          this.mobaState.isWalking = true;
-          if (this.speechAnnouncer) {
-            this.speechAnnouncer.notifyPlayerMove();
+          if (!isRooted) {
+            // Walk into range
+            const moveDist = Math.min(dist, speed * dt);
+            playerPos[0] += (dx / dist) * moveDist;
+            playerPos[2] += (dz / dist) * moveDist;
+            this.resolveMobaCollision(playerPos, 0.7);
+            this.mobaState.rotation = Math.atan2(dx, dz);
+            this.mobaState.currentYaw = this.mobaState.rotation;
+            this.mobaState.velocity = [(dx / dist) * speed, 0, (dz / dist) * speed];
+            this.mobaState.isWalking = true;
+            if (this.speechAnnouncer) {
+              this.speechAnnouncer.notifyPlayerMove();
+            }
+          } else {
+            this.mobaState.velocity = [0, 0, 0];
+            this.mobaState.isWalking = false;
           }
         } else {
           // In range: stop and attack!
@@ -30061,6 +30750,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
               this.speechAnnouncer.triggerActionVoice('attack');
             }
 
+            let isCrit = false;
+            let totalDmg = this.mobaState.heroStats.damage || 55;
+            if (this.mobaState.invisibilityTimer && this.mobaState.invisibilityTimer > 0) {
+              isCrit = true;
+              totalDmg += 140; // Critical shadow backstab
+              this.mobaState.invisibilityTimer = 0; // Break stealth
+              this.showMobaAlert("⚡ SHADOW BACKSTAB CRIT! +140", "text-amber-400");
+              this.mobaPlaySound('hit');
+            }
+
             const isRanged = attackRange > 3.0;
             if (isRanged) {
               if (!this.mobaState.projectiles) this.mobaState.projectiles = [];
@@ -30070,46 +30769,53 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
                 z: playerPos[2],
                 targetEntity: target,
                 speed: 18.0,
-                damage: this.mobaState.heroStats.damage || 50,
+                damage: totalDmg,
                 color: this.mobaState.team === 'RED' ? [1.0, 0.4, 0.1] : [0.2, 0.7, 1.0],
                 attackerTeam: this.mobaState.team,
-                isPlayer: true
+                isPlayer: true,
+                isMagic: false,
+                isCrit: isCrit
               });
             } else {
-              this.applyMobaDamage(target, this.mobaState.heroStats.damage || 55, this.mobaState.team, false, false);
+              this.applyMobaDamage(target, totalDmg, this.mobaState.team, false, isCrit);
             }
           }
         }
       }
     } else if (this.mobaState.targetPos) {
-      const target = this.mobaState.targetPos;
-      const dx = target[0] - playerPos[0];
-      const dz = target[2] - playerPos[2];
-      const dist = Math.hypot(dx, dz);
-
-      if (dist > 0.25) {
-        const moveDist = Math.min(dist, speed * dt);
-        playerPos[0] += (dx / dist) * moveDist;
-        playerPos[2] += (dz / dist) * moveDist;
-        this.resolveMobaCollision(playerPos, 0.7);
-        this.mobaState.rotation = Math.atan2(dx, dz);
-        this.mobaState.currentYaw = this.mobaState.rotation;
-        this.mobaState.velocity = [(dx / dist) * speed, 0, (dz / dist) * speed];
-        this.mobaState.isWalking = true;
-        if (this.speechAnnouncer) {
-          this.speechAnnouncer.notifyPlayerMove();
-        }
-      } else {
+      if (isRooted) {
         this.mobaState.velocity = [0, 0, 0];
         this.mobaState.isWalking = false;
-        this.mobaState.targetPos = null;
+      } else {
+        const target = this.mobaState.targetPos;
+        const dx = target[0] - playerPos[0];
+        const dz = target[2] - playerPos[2];
+        const dist = Math.hypot(dx, dz);
+
+        if (dist > 0.25) {
+          const moveDist = Math.min(dist, speed * dt);
+          playerPos[0] += (dx / dist) * moveDist;
+          playerPos[2] += (dz / dist) * moveDist;
+          this.resolveMobaCollision(playerPos, 0.7);
+          this.mobaState.rotation = Math.atan2(dx, dz);
+          this.mobaState.currentYaw = this.mobaState.rotation;
+          this.mobaState.velocity = [(dx / dist) * speed, 0, (dz / dist) * speed];
+          this.mobaState.isWalking = true;
+          if (this.speechAnnouncer) {
+            this.speechAnnouncer.notifyPlayerMove();
+          }
+        } else {
+          this.mobaState.velocity = [0, 0, 0];
+          this.mobaState.isWalking = false;
+          this.mobaState.targetPos = null;
+        }
       }
     } else {
       this.mobaState.velocity = [0, 0, 0];
       this.mobaState.isWalking = false;
 
       // Auto-target nearest hostile if idle and within range + 1.2m
-      if (this.mobaState.attackTimer <= 0) {
+      if (!isStunned && this.mobaState.attackTimer <= 0) {
         const autoT = this.mobaAutoAcquireTarget();
         if (autoT) {
           this.mobaState.targetEntity = autoT;
@@ -30180,7 +30886,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             timer: 0.45,
             maxTimer: 0.45,
             type: 'fireExplosion',
-            color: proj.color || [1.0, 0.45, 0.1]
+            color: proj.color || [1.0, 0.45, 0.1],
+            isMagic: !!proj.isMagic
           });
           return false;
         }
@@ -30202,6 +30909,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (this.mobaBotPlayEnabled !== false) {
       this.updateMobaBots(dt);
     }
+
+    // 5b. Update advanced magic systems (sky meteors, clones, proximity mines)
+    this.updateMobaAdvancedMagic(dt);
 
     // 6. Resolve unit-to-unit soft separation
     this.resolveUnitSeparation();
@@ -30374,6 +31084,20 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.state.camPitch = 0.98; // Traditional MOBA steep tilt angle
       this.state.camYaw = 0.0;
     }
+
+    // Apply active screen shake to camera target and subtle orientation jitter
+    if (this._mobaScreenShakeTimer && this._mobaScreenShakeTimer > 0) {
+      const progress = this._mobaScreenShakeTimer / (this._mobaScreenShakeDuration || 0.35);
+      const intensity = (this._mobaScreenShakeIntensity || 0.5) * progress;
+      const shakeX = (Math.random() - 0.5) * 1.5 * intensity;
+      const shakeY = (Math.random() - 0.5) * 0.8 * intensity;
+      const shakeZ = (Math.random() - 0.5) * 1.5 * intensity;
+      this.state.camTarget[0] += shakeX;
+      this.state.camTarget[1] += shakeY;
+      this.state.camTarget[2] += shakeZ;
+      this.state.camPitch += (Math.random() - 0.5) * 0.03 * intensity;
+      this.state.camYaw += (Math.random() - 0.5) * 0.03 * intensity;
+    }
   }
 
   mobaUpdateInGameHUD() {
@@ -30530,15 +31254,31 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   mobaUpdateAbilitiesUI() {
+    const heroName = (this.mobaState && this.mobaState.selectedHero) || 'Arissa';
+    const spells = this.getMobaHeroSpells(heroName);
     const spellKeys = ['q', 'w', 'e', 'r'];
-    const spellNames = ['Area Blast', 'Blink Dash', 'Barrier Field', 'Hollow Eclipse Ultimate'];
-    const costs = [40, 50, 60, 110];
 
     for (let i = 0; i < 4; i++) {
+      const spell = spells[i];
+      if (!spell) continue;
+
       const costEl = document.getElementById(`moba-spell-${spellKeys[i]}-cost`);
-      if (costEl) costEl.textContent = costs[i];
+      if (costEl) costEl.textContent = spell.cost;
+
       const nameEl = document.getElementById(`moba-spell-${spellKeys[i]}-name`);
-      if (nameEl) nameEl.textContent = spellNames[i].split(' ')[0];
+      if (nameEl) nameEl.textContent = spell.shortName || spell.name.split(' ')[0];
+
+      const imgEl = document.getElementById(`moba-spell-${spellKeys[i]}-img`);
+      if (imgEl && spell.icon) {
+        imgEl.style.backgroundImage = `url('${spell.icon}')`;
+      }
+
+      const slotEl = document.getElementById(`moba-spell-${spellKeys[i]}`);
+      if (slotEl) {
+        const tooltipStr = `${spellKeys[i].toUpperCase()}: ${spell.name} - ${spell.desc} (Cost: ${spell.cost} Mana, CD: ${spell.cooldown}s)`;
+        slotEl.setAttribute('onmouseenter', `app.showMobaHudTooltip("${tooltipStr}")`);
+        slotEl.setAttribute('ontouchstart', `app.showMobaHudTooltip("${tooltipStr}")`);
+      }
     }
   }
 
@@ -30563,7 +31303,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (!listEl) return;
     listEl.innerHTML = '';
 
-    if (this.mobaState.partiesList.length === 0) {
+    if (!this.mobaState || !this.mobaState.partiesList || this.mobaState.partiesList.length === 0) {
       listEl.innerHTML = `
         <div class="text-xs text-slate-400 text-center py-4">No active battle lobbies. Create one above!</div>
       `;
@@ -30711,13 +31451,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
     // Atmospheric dark night lighting for MOBA gameplay (moody moonlight), refined studio key in lobby
     if (progInfo.uLightColor) {
-      gl.uniform3fv(progInfo.uLightColor, isLobby ? [0.62, 0.60, 0.58] : [0.242, 0.231, 0.275]);
+      gl.uniform3fv(progInfo.uLightColor, isLobby ? [0.88, 0.85, 0.82] : [0.242, 0.231, 0.275]);
     }
     if (progInfo.uFillLightDir) {
       gl.uniform3fv(progInfo.uFillLightDir, isLobby ? [-0.5, 0.6, -0.4] : [-0.4, 0.65, -0.35]);
     }
     if (progInfo.uFillLightColor) {
-      gl.uniform3fv(progInfo.uFillLightColor, isLobby ? [0.18, 0.20, 0.24] : [0.088, 0.099, 0.132]);
+      gl.uniform3fv(progInfo.uFillLightColor, isLobby ? [0.24, 0.26, 0.30] : [0.088, 0.099, 0.132]);
     }
 
     if (progInfo.uNumPointLights && progInfo.pointLights) {
@@ -30728,11 +31468,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
       const u0 = progInfo.pointLights[0];
       if (u0) {
-        // Spotlight 0: Studio key light in lobby (4.2), localized hero lantern in gameplay (+20% stronger: 3.84)
+        // Spotlight 0: Studio key light in lobby (5.2 with glowing highlights), localized hero lantern in gameplay (+20% stronger: 3.84)
         if (u0.pos) gl.uniform3fv(u0.pos, isLobby ? [0.0, 3.2, 4.0] : [pCenterPos[0], pCenterPos[1] + 4.5, pCenterPos[2]]);
-        if (u0.color) gl.uniform3fv(u0.color, isLobby ? [0.78, 0.76, 0.74] : [0.65, 0.60, 0.55]);
-        if (u0.intensity) gl.uniform1f(u0.intensity, isLobby ? 4.2 : 3.84); // Player follow light is +20% stronger (3.84 vs 3.2)
-        if (u0.radius) gl.uniform1f(u0.radius, isLobby ? 12.0 : 10.8);
+        if (u0.color) gl.uniform3fv(u0.color, isLobby ? [0.95, 0.92, 0.90] : [0.65, 0.60, 0.55]);
+        if (u0.intensity) gl.uniform1f(u0.intensity, isLobby ? 5.2 : 3.84);
+        if (u0.radius) gl.uniform1f(u0.radius, isLobby ? 14.0 : 10.8);
       }
       const u1 = progInfo.pointLights[1];
       if (u1) {
@@ -31767,6 +32507,35 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(color));
           gl.drawElements(gl.TRIANGLES, charMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
+
+        // Draw holographic barrier dome around bot if shielded
+        if (p.shield && p.shield > 0 && this.sacredSpellMeshes && this.sacredSpellMeshes.shieldDome) {
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+          gl.depthMask(false);
+          const shieldMesh = this.sacredSpellMeshes.shieldDome;
+          gl.bindVertexArray(shieldMesh.vao);
+          const sPulse = 1.35 + Math.sin(timestamp * 0.006 + (p.pos[0] || 0)) * 0.05;
+          const sSpin = timestamp * 0.0015;
+          const cS = Math.cos(sSpin) * sPulse, sS = Math.sin(sSpin) * sPulse;
+          this.instanceMatrix[0] = cS; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sS; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sPulse * 1.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sS; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cS; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = p.pos[0]; this.instanceMatrix[13] = 0.85; this.instanceMatrix[14] = p.pos[2]; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.05);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.38 + 0.1 * Math.sin(timestamp * 0.005));
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12);
+          const sColor = p.team === 'RED' ? [1.0, 0.35, 0.2] : [0.1, 0.9, 0.95];
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(sColor));
+          gl.drawElements(gl.TRIANGLES, shieldMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+          gl.depthMask(true);
+          gl.disable(gl.BLEND);
+        }
       });
     }
 
@@ -31851,6 +32620,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
       }
 
+      const isInvisible = (this.mobaState.invisibilityTimer && this.mobaState.invisibilityTimer > 0);
+      if (isInvisible) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.35);
+      }
+
       const glbPath = {
         Arissa: 'assets/models/moba-characters/arissa.glb',
         Bot: 'assets/models/moba-characters/bot.glb',
@@ -31886,6 +32662,121 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(myColor));
         gl.drawElements(gl.TRIANGLES, charMesh.indexCount, gl.UNSIGNED_SHORT, 0);
       }
+
+      if (isInvisible) {
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+        gl.disable(gl.BLEND);
+      }
+    }
+
+    // 5c. Render Hero Clones / Illusions (e.g. Skeletonz & Woman Mobile clones)
+    if (this.mobaState.clones && this.mobaState.clones.length > 0) {
+      this.mobaState.clones.forEach(clone => {
+        const cloneGlb = {
+          Arissa: 'assets/models/moba-characters/arissa.glb',
+          Bot: 'assets/models/moba-characters/bot.glb',
+          Erika: 'assets/models/moba-characters/erika.glb',
+          Monster: 'assets/models/moba-characters/monster.glb',
+          Skeletonz: 'assets/models/moba-characters/skeletonz.glb',
+          'Woman Mobile': 'assets/models/moba-characters/woman-mobile.glb'
+        }[clone.hero] || 'assets/models/moba-characters/skeletonz.glb';
+        const cModel = (this.mobaHeroModels && this.mobaHeroModels[cloneGlb]);
+
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.72);
+
+        if (cModel && cModel.soldierMesh) {
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.8);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.1);
+          this.drawBotMeshPart(progInfo, cModel.soldierMesh, clone.pos, clone.yaw, 0, 0, 0, 1.25, 1.25, 1.25, [0.8, 0.45, 1.0], 0.0, 0.0, 0, 0.0);
+        } else if (charMesh) {
+          gl.bindVertexArray(charMesh.vao);
+          this.instanceMatrix[0] = 0.85; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.85; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.85; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = clone.pos[0]; this.instanceMatrix[13] = 0.42; this.instanceMatrix[14] = clone.pos[2]; this.instanceMatrix[15] = 1.0;
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.75, 0.35, 1.0]));
+          gl.drawElements(gl.TRIANGLES, charMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+        gl.disable(gl.BLEND);
+      });
+    }
+
+    // 5d. Render Proximity Boom Mines (e.g. Bot / Steelborn mines)
+    if (this.mobaState.mines && this.mobaState.mines.length > 0) {
+      const cylMesh = this.meshBuffers[3] || this.meshBuffers[0];
+      const sphereMesh = this.meshBuffers[0];
+      this.mobaState.mines.forEach(mine => {
+        if (cylMesh) {
+          gl.bindVertexArray(cylMesh.vao);
+          this.instanceMatrix[0] = 0.55; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.12; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.55; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = mine.x; this.instanceMatrix[13] = 0.06; this.instanceMatrix[14] = mine.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.22, 0.24, 0.28]));
+          gl.drawElements(gl.TRIANGLES, cylMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+        if (sphereMesh) {
+          gl.bindVertexArray(sphereMesh.vao);
+          const isPulse = Math.sin(timestamp * 0.012) > 0;
+          const beaconColor = isPulse ? [2.0, 0.3, 0.1] : [0.5, 0.1, 0.05];
+          this.instanceMatrix[0] = 0.2; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.2; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.2; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = mine.x; this.instanceMatrix[13] = 0.18; this.instanceMatrix[14] = mine.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(beaconColor));
+          gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        }
+      });
+    }
+
+    // 5e. Render Celestial Sky Meteors / Fireballs from the Sky
+    if (this.mobaState.skyMeteors && this.mobaState.skyMeteors.length > 0) {
+      const sphereMesh = this.meshBuffers[0];
+      const ringM = this.meshBuffers[6] || sphereMesh;
+      this.mobaState.skyMeteors.forEach(m => {
+        if (sphereMesh) {
+          gl.bindVertexArray(sphereMesh.vao);
+          this.instanceMatrix[0] = 1.35; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 1.35; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 1.35; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = m.x; this.instanceMatrix[13] = m.y; this.instanceMatrix[14] = m.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(m.color || [1.8, 0.5, 0.1]));
+          gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        }
+        if (ringM) {
+          gl.bindVertexArray(ringM.vao);
+          const tScale = (m.radius || 5.0) * (0.8 + 0.2 * Math.sin(timestamp * 0.01));
+          this.instanceMatrix[0] = tScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.06; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = tScale; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = m.x; this.instanceMatrix[13] = 0.04; this.instanceMatrix[14] = m.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.6, 0.2, 0.05]));
+          gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        }
+      });
     }
 
     // 6. Draw dynamic Sacred Geometry VFX bursts & spell circles
@@ -32158,8 +33049,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
         }
 
-        // 3. Holographic Detonation Gimbal Scatter
-        if (holoGimbal) {
+        // 3. Holographic Detonation Gimbal Scatter (Reserved exclusively for magic attacks, not default shoot)
+        if (holoGimbal && vfx.isMagic) {
           gl.enable(gl.BLEND);
           gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
           gl.depthMask(false);
@@ -32180,6 +33071,145 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
           gl.depthMask(true);
           gl.disable(gl.BLEND);
+        }
+      } else if (vfx.type === 'treeRoots') {
+        // AAA Dota-style Overgrowth: Erupting ancient thorny wooden roots & briar ring
+        const ringM = this.meshBuffers[6] || this.meshBuffers[0];
+        const spikeM = this.meshBuffers[9] || this.meshBuffers[3] || this.meshBuffers[0];
+        const growHeight = Math.sin(progress * Math.PI) * 2.4;
+
+        if (ringM) {
+          gl.bindVertexArray(ringM.vao);
+          const rScale = vfx.radius * (0.85 + progress * 0.3);
+          this.instanceMatrix[0] = rScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.08; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = rScale; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.03; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.15, 0.68, 0.2]));
+          gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+
+        if (spikeM && growHeight > 0.05) {
+          gl.bindVertexArray(spikeM.vao);
+          for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * Math.PI * 2 + 0.3;
+            const dist = vfx.radius * 0.55;
+            const rx = vfx.x + Math.sin(angle) * dist;
+            const rz = vfx.z + Math.cos(angle) * dist;
+            this.instanceMatrix[0] = 0.45; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = growHeight; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.45; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = rx; this.instanceMatrix[13] = growHeight * 0.45; this.instanceMatrix[14] = rz; this.instanceMatrix[15] = 1.0;
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+            if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.95);
+            if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.05);
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.38, 0.24, 0.12]));
+            gl.drawElements(gl.TRIANGLES, spikeM.indexCount, gl.UNSIGNED_SHORT, 0);
+          }
+        }
+      } else if (vfx.type === 'iceStunNova') {
+        // AAA Dota-style Glacial Frostbite: Sharp crystalline ice spires bursting from ground
+        const ringM = this.meshBuffers[6] || this.meshBuffers[0];
+        const spikeM = this.meshBuffers[9] || this.meshBuffers[0];
+        const iceHeight = Math.sin(progress * Math.PI) * 2.8;
+
+        if (ringM) {
+          gl.bindVertexArray(ringM.vao);
+          const iScale = vfx.radius * (0.8 + progress * 0.4);
+          this.instanceMatrix[0] = iScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.08; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = iScale; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.03; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.4, 0.9, 1.6]));
+          gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        }
+
+        if (spikeM && iceHeight > 0.05) {
+          gl.bindVertexArray(spikeM.vao);
+          for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * Math.PI * 2;
+            const dist = vfx.radius * 0.5;
+            const ix = vfx.x + Math.sin(angle) * dist;
+            const iz = vfx.z + Math.cos(angle) * dist;
+            this.instanceMatrix[0] = 0.5; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = iceHeight; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.5; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = ix; this.instanceMatrix[13] = iceHeight * 0.45; this.instanceMatrix[14] = iz; this.instanceMatrix[15] = 1.0;
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+            if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.65, 1.1, 1.8]));
+            gl.drawElements(gl.TRIANGLES, spikeM.indexCount, gl.UNSIGNED_SHORT, 0);
+            if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+          }
+        }
+      } else if (vfx.type === 'shadowSmoke') {
+        // Invisibility Smoke Cloak: Dense shadowy dark void puff
+        const sphereM = this.meshBuffers[0];
+        if (sphereM) {
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.bindVertexArray(sphereM.vao);
+          const sScale = vfx.radius * (0.6 + progress * 0.8);
+          this.instanceMatrix[0] = sScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sScale * 0.8; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sScale; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.9; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, (1.0 - progress) * 0.75);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.2, 0.06, 0.35]));
+          gl.drawElements(gl.TRIANGLES, sphereM.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+          gl.disable(gl.BLEND);
+        }
+      } else if (vfx.type === 'cloneBurst') {
+        // Holographic Clone Summoning Mandala Pulse
+        const ringM = this.meshBuffers[6] || this.meshBuffers[0];
+        if (ringM) {
+          gl.bindVertexArray(ringM.vao);
+          const cScale = vfx.radius * (0.5 + progress * 1.2);
+          this.instanceMatrix[0] = cScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.08; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cScale; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.04; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.2, 0.4, 1.8]));
+          gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        }
+      } else if (vfx.type === 'fireTrail') {
+        // Blazing Flame Dash Trail Patch
+        const sphereM = this.meshBuffers[0];
+        if (sphereM) {
+          gl.bindVertexArray(sphereM.vao);
+          const fScale = vfx.radius * (1.0 - progress * 0.4);
+          this.instanceMatrix[0] = fScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = fScale * 0.5; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = fScale; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.25; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.9, 0.6, 0.1]));
+          gl.drawElements(gl.TRIANGLES, sphereM.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
         }
       } else if (ringMesh) {
         gl.bindVertexArray(ringMesh.vao);
@@ -32561,6 +33591,48 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
         osc.start();
         osc.stop(ctx.currentTime + 0.15);
+      } else if (type === 'freeze') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1400, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.35);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.35);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+      } else if (type === 'fire') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(450, ctx.currentTime + 0.15);
+        osc.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 0.45);
+        gain.gain.setValueAtTime(0.22, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.45);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.45);
+      } else if (type === 'explosion') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(160, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.65);
+        gain.gain.setValueAtTime(0.35, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.65);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.65);
+      } else if (type === 'magic') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1174.66, ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+      } else if (type === 'teleport') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(950, ctx.currentTime + 0.12);
+        osc.frequency.exponentialRampToValueAtTime(160, ctx.currentTime + 0.28);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.28);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.28);
       }
     } catch (err) {
       // Audio context block by browser gesture
@@ -33124,13 +34196,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       damage: t.damage || 70
     }));
 
-    // Bots deployed across Top, Mid, and Bot lanes with full HP & Mana pools (spawn points scaled up for enlarged map)
+    // Bots deployed across Top, Mid, and Bot lanes with full HP & Mana pools, competitive stats & spell mastery
     this.mobaState.players = [
-      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 500, maxHp: 500, mp: 500, maxMp: 500, damage: 50, speed: 4.0, attackRange: 6.8, attackCooldown: 0.9, attackTimer: 0, pos: [-33.0, 0, -28.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1 },
-      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 750, maxHp: 750, mp: 200, maxMp: 200, damage: 65, speed: 3.8, attackRange: 2.2, attackCooldown: 1.1, attackTimer: 0, pos: [-28.0, 0, -33.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1 },
-      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 550, maxHp: 550, mp: 240, maxMp: 240, damage: 52, speed: 4.0, attackRange: 7.0, attackCooldown: 0.9, attackTimer: 0, pos: [33.0, 0, 28.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1 },
-      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 600, maxHp: 600, mp: 220, maxMp: 220, damage: 58, speed: 4.2, attackRange: 2.2, attackCooldown: 1.0, attackTimer: 0, pos: [28.0, 0, 33.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1 },
-      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 680, maxHp: 680, mp: 300, maxMp: 300, damage: 60, speed: 3.9, attackRange: 2.2, attackCooldown: 1.0, attackTimer: 0, pos: [32.0, 0, 32.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1 }
+      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 680, maxHp: 680, mp: 500, maxMp: 500, damage: 62, speed: 4.2, attackRange: 7.0, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-33.0, 0, -28.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1 },
+      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 950, maxHp: 950, mp: 350, maxMp: 350, damage: 78, speed: 4.0, attackRange: 2.5, attackCooldown: 0.95, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-28.0, 0, -33.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1 },
+      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 740, maxHp: 740, mp: 450, maxMp: 450, damage: 65, speed: 4.3, attackRange: 7.2, attackCooldown: 0.82, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [33.0, 0, 28.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1 },
+      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 780, maxHp: 780, mp: 380, maxMp: 380, damage: 72, speed: 4.5, attackRange: 2.5, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [28.0, 0, 33.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1 },
+      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 880, maxHp: 880, mp: 450, maxMp: 450, damage: 75, speed: 4.2, attackRange: 2.5, attackCooldown: 0.88, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [32.0, 0, 32.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1 }
     ];
 
     // Spawn first creep wave
@@ -33376,6 +34448,18 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     };
 
     this.mobaState.creeps.forEach(creep => {
+      // Stunned: cannot move or act
+      if (creep.stunnedTimer && creep.stunnedTimer > 0) {
+        creep.stunnedTimer = Math.max(0, creep.stunnedTimer - dt);
+        creep.isMoving = false;
+        creep.isAttacking = false;
+        return;
+      }
+      // Rooted: cannot walk
+      if (creep.rootedTimer && creep.rootedTimer > 0) {
+        creep.rootedTimer = Math.max(0, creep.rootedTimer - dt);
+      }
+
       creep.attackTimer = Math.max(0, (creep.attackTimer || 0) - dt);
 
       // Mana regeneration (+5 MP/s)
@@ -33459,7 +34543,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             creep.lastAttackTime = performance.now();
             this.applyMobaDamage(target, creep.damage, creep.team, false, false);
           }
-        } else {
+        } else if (!creep.rootedTimer || creep.rootedTimer <= 0) {
           // Walk toward target
           creep.isAttacking = false;
           const step = Math.min(dist, creep.speed * dt);
@@ -33468,11 +34552,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.resolveMobaCollision(creep.pos, 0.45);
           creep.yaw = Math.atan2(dx, dz);
           creep.isMoving = true;
+        } else {
+          creep.isMoving = false;
         }
       } else {
         creep.isAttacking = false;
         // Advance along classic Dota lane waypoints (around the map rather than direct diagonal fight)
-        if (creep.waypoints && creep.waypoints.length > 0) {
+        if ((!creep.rootedTimer || creep.rootedTimer <= 0) && creep.waypoints && creep.waypoints.length > 0) {
           if (creep.waypointIndex === undefined) creep.waypointIndex = 1;
 
           if (creep.waypointIndex < creep.waypoints.length) {
@@ -33583,6 +34669,485 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     });
   }
 
+  castMobaBotSpell(b, spellIndex, target) {
+    if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner || b.hp <= 0) return;
+    if (b.stunnedTimer && b.stunnedTimer > 0) return;
+
+    const heroName = b.selectedHero || 'Arissa';
+    const spells = this.getMobaHeroSpells(heroName);
+    const spell = spells && spells[spellIndex];
+    if (!spell) return;
+
+    if (!b.spellsCooldown) b.spellsCooldown = [0, 0, 0, 0];
+    if (b.spellsCooldown[spellIndex] > 0) return;
+
+    const cost = spell.cost || 40;
+    if ((b.mp || 0) < cost) return;
+
+    // Deduct mana & set cooldown
+    b.mp = Math.max(0, b.mp - cost);
+    b.spellsCooldown[spellIndex] = spell.cooldown || 12.0;
+
+    const bPos = b.pos;
+    const myTeam = b.team;
+    const targetPos = target && target.pos ? target.pos : [bPos[0] + Math.sin(b.yaw || 0) * 5.0, 0, bPos[2] + Math.cos(b.yaw || 0) * 5.0];
+    const dx = targetPos[0] - bPos[0];
+    const dz = targetPos[2] - bPos[2];
+    const distToTarget = Math.hypot(dx, dz);
+    const aimYaw = distToTarget > 0.1 ? Math.atan2(dx, dz) : (b.yaw || 0);
+    b.yaw = aimYaw;
+
+    const heroKey = heroName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+
+    // Execute hero-specific magic for bot:
+    if (heroKey === 'arissa') {
+      if (spellIndex === 0) { // Area Blast (Q)
+        this.mobaState.vfxBursts.push({
+          type: 'areaBlast',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 5.2,
+          timer: 0.65,
+          maxTimer: 0.65,
+          color: [0.08, 0.92, 0.98]
+        });
+        this.mobaDamageInRadius(bPos, 4.8, 140, myTeam, true);
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "✨ AREA BLAST!", "#38bdf8");
+        this.mobaPlaySound('magic');
+      } else if (spellIndex === 1) { // Blink Dash (W)
+        const dashDist = Math.min(6.0, distToTarget > 0.5 ? distToTarget : 5.5);
+        const nx = bPos[0] + Math.sin(aimYaw) * dashDist;
+        const nz = bPos[2] + Math.cos(aimYaw) * dashDist;
+        const newPos = [nx, 0, nz];
+        this.resolveMobaCollision(newPos, 0.7);
+
+        this.mobaState.vfxBursts.push({
+          type: 'blinkDepart',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 2.2,
+          timer: 0.45,
+          maxTimer: 0.45,
+          color: [0.95, 0.25, 0.85]
+        });
+
+        b.pos[0] = newPos[0];
+        b.pos[2] = newPos[2];
+
+        this.mobaState.vfxBursts.push({
+          type: 'blinkArrive',
+          x: b.pos[0],
+          z: b.pos[2],
+          radius: 2.8,
+          timer: 0.45,
+          maxTimer: 0.45,
+          color: [0.95, 0.25, 0.85]
+        });
+        this.mobaDamageInRadius(b.pos, 3.4, 90, myTeam, true);
+        this.addMobaCombatText(b.pos[0], 2.4, b.pos[2], "⚡ BLINK DASH!", "#f472b6");
+        this.mobaPlaySound('teleport');
+      } else if (spellIndex === 2) { // Barrier Field (E)
+        b.shield = (b.shield || 0) + 260;
+        b.shieldTimer = 5.5;
+        this.mobaState.vfxBursts.push({
+          type: 'barrier',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 3.8,
+          timer: 0.85,
+          maxTimer: 0.85,
+          color: [0.15, 0.98, 0.45]
+        });
+        this.mobaDamageInRadius(bPos, 3.5, 50, myTeam, true);
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "🛡️ BARRIER SHIELD!", "#4ade80");
+        this.mobaPlaySound('magic');
+      } else if (spellIndex === 3) { // Hollow Eclipse Ultimate (R)
+        this.mobaState.vfxBursts.push({
+          type: 'ultimate',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 8.8,
+          timer: 1.25,
+          maxTimer: 1.25,
+          color: [0.98, 0.12, 0.25]
+        });
+        this.mobaDamageInRadius(bPos, 8.5, 360, myTeam, true, true);
+        this.triggerMobaScreenShake(0.7);
+        this.showMobaAlert(`🌑 ${b.name} UNLEASHED HOLLOW ECLIPSE!`);
+        this.mobaPlaySound('explosion');
+      }
+    } else if (heroKey === 'erika') {
+      if (spellIndex === 0) { // Frostbite Ice Stun (Q)
+        this.mobaState.vfxBursts.push({
+          type: 'iceStunNova',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 5.2,
+          timer: 1.1,
+          maxTimer: 1.1,
+          color: [0.2, 0.85, 1.0]
+        });
+        this.mobaDamageInRadius(bPos, 5.0, 135, myTeam, true, false, 'stun', 2.2);
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "❄️ FROSTBITE STUN!", "#38bdf8");
+        this.mobaPlaySound('freeze');
+        this.showMobaAlert(`❄️ ${b.name} CAST GLACIAL FROSTBITE!`);
+      } else if (spellIndex === 1) { // Flame Surge (W)
+        const dashDist = 5.5;
+        const nx = bPos[0] + Math.sin(aimYaw) * dashDist;
+        const nz = bPos[2] + Math.cos(aimYaw) * dashDist;
+        const newPos = [nx, 0, nz];
+        this.resolveMobaCollision(newPos, 0.7);
+
+        for (let t = 0.2; t <= 1.0; t += 0.2) {
+          this.mobaState.vfxBursts.push({
+            type: 'fireTrail',
+            x: bPos[0] + (nx - bPos[0]) * t,
+            y: 0.1,
+            z: bPos[2] + (nz - bPos[2]) * t,
+            radius: 1.8,
+            timer: 0.8,
+            maxTimer: 0.8,
+            color: [1.0, 0.45, 0.08]
+          });
+        }
+        b.pos[0] = newPos[0];
+        b.pos[2] = newPos[2];
+        this.mobaDamageInRadius(b.pos, 3.8, 105, myTeam, true);
+        this.addMobaCombatText(b.pos[0], 2.4, b.pos[2], "🔥 FLAME SURGE!", "#fb923c");
+        this.mobaPlaySound('fire');
+      } else if (spellIndex === 2) { // Glacial Armor (E)
+        b.shield = (b.shield || 0) + 280;
+        b.shieldTimer = 5.5;
+        this.mobaState.vfxBursts.push({
+          type: 'iceStunNova',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 3.6,
+          timer: 0.8,
+          maxTimer: 0.8,
+          color: [0.35, 0.9, 1.0]
+        });
+        this.mobaDamageInRadius(bPos, 3.5, 55, myTeam, true);
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "🛡️ GLACIAL ARMOR!", "#38bdf8");
+        this.mobaPlaySound('freeze');
+      } else if (spellIndex === 3) { // Celestial Meteor Strike (R)
+        if (!this.mobaState.skyMeteors) this.mobaState.skyMeteors = [];
+        this.mobaState.skyMeteors.push({
+          x: targetPos[0],
+          y: 24.0,
+          z: targetPos[2],
+          speed: 28.0,
+          radius: 6.2,
+          damage: 400,
+          heroTeam: myTeam,
+          statusEffect: 'stun',
+          stunDuration: 1.6,
+          color: [1.0, 0.35, 0.05],
+          title: "☄️ SKY METEOR IMPACT! -400",
+          alert: `☄️ ${b.name}'s SKY FIREBALL CRASHED!`
+        });
+        this.mobaState.vfxBursts.push({
+          type: 'scorchFire',
+          x: targetPos[0],
+          z: targetPos[2],
+          radius: 6.0,
+          timer: 1.2,
+          maxTimer: 1.2,
+          color: [1.0, 0.2, 0.05]
+        });
+        this.showMobaAlert(`☄️ ${b.name} CALLS DOWN CELESTIAL METEOR!`);
+        this.mobaPlaySound('fire');
+      }
+    } else if (heroKey === 'monster' || heroKey === 'warrok') {
+      if (spellIndex === 0) { // Overgrowth Tree Roots (Q)
+        this.mobaState.vfxBursts.push({
+          type: 'treeRoots',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 5.5,
+          timer: 1.3,
+          maxTimer: 1.3,
+          color: [0.18, 0.85, 0.25]
+        });
+        this.mobaDamageInRadius(bPos, 5.4, 140, myTeam, true, false, 'root', 3.0);
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "🌿 OVERGROWTH ROOTS!", "#4ade80");
+        this.showMobaAlert(`🌿 ${b.name} ROOTED ENEMIES WITH OVERGROWTH!`);
+        this.mobaPlaySound('hit');
+      } else if (spellIndex === 1) { // Earth Tremor Slam (W)
+        this.mobaState.vfxBursts.push({
+          type: 'areaBlast',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 4.8,
+          timer: 0.7,
+          maxTimer: 0.7,
+          color: [0.65, 0.45, 0.2]
+        });
+        this.mobaDamageInRadius(bPos, 4.6, 120, myTeam, true);
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "💥 TREMOR SLAM!", "#f59e0b");
+        this.triggerMobaScreenShake(0.5);
+        this.mobaPlaySound('explosion');
+      } else if (spellIndex === 2) { // Barkskin Armor (E)
+        b.shield = (b.shield || 0) + 360;
+        b.shieldTimer = 6.0;
+        this.mobaState.vfxBursts.push({
+          type: 'barrier',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 3.6,
+          timer: 0.9,
+          maxTimer: 0.9,
+          color: [0.25, 0.75, 0.25]
+        });
+        this.mobaDamageInRadius(bPos, 3.5, 50, myTeam, true);
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "🛡️ BARKSKIN!", "#4ade80");
+      } else if (spellIndex === 3) { // Seismic Earth Cataclysm (R)
+        if (distToTarget > 1.0) {
+          const leapDist = Math.min(distToTarget, 6.0);
+          b.pos[0] += Math.sin(aimYaw) * leapDist;
+          b.pos[2] += Math.cos(aimYaw) * leapDist;
+          this.resolveMobaCollision(b.pos, 0.7);
+        }
+        this.mobaState.vfxBursts.push({
+          type: 'ultimate',
+          x: b.pos[0],
+          z: b.pos[2],
+          radius: 7.8,
+          timer: 1.4,
+          maxTimer: 1.4,
+          color: [0.85, 0.35, 0.1]
+        });
+        this.mobaDamageInRadius(b.pos, 7.5, 380, myTeam, true, true, 'stun', 2.0);
+        this.triggerMobaScreenShake(0.8);
+        this.showMobaAlert(`🌋 ${b.name} SEISMIC CATACLYSM SHATTERS EARTH!`);
+        this.mobaPlaySound('explosion');
+      }
+    } else if (heroKey === 'skeletonz') {
+      if (spellIndex === 0) { // Shadow Walk (Q)
+        b.invisibilityTimer = 6.0;
+        b.hasBackstab = true;
+        this.mobaState.vfxBursts.push({
+          type: 'shadowSmoke',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 3.0,
+          timer: 0.8,
+          maxTimer: 0.8,
+          color: [0.4, 0.1, 0.6]
+        });
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "👤 SHADOW WALK!", "#a855f7");
+        this.mobaPlaySound('teleport');
+      } else if (spellIndex === 1) { // Mirror Clones (W)
+        if (!this.mobaState.clones) this.mobaState.clones = [];
+        for (let offset of [-2.2, 2.2]) {
+          this.mobaState.clones.push({
+            id: 'clone_' + Math.random().toString(36).substr(2, 6),
+            hero: 'Skeletonz',
+            team: myTeam,
+            pos: [bPos[0] + offset, 0, bPos[2] + (Math.random() - 0.5)],
+            yaw: b.yaw || 0,
+            hp: Math.round(b.hp * 0.65),
+            maxHp: Math.round(b.maxHp * 0.65),
+            damage: Math.round(b.damage * 0.55),
+            speed: (b.speed || 4.2) * 1.0,
+            duration: 12.0,
+            attackTimer: 0.4
+          });
+        }
+        this.mobaState.vfxBursts.push({
+          type: 'cloneBurst',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 3.5,
+          timer: 0.7,
+          maxTimer: 0.7,
+          color: [0.7, 0.2, 0.95]
+        });
+        this.showMobaAlert(`👥 ${b.name} SUMMONED 2 SHADOW CLONES!`);
+        this.mobaPlaySound('magic');
+      } else if (spellIndex === 2) { // Shadow Dagger (E)
+        const tX = bPos[0] + Math.sin(aimYaw) * Math.min(distToTarget, 6.5);
+        const tZ = bPos[2] + Math.cos(aimYaw) * Math.min(distToTarget, 6.5);
+        this.mobaState.vfxBursts.push({
+          type: 'fireTrail',
+          x: tX,
+          y: 0.8,
+          z: tZ,
+          radius: 2.4,
+          timer: 0.5,
+          maxTimer: 0.5,
+          color: [0.65, 0.15, 0.9]
+        });
+        this.mobaDamageInRadius([tX, 0, tZ], 3.6, 120, myTeam, true);
+        this.addMobaCombatText(tX, 2.2, tZ, "🗡️ SHADOW DAGGER!", "#c084fc");
+        this.mobaPlaySound('attack');
+      } else if (spellIndex === 3) { // Phantom Omnislash (R)
+        this.mobaState.vfxBursts.push({
+          type: 'ultimate',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 7.5,
+          timer: 1.2,
+          maxTimer: 1.2,
+          color: [0.8, 0.1, 0.9]
+        });
+        this.mobaDamageInRadius(bPos, 7.0, 440, myTeam, true, true);
+        this.showMobaAlert(`⚔️ ${b.name} PHANTOM OMNISLASH FLURRY!`);
+        this.mobaPlaySound('attack');
+      }
+    } else if (heroKey === 'bot' || heroKey === 'steelborn' || heroKey === 'slayzer') {
+      if (spellIndex === 0) { // Proximity Mine (Q)
+        if (!this.mobaState.mines) this.mobaState.mines = [];
+        this.mobaState.mines.push({
+          id: 'mine_' + Date.now() + '_' + Math.random(),
+          team: myTeam,
+          x: bPos[0],
+          z: bPos[2],
+          armTimer: 0.5,
+          timer: 60.0,
+          damage: 210,
+          triggerRadius: 2.8,
+          blastRadius: 4.8
+        });
+        this.mobaState.vfxBursts.push({
+          type: 'barrier',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 1.8,
+          timer: 0.4,
+          maxTimer: 0.4,
+          color: [1.0, 0.8, 0.1]
+        });
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "💣 BOOM MINE ARMED!", "#facc15");
+        this.mobaPlaySound('confirm');
+      } else if (spellIndex === 1) { // EMP Static Shockwave (W)
+        this.mobaState.vfxBursts.push({
+          type: 'areaBlast',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 4.8,
+          timer: 0.6,
+          maxTimer: 0.6,
+          color: [0.1, 0.75, 1.0]
+        });
+        this.mobaDamageInRadius(bPos, 4.6, 120, myTeam, true, false, 'stun', 1.8);
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "⚡ EMP STUN!", "#38bdf8");
+        this.mobaPlaySound('magic');
+      } else if (spellIndex === 2) { // Nanite Forcefield (E)
+        b.shield = (b.shield || 0) + 310;
+        b.shieldTimer = 5.5;
+        this.mobaState.vfxBursts.push({
+          type: 'barrier',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 3.6,
+          timer: 0.8,
+          maxTimer: 0.8,
+          color: [1.0, 0.85, 0.2]
+        });
+        this.mobaDamageInRadius(bPos, 3.2, 45, myTeam, true);
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "🛡️ NANITE SHIELD!", "#facc15");
+      } else if (spellIndex === 3) { // Sky Orbital Bombardment (R)
+        if (!this.mobaState.skyMeteors) this.mobaState.skyMeteors = [];
+        for (let k = 0; k < 3; k++) {
+          const offsetX = (k - 1) * 2.2;
+          this.mobaState.skyMeteors.push({
+            x: targetPos[0] + offsetX,
+            y: 22.0 + k * 4.0,
+            z: targetPos[2],
+            speed: 30.0,
+            radius: 5.5,
+            damage: 160,
+            heroTeam: myTeam,
+            statusEffect: 'stun',
+            stunDuration: 1.5,
+            color: [0.15, 0.85, 1.0],
+            title: "🛰️ ORBITAL STRIKE! -160",
+            alert: `🛰️ ${b.name}'s ORBITAL BOMBARDMENT IMPACT!`
+          });
+        }
+        this.showMobaAlert(`🛰️ ${b.name} COMMENCED ORBITAL BOMBARDMENT!`);
+        this.mobaPlaySound('explosion');
+      }
+    } else { // woman mobile / default
+      if (spellIndex === 0) { // Decoy Clone (Q)
+        const oldPos = [...bPos];
+        const dashDist = 5.5;
+        b.pos[0] += Math.sin(aimYaw) * dashDist;
+        b.pos[2] += Math.cos(aimYaw) * dashDist;
+        this.resolveMobaCollision(b.pos, 0.7);
+
+        if (!this.mobaState.clones) this.mobaState.clones = [];
+        this.mobaState.clones.push({
+          id: 'clone_' + Math.random().toString(36).substr(2, 6),
+          hero: 'Woman Mobile',
+          team: myTeam,
+          pos: [...oldPos],
+          yaw: aimYaw,
+          hp: Math.round(b.hp * 0.6),
+          maxHp: Math.round(b.maxHp * 0.6),
+          damage: Math.round(b.damage * 0.55),
+          speed: b.speed || 4.2,
+          duration: 10.0,
+          attackTimer: 0.3
+        });
+        this.mobaState.vfxBursts.push({
+          type: 'cloneBurst',
+          x: oldPos[0],
+          z: oldPos[2],
+          radius: 3.0,
+          timer: 0.6,
+          maxTimer: 0.6,
+          color: [0.25, 0.6, 1.0]
+        });
+        this.addMobaCombatText(b.pos[0], 2.4, b.pos[2], "👥 DECOY CLONE!", "#60a5fa");
+        this.mobaPlaySound('teleport');
+      } else if (spellIndex === 1) { // Smoke Cloak (W)
+        b.invisibilityTimer = 5.0;
+        b.hasBackstab = true;
+        this.mobaState.vfxBursts.push({
+          type: 'shadowSmoke',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 3.2,
+          timer: 0.8,
+          maxTimer: 0.8,
+          color: [0.2, 0.4, 0.7]
+        });
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "💨 SMOKE CLOAK!", "#93c5fd");
+        this.mobaPlaySound('teleport');
+      } else if (spellIndex === 2) { // Whirlwind Slashes (E)
+        this.mobaState.vfxBursts.push({
+          type: 'areaBlast',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 4.2,
+          timer: 0.55,
+          maxTimer: 0.55,
+          color: [0.4, 0.7, 1.0]
+        });
+        this.mobaDamageInRadius(bPos, 4.2, 145, myTeam, true);
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "🌀 WHIRLWIND!", "#3b82f6");
+        this.mobaPlaySound('attack');
+      } else if (spellIndex === 3) { // Blade Dance (R)
+        this.mobaState.vfxBursts.push({
+          type: 'ultimate',
+          x: bPos[0],
+          z: bPos[2],
+          radius: 7.2,
+          timer: 1.2,
+          maxTimer: 1.2,
+          color: [0.15, 0.5, 1.0]
+        });
+        this.mobaDamageInRadius(bPos, 7.0, 390, myTeam, true, true);
+        this.showMobaAlert(`⚡ ${b.name} BLADE DANCE EXECUTION!`);
+        this.mobaPlaySound('attack');
+      }
+    }
+  }
+
   updateMobaBots(dt) {
     if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner || !this.mobaState.players) return;
 
@@ -33590,21 +35155,55 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (!b.isBot || b.hp <= 0) return;
       if (!b.pos) b.pos = [0, 0, 0];
 
+      // Stunned: cannot move or act
+      if (b.stunnedTimer && b.stunnedTimer > 0) {
+        b.stunnedTimer = Math.max(0, b.stunnedTimer - dt);
+        b.moving = false;
+        return;
+      }
+      // Rooted: cannot walk
+      if (b.rootedTimer && b.rootedTimer > 0) {
+        b.rootedTimer = Math.max(0, b.rootedTimer - dt);
+      }
+
       b.attackTimer = Math.max(0, (b.attackTimer || 0) - dt);
 
-      // Bot mana regeneration (+6 MP/s)
-      b.mp = Math.min(b.maxMp || 250, (b.mp || 0) + dt * 6);
+      // Bot mana regeneration (+12 MP/s for active spell usage)
+      b.mp = Math.min(b.maxMp || 450, (b.mp || 0) + dt * 12);
+
+      // Decrement spell cooldowns
+      if (!b.spellsCooldown) b.spellsCooldown = [0, 0, 0, 0];
+      for (let i = 0; i < 4; i++) {
+        b.spellsCooldown[i] = Math.max(0, (b.spellsCooldown[i] || 0) - dt);
+      }
+
+      // Decrement shield and stealth timers
+      if (b.shieldTimer) {
+        b.shieldTimer = Math.max(0, b.shieldTimer - dt);
+        if (b.shieldTimer <= 0) b.shield = 0;
+      }
+      if (b.invisibilityTimer) {
+        b.invisibilityTimer = Math.max(0, b.invisibilityTimer - dt);
+      }
 
       const basePos = b.team === 'RED' ? [-38.0, 0, -38.0] : [38.0, 0, 38.0];
       const enemyBasePos = b.team === 'RED' ? [38.0, 0, 38.0] : [-38.0, 0, -38.0];
 
-      // Low health retreat to base fountain
-      if (b.hp < b.maxHp * 0.25) {
+      // Low health tactical retreat to base fountain (< 22% HP)
+      if (b.hp < b.maxHp * 0.22) {
+        // If bot has mobility dash or stealth, use it to escape!
+        const heroKey = (b.selectedHero || '').toLowerCase();
+        if ((heroKey === 'arissa' || heroKey === 'erika') && b.spellsCooldown[1] <= 0 && b.mp >= 45) {
+          this.castMobaBotSpell(b, 1, { pos: basePos });
+        } else if ((heroKey === 'skeletonz' || heroKey.includes('woman')) && b.spellsCooldown[0] <= 0 && b.mp >= 40) {
+          this.castMobaBotSpell(b, 0, null);
+        }
+
         const dx = basePos[0] - b.pos[0];
         const dz = basePos[2] - b.pos[2];
         const dist = Math.hypot(dx, dz);
         if (dist > 2.0) {
-          const step = Math.min(dist, b.speed * dt);
+          const step = Math.min(dist, (b.speed || 4.2) * (b.invisibilityTimer > 0 ? 1.35 : 1.0) * dt);
           b.pos[0] += (dx / dist) * step;
           b.pos[2] += (dz / dist) * step;
           this.resolveMobaCollision(b.pos, 0.65);
@@ -33612,44 +35211,63 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           b.moving = true;
         } else {
           b.moving = false;
-          b.hp = Math.min(b.maxHp, b.hp + dt * 80);
-          b.mp = Math.min(b.maxMp || 250, (b.mp || 0) + dt * 60);
+          b.hp = Math.min(b.maxHp, b.hp + dt * 100);
+          b.mp = Math.min(b.maxMp || 450, (b.mp || 0) + dt * 80);
         }
         return;
       }
 
-      // Find closest enemy target (heroes, creeps, towers, tron)
-      let closestTarget = null;
-      let minDist = 14.0;
+      // --- INTELLIGENT TARGET SCORING & THREAT EVALUATION ---
+      let bestTarget = null;
+      let bestScore = -9999;
+      let closestDist = 999;
 
-      // 1. Check local player
+      // 1. Check local player (High Priority Champion)
       if (this.mobaState.team !== b.team && this.mobaState.heroStats.hp > 0) {
-        const d = Math.hypot(this.mobaState.currentPos[0] - b.pos[0], this.mobaState.currentPos[2] - b.pos[2]);
-        if (d < minDist) {
-          minDist = d;
-          closestTarget = { isPlayer: true, pos: this.mobaState.currentPos };
+        const pPos = this.mobaState.currentPos;
+        const d = Math.hypot(pPos[0] - b.pos[0], pPos[2] - b.pos[2]);
+        if (d < 16.0) {
+          let score = (16.0 - d) * 2.2;
+          // Finish off low-health player
+          const pHealthPct = this.mobaState.heroStats.hp / Math.max(1, this.mobaState.heroStats.maxHp);
+          if (pHealthPct < 0.40) score += 20.0;
+          if (score > bestScore) {
+            bestScore = score;
+            bestTarget = { isPlayer: true, pos: pPos, hp: this.mobaState.heroStats.hp, maxHp: this.mobaState.heroStats.maxHp };
+            closestDist = d;
+          }
         }
       }
 
-      // 2. Check enemy bots
+      // 2. Check enemy bots (Champion vs Champion)
       this.mobaState.players.forEach(other => {
         if (other.team !== b.team && other.hp > 0 && other.pos) {
           const d = Math.hypot(other.pos[0] - b.pos[0], other.pos[2] - b.pos[2]);
-          if (d < minDist) {
-            minDist = d;
-            closestTarget = other;
+          if (d < 15.0) {
+            let score = (15.0 - d) * 1.8;
+            if (other.hp < other.maxHp * 0.35) score += 15.0;
+            if (score > bestScore) {
+              bestScore = score;
+              bestTarget = other;
+              closestDist = d;
+            }
           }
         }
       });
 
-      // 3. Check enemy creeps
+      // 3. Check enemy creeps (Lane clearing & farming)
       if (this.mobaState.creeps) {
         this.mobaState.creeps.forEach(c => {
           if (c.team !== b.team && c.hp > 0 && c.pos) {
             const d = Math.hypot(c.pos[0] - b.pos[0], c.pos[2] - b.pos[2]);
-            if (d < minDist) {
-              minDist = d;
-              closestTarget = c;
+            if (d < 12.0) {
+              let score = (12.0 - d) * 1.0;
+              if (c.hp < 40) score += 8.0; // Last hit creep for gold
+              if (score > bestScore) {
+                bestScore = score;
+                bestTarget = c;
+                closestDist = d;
+              }
             }
           }
         });
@@ -33660,9 +35278,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.mobaState.towers.forEach(t => {
           if (t.team !== b.team && t.hp > 0 && t.pos) {
             const d = Math.hypot(t.pos[0] - b.pos[0], t.pos[2] - b.pos[2]);
-            if (d < minDist) {
-              minDist = d;
-              closestTarget = t;
+            if (d < 13.0) {
+              let score = (13.0 - d) * 1.2;
+              if (score > bestScore) {
+                bestScore = score;
+                bestTarget = t;
+                closestDist = d;
+              }
             }
           }
         });
@@ -33673,63 +35295,175 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const enemyTron = this.mobaState.trons && this.mobaState.trons[enemyTronTeam];
       if (enemyTron && enemyTron.hp > 0 && enemyTron.pos) {
         const d = Math.hypot(enemyTron.pos[0] - b.pos[0], enemyTron.pos[2] - b.pos[2]);
-        if (d < minDist) {
-          minDist = d;
-          closestTarget = enemyTron;
+        if (d < 14.0) {
+          let score = (14.0 - d) * 2.5 + 25.0;
+          if (score > bestScore) {
+            bestScore = score;
+            bestTarget = enemyTron;
+            closestDist = d;
+          }
         }
       }
 
-      if (closestTarget) {
-        const tPos = closestTarget.pos;
+      // --- TOWER DIVE SAFETY AWARENESS ---
+      // Intelligent bots check if an enemy tower is nearby and avoid suiciding unless friendly creeps are tanking
+      if (bestTarget && this.mobaState.towers) {
+        const nearestEnemyTower = this.mobaState.towers.find(t => t.team !== b.team && t.hp > 0 && Math.hypot(t.pos[0] - b.pos[0], t.pos[2] - b.pos[2]) < 14.0);
+        if (nearestEnemyTower) {
+          const towerDist = Math.hypot(nearestEnemyTower.pos[0] - b.pos[0], nearestEnemyTower.pos[2] - b.pos[2]);
+          const friendlyCreepsTanking = this.mobaState.creeps && this.mobaState.creeps.some(c => c.team === b.team && c.hp > 0 && Math.hypot(c.pos[0] - nearestEnemyTower.pos[0], c.pos[2] - nearestEnemyTower.pos[2]) < (nearestEnemyTower.range || 15.0));
+          if (!friendlyCreepsTanking && towerDist < 12.0) {
+            // Dangerous! Back away from enemy tower range
+            const towDx = b.pos[0] - nearestEnemyTower.pos[0];
+            const towDz = b.pos[2] - nearestEnemyTower.pos[2];
+            const towLen = Math.hypot(towDx, towDz) || 1.0;
+            const step = Math.min(2.5, (b.speed || 4.2) * dt);
+            b.pos[0] += (towDx / towLen) * step;
+            b.pos[2] += (towDz / towLen) * step;
+            this.resolveMobaCollision(b.pos, 0.65);
+            b.yaw = Math.atan2(-towDx, -towDz);
+            b.moving = true;
+            return;
+          }
+        }
+      }
+
+      // --- COMBAT & SPELL CASTING INTELLIGENCE ---
+      if (bestTarget) {
+        const tPos = bestTarget.pos;
         const dx = tPos[0] - b.pos[0];
         const dz = tPos[2] - b.pos[2];
         const dist = Math.hypot(dx, dz);
-        const targetRad = this.getMobaTargetRadius(closestTarget);
-        const attackRange = b.attackRange || (b.isRanged ? 6.8 : 2.2);
+        const targetRad = this.getMobaTargetRadius(bestTarget);
+        const attackRange = b.attackRange || (b.isRanged ? 7.0 : 2.5);
+        const isHeroTarget = bestTarget.isPlayer || bestTarget.isBot;
+        const heroKey = (b.selectedHero || 'arissa').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-        if (dist <= attackRange + targetRad) {
-          b.moving = false;
-          b.yaw = Math.atan2(dx, dz);
+        b.yaw = Math.atan2(dx, dz);
+
+        // --- 1. TACTICAL MAGIC CASTING EVALUATION ---
+        // A. Defensive Shield Reactions (Slot 2 / E or Invisibility)
+        if (b.hp < b.maxHp * 0.70 && (!b.shieldTimer || b.shieldTimer <= 0)) {
+          if ((heroKey === 'arissa' || heroKey === 'erika' || heroKey === 'monster' || heroKey === 'warrok' || heroKey === 'bot' || heroKey === 'steelborn') && b.spellsCooldown[2] <= 0 && b.mp >= 45) {
+            this.castMobaBotSpell(b, 2, bestTarget);
+          } else if ((heroKey === 'skeletonz' || heroKey.includes('woman')) && b.spellsCooldown[0] <= 0 && b.mp >= 40) {
+            this.castMobaBotSpell(b, 0, bestTarget);
+          }
+        }
+
+        // B. Devastating Ultimate Abilities (Slot 3 / R)
+        if (isHeroTarget && dist <= 7.8 && b.spellsCooldown[3] <= 0 && b.mp >= 105) {
+          this.castMobaBotSpell(b, 3, bestTarget);
+        }
+
+        // C. Crowd Control: Stuns, Roots, EMP, Area Blast (Slot 0/1)
+        if (dist <= 5.4 && isHeroTarget) {
+          if (heroKey === 'erika' && b.spellsCooldown[0] <= 0 && b.mp >= 45) {
+            this.castMobaBotSpell(b, 0, bestTarget); // Frostbite Ice Stun!
+          } else if ((heroKey === 'monster' || heroKey === 'warrok') && b.spellsCooldown[0] <= 0 && b.mp >= 45) {
+            this.castMobaBotSpell(b, 0, bestTarget); // Overgrowth Tree Roots!
+          } else if ((heroKey === 'bot' || heroKey === 'steelborn') && b.spellsCooldown[1] <= 0 && b.mp >= 45) {
+            this.castMobaBotSpell(b, 1, bestTarget); // EMP Static Shockwave!
+          } else if (heroKey === 'arissa' && b.spellsCooldown[0] <= 0 && b.mp >= 40) {
+            this.castMobaBotSpell(b, 0, bestTarget); // Area Blast Shockwave!
+          }
+        }
+
+        // D. Secondary Burst, Clones, Traps & Dashes
+        if (heroKey === 'skeletonz' && isHeroTarget && b.spellsCooldown[1] <= 0 && b.mp >= 65) {
+          this.castMobaBotSpell(b, 1, bestTarget); // Summon 2 Mirror Clones!
+        } else if (heroKey === 'skeletonz' && dist <= 6.5 && b.spellsCooldown[2] <= 0 && b.mp >= 45) {
+          this.castMobaBotSpell(b, 2, bestTarget); // Shadow Dagger!
+        } else if ((heroKey === 'monster' || heroKey === 'warrok') && dist <= 4.4 && b.spellsCooldown[1] <= 0 && b.mp >= 40) {
+          this.castMobaBotSpell(b, 1, bestTarget); // Earth Tremor Slam!
+        } else if ((heroKey === 'bot' || heroKey === 'steelborn') && b.spellsCooldown[0] <= 0 && b.mp >= 35) {
+          this.castMobaBotSpell(b, 0, bestTarget); // Plant Proximity Boom Mine!
+        } else if (heroKey.includes('woman') && dist <= 4.0 && b.spellsCooldown[2] <= 0 && b.mp >= 50) {
+          this.castMobaBotSpell(b, 2, bestTarget); // Whirlwind Slashes!
+        } else if (heroKey.includes('woman') && dist > 3.5 && dist < 7.0 && b.spellsCooldown[0] <= 0 && b.mp >= 40) {
+          this.castMobaBotSpell(b, 0, bestTarget); // Decoy Illusion Clone!
+        }
+
+        // E. Gap-Closer Dash / Surge for Ranged / Melee
+        if (dist > 4.5 && dist < 9.5 && isHeroTarget) {
+          if (heroKey === 'arissa' && b.spellsCooldown[1] <= 0 && b.mp >= 50) {
+            this.castMobaBotSpell(b, 1, bestTarget); // Blink Dash!
+          } else if (heroKey === 'erika' && b.spellsCooldown[1] <= 0 && b.mp >= 45) {
+            this.castMobaBotSpell(b, 1, bestTarget); // Flame Surge!
+          }
+        }
+
+        // --- 2. MOVEMENT, KITING & AUTO-ATTACK EXECUTION ---
+        const effectiveRange = attackRange + targetRad;
+        const currentSpeed = (b.speed || 4.2) * (b.invisibilityTimer > 0 ? 1.35 : 1.0);
+
+        if (dist <= effectiveRange) {
+          // RANGED KITING: If enemy is too close (< 3.8m), back up slightly to maintain safe firing distance!
+          if (b.isRanged && dist < 3.8 && (!b.rootedTimer || b.rootedTimer <= 0)) {
+            const step = Math.min(3.8 - dist, currentSpeed * 0.7 * dt);
+            b.pos[0] -= (dx / dist) * step;
+            b.pos[2] -= (dz / dist) * step;
+            this.resolveMobaCollision(b.pos, 0.65);
+            b.moving = true;
+          } else {
+            b.moving = false;
+          }
+
+          // Trigger basic attack / projectile
           if (b.attackTimer <= 0) {
-            b.attackTimer = b.attackCooldown || 0.95;
+            b.attackTimer = b.attackCooldown || 0.85;
             b.lastAttackTime = performance.now();
             this.mobaPlaySound('attack');
+
+            let hitDamage = b.damage || 65;
+            let isCrit = false;
+
+            // Invisibility Backstab Critical Strike!
+            if (b.invisibilityTimer > 0 || b.hasBackstab) {
+              hitDamage += 140;
+              isCrit = true;
+              b.invisibilityTimer = 0;
+              b.hasBackstab = false;
+              this.addMobaCombatText(tPos[0], 2.6, tPos[2], "🗡️ BACKSTAB CRIT!", "#fbbf24");
+            }
+
             if (b.isRanged) {
               if (!this.mobaState.projectiles) this.mobaState.projectiles = [];
               this.mobaState.projectiles.push({
                 x: b.pos[0],
                 y: 1.1,
                 z: b.pos[2],
-                targetEntity: closestTarget,
-                speed: 16.0,
-                damage: b.damage || 50,
+                targetEntity: bestTarget,
+                speed: 18.0,
+                damage: hitDamage,
+                isCrit: isCrit,
                 color: b.team === 'RED' ? [1.0, 0.3, 0.1] : [0.2, 0.6, 1.0],
                 attackerTeam: b.team
               });
             } else {
-              this.applyMobaDamage(closestTarget, b.damage || 55, b.team, false, false);
+              this.applyMobaDamage(bestTarget, hitDamage, b.team, false, isCrit);
             }
           }
-        } else {
-          // Walk towards target
-          const step = Math.min(dist, b.speed * dt);
+        } else if (!b.rootedTimer || b.rootedTimer <= 0) {
+          // Move towards target
+          const step = Math.min(dist, currentSpeed * dt);
           b.pos[0] += (dx / dist) * step;
           b.pos[2] += (dz / dist) * step;
           this.resolveMobaCollision(b.pos, 0.65);
-          b.yaw = Math.atan2(dx, dz);
           b.moving = true;
+        } else {
+          b.moving = false;
         }
-      } else if (b.waypoints && b.waypointIndex < b.waypoints.length) {
+      } else if ((!b.rootedTimer || b.rootedTimer <= 0) && b.waypoints && b.waypointIndex < b.waypoints.length) {
         // Advance along classic lane waypoints
         const wp = b.waypoints[b.waypointIndex];
         const dx = wp[0] - b.pos[0];
         const dz = wp[2] - b.pos[2];
         const dist = Math.hypot(dx, dz);
-        // Scaled waypoint tolerance to prevent friendly bots getting stuck on friendly/enemy tower collisions (since min dist can be 1.9)
         if (dist < 3.2) {
           b.waypointIndex++;
         } else {
-          const step = Math.min(dist, b.speed * dt);
+          const step = Math.min(dist, (b.speed || 4.2) * dt);
           b.pos[0] += (dx / dist) * step;
           b.pos[2] += (dz / dist) * step;
           this.resolveMobaCollision(b.pos, 0.65);
@@ -33742,7 +35476,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const dz = enemyBasePos[2] - b.pos[2];
         const dist = Math.hypot(dx, dz);
         if (dist > 2.0) {
-          const step = Math.min(dist, b.speed * dt);
+          const step = Math.min(dist, (b.speed || 4.2) * dt);
           b.pos[0] += (dx / dist) * step;
           b.pos[2] += (dz / dist) * step;
           this.resolveMobaCollision(b.pos, 0.65);
@@ -33753,6 +35487,173 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       }
     });
+  }
+
+  updateMobaAdvancedMagic(dt) {
+    if (!this.mobaState || !this.mobaState.playing) return;
+
+    // 1. Sky Meteors / Fireballs from the sky (e.g. Erika's Celestial Fireball, Bot's Orbital Bombardment)
+    if (this.mobaState.skyMeteors && this.mobaState.skyMeteors.length > 0) {
+      this.mobaState.skyMeteors = this.mobaState.skyMeteors.filter(m => {
+        m.y -= m.speed * dt;
+        if (m.y <= 0.3) {
+          // Impact ground!
+          if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+          this.mobaState.vfxBursts.push({
+            type: 'fireExplosion',
+            x: m.x,
+            y: 0.2,
+            z: m.z,
+            radius: m.radius || 5.5,
+            timer: 0.75,
+            maxTimer: 0.75,
+            color: m.color || [1.0, 0.4, 0.05],
+            isMagic: true
+          });
+          this.mobaDamageInRadius([m.x, 0, m.z], m.radius || 5.5, m.damage || 350, m.heroTeam, true, true, m.statusEffect, m.stunDuration);
+          this.triggerMobaScreenShake(0.7);
+          this.mobaPlaySound('explosion');
+          this.showMobaAlert(m.alert || "☄️ SKY FIREBALL CRASHED!");
+          return false;
+        }
+        return true;
+      });
+    }
+
+    // 2. Proximity Mines (e.g. Bot / Steelborn's Deploy Boom)
+    if (this.mobaState.mines && this.mobaState.mines.length > 0) {
+      this.mobaState.mines = this.mobaState.mines.filter(mine => {
+        mine.armTimer -= dt;
+        mine.timer -= dt;
+
+        if (mine.armTimer <= 0) {
+          let triggered = false;
+
+          // Check enemy bots/players
+          if (this.mobaState.players) {
+            for (let p of this.mobaState.players) {
+              if (p.team !== mine.team && p.hp > 0 && p.pos) {
+                if (Math.hypot(p.pos[0] - mine.x, p.pos[2] - mine.z) <= (mine.triggerRadius || 2.8)) {
+                  triggered = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Check enemy creeps
+          if (!triggered && this.mobaState.creeps) {
+            for (let c of this.mobaState.creeps) {
+              if (c.team !== mine.team && c.hp > 0 && c.pos) {
+                if (Math.hypot(c.pos[0] - mine.x, c.pos[2] - mine.z) <= (mine.triggerRadius || 2.8)) {
+                  triggered = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          // Check player if on opposing team
+          if (!triggered && this.mobaState.team !== mine.team && this.mobaState.heroStats.hp > 0) {
+            if (Math.hypot(this.mobaState.currentPos[0] - mine.x, this.mobaState.currentPos[2] - mine.z) <= (mine.triggerRadius || 2.8)) {
+              triggered = true;
+            }
+          }
+
+          if (triggered || mine.timer <= 0) {
+            if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+            this.mobaState.vfxBursts.push({
+              type: 'fireExplosion',
+              x: mine.x,
+              y: 0.2,
+              z: mine.z,
+              radius: mine.blastRadius || 4.8,
+              timer: 0.6,
+              maxTimer: 0.6,
+              color: [1.0, 0.7, 0.1],
+              isMagic: true
+            });
+            this.mobaDamageInRadius([mine.x, 0, mine.z], mine.blastRadius || 4.8, mine.damage || 195, mine.team, true, true);
+            this.triggerMobaScreenShake(0.5);
+            this.mobaPlaySound('explosion');
+            this.showMobaAlert("💥 PROXIMITY BOOM DETONATED! -195");
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    // 3. Clones / Illusions (e.g. Skeletonz's Shadow Clones, Woman Mobile's Decoy)
+    if (this.mobaState.clones && this.mobaState.clones.length > 0) {
+      this.mobaState.clones = this.mobaState.clones.filter(clone => {
+        clone.duration -= dt;
+        clone.attackTimer = (clone.attackTimer || 0) - dt;
+
+        if (clone.duration <= 0 || clone.hp <= 0) {
+          if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+          this.mobaState.vfxBursts.push({
+            type: 'cloneBurst',
+            x: clone.pos[0],
+            z: clone.pos[2],
+            radius: 2.5,
+            timer: 0.5,
+            maxTimer: 0.5,
+            color: [0.65, 0.25, 0.95]
+          });
+          return false;
+        }
+
+        // Target nearest hostile unit within 12m
+        let closestTarget = null;
+        let closestDist = 12.0;
+
+        // Check creeps
+        if (this.mobaState.creeps) {
+          for (let c of this.mobaState.creeps) {
+            if (c.team !== clone.team && c.hp > 0 && c.pos) {
+              const d = Math.hypot(c.pos[0] - clone.pos[0], c.pos[2] - clone.pos[2]);
+              if (d < closestDist) {
+                closestDist = d;
+                closestTarget = c;
+              }
+            }
+          }
+        }
+
+        // Check enemy bots/players
+        if (this.mobaState.players) {
+          for (let p of this.mobaState.players) {
+            if (p.team !== clone.team && p.hp > 0 && p.pos) {
+              const d = Math.hypot(p.pos[0] - clone.pos[0], p.pos[2] - clone.pos[2]);
+              if (d < closestDist) {
+                closestDist = d;
+                closestTarget = p;
+              }
+            }
+          }
+        }
+
+        if (closestTarget) {
+          const dx = closestTarget.pos[0] - clone.pos[0];
+          const dz = closestTarget.pos[2] - clone.pos[2];
+          const dist = Math.hypot(dx, dz);
+          clone.yaw = Math.atan2(dx, dz);
+
+          if (dist > 2.0) {
+            const move = Math.min(dist, (clone.speed || 5.5) * dt);
+            clone.pos[0] += (dx / dist) * move;
+            clone.pos[2] += (dz / dist) * move;
+            this.resolveMobaCollision(clone.pos, 0.6);
+          } else if (clone.attackTimer <= 0) {
+            clone.attackTimer = 0.85;
+            this.applyMobaDamage(closestTarget, clone.damage || 35, clone.team, false, false);
+            this.mobaPlaySound('hit');
+          }
+        }
+        return true;
+      });
+    }
   }
 
   mobaTriggerPlayerAttack() {
@@ -33900,11 +35801,30 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     return closest;
   }
 
-  applyMobaDamage(target, amount, attackerTeam, isSpell = false, isCrit = false) {
+  applyMobaDamage(target, amount, attackerTeam, isSpell = false, isCrit = false, statusType = null, statusDuration = 0) {
     if (!target || !this.mobaState) return;
 
     let targetPos = target.pos || this.mobaState.currentPos;
     let finalDmg = Math.round(amount * (isCrit ? 1.6 : 1.0));
+
+    // Status effect application
+    if (statusType === 'stun' && statusDuration > 0) {
+      if (target.isPlayer || target === this.mobaState) {
+        this.mobaState.stunnedTimer = Math.max(this.mobaState.stunnedTimer || 0, statusDuration);
+        this.addMobaCombatText(targetPos[0], 2.8, targetPos[2], "❄️ STUNNED!", "#38bdf8");
+      } else {
+        target.stunnedTimer = Math.max(target.stunnedTimer || 0, statusDuration);
+        this.addMobaCombatText(targetPos[0], 2.4, targetPos[2], "❄️ STUNNED!", "#38bdf8");
+      }
+    } else if (statusType === 'root' && statusDuration > 0) {
+      if (target.isPlayer || target === this.mobaState) {
+        this.mobaState.rootedTimer = Math.max(this.mobaState.rootedTimer || 0, statusDuration);
+        this.addMobaCombatText(targetPos[0], 2.8, targetPos[2], "🌿 ROOTED!", "#4ade80");
+      } else {
+        target.rootedTimer = Math.max(target.rootedTimer || 0, statusDuration);
+        this.addMobaCombatText(targetPos[0], 2.4, targetPos[2], "🌿 ROOTED!", "#4ade80");
+      }
+    }
 
     // Towers custom logic: Magic immunity & physical damage resistance (armor)
     const isTower = (target.id && typeof target.id === 'string' && target.id.includes('tower'));
@@ -33974,6 +35894,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     // 2. Damage to Other Entities (Bots, Creeps, Towers, Tron)
+    if (target.shield && target.shield > 0) {
+      const absorb = Math.min(target.shield, finalDmg);
+      target.shield -= absorb;
+      finalDmg -= absorb;
+      this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], `ABSORB ${absorb}`, '#38bdf8');
+    }
+
     target.hp = Math.max(0, (target.hp || 0) - finalDmg);
     this.addMobaCombatText(targetPos[0], 1.8, targetPos[2], `-${finalDmg}`, isCrit ? '#fbbf24' : '#ef4444');
     if (!isTower && (!target.id || !target.id.startsWith('tron_'))) {
@@ -34003,6 +35930,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         setTimeout(() => {
           if (target && this.mobaState && this.mobaState.playing) {
             target.hp = target.maxHp;
+            target.mp = target.maxMp || 400;
+            target.shield = 0;
+            target.shieldTimer = 0;
+            target.invisibilityTimer = 0;
+            target.stunnedTimer = 0;
+            target.rootedTimer = 0;
+            target.spellsCooldown = [0, 0, 0, 0];
             const bBase = target.team === 'RED' ? [-38.0, 0, -38.0] : [38.0, 0, 38.0];
             target.pos = [...bBase];
           }
@@ -34054,14 +35988,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
   }
 
-  mobaDamageInRadius(center, radius, damage, myTeam, isSpell = true, isCrit = false) {
+  mobaDamageInRadius(center, radius, damage, myTeam, isSpell = true, isCrit = false, statusType = null, statusDuration = 0) {
     if (!this.mobaState) return;
 
     // Check player
     if (this.mobaState.team !== myTeam && this.mobaState.heroStats.hp > 0) {
       const d = Math.hypot(this.mobaState.currentPos[0] - center[0], this.mobaState.currentPos[2] - center[2]);
       if (d <= radius) {
-        this.applyMobaDamage({ isPlayer: true, pos: this.mobaState.currentPos }, damage, myTeam, isSpell, isCrit);
+        this.applyMobaDamage({ isPlayer: true, pos: this.mobaState.currentPos }, damage, myTeam, isSpell, isCrit, statusType, statusDuration);
       }
     }
 
@@ -34071,7 +36005,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (p.team !== myTeam && p.hp > 0 && p.pos) {
           const d = Math.hypot(p.pos[0] - center[0], p.pos[2] - center[2]);
           if (d <= radius) {
-            this.applyMobaDamage(p, damage, myTeam, isSpell, isCrit);
+            this.applyMobaDamage(p, damage, myTeam, isSpell, isCrit, statusType, statusDuration);
           }
         }
       });
@@ -34083,7 +36017,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (c.team !== myTeam && c.hp > 0 && c.pos) {
           const d = Math.hypot(c.pos[0] - center[0], c.pos[2] - center[2]);
           if (d <= radius) {
-            this.applyMobaDamage(c, damage, myTeam, isSpell, isCrit);
+            this.applyMobaDamage(c, damage, myTeam, isSpell, isCrit, statusType, statusDuration);
           }
         }
       });
@@ -34124,6 +36058,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       timer: 0.85,
       maxTimer: 0.85
     });
+  }
+
+  triggerMobaScreenShake(intensity = 0.5, duration = 0.35) {
+    this._mobaScreenShakeTimer = duration || 0.35;
+    this._mobaScreenShakeDuration = duration || 0.35;
+    this._mobaScreenShakeIntensity = intensity || 0.5;
+
+    const canvas = this.canvas || document.getElementById('gl-canvas');
+    if (canvas) {
+      const px = Math.min(8, Math.round(intensity * 10));
+      const offX = (Math.random() - 0.5) * px;
+      const offY = (Math.random() - 0.5) * px;
+      canvas.style.transform = `translate(${offX.toFixed(1)}px, ${offY.toFixed(1)}px)`;
+      setTimeout(() => {
+        if (canvas) canvas.style.transform = '';
+      }, 45);
+    }
   }
 
   showMobaAlert(msg, colorClass = 'text-amber-400') {
