@@ -35807,6 +35807,25 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     let targetPos = target.pos || this.mobaState.currentPos;
     let finalDmg = Math.round(amount * (isCrit ? 1.6 : 1.0));
 
+    // Global magic damage reduction: tune spell damage down by ~25%
+    if (isSpell) {
+      finalDmg = Math.round(finalDmg * 0.75);
+    }
+
+    // Safety check: On level 1 / full energy hero, no single attack or spell can one-shot kill a full health player
+    if ((target.isPlayer || target === this.mobaState) && this.mobaState.heroStats) {
+      const stats = this.mobaState.heroStats;
+      const totalEffectiveHp = (stats.hp || 0) + (stats.shield || 0);
+      const isFullHealth = totalEffectiveHp >= (stats.maxHp || 500) * 0.95;
+      if (isFullHealth) {
+        // Cap single-hit damage so the player always retains at least 25% of their max HP
+        const maxAllowedDamage = Math.max(1, Math.floor((stats.maxHp || 500) * 0.75));
+        if (finalDmg >= maxAllowedDamage) {
+          finalDmg = maxAllowedDamage;
+        }
+      }
+    }
+
     // Status effect application
     if (statusType === 'stun' && statusDuration > 0) {
       if (target.isPlayer || target === this.mobaState) {

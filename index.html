@@ -1030,12 +1030,12 @@
               </div>
 
               <!-- RESPAWN TIMER OVERLAY / HERO FALLEN POPUP (Shown when player is dead, guaranteed above all UI elements) -->
-              <div id="moba-respawn-overlay" class="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-auto z-[80] hidden transition-all duration-300">
-                <div class="bg-slate-950/95 border border-red-500/60 p-6 sm:p-8 rounded-2xl flex flex-col items-center max-w-sm text-center shadow-[0_0_40px_rgba(239,68,68,0.5)]">
-                  <span class="text-4xl sm:text-5xl">💀</span>
-                  <h2 class="text-xl sm:text-2xl font-black text-rose-500 tracking-wider mt-2 uppercase">YOU HAVE FALLEN</h2>
-                  <p class="text-[11px] sm:text-xs text-slate-300 mt-2 leading-relaxed">Wait for respawn or use <strong class="text-cyan-400">Magic Reborn</strong> potion from your inventory to half cut respawn time!</p>
-                  <div class="text-4xl sm:text-5xl font-black font-mono text-amber-400 mt-4 animate-pulse" id="moba-respawn-countdown">20s</div>
+              <div id="moba-respawn-overlay" class="absolute inset-0 bg-black/25 flex flex-col items-center justify-center pointer-events-none z-[80] hidden transition-all duration-300">
+                <div class="bg-slate-950/40 backdrop-blur-[2px] border border-red-500/30 p-5 sm:p-6 rounded-2xl flex flex-col items-center max-w-sm text-center shadow-[0_0_25px_rgba(239,68,68,0.25)] pointer-events-auto">
+                  <span class="text-3xl sm:text-4xl drop-shadow-md">💀</span>
+                  <h2 class="text-lg sm:text-xl font-black text-rose-400 tracking-wider mt-1.5 uppercase drop-shadow">YOU HAVE FALLEN</h2>
+                  <p class="text-[11px] sm:text-xs text-slate-200/90 mt-1.5 leading-relaxed drop-shadow">Wait for respawn or use <strong class="text-cyan-300 font-bold">Magic Reborn</strong> potion from your inventory to half cut respawn time!</p>
+                  <div class="text-3xl sm:text-4xl font-black font-mono text-amber-300 mt-3 animate-pulse drop-shadow" id="moba-respawn-countdown">20s</div>
                 </div>
               </div>
 
