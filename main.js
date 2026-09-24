@@ -3297,71 +3297,73 @@ vec3 acesTonemap(vec3 x) {
 void main() {
     vec2 uv = v_uv;
     vec3 sceneCol = texture(u_sceneColor, uv).rgb;
-    float rawDepth = texture(u_sceneDepth, uv).r;
-    float linDepth = linearizeDepth(rawDepth);
-    float normDepth = clamp(linDepth / 45.0, 0.0, 1.0);
 
-    // 1. HZB Mip Downsample Emulation & Visualizers
-    // 5 levels of depth pyramid downsampling (Mip 0 to Mip 4)
-    float mipDiv = pow(2.0, float(u_hzbMipLevel));
-    vec2 mipGrid = floor(uv * (u_resolution / mipDiv)) / (u_resolution / mipDiv);
-    
-    // Conservative Max-Depth Gather across 2x2 footprint
-    vec2 texel = 1.0 / u_resolution;
-    float d0 = texture(u_sceneDepth, mipGrid).r;
-    float d1 = texture(u_sceneDepth, mipGrid + vec2(texel.x * mipDiv, 0.0)).r;
-    float d2 = texture(u_sceneDepth, mipGrid + vec2(0.0, texel.y * mipDiv)).r;
-    float d3 = texture(u_sceneDepth, mipGrid + vec2(texel.x * mipDiv, texel.y * mipDiv)).r;
-    float hzbDepth = max(max(d0, d1), max(d2, d3));
-    float hzbLin = linearizeDepth(hzbDepth);
-    float hzbNorm = clamp(hzbLin / 45.0, 0.0, 1.0);
+    // 1. HZB Mip Downsample Emulation & Visualizers (only executed when an HZB debug view mode is active)
+    if (u_hzbViewMode > 0) {
+        float rawDepth = texture(u_sceneDepth, uv).r;
+        float linDepth = linearizeDepth(rawDepth);
+        float normDepth = clamp(linDepth / 45.0, 0.0, 1.0);
 
-    // Check if view mode is an HZB debug mode
-    if (u_hzbViewMode == 1) {
-        // Mode 1: HZB Depth Pyramid False-Color Mip Heatmap
-        vec3 heat = turboColormap(hzbNorm);
+        float mipDiv = pow(2.0, float(u_hzbMipLevel));
+        vec2 mipGrid = floor(uv * (u_resolution / mipDiv)) / (u_resolution / mipDiv);
         
-        // Overlay mip tile grid borders to clearly show pyramid resolution
-        vec2 gridFract = fract(uv * (u_resolution / mipDiv));
-        float border = (gridFract.x < 0.05 || gridFract.y < 0.05) ? 0.4 : 0.0;
-        heat = mix(heat, vec3(0.0, 0.95, 1.0), border);
+        // Conservative Max-Depth Gather across 2x2 footprint
+        vec2 texel = 1.0 / u_resolution;
+        float d0 = texture(u_sceneDepth, mipGrid).r;
+        float d1 = texture(u_sceneDepth, mipGrid + vec2(texel.x * mipDiv, 0.0)).r;
+        float d2 = texture(u_sceneDepth, mipGrid + vec2(0.0, texel.y * mipDiv)).r;
+        float d3 = texture(u_sceneDepth, mipGrid + vec2(texel.x * mipDiv, texel.y * mipDiv)).r;
+        float hzbDepth = max(max(d0, d1), max(d2, d3));
+        float hzbLin = linearizeDepth(hzbDepth);
+        float hzbNorm = clamp(hzbLin / 45.0, 0.0, 1.0);
 
-        fragColor = vec4(heat, 1.0);
-        return;
-    } else if (u_hzbViewMode == 2) {
-        // Mode 2: Linear Depth Buffer (Near/Far Contrast)
-        float contrastDepth = pow(1.0 - normDepth, 1.8);
-        fragColor = vec4(vec3(contrastDepth), 1.0);
-        return;
-    } else if (u_hzbViewMode == 3) {
-        // Mode 3: Early-Z Occlusion Culling Bounding Volumes (Green=Passed, Red=Culled)
-        vec3 base = sceneCol * 0.45;
-        float depthDiff = abs(rawDepth - hzbDepth);
-        vec3 cullHighlight = (depthDiff > 0.001) ? vec3(1.0, 0.15, 0.15) : vec3(0.1, 0.95, 0.35);
-        float pulse = 0.5 + 0.5 * sin(u_time * 6.0 + uv.y * 30.0);
-        fragColor = vec4(mix(base, cullHighlight, 0.65 + 0.35 * pulse), 1.0);
-        return;
-    } else if (u_hzbViewMode == 4) {
-        // Mode 4: Hi-Z SSR Raymarching Heatmap (Sample Density)
-        float raySteps = float(u_hzbSteps);
-        float sampleDensity = fract(hzbNorm * raySteps * 2.0);
-        vec3 rayColor = turboColormap(sampleDensity);
-        fragColor = vec4(rayColor, 1.0);
-        return;
-    } else if (u_hzbViewMode == 5) {
-        // Mode 5: Split Screen (Scene Left / HZB Depth Right)
-        if (uv.x > 0.5) {
-            float splitX = (uv.x - 0.5) * 2.0;
+        // Check if view mode is an HZB debug mode
+        if (u_hzbViewMode == 1) {
+            // Mode 1: HZB Depth Pyramid False-Color Mip Heatmap
             vec3 heat = turboColormap(hzbNorm);
-            vec2 gridFract = fract(vec2(splitX, uv.y) * (u_resolution / mipDiv));
+            
+            // Overlay mip tile grid borders to clearly show pyramid resolution
+            vec2 gridFract = fract(uv * (u_resolution / mipDiv));
             float border = (gridFract.x < 0.05 || gridFract.y < 0.05) ? 0.4 : 0.0;
             heat = mix(heat, vec3(0.0, 0.95, 1.0), border);
+
             fragColor = vec4(heat, 1.0);
             return;
-        } else if (abs(uv.x - 0.5) < 0.003) {
-            // White divider line
-            fragColor = vec4(1.0, 1.0, 1.0, 1.0);
+        } else if (u_hzbViewMode == 2) {
+            // Mode 2: Linear Depth Buffer (Near/Far Contrast)
+            float contrastDepth = pow(1.0 - normDepth, 1.8);
+            fragColor = vec4(vec3(contrastDepth), 1.0);
             return;
+        } else if (u_hzbViewMode == 3) {
+            // Mode 3: Early-Z Occlusion Culling Bounding Volumes (Green=Passed, Red=Culled)
+            vec3 base = sceneCol * 0.45;
+            float depthDiff = abs(rawDepth - hzbDepth);
+            vec3 cullHighlight = (depthDiff > 0.001) ? vec3(1.0, 0.15, 0.15) : vec3(0.1, 0.95, 0.35);
+            float pulse = 0.5 + 0.5 * sin(u_time * 6.0 + uv.y * 30.0);
+            fragColor = vec4(mix(base, cullHighlight, 0.65 + 0.35 * pulse), 1.0);
+            return;
+        } else if (u_hzbViewMode == 4) {
+            // Mode 4: Hi-Z SSR Raymarching Heatmap (Sample Density)
+            float raySteps = float(u_hzbSteps);
+            float sampleDensity = fract(hzbNorm * raySteps * 2.0);
+            vec3 rayColor = turboColormap(sampleDensity);
+            fragColor = vec4(rayColor, 1.0);
+            return;
+        } else if (u_hzbViewMode == 5) {
+            // Mode 5: Split Screen (Scene Left / HZB Depth Right)
+            if (uv.x > 0.5) {
+                float splitX = (uv.x - 0.5) * 2.0;
+                vec3 heat = turboColormap(hzbNorm);
+                vec2 gridFract = fract(vec2(splitX, uv.y) * (u_resolution / mipDiv));
+                float border = (gridFract.x < 0.05 || gridFract.y < 0.05) ? 0.4 : 0.0;
+                heat = mix(heat, vec3(0.0, 0.95, 1.0), border);
+                fragColor = vec4(heat, 1.0);
+                return;
+            } else if (abs(uv.x - 0.5) < 0.003) {
+                // White divider line
+                fragColor = vec4(1.0, 1.0, 1.0, 1.0);
+                return;
+            }
         }
     }
 
@@ -6350,7 +6352,15 @@ class NativeApp {
     this.fpsAutoFireInterval = null;
 
     this.canvas = document.getElementById('engine-canvas');
-    this.gl = this.canvas.getContext('webgl2', { antialias: true, alpha: false });
+    this.offscreenCanvas = null;
+
+    if (this.canvas) {
+      try {
+        this.gl = this.canvas.getContext('webgl2', { antialias: true, alpha: false });
+      } catch (e) {
+        console.warn("Failed to initialize WebGL2 context:", e);
+      }
+    }
     
     if (!this.gl) {
       alert("WebGL2 / OpenGL ES 3.0 is not supported on this browser.");
@@ -6556,8 +6566,8 @@ class NativeApp {
     // Web Audio Synthesizer for FPS Sound FX
     this.synth = new RetroSoundSynth();
 
-    // Background music master volume (soft 4% default so voices are crystal clear)
-    this.masterMusicVolume = 0.04;
+    // Background music master volume (standard 45% default)
+    this.masterMusicVolume = 0.45;
 
     // Cross-Platform Web Speech Voice Announcer Subsystem
     this.speechAnnouncer = new WebSpeechAnnouncer(this);
@@ -8471,6 +8481,7 @@ void main() {
       this.sacredHeroMeshes = {
         Arissa: this.buildMeshBuffer(SacredGeometryFactory.createPentagramCircle(1.2)),
         Erika: this.buildMeshBuffer(SacredGeometryFactory.createHexagramCircle(1.2)),
+        ErikaSpiral: this.buildMeshBuffer(SacredGeometryFactory.createSpiralVortexCircle(1.2)),
         Monster: this.buildMeshBuffer(SacredGeometryFactory.createTripleTriangleCircle(1.25)),
         Bot: this.buildMeshBuffer(SacredGeometryFactory.createOctagramCircle(1.2)),
         Skeletonz: this.buildMeshBuffer(SacredGeometryFactory.createHeptagramCircle(1.2)),
@@ -8634,6 +8645,14 @@ void main() {
 
   drawHeroSacredCircle(progInfo, heroName, team, pos, timestamp, isLocal = false) {
     if (!this.sacredHeroMeshes) return;
+
+    // In MOBA only: Replace Erika's under foot sacred symbol with dynamic golden vortex spiral effect!
+    const isMoba = Boolean(this.state.demoScene && this.state.demoScene.includes('15_moba'));
+    if (heroName === 'Erika' && isMoba) {
+      this.drawErikaSpiralEffect(progInfo, team, pos, timestamp, isLocal);
+      return;
+    }
+
     const mesh = this.sacredHeroMeshes[heroName] || this.sacredHeroMeshes.Arissa;
     if (!mesh) return;
 
@@ -8687,6 +8706,71 @@ void main() {
       this.instanceMatrix[4] = 0;   this.instanceMatrix[5] = 0.035; this.instanceMatrix[6] = 0;  this.instanceMatrix[7] = 0;
       this.instanceMatrix[8] = sR;  this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cR; this.instanceMatrix[11] = 0;
       // Lift inner ring above road level to remain beautifully visible on cobblestones
+      this.instanceMatrix[12] = pos[0]; this.instanceMatrix[13] = baseY + 0.08; this.instanceMatrix[14] = pos[2]; this.instanceMatrix[15] = 1.0;
+      Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+      gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+      if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(baseColor));
+      gl.drawElements(gl.TRIANGLES, innerRing.indexCount, gl.UNSIGNED_SHORT, 0);
+    }
+  }
+
+  drawErikaSpiralEffect(progInfo, team, pos, timestamp, isLocal = false, customScale = null) {
+    const spiralMesh = (this.sacredHeroMeshes && this.sacredHeroMeshes.ErikaSpiral) ||
+                       (this.sacredHeroMeshes && this.sacredHeroMeshes.Erika);
+    if (!spiralMesh) return;
+
+    const gl = this.gl;
+    const isPedestal = customScale !== null;
+    const baseY = typeof pos[1] === 'number' ? pos[1] : 0.0;
+    const yPos = isPedestal ? baseY : (baseY + 0.075);
+    const yThick = isPedestal ? 0.028 : 0.03;
+
+    // Erika Sorceress Mystic Cyan / Arcane Teal Palette with team tint
+    const baseColor = [0.0, 0.95, 1.0]; // Pure Electric Sorceress Cyan
+    const teamTint = team === 'RED' ? [1.0, 0.25, 0.2] : [0.15, 0.55, 1.0];
+    const finalColor = [
+      baseColor[0] * 0.78 + teamTint[0] * 0.22,
+      baseColor[1] * 0.78 + teamTint[1] * 0.22,
+      baseColor[2] * 0.78 + teamTint[2] * 0.22
+    ];
+
+    // Scale calculation: exact same dimension logic as all other heroes
+    const effScale = isPedestal
+      ? customScale
+      : ((isLocal ? 1.35 : 1.15) + Math.sin(timestamp * 0.004 + pos[0]) * 0.08);
+
+    // Swirling vortex dynamics: smooth, hypnotic rotation
+    const spinSpeed = isPedestal ? 0.0008 : 0.0009;
+    const vortexSpin = timestamp * spinSpeed * (team === 'RED' ? 1 : -1);
+    const cS = Math.cos(vortexSpin) * effScale;
+    const sS = Math.sin(vortexSpin) * effScale;
+
+    // 1. PRIMARY SPIRAL DISC - exact same dimensions, elevation, and layer placement as other heroes
+    gl.bindVertexArray(spiralMesh.vao);
+    this.instanceMatrix[0] = cS;   this.instanceMatrix[1] = 0;      this.instanceMatrix[2] = -sS;  this.instanceMatrix[3] = 0;
+    this.instanceMatrix[4] = 0;    this.instanceMatrix[5] = yThick; this.instanceMatrix[6] = 0;    this.instanceMatrix[7] = 0;
+    this.instanceMatrix[8] = sS;   this.instanceMatrix[9] = 0;      this.instanceMatrix[10] = cS;  this.instanceMatrix[11] = 0;
+    this.instanceMatrix[12] = pos[0]; this.instanceMatrix[13] = yPos; this.instanceMatrix[14] = pos[2]; this.instanceMatrix[15] = 1.0;
+
+    Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+    gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+    if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+    if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, isPedestal ? 0.35 : 0.15);
+    if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, isPedestal ? 0.15 : 0.85);
+    if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(finalColor));
+    if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+    gl.drawElements(gl.TRIANGLES, spiralMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+    // 2. INNER ACCENT RING for local hero in gameplay (identical to other heroes using meshBuffers[6])
+    if (isLocal && !isPedestal && this.meshBuffers && this.meshBuffers[6]) {
+      const innerRing = this.meshBuffers[6];
+      gl.bindVertexArray(innerRing.vao);
+      const revSpin = -vortexSpin * 1.5;
+      const cR = Math.cos(revSpin) * 0.65, sR = Math.sin(revSpin) * 0.65;
+      this.instanceMatrix[0] = cR;  this.instanceMatrix[1] = 0;      this.instanceMatrix[2] = -sR;  this.instanceMatrix[3] = 0;
+      this.instanceMatrix[4] = 0;   this.instanceMatrix[5] = 0.035;  this.instanceMatrix[6] = 0;    this.instanceMatrix[7] = 0;
+      this.instanceMatrix[8] = sR;  this.instanceMatrix[9] = 0;      this.instanceMatrix[10] = cR;  this.instanceMatrix[11] = 0;
       this.instanceMatrix[12] = pos[0]; this.instanceMatrix[13] = baseY + 0.08; this.instanceMatrix[14] = pos[2]; this.instanceMatrix[15] = 1.0;
       Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
@@ -9353,6 +9437,10 @@ void main() {
         if (typeof this.updateOverlayVisibility === 'function') {
           this.updateOverlayVisibility();
         }
+      }
+
+      if (typeof this.updateProjectTabs === 'function') {
+        this.updateProjectTabs();
       }
     };
 
@@ -10204,6 +10292,30 @@ void main() {
     const btnTabFs = document.getElementById('btn-tab-fullscreen');
     if (btnTabFs) btnTabFs.addEventListener('click', toggleFullscreen);
 
+    // Listen for tab focus/blur state to make the local hero inactive and reduce taken damage
+    document.addEventListener('visibilitychange', () => {
+      if (!this.mobaState) return;
+      if (document.visibilityState === 'hidden') {
+        this.mobaState.inactive = true;
+        this.log("⚠️ Tab minimized/unfocused: Your hero is now INACTIVE. Incoming damage halved.", "info");
+        if (this.mobaState.activePartyId) {
+          this.net.send('moba:action', {
+            partyId: this.mobaState.activePartyId,
+            action: { type: 'set_inactive', playerId: this.net.localPlayerId, inactive: true }
+          });
+        }
+      } else {
+        this.mobaState.inactive = false;
+        this.log("⚡ Tab focused: Your hero is active again!", "success");
+        if (this.mobaState.activePartyId) {
+          this.net.send('moba:action', {
+            partyId: this.mobaState.activePartyId,
+            action: { type: 'set_inactive', playerId: this.net.localPlayerId, inactive: false }
+          });
+        }
+      }
+    });
+
     window.addEventListener('resize', this.onResize.bind(this));
   }
 
@@ -10827,17 +10939,26 @@ void main() {
       };
 
       // Touch events on Joystick
-      joystickBase.addEventListener('touchstart', (e) => {
+      const startJoyTouch = (e) => {
         e.preventDefault();
+        e.stopPropagation();
+        if (this.joystickState.active) return;
         const touch = e.changedTouches[0];
         handleJoyStart(touch.clientX, touch.clientY, touch.identifier);
-      }, { passive: false });
+      };
+
+      joystickBase.addEventListener('touchstart', startJoyTouch, { passive: false });
+      const joyContainer = document.getElementById('joystick-left-container');
+      if (joyContainer) {
+        joyContainer.addEventListener('touchstart', startJoyTouch, { passive: false });
+      }
 
       window.addEventListener('touchmove', (e) => {
         if (!this.joystickState.active) return;
         for (let i = 0; i < e.changedTouches.length; i++) {
           const t = e.changedTouches[i];
           if (t.identifier === this.joystickState.touchId) {
+            e.preventDefault();
             handleJoyMove(t.clientX, t.clientY);
             break;
           }
@@ -10855,7 +10976,20 @@ void main() {
         }
       });
 
-      window.addEventListener('touchcancel', handleJoyEnd);
+      window.addEventListener('touchcancel', (e) => {
+        if (!this.joystickState.active) return;
+        if (e && e.changedTouches) {
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const t = e.changedTouches[i];
+            if (t.identifier === this.joystickState.touchId) {
+              handleJoyEnd();
+              break;
+            }
+          }
+        } else {
+          handleJoyEnd();
+        }
+      });
 
       // Mouse fallback for testing joystick on desktop
       joystickBase.addEventListener('mousedown', (e) => {
@@ -10886,7 +11020,7 @@ void main() {
         return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
       };
 
-      // Helper to check if currently in FPS Shooter mode
+      // Helper to check if currently in FPS Shooter mode or first-person view
       const checkIsFPS = () => {
         const ds = this.state.demoScene || '';
         const isSlotMachine = ds.includes('09_slot_machine');
@@ -10894,37 +11028,24 @@ void main() {
         const isPlinko = ds.includes('11_plinko');
         const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
         const isBingo = ds.includes('13_bingo');
-        return (this.state.cameraMode === 3 || ds.includes('07_fps')) && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo;
+        const isPong = ds.includes('14_pong');
+        const isMoba = ds.includes('15_moba');
+        return (this.state.cameraMode === 3 || this.state.cameraMode === 1 || ds.includes('07_fps')) && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong && !isMoba;
       };
 
       canvasContainer.addEventListener('touchstart', (e) => {
-        // If touch occurred inside any overlay dialog, buttons, or scrollable panels, do NOT preventDefault or trigger camera orbit!
-        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal, #pong-mode-modal, .pong-modal-backdrop, .pong-modal-card')) {
+        // If touch occurred inside any overlay dialog, buttons, or scrollable panels, do NOT trigger camera orbit
+        if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal, #pong-mode-modal, .pong-modal-backdrop, .pong-modal-card, #joystick-left-container, #joystick-left-base, .joystick-container, .joystick-base, .mobile-action-pad, .btn-touch-action, .fps-floating-fire-btn')) {
           return;
         }
         e.preventDefault();
-
-        // ✌️ Universal Two-Finger Pinch-to-Zoom Gesture across all modes
-        if (e.touches && e.touches.length >= 2) {
-          const t0 = e.touches[0];
-          const t1 = e.touches[1];
-          const dist = getTouchDist(t0, t1);
-          this.pinchZoomState.active = true;
-          this.pinchZoomState.startDist = dist;
-          this.pinchZoomState.lastDist = dist;
-          this.pinchZoomState.lastPinchTime = Date.now();
-          this.pinchZoomState.lastCenterX = (t0.clientX + t1.clientX) / 2;
-          this.pinchZoomState.lastCenterY = (t0.clientY + t1.clientY) / 2;
-          // Temporarily pause single-finger look to prevent jumpy camera yaw/pitch
-          this.touchLookState.active = false;
-          return;
-        }
 
         const isFPS = checkIsFPS();
         const now = Date.now();
 
         if (isFPS) {
           // 🎮 FPS MULTI-TOUCH CONTROLS:
+          // Fully concurrent dual-touch: Joystick thumb moves, Viewport thumb aims simultaneously!
           for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
             if (touch.identifier === this.joystickState.touchId) continue;
@@ -10960,14 +11081,22 @@ void main() {
         }
 
         // --- NON-FPS MODES (Plinko, Roulette, Showroom, Orbit Camera) ---
-        // ✌️ Classic Two-Finger Pinch-to-Zoom Gesture / 2-Finger Camera Translation
-        if (e.touches.length >= 2) {
-          const t0 = e.touches[0];
-          const t1 = e.touches[1];
+        const nonJoyTouches = [];
+        for (let i = 0; i < e.touches.length; i++) {
+          if (e.touches[i].identifier !== this.joystickState.touchId) {
+            nonJoyTouches.push(e.touches[i]);
+          }
+        }
+
+        // ✌️ Classic Two-Finger Pinch-to-Zoom Gesture (excludes joystick thumb)
+        if (nonJoyTouches.length >= 2) {
+          const t0 = nonJoyTouches[0];
+          const t1 = nonJoyTouches[1];
           const dist = getTouchDist(t0, t1);
           this.pinchZoomState.active = true;
           this.pinchZoomState.startDist = dist;
           this.pinchZoomState.lastDist = dist;
+          this.pinchZoomState.lastPinchTime = now;
           this.pinchZoomState.lastCenterX = (t0.clientX + t1.clientX) / 2;
           this.pinchZoomState.lastCenterY = (t0.clientY + t1.clientY) / 2;
           // Temporarily pause single-finger look to prevent jumpy camera yaw/pitch
@@ -10975,14 +11104,14 @@ void main() {
           return;
         }
 
-        // 👆 Single Finger Orbit Look or Double-Tap Zoom Reset
-        if (e.touches.length === 1) {
+        // 👆 Single Finger Orbit Look or Double-Tap Zoom Reset (non-FPS)
+        if (nonJoyTouches.length === 1) {
           // In MOBA demo, taps/clicks are dedicated to ground movement & abilities - never orbit look or double-tap camera reset!
           if (this.state.demoScene && this.state.demoScene.includes('15_moba')) {
             return;
           }
 
-          const touch = e.touches[0];
+          const touch = nonJoyTouches[0];
           const ds = this.state.demoScene || '';
           const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
 
@@ -11029,15 +11158,50 @@ void main() {
       }, { passive: false });
 
       const handleTouchMove = (e) => {
-        // ✌️ Universal Two-Finger Pinch-to-Zoom / Translation Gestures across all modes
-        if (e.touches && e.touches.length >= 2) {
+        const isFPS = checkIsFPS();
+
+        if (isFPS) {
+          // In FPS mode, ALWAYS track and update look if touchLookState is active, regardless of other touches!
+          // Can move joystick with one finger and swipe camera look with another finger simultaneously!
+          if (!this.touchLookState.active || this.touchLookState.touchId === null) return;
+          const invX = this.state.invertMouseX ? -1 : 1;
+          const invY = this.state.invertMouseY ? -1 : 1;
+
+          for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (touch.identifier === this.touchLookState.touchId) {
+              e.preventDefault();
+              const dx = touch.clientX - this.touchLookState.lastX;
+              const dy = touch.clientY - this.touchLookState.lastY;
+              this.touchLookState.lastX = touch.clientX;
+              this.touchLookState.lastY = touch.clientY;
+
+              // Smooth FPS Swipe Look at the same time as joystick locomotion!
+              this.state.camYaw += dx * 0.005 * invX;
+              this.state.camPitch = Math.max(-1.5, Math.min(1.5, this.state.camPitch - dy * 0.005 * invY));
+              break;
+            }
+          }
+          return;
+        }
+
+        // --- NON-FPS MODES ---
+        const nonJoyTouches = [];
+        for (let i = 0; i < e.touches.length; i++) {
+          if (e.touches[i].identifier !== this.joystickState.touchId) {
+            nonJoyTouches.push(e.touches[i]);
+          }
+        }
+
+        // ✌️ Universal Two-Finger Pinch-to-Zoom / Translation Gestures (non-FPS)
+        if (nonJoyTouches.length >= 2) {
           if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal')) {
             return;
           }
           e.preventDefault();
 
-          const t0 = e.touches[0];
-          const t1 = e.touches[1];
+          const t0 = nonJoyTouches[0];
+          const t1 = nonJoyTouches[1];
           const currentDist = getTouchDist(t0, t1);
           const currentCenterX = (t0.clientX + t1.clientX) / 2;
           const currentCenterY = (t0.clientY + t1.clientY) / 2;
@@ -11078,9 +11242,6 @@ void main() {
               if (this.mobaState.zoomLevel === undefined) {
                 this.mobaState.zoomLevel = this.isMobileDevice() ? 18.5 : 16.5;
               }
-              // Standard two finger zoom gesture:
-              // Fingers spreading apart (pinch out / deltaDist > 0) -> zoom in (lower zoomLevel, down to 1.8 for First-Person view)
-              // Fingers pinching together (pinch in / deltaDist < 0) -> zoom out (higher zoomLevel, up to 32.0 for RTS view)
               const zoomSens = Math.max(0.018, 0.05 * (this.mobaState.zoomLevel / 16.0));
               this.mobaState.zoomLevel = Math.max(1.8, Math.min(32.0, this.mobaState.zoomLevel - deltaDist * zoomSens));
               this.showMobileZoomIndicator(this.mobaState.zoomLevel);
@@ -11088,8 +11249,6 @@ void main() {
             }
 
             // In 3D Plinko table / Orbit Camera mode:
-            // Fingers spread (deltaDist > 0) -> zoom in (lower radius)
-            // Fingers pinch together (deltaDist < 0) -> zoom out (higher radius)
             if (this.state.cameraMode === 0 || this.state.demoScene.includes('11_plinko')) {
               const zoomSens = 0.014 * Math.max(0.4, this.state.camRadius * 0.22);
               this.state.camRadius = Math.max(0.4, Math.min(26.0, this.state.camRadius - deltaDist * zoomSens));
@@ -11119,32 +11278,7 @@ void main() {
           return;
         }
 
-        const isFPS = checkIsFPS();
-
-        if (isFPS) {
-          // In FPS mode, ALWAYS track and update look if touchLookState is active, regardless of other touches!
-          if (!this.touchLookState.active || this.touchLookState.touchId === null) return;
-          const invX = this.state.invertMouseX ? -1 : 1;
-          const invY = this.state.invertMouseY ? -1 : 1;
-
-          for (let i = 0; i < e.changedTouches.length; i++) {
-            const touch = e.changedTouches[i];
-            if (touch.identifier === this.touchLookState.touchId) {
-              const dx = touch.clientX - this.touchLookState.lastX;
-              const dy = touch.clientY - this.touchLookState.lastY;
-              this.touchLookState.lastX = touch.clientX;
-              this.touchLookState.lastY = touch.clientY;
-
-              // Smooth FPS Swipe Look (even while shooting, joystick moving, or multi-touching!)
-              this.state.camYaw += dx * 0.005 * invX;
-              this.state.camPitch = Math.max(-1.5, Math.min(1.5, this.state.camPitch - dy * 0.005 * invY));
-              break;
-            }
-          }
-          return;
-        }
-
-        // NON-FPS MODES:
+        // 👆 Single Finger Orbit / Swipe Look (non-FPS)
         if (e.target.closest && e.target.closest('.plinko-overlay-panel, .slot-machine-overlay-panel, .puzzle-overlay-panel, #fps-startup-overlay, .modal-overlay, .plinko-mobile-fab, button, input, select, textarea, #moba-shop-modal, #pong-mode-modal, .pong-modal-backdrop, .pong-modal-card')) {
           return;
         }
@@ -11165,7 +11299,6 @@ void main() {
           return;
         }
 
-        // 👆 Single Finger Orbit / Swipe Look
         if (this.state.demoScene && this.state.demoScene.includes('15_moba')) return;
         if (!this.touchLookState.active || this.pinchZoomState.active) return;
         const invX = this.state.invertMouseX ? -1 : 1;
@@ -11193,9 +11326,14 @@ void main() {
         }
       };
 
-      canvasContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+      canvasContainer.addEventListener('touchmove', (e) => {
+        e._canvasMoveHandled = true;
+        handleTouchMove(e);
+      }, { passive: false });
+
       window.addEventListener('touchmove', (e) => {
-        // Window listener ensures FPS look continues seamlessly even if finger moves over controls
+        if (e._canvasMoveHandled) return;
+        // Window listener ensures FPS look continues seamlessly even if finger moves over controls or edges
         if (checkIsFPS() && this.touchLookState.active) {
           handleTouchMove(e);
         }
@@ -11246,7 +11384,13 @@ void main() {
         }
 
         // NON-FPS MODES:
-        if (e.touches.length < 2) {
+        const nonJoyTouches = [];
+        for (let i = 0; i < e.touches.length; i++) {
+          if (e.touches[i].identifier !== this.joystickState.touchId) {
+            nonJoyTouches.push(e.touches[i]);
+          }
+        }
+        if (nonJoyTouches.length < 2) {
           this.pinchZoomState.active = false;
         }
 
@@ -11275,9 +11419,9 @@ void main() {
           }
         }
 
-        if (e.touches.length === 1 && !this.touchLookState.active) {
+        if (nonJoyTouches.length === 1 && !this.touchLookState.active) {
           // Seamless transition from pinch to single-touch orbit without camera jerk
-          const remainingTouch = e.touches[0];
+          const remainingTouch = nonJoyTouches[0];
           if (remainingTouch.identifier !== this.joystickState.touchId) {
             this.touchLookState.active = true;
             this.touchLookState.touchId = remainingTouch.identifier;
@@ -11301,12 +11445,12 @@ void main() {
       canvasContainer.addEventListener('touchend', endTouchLook, { passive: false });
       canvasContainer.addEventListener('touchcancel', endTouchLook, { passive: false });
       window.addEventListener('touchend', (e) => {
-        if (checkIsFPS() && this.touchLookState.active) {
+        if (this.touchLookState.active) {
           endTouchLook(e);
         }
       }, { passive: false });
       window.addEventListener('touchcancel', (e) => {
-        if (checkIsFPS() && this.touchLookState.active) {
+        if (this.touchLookState.active) {
           endTouchLook(e);
         }
       }, { passive: false });
@@ -11325,12 +11469,14 @@ void main() {
       if (!elem) return;
       elem.addEventListener('touchstart', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         elem.classList.add('active');
         onDown();
       }, { passive: false });
 
       elem.addEventListener('touchend', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         elem.classList.remove('active');
         onUp();
       }, { passive: false });
@@ -11354,6 +11500,7 @@ void main() {
       const triggerFireStart = (e) => {
         if (e) {
           e.preventDefault();
+          e.stopPropagation();
           if (e.changedTouches && e.changedTouches.length > 0) {
             buttonTouchId = e.changedTouches[0].identifier;
           }
@@ -26716,9 +26863,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     
     const targetW = Math.floor(width * dpr);
     const targetH = Math.floor(height * dpr);
-    if (this.canvas.width !== targetW || this.canvas.height !== targetH) {
-      this.canvas.width = targetW;
-      this.canvas.height = targetH;
+    if (this.canvas && (this.canvas.width !== targetW || this.canvas.height !== targetH)) {
+      try {
+        this.canvas.width = targetW;
+        this.canvas.height = targetH;
+      } catch (e) {
+        if (this.offscreenCanvas) {
+          this.offscreenCanvas.width = targetW;
+          this.offscreenCanvas.height = targetH;
+        }
+      }
     }
   }
 
@@ -28170,8 +28324,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (this.postProcProg.uHzbMipLevel) gl.uniform1f(this.postProcProg.uHzbMipLevel, hzb.mipLevel !== undefined ? hzb.mipLevel : 0);
       if (this.postProcProg.uHzbSteps) gl.uniform1i(this.postProcProg.uHzbSteps, hzb.steps !== undefined ? hzb.steps : 8);
 
-      // Bloom Uniforms
-      if (this.postProcProg.uBloomEnabled) gl.uniform1i(this.postProcProg.uBloomEnabled, bloom.enabled ? 1 : 0);
+      // Bloom Uniforms (bypassed in MOBA when Cheap Material is active to eliminate heavy fullscreen Kawase blur fillrate bottleneck on mobile GPUs)
+      const isMobaScene = this.state.demoScene && this.state.demoScene.includes('15_moba');
+      const isMobaCheap = isMobaScene && !!this.state.fpsCheapMaterial;
+      const bloomActive = (bloom.enabled && !isMobaCheap) ? 1 : 0;
+      if (this.postProcProg.uBloomEnabled) gl.uniform1i(this.postProcProg.uBloomEnabled, bloomActive);
       if (this.postProcProg.uBloomThreshold) gl.uniform1f(this.postProcProg.uBloomThreshold, bloom.threshold !== undefined ? bloom.threshold : 0.38);
       if (this.postProcProg.uBloomSensitivity) gl.uniform1f(this.postProcProg.uBloomSensitivity, bloom.sensitivity !== undefined ? bloom.sensitivity : 0.65);
       if (this.postProcProg.uBloomIntensity) gl.uniform1f(this.postProcProg.uBloomIntensity, bloom.intensity !== undefined ? bloom.intensity : 2.10);
@@ -28179,9 +28336,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (this.postProcProg.uBloomAnamorphic) gl.uniform1f(this.postProcProg.uBloomAnamorphic, bloom.anamorphic ? 1.0 : 0.0);
       if (this.postProcProg.uBloomChromatic) gl.uniform1f(this.postProcProg.uBloomChromatic, bloom.chromatic ? 1.0 : 0.0);
 
-      // Volumetric Uniforms (disabled in showroom to keep obsidian black floor & eliminate gray fog wash)
+      // Volumetric Uniforms (disabled in showroom to keep obsidian black floor & eliminate gray fog wash; bypassed in cheap material mode)
       const isLobby = (!this.mobaState || !this.mobaState.playing);
-      if (this.postProcProg.uVolumetricEnabled) gl.uniform1i(this.postProcProg.uVolumetricEnabled, (vol.enabled && !isLobby) ? 1 : 0);
+      const volActive = (vol.enabled && !isLobby && !isMobaCheap) ? 1 : 0;
+      if (this.postProcProg.uVolumetricEnabled) gl.uniform1i(this.postProcProg.uVolumetricEnabled, volActive);
       if (this.postProcProg.uVolumetricSamples) gl.uniform1i(this.postProcProg.uVolumetricSamples, vol.samples !== undefined ? vol.samples : 32);
       if (this.postProcProg.uVolumetricDensity) gl.uniform1f(this.postProcProg.uVolumetricDensity, vol.density !== undefined ? vol.density : 0.95);
       if (this.postProcProg.uVolumetricDecay) gl.uniform1f(this.postProcProg.uVolumetricDecay, vol.decay !== undefined ? vol.decay : 0.965);
@@ -28205,6 +28363,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   renderBillboardLabels(timestamp) {
+    if (this.state.demoScene && this.state.demoScene.includes('15_moba')) return; // MOBA uses high-performance in-engine overlays
+
     const gl = this.gl;
 
     // 1. Set Blend & Depth States for labels rendering on top of geometry
@@ -29293,6 +29453,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (data && data.state) {
         this.mobaSyncGameState(data.state);
       }
+      if (data && data.action) {
+        const act = data.action;
+        if (act.type === 'set_inactive' && this.mobaState && this.mobaState.players) {
+          const p = this.mobaState.players.find(player => player.id === act.playerId);
+          if (p) {
+            p.inactive = act.inactive;
+            this.log(`👤 Player [${p.name || p.id}] has become ${act.inactive ? 'INACTIVE (damage halved)' : 'ACTIVE'}.`, act.inactive ? "info" : "success");
+          }
+        }
+      }
     });
 
     // Query active games
@@ -29311,6 +29481,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const isMobile = window.innerWidth < 640 || this.isMobileDevice();
     this.setMobaMobileView(isMobile ? 'rooms' : 'draft');
 
+    // Initialize sound effects flag if not defined
+    if (this.mobaEffectsEnabled === undefined) {
+      this.mobaEffectsEnabled = true;
+    }
+
     // Bind music toggle buttons
     const btnMusicLobby = document.getElementById('moba-btn-toggle-music');
     if (btnMusicLobby) {
@@ -29324,6 +29499,52 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       btnMusicGame.onclick = (e) => {
         if (e) e.stopPropagation();
         this.mobaToggleMusic();
+      };
+    }
+
+    // Bind sound effects toggle buttons
+    const btnSfxLobby = document.getElementById('moba-btn-toggle-effects');
+    if (btnSfxLobby) {
+      btnSfxLobby.onclick = (e) => {
+        if (e) e.stopPropagation();
+        this.mobaToggleEffects();
+      };
+    }
+    const btnSfxGame = document.getElementById('moba-game-btn-toggle-effects');
+    if (btnSfxGame) {
+      btnSfxGame.onclick = (e) => {
+        if (e) e.stopPropagation();
+        this.mobaToggleEffects();
+      };
+    }
+
+    // Bind About modal buttons
+    const btnAboutLobby = document.getElementById('moba-btn-about');
+    if (btnAboutLobby) {
+      btnAboutLobby.onclick = (e) => {
+        if (e) e.stopPropagation();
+        this.showMobaAbout();
+      };
+    }
+    const btnAboutGame = document.getElementById('moba-game-btn-about');
+    if (btnAboutGame) {
+      btnAboutGame.onclick = (e) => {
+        if (e) e.stopPropagation();
+        this.showMobaAbout();
+      };
+    }
+    const btnCloseAbout = document.getElementById('moba-btn-close-about');
+    if (btnCloseAbout) {
+      btnCloseAbout.onclick = (e) => {
+        if (e) e.stopPropagation();
+        this.hideMobaAbout();
+      };
+    }
+    const btnAboutOk = document.getElementById('moba-btn-about-ok');
+    if (btnAboutOk) {
+      btnAboutOk.onclick = (e) => {
+        if (e) e.stopPropagation();
+        this.hideMobaAbout();
       };
     }
 
@@ -29343,6 +29564,244 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
   }
 
+  mobaToggleEffects() {
+    this.mobaEffectsEnabled = !this.mobaEffectsEnabled;
+    
+    const lobbyLabel = document.getElementById('moba-effects-status-txt');
+    if (lobbyLabel) {
+      lobbyLabel.textContent = this.mobaEffectsEnabled ? 'ON' : 'OFF';
+    }
+    const gameLabel = document.getElementById('moba-game-effects-status-txt');
+    if (gameLabel) {
+      gameLabel.textContent = this.mobaEffectsEnabled ? 'ON' : 'OFF';
+    }
+
+    const lobbyBtn = document.getElementById('moba-btn-toggle-effects');
+    if (lobbyBtn) {
+      if (this.mobaEffectsEnabled) {
+        lobbyBtn.className = "bg-amber-600/80 hover:bg-amber-500 border border-amber-400/40 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-bold text-white transition-all cursor-pointer flex items-center space-x-1";
+      } else {
+        lobbyBtn.className = "bg-slate-700/80 hover:bg-slate-600 border border-slate-500/40 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-bold text-slate-300 transition-all cursor-pointer flex items-center space-x-1";
+      }
+    }
+    const gameBtn = document.getElementById('moba-game-btn-toggle-effects');
+    if (gameBtn) {
+      if (this.mobaEffectsEnabled) {
+        gameBtn.className = "bg-black/60 hover:bg-black/80 border border-amber-500/50 px-2.5 py-1 rounded-xl text-[10px] sm:text-xs font-bold text-amber-400 transition-all cursor-pointer flex items-center space-x-1.5 shadow-lg";
+      } else {
+        gameBtn.className = "bg-black/60 hover:bg-black/80 border border-white/20 px-2.5 py-1 rounded-xl text-[10px] sm:text-xs font-bold text-slate-400 transition-all cursor-pointer flex items-center space-x-1.5 shadow-lg";
+      }
+    }
+
+    this.mobaPlaySound('select');
+  }
+
+  showMobaAbout() {
+    const modal = document.getElementById('moba-about-modal');
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+      this.mobaPlaySound('select');
+    }
+  }
+
+  hideMobaAbout() {
+    const modal = document.getElementById('moba-about-modal');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.style.display = 'none';
+      this.mobaPlaySound('back');
+    }
+  }
+
+  updateProjectTabs() {
+    const isSlotMachine = this.state.demoScene && this.state.demoScene.includes('09_slot_machine');
+    const isSlidingPuzzle = this.state.demoScene && this.state.demoScene.includes('10_sliding_puzzle');
+    const isPlinko = this.state.demoScene && this.state.demoScene.includes('11_plinko');
+    const isRoulette = this.state.demoScene && this.state.demoScene.includes('12_roulette');
+    const isBingo = this.state.demoScene && this.state.demoScene.includes('13_bingo');
+    const isPong = this.state.demoScene && this.state.demoScene.includes('14_pong');
+    const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba');
+    const isFPS = this.state.cameraMode === 3 && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong && !isMoba;
+
+    // Get tab panels
+    const projLayout = document.querySelector('.project-page-layout');
+    const mobaDash = document.getElementById('project-moba-dashboard');
+    const minigamesDash = document.getElementById('project-minigames-dashboard');
+
+    // Get main level buttons
+    const btnCompiler = document.querySelector('[data-tab="live-editor"]');
+    const btnWasm = document.querySelector('[data-tab="platform-export"]');
+    const btnHeaders = document.querySelector('[data-tab="headers"]');
+
+    // Grouping: Only show compiler/wasm/headers main tabs when FPS shooter is active live!
+    if (btnCompiler) btnCompiler.style.display = isFPS ? '' : 'none';
+    if (btnWasm) btnWasm.style.display = isFPS ? '' : 'none';
+    if (btnHeaders) btnHeaders.style.display = isFPS ? '' : 'none';
+
+    // Toggle per-project views inside the "Project" tab
+    if (isMoba) {
+      if (projLayout) projLayout.style.display = 'none';
+      if (mobaDash) {
+        mobaDash.style.display = 'block';
+        // Sync stats displays
+        const lvlEl = document.getElementById('moba-dash-level');
+        const dmgEl = document.getElementById('moba-dash-damage');
+        const rangeEl = document.getElementById('moba-dash-range');
+        const speedEl = document.getElementById('moba-dash-speed');
+        const buffsEl = document.getElementById('moba-dash-buffs');
+
+        if (this.mobaState && this.mobaState.heroStats) {
+          if (lvlEl) lvlEl.textContent = `Level ${this.mobaState.heroStats.level || 1}`;
+          if (dmgEl) dmgEl.textContent = `${this.mobaState.heroStats.damage || 55} AD`;
+          if (rangeEl) rangeEl.textContent = `${this.mobaState.heroStats.attackRange || 1.5} Units`;
+          if (speedEl) speedEl.textContent = `${(this.mobaState.heroStats.speed || 6.2).toFixed(1)} Units/s`;
+          
+          let activeBuffs = [];
+          if (this._mobaGodMode) activeBuffs.push('✨ God Mode');
+          if (this._mobaOneShot) activeBuffs.push('🔥 One-Shot');
+          if (this._mobaSuperSpeed) activeBuffs.push('⚡ Super Speed');
+          if (this.mobaState.heroStats.hasWeapon) activeBuffs.push('⚔️ Demonic Glaive');
+          if (this.mobaState.heroStats.hasBoots) activeBuffs.push('🥾 Hermes Boots');
+          if (this.mobaState.heroStats.hasShield) activeBuffs.push('🛡️ Aegis Shield');
+
+          if (buffsEl) {
+            buffsEl.textContent = activeBuffs.length > 0 ? activeBuffs.join(', ') : 'No Buffs Active';
+            buffsEl.className = activeBuffs.length > 0 ? 'font-bold text-amber-400 text-[11px]' : 'text-slate-500 italic text-[11px]';
+          }
+        }
+      }
+      if (minigamesDash) minigamesDash.style.display = 'none';
+    } else if (isSlotMachine || isSlidingPuzzle || isPlinko || isRoulette || isBingo || isPong) {
+      if (projLayout) projLayout.style.display = 'none';
+      if (mobaDash) mobaDash.style.display = 'none';
+      if (minigamesDash) minigamesDash.style.display = 'block';
+    } else {
+      // Default to FPS Scene Hierarchies / Maps Layout if we are in C++ engine FPS
+      if (projLayout) projLayout.style.display = 'grid';
+      if (mobaDash) mobaDash.style.display = 'none';
+      if (minigamesDash) minigamesDash.style.display = 'none';
+    }
+  }
+
+  // Developer sandbox companion methods
+  mobaInjectGold(amount) {
+    if (this.mobaState && this.mobaState.playing) {
+      this.mobaState.gold = (this.mobaState.gold || 0) + amount;
+      this.log(`💰 Dev Hack: Injected ${amount} Gold!`, "success");
+      this.mobaPlaySound('confirm');
+      this.updateProjectTabs();
+    } else {
+      this.log("⚠️ No active MOBA match running.", "error");
+    }
+  }
+
+  mobaResetCooldowns() {
+    if (this.mobaState && this.mobaState.spellsCooldown) {
+      this.mobaState.spellsCooldown = [0, 0, 0, 0];
+      this.log("⏳ Dev Hack: Cleared all Ability Cooldowns!", "success");
+      this.mobaPlaySound('confirm');
+      this.updateProjectTabs();
+    } else {
+      this.log("⚠️ No active MOBA match running.", "error");
+    }
+  }
+
+  mobaInstaKillCreeps() {
+    if (this.mobaState && this.mobaState.creeps) {
+      const myTeam = this.mobaState.team;
+      const enemyTeam = myTeam === 'RED' ? 'BLACK' : 'RED';
+      let count = 0;
+      this.mobaState.creeps.forEach(c => {
+        if (c.team === enemyTeam && c.hp > 0) {
+          c.hp = 0;
+          count++;
+        }
+      });
+      this.log(`💀 Dev Hack: Annihilated ${count} enemy creeps!`, "success");
+      this.mobaPlaySound('explosion');
+      this.updateProjectTabs();
+    } else {
+      this.log("⚠️ No active MOBA match running.", "error");
+    }
+  }
+
+  mobaSetSpawnInterval(val) {
+    const ms = parseInt(val, 10) || 30000;
+    if (this.mobaState) {
+      this.mobaState.spawnIntervalMs = ms;
+      this.log(`⏳ Creep spawn interval adjusted to ${ms / 1000} seconds.`, "info");
+      this.mobaPlaySound('select');
+    }
+  }
+
+  mobaToggleGodMode() {
+    this._mobaGodMode = !this._mobaGodMode;
+    const btn = document.getElementById('moba-dash-toggle-god');
+    if (btn) {
+      btn.textContent = this._mobaGodMode ? 'ON' : 'OFF';
+      btn.className = this._mobaGodMode 
+        ? "bg-gradient-to-r from-amber-600 to-amber-500 text-slate-950 font-black px-3 py-1 rounded-lg active:scale-95 transition-all cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.3)]"
+        : "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold px-3 py-1 rounded-lg";
+    }
+    this.log(`✨ God Mode: ${this._mobaGodMode ? 'ENABLED (Damage Immature)' : 'DISABLED'}`, "info");
+    this.mobaPlaySound('confirm');
+    this.updateProjectTabs();
+  }
+
+  mobaToggleOneShot() {
+    this._mobaOneShot = !this._mobaOneShot;
+    const btn = document.getElementById('moba-dash-toggle-oneshot');
+    if (btn) {
+      btn.textContent = this._mobaOneShot ? 'ON' : 'OFF';
+      btn.className = this._mobaOneShot 
+        ? "bg-gradient-to-r from-amber-600 to-amber-500 text-slate-950 font-black px-3 py-1 rounded-lg active:scale-95 transition-all cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.3)]"
+        : "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold px-3 py-1 rounded-lg";
+    }
+    this.log(`🔥 One-Shot attacks: ${this._mobaOneShot ? 'ENABLED (9999 True Damage)' : 'DISABLED'}`, "info");
+    this.mobaPlaySound('confirm');
+    this.updateProjectTabs();
+  }
+
+  mobaToggleSuperSpeed() {
+    this._mobaSuperSpeed = !this._mobaSuperSpeed;
+    if (this.mobaState && this.mobaState.heroStats) {
+      this.mobaState.heroStats.speed = this._mobaSuperSpeed ? 15.5 : 6.2;
+    }
+    const btn = document.getElementById('moba-dash-toggle-speed');
+    if (btn) {
+      btn.textContent = this._mobaSuperSpeed ? 'ON' : 'OFF';
+      btn.className = this._mobaSuperSpeed 
+        ? "bg-gradient-to-r from-amber-600 to-amber-500 text-slate-950 font-black px-3 py-1 rounded-lg active:scale-95 transition-all cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.3)]"
+        : "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold px-3 py-1 rounded-lg";
+    }
+    this.log(`⚡ Speed Hack: ${this._mobaSuperSpeed ? 'ENABLED (2.5x)' : 'DISABLED'}`, "info");
+    this.mobaPlaySound('confirm');
+    this.updateProjectTabs();
+  }
+
+  setArcadeSpeed(val) {
+    const mult = parseFloat(val) || 1.0;
+    this.arcadeSpeedMultiplier = mult;
+    this.log(`⚙️ Arcade target physics speed scaled to ${mult}x.`, "info");
+  }
+
+  injectArcadeCredits() {
+    if (this.setCredits) {
+      this.setCredits((this.credits || 0) + 100);
+    } else if (this.addSlotCredits) {
+      this.addSlotCredits(100);
+    } else {
+      if (this.state) {
+        this.state.credits = (this.state.credits || 0) + 100;
+        this.state.userCoins = (this.state.userCoins || 0) + 100;
+        this.state.userBalance = (this.state.userBalance || 0) + 100;
+      }
+    }
+    this.log("💰 Injected 100 Arcade Credits / Tokens!", "success");
+    this.mobaPlaySound('confirm');
+  }
+
   initMobaMusic() {
     if (this._mobaMusicInitialized) return;
     this._mobaMusicInitialized = true;
@@ -29359,9 +29818,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const startMusicOnInteraction = () => {
       if (!this.mobaMusicEnabled) return;
       this.mobaPlayNextTrack();
-      document.removeEventListener('click', startMusicOnInteraction);
+      
+      // Clean up all interaction listeners
+      ['click', 'touchstart', 'mousedown', 'pointerdown'].forEach(evt => {
+        document.removeEventListener(evt, startMusicOnInteraction);
+      });
     };
-    document.addEventListener('click', startMusicOnInteraction);
+    
+    ['click', 'touchstart', 'mousedown', 'pointerdown'].forEach(evt => {
+      document.addEventListener(evt, startMusicOnInteraction);
+    });
   }
 
   mobaPlayNextTrack() {
@@ -29373,7 +29839,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     const trackUrl = this.mobaPlaylist[this.mobaCurrentTrackIndex];
-    const targetVol = this.masterMusicVolume !== undefined ? this.masterMusicVolume : 0.04;
+    const targetVol = this.masterMusicVolume !== undefined ? this.masterMusicVolume : 0.45;
 
     if (!this.mobaAudioElement) {
       this.mobaAudioElement = new Audio();
@@ -29383,7 +29849,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.mobaCurrentTrackPlayCount++;
         if (this.mobaCurrentTrackPlayCount < 3) {
           this.mobaAudioElement.currentTime = 0;
-          this.mobaAudioElement.volume = this.masterMusicVolume !== undefined ? this.masterMusicVolume : 0.04;
+          this.mobaAudioElement.volume = this.masterMusicVolume !== undefined ? this.masterMusicVolume : 0.45;
           this.mobaAudioElement.play().catch(err => console.log("Music play failed:", err));
         } else {
           this.mobaCurrentTrackPlayCount = 0;
@@ -30675,6 +31141,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.targetEntity = null;
     }
 
+    // Force inactivity when tab is inactive
+    if (this.mobaState.inactive) {
+      this.mobaState.velocity = [0, 0, 0];
+      this.mobaState.isWalking = false;
+      this.mobaState.targetPos = null;
+      this.mobaState.targetEntity = null;
+    }
+
     // Status effects and invisibility timers
     if (this.mobaState.stunnedTimer && this.mobaState.stunnedTimer > 0) {
       this.mobaState.stunnedTimer = Math.max(0, this.mobaState.stunnedTimer - dt);
@@ -31101,97 +31575,143 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   mobaUpdateInGameHUD() {
-    // 1. Hero HP and Mana bars & numeric values
-    const progressHp = document.getElementById('moba-hero-hp-bar');
-    const progressMp = document.getElementById('moba-hero-mp-bar');
-    const textHp = document.getElementById('moba-hero-hp-text');
-    const textMp = document.getElementById('moba-hero-mp-text');
+    if (!this._mobaHudElements) {
+      this._mobaHudElements = {
+        progressHp: document.getElementById('moba-hero-hp-bar'),
+        progressMp: document.getElementById('moba-hero-mp-bar'),
+        textHp: document.getElementById('moba-hero-hp-text'),
+        textMp: document.getElementById('moba-hero-mp-text'),
+        statAtk: document.getElementById('moba-stat-atk'),
+        statSpeed: document.getElementById('moba-stat-speed'),
+        statDef: document.getElementById('moba-stat-def'),
+        statInt: document.getElementById('moba-stat-int'),
+        hpRedBase: document.getElementById('moba-red-tron-hp'),
+        hpBlackBase: document.getElementById('moba-black-tron-hp'),
+        textRedBase: document.getElementById('moba-red-tron-hp-text'),
+        textBlackBase: document.getElementById('moba-black-tron-hp-text'),
+        textRedKills: document.getElementById('moba-red-kills'),
+        textBlackKills: document.getElementById('moba-black-kills'),
+        textTimer: document.getElementById('moba-timer'),
+        textGold: document.getElementById('moba-gold'),
+        textHeroName: document.getElementById('moba-hero-name'),
+        heroImg: document.getElementById('moba-portrait-img'),
+        placeholder: document.getElementById('moba-portrait-placeholder'),
+        teamTag: document.getElementById('moba-team-tag'),
+        combatTextContainer: document.getElementById('moba-combat-text-container')
+      };
+      this._mobaHudCache = {};
+    }
+    const el = this._mobaHudElements;
+    const c = this._mobaHudCache;
 
+    // 1. Hero HP and Mana bars & numeric values (dirty checked to avoid DOM layout thrashing)
     const s = this.mobaState.heroStats;
-    if (progressHp) progressHp.style.width = `${Math.max(0, (s.hp / s.maxHp) * 100)}%`;
-    if (progressMp) progressMp.style.width = `${Math.max(0, (s.mp / s.maxMp) * 100)}%`;
-    if (textHp) textHp.textContent = `${Math.round(s.hp)}/${s.maxHp}`;
-    if (textMp) textMp.textContent = `${Math.round(s.mp)}/${s.maxMp}`;
+    const hpPct = Math.round(Math.max(0, (s.hp / s.maxHp) * 100));
+    const mpPct = Math.round(Math.max(0, (s.mp / s.maxMp) * 100));
+    const hpCur = Math.round(s.hp);
+    const mpCur = Math.round(s.mp);
 
-    // Real-time Hero Stats update inside footer
-    const statAtk = document.getElementById('moba-stat-atk');
-    const statSpeed = document.getElementById('moba-stat-speed');
-    const statDef = document.getElementById('moba-stat-def');
-    const statInt = document.getElementById('moba-stat-int');
+    if (c.hpPct !== hpPct && el.progressHp) {
+      c.hpPct = hpPct;
+      el.progressHp.style.width = `${hpPct}%`;
+    }
+    if (c.mpPct !== mpPct && el.progressMp) {
+      c.mpPct = mpPct;
+      el.progressMp.style.width = `${mpPct}%`;
+    }
+    if ((c.hpCur !== hpCur || c.maxHp !== s.maxHp) && el.textHp) {
+      c.hpCur = hpCur;
+      c.maxHp = s.maxHp;
+      el.textHp.textContent = `${hpCur}/${s.maxHp}`;
+    }
+    if ((c.mpCur !== mpCur || c.maxMp !== s.maxMp) && el.textMp) {
+      c.mpCur = mpCur;
+      c.maxMp = s.maxMp;
+      el.textMp.textContent = `${mpCur}/${s.maxMp}`;
+    }
 
-    if (statAtk) statAtk.textContent = Math.round(s.damage || 45);
-    if (statSpeed) statSpeed.textContent = (s.speed || 6.5).toFixed(1);
-    if (statDef) statDef.textContent = Math.round((s.agility || 28) * 0.4 + (s.armor || 0));
-    if (statInt) statInt.textContent = Math.round(s.intelligence || 14);
+    // Real-time Hero Stats
+    const atkVal = Math.round(s.damage || 45);
+    const speedVal = (s.speed || 6.5).toFixed(1);
+    const defVal = Math.round((s.agility || 28) * 0.4 + (s.armor || 0));
+    const intVal = Math.round(s.intelligence || 14);
+
+    if (c.atk !== atkVal && el.statAtk) { c.atk = atkVal; el.statAtk.textContent = atkVal; }
+    if (c.speed !== speedVal && el.statSpeed) { c.speed = speedVal; el.statSpeed.textContent = speedVal; }
+    if (c.def !== defVal && el.statDef) { c.def = defVal; el.statDef.textContent = defVal; }
+    if (c.int !== intVal && el.statInt) { c.int = intVal; el.statInt.textContent = intVal; }
 
     // 2. Base Trons HP bars & numeric values
-    const hpRedBase = document.getElementById('moba-red-tron-hp');
-    const hpBlackBase = document.getElementById('moba-black-tron-hp');
-    const textRedBase = document.getElementById('moba-red-tron-hp-text');
-    const textBlackBase = document.getElementById('moba-black-tron-hp-text');
+    const redTronHp = (this.mobaState.trons && this.mobaState.trons.RED) ? Math.round(this.mobaState.trons.RED.hp) : 2500;
+    const blackTronHp = (this.mobaState.trons && this.mobaState.trons.BLACK) ? Math.round(this.mobaState.trons.BLACK.hp) : 2500;
 
-    const redTronHp = (this.mobaState.trons && this.mobaState.trons.RED) ? this.mobaState.trons.RED.hp : 2500;
-    const blackTronHp = (this.mobaState.trons && this.mobaState.trons.BLACK) ? this.mobaState.trons.BLACK.hp : 2500;
-
-    if (hpRedBase) hpRedBase.style.width = `${Math.max(0, (redTronHp / 2500) * 100)}%`;
-    if (hpBlackBase) hpBlackBase.style.width = `${Math.max(0, (blackTronHp / 2500) * 100)}%`;
-    if (textRedBase) textRedBase.textContent = `${Math.round(redTronHp)}/2500`;
-    if (textBlackBase) textBlackBase.textContent = `${Math.round(blackTronHp)}/2500`;
+    if (c.redTronHp !== redTronHp) {
+      c.redTronHp = redTronHp;
+      if (el.hpRedBase) el.hpRedBase.style.width = `${Math.max(0, (redTronHp / 2500) * 100)}%`;
+      if (el.textRedBase) el.textRedBase.textContent = `${redTronHp}/2500`;
+    }
+    if (c.blackTronHp !== blackTronHp) {
+      c.blackTronHp = blackTronHp;
+      if (el.hpBlackBase) el.hpBlackBase.style.width = `${Math.max(0, (blackTronHp / 2500) * 100)}%`;
+      if (el.textBlackBase) el.textBlackBase.textContent = `${blackTronHp}/2500`;
+    }
 
     // 3. Match Kills and Clock
-    const textRedKills = document.getElementById('moba-red-kills');
-    const textBlackKills = document.getElementById('moba-black-kills');
-    const textTimer = document.getElementById('moba-timer');
-    const textGold = document.getElementById('moba-gold');
+    const rKills = (this.mobaState.kills && this.mobaState.kills.RED) || 0;
+    const bKills = (this.mobaState.kills && this.mobaState.kills.BLACK) || 0;
+    const goldVal = this.mobaState.gold || 200;
 
-    if (textRedKills) textRedKills.textContent = (this.mobaState.kills && this.mobaState.kills.RED) || 0;
-    if (textBlackKills) textBlackKills.textContent = (this.mobaState.kills && this.mobaState.kills.BLACK) || 0;
-    if (textGold) textGold.textContent = this.mobaState.gold || 200;
+    if (c.rKills !== rKills && el.textRedKills) { c.rKills = rKills; el.textRedKills.textContent = rKills; }
+    if (c.bKills !== bKills && el.textBlackKills) { c.bKills = bKills; el.textBlackKills.textContent = bKills; }
+    if (c.gold !== goldVal && el.textGold) { c.gold = goldVal; el.textGold.textContent = goldVal; }
 
-    if (textTimer) {
-      const totalSec = Math.floor(this.mobaState.matchTimer || 0);
+    const totalSec = Math.floor(this.mobaState.matchTimer || 0);
+    if (c.timerSec !== totalSec && el.textTimer) {
+      c.timerSec = totalSec;
       const mins = Math.floor(totalSec / 60).toString().padStart(2, '0');
       const secs = (totalSec % 60).toString().padStart(2, '0');
-      textTimer.textContent = `${mins}:${secs}`;
+      el.textTimer.textContent = `${mins}:${secs}`;
     }
 
-    // 4. Hero details and Team Badge
-    const textHeroName = document.getElementById('moba-hero-name');
-    if (textHeroName) textHeroName.textContent = this.mobaState.selectedHero || 'Arissa';
-
+    // 4. Hero details and Team Badge (cached)
     const activeHero = this.mobaState.selectedHero || 'Arissa';
-    const heroImg = document.getElementById('moba-portrait-img');
-    const placeholder = document.getElementById('moba-portrait-placeholder');
-    if (heroImg) {
-      const heroMap = {
-        'arissa': 'arissa.png',
-        'erika': 'erika.png',
-        'skeletonz': 'skeletonz.png',
-        'monster': 'warrok.png',
-        'bot': 'slayzer.png',
-        'womanmobile': 'mariasword.png',
-        'slayzer': 'slayzer.png',
-        'steelborn': 'steelborn.png',
-        'warrok': 'warrok.png',
-        'mariasword': 'mariasword.png'
-      };
-      const key = activeHero.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const filename = heroMap[key] || 'arissa.png';
-      heroImg.src = `assets/textures/moba/hero-image/${filename}`;
-      heroImg.style.display = 'block';
-      if (placeholder) placeholder.style.display = 'none';
+    if (this._lastMobaHudHero !== activeHero) {
+      this._lastMobaHudHero = activeHero;
+      if (el.textHeroName) el.textHeroName.textContent = activeHero;
+      if (el.heroImg) {
+        const heroMap = {
+          'arissa': 'arissa.png',
+          'erika': 'erika.png',
+          'skeletonz': 'skeletonz.png',
+          'monster': 'warrok.png',
+          'bot': 'slayzer.png',
+          'womanmobile': 'mariasword.png',
+          'slayzer': 'slayzer.png',
+          'steelborn': 'steelborn.png',
+          'warrok': 'warrok.png',
+          'mariasword': 'mariasword.png'
+        };
+        const key = activeHero.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const filename = heroMap[key] || 'arissa.png';
+        el.heroImg.src = `assets/textures/moba/hero-image/${filename}`;
+        el.heroImg.style.display = 'block';
+        if (el.placeholder) el.placeholder.style.display = 'none';
+      }
     }
 
-    const teamTag = document.getElementById('moba-team-tag');
-    if (teamTag) {
-      teamTag.textContent = this.mobaState.team || 'RED';
-      teamTag.className = this.mobaState.team === 'RED'
-        ? 'absolute bottom-0 left-0 right-0 text-center text-[6px] sm:text-[7px] font-black text-white uppercase py-0.2 bg-red-600'
-        : 'absolute bottom-0 left-0 right-0 text-center text-[6px] sm:text-[7px] font-black text-white uppercase py-0.2 bg-sky-600';
+    const currentTeam = this.mobaState.team || 'RED';
+    if (this._lastMobaHudTeam !== currentTeam) {
+      this._lastMobaHudTeam = currentTeam;
+      if (el.teamTag) {
+        el.teamTag.textContent = currentTeam;
+        el.teamTag.className = currentTeam === 'RED'
+          ? 'absolute bottom-0 left-0 right-0 text-center text-[6px] sm:text-[7px] font-black text-white uppercase py-0.2 bg-red-600'
+          : 'absolute bottom-0 left-0 right-0 text-center text-[6px] sm:text-[7px] font-black text-white uppercase py-0.2 bg-sky-600';
+      }
     }
 
     // 5. Floating 3D Combat Damage indicators projected to screen
-    const container = document.getElementById('moba-combat-text-container');
+    const container = el.combatTextContainer;
     if (container && this.mobaState.combatTexts && this.mobaState.combatTexts.length > 0) {
       let html = '';
       this.mobaState.combatTexts.forEach(item => {
@@ -31202,8 +31722,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       });
       container.innerHTML = html;
-    } else if (container && container.innerHTML !== '') {
+      c.hadCombatText = true;
+    } else if (container && c.hadCombatText) {
       container.innerHTML = '';
+      c.hadCombatText = false;
     }
   }
 
@@ -31653,26 +32175,31 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
 
         // 2b. Sacred Geometry Magic Circle on pedestal floor
-        const sacredMesh = this.sacredHeroMeshes && this.sacredHeroMeshes[heroName];
-        if (sacredMesh) {
-          gl.bindVertexArray(sacredMesh.vao);
-          const sacredSpin = timestamp * 0.0006 * (i % 2 === 0 ? 1 : -1);
-          const cSec = Math.cos(sacredSpin) * (0.85 * scale);
-          const sSec = Math.sin(sacredSpin) * (0.85 * scale);
+        if (heroName === 'Erika') {
+          // In MOBA only: Replace Erika's under foot sacred symbol with dynamic golden vortex spiral effect (matching other heroes' dimensions)
+          this.drawErikaSpiralEffect(progInfo, 'BLUE', [posX, 0.024, 0.0], timestamp, distToCenter < 0.6, 0.85 * scale);
+        } else {
+          const sacredMesh = this.sacredHeroMeshes && this.sacredHeroMeshes[heroName];
+          if (sacredMesh) {
+            gl.bindVertexArray(sacredMesh.vao);
+            const sacredSpin = timestamp * 0.0006 * (i % 2 === 0 ? 1 : -1);
+            const cSec = Math.cos(sacredSpin) * (0.85 * scale);
+            const sSec = Math.sin(sacredSpin) * (0.85 * scale);
 
-          this.instanceMatrix[0] = cSec; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sSec; this.instanceMatrix[3] = 0;
-          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.028; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-          this.instanceMatrix[8] = sSec; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cSec; this.instanceMatrix[11] = 0;
-          this.instanceMatrix[12] = posX; this.instanceMatrix[13] = 0.024; this.instanceMatrix[14] = 0.0; this.instanceMatrix[15] = 1.0;
+            this.instanceMatrix[0] = cSec; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sSec; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.028; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = sSec; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cSec; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = posX; this.instanceMatrix[13] = 0.024; this.instanceMatrix[14] = 0.0; this.instanceMatrix[15] = 1.0;
 
-          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
-          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.35);
-          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.15);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(themeColor));
-          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
-          gl.drawElements(gl.TRIANGLES, sacredMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+            if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.35);
+            if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.15);
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(themeColor));
+            if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+            gl.drawElements(gl.TRIANGLES, sacredMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          }
         }
 
         // 3. Render Hero Character with authentic UV textures & natural diffuse roughness
@@ -31717,11 +32244,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12); // Neon emissive glow material
       if (progInfo.uUseTexMaps) gl.uniform1i(progInfo.uUseTexMaps, 0); // Disallow model texture leakage into VFX
 
+      const isLobbyCheap = !!(this.state.fpsCheapMaterial || this.isMobileDevice());
+      if (!this._mobaLobbyColorBuf) this._mobaLobbyColorBuf = new Float32Array(3);
+
       for (let i = 0; i < list.length; i++) {
         const heroName = list[i];
         const posX = (i - this.mobaCarouselX) * 2.4;
         const distToCenter = Math.abs(i - this.mobaCarouselX);
-        if (distToCenter > 3.0) continue; // Only render visible heroes in carousel
+        if (distToCenter > (isLobbyCheap ? 1.5 : 3.0)) continue; // In cheap material mode, cull off-center carousel heroes
         const scale = Math.max(0.65, 1.25 - distToCenter * 0.35);
 
         // Distinct, saturated chromatic neon colors for each hero (pure Red, Green, Blue, Gold, Cyan, Violet)
@@ -31734,10 +32264,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           Skeletonz: [0.86, 0.06, 1.0]      // Pure Vivid Amethyst Violet
         }[heroName] || [0.2, 0.85, 1.0];
 
+        this._mobaLobbyColorBuf[0] = themeColor[0];
+        this._mobaLobbyColorBuf[1] = themeColor[1];
+        this._mobaLobbyColorBuf[2] = themeColor[2];
+
         // 1. Orbiting Luminous Particles: Tiny, transparent glowing motes (no large gray balls)
         if (particleMesh) {
           gl.bindVertexArray(particleMesh.vao);
-          const numParticles = 6;
+          const numParticles = isLobbyCheap ? 3 : 6;
           for (let p = 0; p < numParticles; p++) {
             const isAscending = (p % 2 === 0);
             const orbitDir = isAscending ? 1 : -1;
@@ -31762,27 +32296,31 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
             if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
             if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.25); // Transparent soft halo
-            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(themeColor));
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, this._mobaLobbyColorBuf);
             gl.drawElements(gl.TRIANGLES, particleMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
-            // Layer B: Luminous transparent inner spark core
-            this.instanceMatrix[0] = pSize; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = pSize; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-            this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = pSize; this.instanceMatrix[11] = 0;
-            this.instanceMatrix[12] = pX; this.instanceMatrix[13] = pY; this.instanceMatrix[14] = pZ; this.instanceMatrix[15] = 1.0;
+            // Layer B: Luminous transparent inner spark core (skipped in cheap mode to halve particle draw calls)
+            if (!isLobbyCheap) {
+              this.instanceMatrix[0] = pSize; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+              this.instanceMatrix[4] = 0; this.instanceMatrix[5] = pSize; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+              this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = pSize; this.instanceMatrix[11] = 0;
+              this.instanceMatrix[12] = pX; this.instanceMatrix[13] = pY; this.instanceMatrix[14] = pZ; this.instanceMatrix[15] = 1.0;
 
-            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
-            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-            if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.80); // Transparent core
-            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(themeColor));
-            gl.drawElements(gl.TRIANGLES, particleMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+              Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+              gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+              if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+              if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.80); // Transparent core
+              if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, this._mobaLobbyColorBuf);
+              gl.drawElements(gl.TRIANGLES, particleMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+            }
           }
         }
 
         // 2. SACRED GEOMETRY SYMBOLISM SCANNER GOING FROM HEAD TO FOOT WITH INSTANCED TRAILS
         if (distToCenter <= 1.2) {
-          const sacredSymbolMesh = (this.sacredHeroMeshes && this.sacredHeroMeshes[heroName]) || ringMesh;
+          const sacredSymbolMesh = (heroName === 'Erika' && this.sacredHeroMeshes && this.sacredHeroMeshes.ErikaSpiral)
+            ? this.sacredHeroMeshes.ErikaSpiral
+            : ((this.sacredHeroMeshes && this.sacredHeroMeshes[heroName]) || ringMesh);
           const footY = 0.04;
           const headY = 2.15 * (scale / 1.25);
           const scanCycle = 3.6; // Fluid sinusoidal vertical scan cycle
@@ -31796,7 +32334,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           const baseRadius = 0.96 * scale * bodyContour;
 
           // A) INSTANCED TRAIL DRAWS: Crisp holographic ribbon slices
-          const NUM_TRAILS = 5;
+          const NUM_TRAILS = isLobbyCheap ? 2 : 5;
           for (let tr = NUM_TRAILS; tr >= 1; tr--) {
             const lagY = scanY + tr * 0.046 * (scanVel >= 0 ? -1 : 1);
             if (lagY < footY - 0.03 || lagY > headY + 0.06) continue;
@@ -31820,7 +32358,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
               gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
               if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
               if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, trAlpha);
-              if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(themeColor));
+              if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, this._mobaLobbyColorBuf);
               gl.drawElements(gl.TRIANGLES, sacredSymbolMesh.indexCount, gl.UNSIGNED_SHORT, 0);
             }
           }
@@ -31842,7 +32380,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
             if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
             if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.85);
-            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(themeColor));
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, this._mobaLobbyColorBuf);
             gl.drawElements(gl.TRIANGLES, sacredSymbolMesh.indexCount, gl.UNSIGNED_SHORT, 0);
           }
 
@@ -31921,6 +32459,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // =========================================================================
     // RENDER IN-GAME PLAYING MOBA WORLD ELEMENTS (Forest / Trons / Creeps)
     // =========================================================================
+    const isCheapMat = !!(this.state.fpsCheapMaterial || (this.isMobileDevice && this.isMobileDevice()));
+    const camX = pCenterPos[0], camZ = pCenterPos[2];
 
     // 0. Render Flowing River with Dynamic Physical Water Simulation
     const riverMesh = this.mobaRiverMesh || this.meshBuffers[1];
@@ -31967,7 +32507,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const boulderMesh = this.mobaBoulderMesh || this.meshBuffers[1];
 
     if (globalForestLayoutEngine.trees && globalForestLayoutEngine.trees.length > 0) {
-      // Draw Tree Trunks (with branched trunks where enabled)
+      if (!this._mobaColorBuf) this._mobaColorBuf = new Float32Array(3);
+      const maxTreeDistSq = (isCheapMat ? 38.0 : 54.0) ** 2;
+
+      // Draw Tree Trunks (with distance culling and branched trunks where enabled)
       if (trunkMesh) {
         gl.bindVertexArray(trunkMesh.vao);
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
@@ -31975,6 +32518,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
         for (let i = 0; i < globalForestLayoutEngine.trees.length; i++) {
           const t = globalForestLayoutEngine.trees[i];
+          const dx = t.x - camX, dz = t.z - camZ;
+          if (dx * dx + dz * dz > maxTreeDistSq) continue; // Distance culling
+
           const sc = t.scale;
           const cosY = Math.cos(t.rotY || 0);
           const sinY = Math.sin(t.rotY || 0);
@@ -31984,7 +32530,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.instanceMatrix[12] = t.x; this.instanceMatrix[13] = t.y || 0.0; this.instanceMatrix[14] = t.z; this.instanceMatrix[15] = 1.0;
 
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(t.trunkColor));
+          if (progInfo.uBaseColor) {
+            this._mobaColorBuf[0] = t.trunkColor[0]; this._mobaColorBuf[1] = t.trunkColor[1]; this._mobaColorBuf[2] = t.trunkColor[2];
+            gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+          }
           gl.drawElements(gl.TRIANGLES, trunkMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
       }
@@ -31996,6 +32545,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
       for (let i = 0; i < globalForestLayoutEngine.trees.length; i++) {
         const t = globalForestLayoutEngine.trees[i];
+        const dx = t.x - camX, dz = t.z - camZ;
+        if (dx * dx + dz * dz > maxTreeDistSq) continue; // Distance culling
+
         const sc = t.scale;
         const groundY = t.y || 0.0;
 
@@ -32009,10 +32561,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.bindVertexArray(pineMesh.vao);
           if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.7);
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(t.foliageColor));
+          if (progInfo.uBaseColor) {
+            this._mobaColorBuf[0] = t.foliageColor[0]; this._mobaColorBuf[1] = t.foliageColor[1]; this._mobaColorBuf[2] = t.foliageColor[2];
+            gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+          }
 
-          // 3-tiered conical pine skirt (higher tiers sway progressively more)
-          const tiers = [
+          // Conical pine skirt (2 tiers in cheap mode, 3 in full mode)
+          const tiers = isCheapMat ? [
+            { yOff: 1.35 * sc, rSc: 1.05 * sc, hSc: 1.15 * sc, swayMult: 0.40 },
+            { yOff: 2.25 * sc, rSc: 0.65 * sc, hSc: 0.95 * sc, swayMult: 0.95 }
+          ] : [
             { yOff: 1.2 * sc, rSc: 1.05 * sc, hSc: 1.0 * sc, swayMult: 0.35 },
             { yOff: 1.85 * sc, rSc: 0.82 * sc, hSc: 0.9 * sc, swayMult: 0.70 },
             { yOff: 2.45 * sc, rSc: 0.55 * sc, hSc: 0.8 * sc, swayMult: 1.05 }
@@ -32034,7 +32592,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.bindVertexArray(oakMesh.vao);
           if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.75);
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(t.foliageColor));
+          if (progInfo.uBaseColor) {
+            this._mobaColorBuf[0] = t.foliageColor[0]; this._mobaColorBuf[1] = t.foliageColor[1]; this._mobaColorBuf[2] = t.foliageColor[2];
+            gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+          }
 
           // Central oak crown
           const canopyY = groundY + 1.8 * sc;
@@ -32046,8 +32607,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           gl.drawElements(gl.TRIANGLES, oakMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
-          // Secondary foliage clusters on spreading branch tips
-          if (this.mobaBranchTips && this.mobaBranchTips.length > 0) {
+          // Secondary foliage clusters on spreading branch tips (skipped in cheap mode to keep mobile FPS high)
+          if (!isCheapMat && this.mobaBranchTips && this.mobaBranchTips.length > 0) {
             const cosT = Math.cos(t.rotY || 0);
             const sinT = Math.sin(t.rotY || 0);
             for (let bIdx = 0; bIdx < this.mobaBranchTips.length; bIdx++) {
@@ -32080,10 +32641,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 18); // Use moss-covered rock shader!
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.92);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.02);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.28, 0.30, 0.32])); // Mossy stone
+        if (progInfo.uBaseColor) {
+          this._mobaColorBuf[0] = 0.28; this._mobaColorBuf[1] = 0.30; this._mobaColorBuf[2] = 0.32;
+          gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+        }
 
+        const maxBoulderDistSq = (isCheapMat ? 26.0 : 42.0) ** 2;
         for (let i = 0; i < globalForestLayoutEngine.boulders.length; i++) {
           const b = globalForestLayoutEngine.boulders[i];
+          const dx = b.x - camX, dz = b.z - camZ;
+          if (dx * dx + dz * dz > maxBoulderDistSq) continue; // Distance culling
+
           const bSc = b.scale;
           this.instanceMatrix[0] = bSc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
           this.instanceMatrix[4] = 0; this.instanceMatrix[5] = bSc * 0.7; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
@@ -32095,16 +32663,22 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
       }
 
-      // Draw Procedural Diverse Grass Tufts (curved blades, tall nodding wheat, and lush clover carpets)
+      // Draw Procedural Diverse Grass Tufts with distance culling & zero allocations
       const wheatMesh = this.mobaWheatGrassMesh;
       const cloverMesh = this.mobaCloverMesh;
       const curvedMesh = this.mobaGrassMesh || pineMesh;
 
       if (globalForestLayoutEngine.grass) {
         const swayTime = timestamp * 0.0022;
+        const maxGrassDistSq = (isCheapMat ? 14.0 : 34.0) ** 2;
+        const grassStride = isCheapMat ? 6 : 1; // In cheap material mode, sample 1/6 of tufts for high mobile FPS
+        const grassList = globalForestLayoutEngine.grass;
 
-        for (let i = 0; i < globalForestLayoutEngine.grass.length; i++) {
-          const g = globalForestLayoutEngine.grass[i];
+        for (let i = 0; i < grassList.length; i += grassStride) {
+          const g = grassList[i];
+          const dx = g.x - camX, dz = g.z - camZ;
+          if (dx * dx + dz * dz > maxGrassDistSq) continue; // Distance culling eliminates 95% of off-screen grass draw calls
+
           let activeMesh = curvedMesh;
           let matType = 19; // Gradient swaying grass shader
 
@@ -32132,7 +32706,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.instanceMatrix[12] = g.x; this.instanceMatrix[13] = (g.y || 0.0) - 0.02; this.instanceMatrix[14] = g.z; this.instanceMatrix[15] = 1.0;
 
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(g.color));
+          if (progInfo.uBaseColor) {
+            this._mobaColorBuf[0] = g.color[0]; this._mobaColorBuf[1] = g.color[1]; this._mobaColorBuf[2] = g.color[2];
+            gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+          }
           gl.drawElements(gl.TRIANGLES, activeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
@@ -32146,8 +32723,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
 
-        for (let i = 0; i < globalForestLayoutEngine.wildFlowers.length; i++) {
+        const maxFlowerDistSq = (isCheapMat ? 18.0 : 38.0) ** 2;
+        const flowerStride = isCheapMat ? 2 : 1;
+        for (let i = 0; i < globalForestLayoutEngine.wildFlowers.length; i += flowerStride) {
           const f = globalForestLayoutEngine.wildFlowers[i];
+          const dx = f.x - camX, dz = f.z - camZ;
+          if (dx * dx + dz * dz > maxFlowerDistSq) continue;
+
           const fSc = f.scale;
           const cosF = Math.cos(f.rotY || 0);
           const sinF = Math.sin(f.rotY || 0);
@@ -32158,7 +32740,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.instanceMatrix[12] = f.x; this.instanceMatrix[13] = f.y || 0.0; this.instanceMatrix[14] = f.z; this.instanceMatrix[15] = 1.0;
 
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(f.color));
+          if (progInfo.uBaseColor) {
+            this._mobaColorBuf[0] = f.color[0]; this._mobaColorBuf[1] = f.color[1]; this._mobaColorBuf[2] = f.color[2];
+            gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+          }
           gl.drawElements(gl.TRIANGLES, flowerMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
       }
@@ -32170,8 +32755,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.6);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.05);
 
-        for (let i = 0; i < globalForestLayoutEngine.waterLilies.length; i++) {
+        const maxLilyDistSq = (isCheapMat ? 18.0 : 40.0) ** 2;
+        const lilyStride = isCheapMat ? 2 : 1;
+        for (let i = 0; i < globalForestLayoutEngine.waterLilies.length; i += lilyStride) {
           const l = globalForestLayoutEngine.waterLilies[i];
+          const dx = l.x - camX, dz = l.z - camZ;
+          if (dx * dx + dz * dz > maxLilyDistSq) continue;
+
           const lSc = l.scale;
           const cosL = Math.cos(l.rotY || 0);
           const sinL = Math.sin(l.rotY || 0);
@@ -32183,7 +32773,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.instanceMatrix[12] = l.x; this.instanceMatrix[13] = (l.y || 0.02) + bob; this.instanceMatrix[14] = l.z; this.instanceMatrix[15] = 1.0;
 
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(l.color));
+          if (progInfo.uBaseColor) {
+            this._mobaColorBuf[0] = l.color[0]; this._mobaColorBuf[1] = l.color[1]; this._mobaColorBuf[2] = l.color[2];
+            gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+          }
           gl.drawElements(gl.TRIANGLES, lilyMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
       }
@@ -32196,8 +32789,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.9);
 
         const reedTime = timestamp * 0.0018;
-        for (let i = 0; i < globalForestLayoutEngine.riverReeds.length; i++) {
+        const maxReedDistSq = (isCheapMat ? 18.0 : 40.0) ** 2;
+        const reedStride = isCheapMat ? 2 : 1;
+        for (let i = 0; i < globalForestLayoutEngine.riverReeds.length; i += reedStride) {
           const r = globalForestLayoutEngine.riverReeds[i];
+          const dx = r.x - camX, dz = r.z - camZ;
+          if (dx * dx + dz * dz > maxReedDistSq) continue;
+
           const rSway = Math.sin(reedTime + r.x * 0.3 + r.z * 0.3) * 0.06 * r.scaleY;
 
           this.instanceMatrix[0] = r.scaleX; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
@@ -32206,7 +32804,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.instanceMatrix[12] = r.x; this.instanceMatrix[13] = r.y || 0.0; this.instanceMatrix[14] = r.z; this.instanceMatrix[15] = 1.0;
 
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(r.color));
+          if (progInfo.uBaseColor) {
+            this._mobaColorBuf[0] = r.color[0]; this._mobaColorBuf[1] = r.color[1]; this._mobaColorBuf[2] = r.color[2];
+            gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+          }
           gl.drawElements(gl.TRIANGLES, reedMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
@@ -32219,8 +32820,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.7);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
 
+        const maxFrogDistSq = (isCheapMat ? 22.0 : 36.0) ** 2;
         for (let i = 0; i < globalForestLayoutEngine.frogs.length; i++) {
           const fr = globalForestLayoutEngine.frogs[i];
+          const dx = fr.x - camX, dz = fr.z - camZ;
+          if (dx * dx + dz * dz > maxFrogDistSq) continue;
+
           const frSc = fr.scale;
 
           // Periodic hop every 3.5 seconds
@@ -32247,7 +32852,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.instanceMatrix[12] = posX; this.instanceMatrix[13] = posY; this.instanceMatrix[14] = posZ; this.instanceMatrix[15] = 1.0;
 
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(fr.color));
+          if (progInfo.uBaseColor) {
+            this._mobaColorBuf[0] = fr.color[0]; this._mobaColorBuf[1] = fr.color[1]; this._mobaColorBuf[2] = fr.color[2];
+            gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+          }
           gl.drawElements(gl.TRIANGLES, frogMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
       }
@@ -33393,8 +34001,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (cubeMesh) {
       gl.bindVertexArray(cubeMesh.vao);
 
+      if (!this._mobaHpDarkBuf) {
+        this._mobaHpDarkBuf = new Float32Array([0.05, 0.05, 0.08]);
+        this._mobaHpRedBuf = new Float32Array([2.5, 0.1, 0.15]);
+        this._mobaHpGreenBuf = new Float32Array([0.16, 1.9, 0.44]);
+        this._mobaMpDarkBuf = new Float32Array([0.03, 0.05, 0.12]);
+        this._mobaMpBlueBuf = new Float32Array([0.36, 1.16, 1.96]);
+      }
+      const cheapBarMat = typeof isCheapMat !== 'undefined' ? isCheapMat : !!(this.state.fpsCheapMaterial || (this.isMobileDevice && this.isMobileDevice()));
+      const maxBarDistSq = (cheapBarMat ? 26.0 : 45.0) ** 2;
+
       const drawDualBar3D = (pos, yOffset, curHp, maxHp, curMp, maxMp, width = 1.6, height = 0.11, isEnemy = false) => {
         if (!pos) return;
+        const cX = typeof camX !== 'undefined' ? camX : (pCenterPos ? pCenterPos[0] : 0);
+        const cZ = typeof camZ !== 'undefined' ? camZ : (pCenterPos ? pCenterPos[2] : 0);
+        const dx = pos[0] - cX, dz = pos[2] - cZ;
+        if (dx * dx + dz * dz > maxBarDistSq) return;
+
         const hpPct = Math.max(0, Math.min(1.0, (curHp || 0) / Math.max(1, maxHp || 1)));
         const mpPct = Math.max(0, Math.min(1.0, (curMp || 0) / Math.max(1, maxMp || 1)));
 
@@ -33405,7 +34028,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = height; this.instanceMatrix[11] = 0;
         this.instanceMatrix[12] = pos[0]; this.instanceMatrix[13] = pos[1] + yOffset + height * 0.65; this.instanceMatrix[14] = pos[2]; this.instanceMatrix[15] = 1.0;
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.05, 0.05, 0.08]));
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, this._mobaHpDarkBuf);
         gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
         // Foreground Energy fill
@@ -33418,11 +34041,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         
         // Emissive Color selection: ENEMY has RED energy bar, ALLY has GREEN energy bar
-        // Multiplied by 2.0-2.5 to emit high-intensity light for the HDR bloom pass to glow beautifully
-        const energyColor = isEnemy 
-          ? new Float32Array([1.0 * 2.5, 0.04 * 2.5, 0.06 * 2.5]) // Intense Emissive Neon Crimson Red for Enemies!
-          : new Float32Array([0.08 * 2.0, 0.95 * 2.0, 0.22 * 2.0]); // Intense Emissive Laser Green for Allies!
-        
+        const energyColor = isEnemy ? this._mobaHpRedBuf : this._mobaHpGreenBuf;
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, energyColor);
         gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
@@ -33432,7 +34051,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.instanceMatrix[12] = pos[0];
         this.instanceMatrix[13] = pos[1] + yOffset - height * 0.65;
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.03, 0.05, 0.12]));
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, this._mobaMpDarkBuf);
         gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
         // Foreground Blue Mana fill
@@ -33444,8 +34063,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.instanceMatrix[13] = pos[1] + yOffset - height * 0.65 + 0.015;
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         
-        const manaColor = new Float32Array([0.18 * 2.0, 0.58 * 2.0, 0.98 * 2.0]); // Intense Emissive Arcane Blue Glow!
-        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, manaColor);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, this._mobaMpBlueBuf);
         gl.drawElements(gl.TRIANGLES, cubeMesh.indexCount, gl.UNSIGNED_SHORT, 0);
       };
 
@@ -33500,6 +34118,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   mobaPlaySound(type) {
+    if (this.mobaEffectsEnabled === false) return;
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
@@ -33516,11 +34135,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       osc.connect(gain);
       gain.connect(ctx.destination);
 
+      // Scale factor to make effects quieter and pleasant
+      const sfxVol = 0.28;
+
       if (type === 'select') {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(440, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.setValueAtTime(0.12 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
         osc.start();
         osc.stop(ctx.currentTime + 0.15);
@@ -33528,7 +34150,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(600, ctx.currentTime);
         osc.frequency.setValueAtTime(1200, ctx.currentTime + 0.08);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.setValueAtTime(0.15 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
         osc.start();
         osc.stop(ctx.currentTime + 0.25);
@@ -33536,7 +34158,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(600, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(180, ctx.currentTime + 0.12);
-        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.setValueAtTime(0.12 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.12);
         osc.start();
         osc.stop(ctx.currentTime + 0.12);
@@ -33544,7 +34166,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(180, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(45, ctx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.setValueAtTime(0.2 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
         osc.start();
         osc.stop(ctx.currentTime + 0.15);
@@ -33554,7 +34176,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.frequency.setValueAtTime(554.37, ctx.currentTime + 0.1);
         osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.2);
         osc.frequency.setValueAtTime(880, ctx.currentTime + 0.3);
-        gain.gain.setValueAtTime(0.25, ctx.currentTime);
+        gain.gain.setValueAtTime(0.25 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.6);
         osc.start();
         osc.stop(ctx.currentTime + 0.6);
@@ -33562,14 +34184,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(150, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.4);
-        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.setValueAtTime(0.08 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
         osc.start();
         osc.stop(ctx.currentTime + 0.4);
       } else if (type === 'ping') {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(980, ctx.currentTime);
-        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.setValueAtTime(0.1 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.08);
         osc.start();
         osc.stop(ctx.currentTime + 0.08);
@@ -33579,7 +34201,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.12); // E5
         osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.24); // G5
         osc.frequency.setValueAtTime(1046.50, ctx.currentTime + 0.36); // C6
-        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.setValueAtTime(0.2 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.6);
         osc.start();
         osc.stop(ctx.currentTime + 0.6);
@@ -33587,7 +34209,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(380, ctx.currentTime);
         osc.frequency.linearRampToValueAtTime(220, ctx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.setValueAtTime(0.15 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
         osc.start();
         osc.stop(ctx.currentTime + 0.15);
@@ -33595,7 +34217,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(1400, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.35);
-        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.setValueAtTime(0.2 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.35);
         osc.start();
         osc.stop(ctx.currentTime + 0.35);
@@ -33604,7 +34226,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.frequency.setValueAtTime(180, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(450, ctx.currentTime + 0.15);
         osc.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 0.45);
-        gain.gain.setValueAtTime(0.22, ctx.currentTime);
+        gain.gain.setValueAtTime(0.22 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.45);
         osc.start();
         osc.stop(ctx.currentTime + 0.45);
@@ -33612,7 +34234,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(160, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.65);
-        gain.gain.setValueAtTime(0.35, ctx.currentTime);
+        gain.gain.setValueAtTime(0.35 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.65);
         osc.start();
         osc.stop(ctx.currentTime + 0.65);
@@ -33620,7 +34242,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(587.33, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(1174.66, ctx.currentTime + 0.25);
-        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.setValueAtTime(0.18 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
         osc.start();
         osc.stop(ctx.currentTime + 0.25);
@@ -33629,7 +34251,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         osc.frequency.setValueAtTime(220, ctx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(950, ctx.currentTime + 0.12);
         osc.frequency.exponentialRampToValueAtTime(160, ctx.currentTime + 0.28);
-        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.setValueAtTime(0.2 * sfxVol, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.28);
         osc.start();
         osc.stop(ctx.currentTime + 0.28);
@@ -35804,8 +36426,26 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   applyMobaDamage(target, amount, attackerTeam, isSpell = false, isCrit = false, statusType = null, statusDuration = 0) {
     if (!target || !this.mobaState) return;
 
+    // Dev Hack: God Mode check
+    const isPlayerTarget = (target.isPlayer || target === this.mobaState);
+    if (isPlayerTarget && this._mobaGodMode) {
+      this.addMobaCombatText(target.pos ? target.pos[0] : this.mobaState.currentPos[0], 2.8, target.pos ? target.pos[2] : this.mobaState.currentPos[2], "🛡️ IMMUNE", "#f59e0b");
+      return;
+    }
+
     let targetPos = target.pos || this.mobaState.currentPos;
     let finalDmg = Math.round(amount * (isCrit ? 1.6 : 1.0));
+
+    // Dev Hack: One-Shot check
+    if (attackerTeam === this.mobaState.team && !isPlayerTarget && this._mobaOneShot) {
+      finalDmg = 9999;
+    }
+
+    // Scale damage to half if target is inactive (left tab / minimized)
+    const isTargetInactive = isPlayerTarget ? this.mobaState.inactive : target.inactive;
+    if (isTargetInactive) {
+      finalDmg = Math.round(finalDmg * 0.5);
+    }
 
     // Global magic damage reduction: tune spell damage down by ~25%
     if (isSpell) {

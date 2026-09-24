@@ -148,6 +148,66 @@ export class SacredGeometryFactory {
   }
 
   /**
+   * 2b. ERIKA (MOBA Underfoot Spiral Effect): Sacred Golden Spiral / Fibonacci Vortex Circle
+   * Standardized dimensions matching other hero circles (r * 0.94 to r outer ring, r * 0.82 to 0.85 inner ring),
+   * with 2 clean, elegant logarithmic golden spiral arms swirling from the inner core to outer perimeter.
+   */
+  static createSpiralVortexCircle(r = 1.0, w = 0.038) {
+    const positions = [], normals = [], uvs = [], barys = [], indices = [];
+
+    // 1. Concentric containment boundary rings - identical radius ratios to other heroes
+    createRingGeometry(r * 0.94, r, 48, positions, normals, uvs, barys, indices);
+    createRingGeometry(r * 0.82, r * 0.85, 42, positions, normals, uvs, barys, indices);
+    createRingGeometry(r * 0.24, r * 0.27, 28, positions, normals, uvs, barys, indices);
+
+    // 2. 2 Primary Golden Spiral Arms (clean, uncluttered dual-spiral vortex)
+    const numArms = 2;
+    const steps = 36;
+    const maxTheta = Math.PI * 1.45; // ~261 degrees graceful sweep
+    const rStart = r * 0.27;
+    const rEnd = r * 0.82;
+
+    for (let arm = 0; arm < numArms; arm++) {
+      const baseAngle = arm * Math.PI; // 180 degrees opposing arms
+      let prevPt = null;
+
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        // Smooth logarithmic expansion connecting inner core to outer ring
+        const rad = rStart + (rEnd - rStart) * Math.pow(t, 0.92);
+        const theta = baseAngle + t * maxTheta;
+        const curPt = [Math.cos(theta) * rad, Math.sin(theta) * rad];
+
+        if (prevPt) {
+          const curW = w * (1.15 - t * 0.25);
+          createLineQuad(prevPt, curPt, curW, positions, normals, uvs, barys, indices);
+        }
+        prevPt = curPt;
+
+        // Rune diamonds at harmonic intervals
+        if (s === steps) {
+          createNodeDiamond(curPt, w * 2.2, positions, normals, uvs, barys, indices);
+        } else if (s === Math.floor(steps * 0.5)) {
+          createNodeDiamond(curPt, w * 1.5, positions, normals, uvs, barys, indices);
+        }
+      }
+    }
+
+    // 3. Perimeter glyph ticks (8 ticks evenly spaced between containment rings)
+    for (let i = 0; i < 8; i++) {
+      const a = i * ((Math.PI * 2) / 8);
+      const p0 = [Math.cos(a) * (r * 0.85), Math.sin(a) * (r * 0.85)];
+      const p1 = [Math.cos(a) * (r * 0.94), Math.sin(a) * (r * 0.94)];
+      createLineQuad(p0, p1, w * 0.8, positions, normals, uvs, barys, indices);
+    }
+
+    // 4. Central Singularity Core Diamond
+    createNodeDiamond([0, 0], w * 2.8, positions, normals, uvs, barys, indices);
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
    * 3. MONSTER: Valknut / Trinity of Triangles Sacred Circle
    * 3 interlocking equilateral triangles forming the Norse Valknut knot,
    * bounded by an outer runic wheel and inner power core.

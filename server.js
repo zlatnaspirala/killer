@@ -509,11 +509,11 @@ var Module = (function() {
     return;
   }
 
-  // Static file serving: check dist/ first, then root __dirname
+  // Static file serving: check root __dirname first, then dist/
   let targetPath = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '');
-  let filePath = path.join(DIST_DIR, targetPath);
+  let filePath = path.join(__dirname, targetPath);
   if (!fs.existsSync(filePath)) {
-    filePath = path.join(__dirname, targetPath);
+    filePath = path.join(DIST_DIR, targetPath);
   }
   if (!fs.existsSync(filePath)) {
     if (pathname.includes('.') && !pathname.endsWith('.html')) {
@@ -521,7 +521,7 @@ var Module = (function() {
       res.end(`Not Found: ${pathname}`);
       return;
     }
-    filePath = path.join(fs.existsSync(DIST_DIR) ? DIST_DIR : __dirname, 'index.html');
+    filePath = path.join(fs.existsSync(path.join(__dirname, 'index.html')) ? __dirname : DIST_DIR, 'index.html');
   }
 
   const ext = path.extname(filePath).toLowerCase();
