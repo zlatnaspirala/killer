@@ -9717,14 +9717,14 @@ void main() {
         }
       }
 
-      // MOBA shortcuts: Q/W/E/R for spells, A / Space for basic attack
-      const isMoba = (this.state.cameraMode === 4) || (this.state.demoScene && this.state.demoScene.includes('10_moba'));
+      // MOBA shortcuts: Q/W/E/R or 1/2/3/4 for spells, A / Space for basic attack
+      const isMoba = (this.state.cameraMode === 4) || (this.state.demoScene && (this.state.demoScene.includes('10_moba') || this.state.demoScene.includes('15_moba')));
       if (isMoba && this.mobaState && this.mobaState.playing) {
         if (!e.repeat) {
-          if (k === 'q') { this.castMobaSpell(0); e.preventDefault(); }
-          else if (k === 'w') { this.castMobaSpell(1); e.preventDefault(); }
-          else if (k === 'e') { this.castMobaSpell(2); e.preventDefault(); }
-          else if (k === 'r') { this.castMobaSpell(3); e.preventDefault(); }
+          if (k === 'q' || k === '1') { this.castMobaSpell(0); e.preventDefault(); }
+          else if (k === 'w' || k === '2') { this.castMobaSpell(1); e.preventDefault(); }
+          else if (k === 'e' || k === '3') { this.castMobaSpell(2); e.preventDefault(); }
+          else if (k === 'r' || k === '4') { this.castMobaSpell(3); e.preventDefault(); }
           else if (k === 'a' || e.code === 'Space') { this.mobaTriggerPlayerAttack(); e.preventDefault(); }
         }
       }
@@ -28324,17 +28324,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (this.postProcProg.uHzbMipLevel) gl.uniform1f(this.postProcProg.uHzbMipLevel, hzb.mipLevel !== undefined ? hzb.mipLevel : 0);
       if (this.postProcProg.uHzbSteps) gl.uniform1i(this.postProcProg.uHzbSteps, hzb.steps !== undefined ? hzb.steps : 8);
 
-      // Bloom Uniforms (bypassed in MOBA when Cheap Material is active to eliminate heavy fullscreen Kawase blur fillrate bottleneck on mobile GPUs)
+      // Bloom Uniforms (subtle cheap bloom & soft blur preserved in moba mode)
       const isMobaScene = this.state.demoScene && this.state.demoScene.includes('15_moba');
       const isMobaCheap = isMobaScene && !!this.state.fpsCheapMaterial;
-      const bloomActive = (bloom.enabled && !isMobaCheap) ? 1 : 0;
+      const bloomActive = bloom.enabled ? 1 : 0;
+      const bloomIntensity = isMobaCheap ? 0.95 : (bloom.intensity !== undefined ? bloom.intensity : 2.10);
+      const bloomRadius = isMobaCheap ? 1.05 : (bloom.radius !== undefined ? bloom.radius : 1.75);
       if (this.postProcProg.uBloomEnabled) gl.uniform1i(this.postProcProg.uBloomEnabled, bloomActive);
       if (this.postProcProg.uBloomThreshold) gl.uniform1f(this.postProcProg.uBloomThreshold, bloom.threshold !== undefined ? bloom.threshold : 0.38);
       if (this.postProcProg.uBloomSensitivity) gl.uniform1f(this.postProcProg.uBloomSensitivity, bloom.sensitivity !== undefined ? bloom.sensitivity : 0.65);
-      if (this.postProcProg.uBloomIntensity) gl.uniform1f(this.postProcProg.uBloomIntensity, bloom.intensity !== undefined ? bloom.intensity : 2.10);
-      if (this.postProcProg.uBloomRadius) gl.uniform1f(this.postProcProg.uBloomRadius, bloom.radius !== undefined ? bloom.radius : 1.75);
-      if (this.postProcProg.uBloomAnamorphic) gl.uniform1f(this.postProcProg.uBloomAnamorphic, bloom.anamorphic ? 1.0 : 0.0);
-      if (this.postProcProg.uBloomChromatic) gl.uniform1f(this.postProcProg.uBloomChromatic, bloom.chromatic ? 1.0 : 0.0);
+      if (this.postProcProg.uBloomIntensity) gl.uniform1f(this.postProcProg.uBloomIntensity, bloomIntensity);
+      if (this.postProcProg.uBloomRadius) gl.uniform1f(this.postProcProg.uBloomRadius, bloomRadius);
+      if (this.postProcProg.uBloomAnamorphic) gl.uniform1f(this.postProcProg.uBloomAnamorphic, (bloom.anamorphic && !isMobaCheap) ? 1.0 : 0.0);
+      if (this.postProcProg.uBloomChromatic) gl.uniform1f(this.postProcProg.uBloomChromatic, (bloom.chromatic && !isMobaCheap) ? 1.0 : 0.0);
 
       // Volumetric Uniforms (disabled in showroom to keep obsidian black floor & eliminate gray fog wash; bypassed in cheap material mode)
       const isLobby = (!this.mobaState || !this.mobaState.playing);
@@ -29058,12 +29060,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (shopContainer) {
       shopContainer.innerHTML = '';
       const shopItems = [
-        { key: 'blade', name: 'Blade of Blood', price: 200, desc: '+25 Strength / Damage', color: 'border-red-600/50' },
-        { key: 'boots', name: 'Boots of Speed', price: 160, desc: '+2.5 Speed Boost', color: 'border-emerald-600/50' },
-        { key: 'heart', name: 'Heart of Titan', price: 300, desc: '+400 Max Health', color: 'border-cyan-600/50' },
-        { key: 'scepter', name: 'Archmage Scepter', price: 240, desc: '+300 Max Mana', color: 'border-purple-600/50' },
-        { key: 'shield', name: 'Aegis Shield', price: 220, desc: '+15 Health Regen / Armor', color: 'border-amber-600/50' },
-        { key: 'magic_reborn', name: 'Magic Reborn', price: 300, desc: 'One-time use potion. Halves respawn time or +10 HP when alive.', color: 'border-blue-600/50' }
+        { key: 'blade', name: 'Blade of Blood', price: 200, desc: '+25 Strength / Damage (3x Merges into Aether Fortis: +95 DMG, +15 Armor)', color: 'border-red-600/50' },
+        { key: 'boots', name: 'Boots of Speed', price: 160, desc: '+2.5 Speed (3x Merges into Caelum Feather: +8.0 Speed, +500 HP)', color: 'border-emerald-600/50' },
+        { key: 'heart', name: 'Heart of Titan', price: 300, desc: '+400 Max Health (3x Merges into Sanguis Vita: +1500 HP, +20 Armor)', color: 'border-cyan-600/50' },
+        { key: 'scepter', name: 'Archmage Scepter', price: 240, desc: '+300 Max Mana (3x Merges into Terra Sanctum: +1100 MP, +60 INT)', color: 'border-purple-600/50' },
+        { key: 'shield', name: 'Aegis Shield', price: 220, desc: '+15 Health Regen / Armor (3x Merges into Aether Scale: +48 Armor, +550 HP)', color: 'border-amber-600/50' },
+        { key: 'corona', name: 'Corona Ignifera', price: 280, desc: '+30 DMG, +200 HP (3x Merges into Corona Umbra: +90 DMG, +600 HP)', color: 'border-orange-500/50' },
+        { key: 'fulgur', name: 'Fulgur Stone', price: 240, desc: '+25 INT, +250 Mana (3x Merges into Fulgur Mortis: +80 INT, +800 MP)', color: 'border-yellow-400/50' },
+        { key: 'magic_reborn', name: 'Magic Reborn', price: 300, desc: 'One-time potion: Halves respawn time or +10 HP (3x Merges into Mortis Ultima: Divine Instant Revive)', color: 'border-blue-600/50' }
       ];
 
       shopItems.forEach(item => {
@@ -29073,6 +29077,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           heart: 'silva-heart.png',
           scepter: 'vita-mindza.png',
           shield: 'ventus-aegis.png',
+          corona: 'corona-ignifera.png',
+          fulgur: 'fulgur-stone.png',
           magic_reborn: 'aqua-sanctum.png'
         };
         const imageFile = itemImages[item.key] || 'aether-gladius.png';
@@ -29089,7 +29095,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             </div>
             <div class="flex items-center justify-between mt-1.5">
               <span class="text-[10px] text-amber-400 font-bold font-mono">🪙 ${item.price} Gold</span>
-              <button class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[9px] py-0.5 px-2 rounded active:scale-95 transition-all" onclick="app.buyMobaItem('${item.key}')">BUY</button>
+              <button class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[9px] py-0.5 px-2 rounded active:scale-95 transition-all cursor-pointer" onclick="app.buyMobaItem('${item.key}')">BUY</button>
             </div>
           </div>
         `;
@@ -29097,15 +29103,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       });
     }
 
-    // Connect Keyboard input listener hooks for abilities Q, W, E, R
+    // Connect Keyboard input listener hooks for abilities Q, W, E, R or 1, 2, 3, 4
     if (this._mobaKeyHandler) window.removeEventListener('keydown', this._mobaKeyHandler);
     this._mobaKeyHandler = (e) => {
       if (!this.mobaState || !this.mobaState.playing) return;
       const key = e.key.toLowerCase();
-      if (key === 'q') this.castMobaSpell(0);
-      else if (key === 'w') this.castMobaSpell(1);
-      else if (key === 'e') this.castMobaSpell(2);
-      else if (key === 'r') this.castMobaSpell(3);
+      if (key === 'q' || key === '1') this.castMobaSpell(0);
+      else if (key === 'w' || key === '2') this.castMobaSpell(1);
+      else if (key === 'e' || key === '3') this.castMobaSpell(2);
+      else if (key === 'r' || key === '4') this.castMobaSpell(3);
     };
     window.addEventListener('keydown', this._mobaKeyHandler);
 
@@ -30082,15 +30088,18 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   buyMobaItem(itemKey) {
     if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
 
-    const itemDetails = {
-      blade: { name: 'Blade of Blood', price: 200, strength: 25, desc: '+25 Strength / Damage' },
-      boots: { name: 'Boots of Speed', price: 160, speed: 2.5, desc: '+2.5 Speed' },
-      heart: { name: 'Heart of Titan', price: 300, hp: 400, desc: '+400 Max HP' },
-      scepter: { name: 'Archmage Scepter', price: 240, mp: 300, desc: '+300 Max Mana' },
-      shield: { name: 'Aegis Shield', price: 220, armor: 15, desc: '+15 HP Regen / Armor' },
-      magic_reborn: { name: 'Magic Reborn', price: 300, desc: 'One-time use potion. Halves respawn time or +10 HP when alive.' }
-    }[itemKey];
+    const MOBA_ITEM_CATALOG = {
+      blade: { key: 'blade', name: 'Blade of Blood', price: 200, strength: 25, desc: '+25 Strength / Damage (3x Merges into Aether Fortis)' },
+      boots: { key: 'boots', name: 'Boots of Speed', price: 160, speed: 2.5, desc: '+2.5 Speed (3x Merges into Caelum Feather)' },
+      heart: { key: 'heart', name: 'Heart of Titan', price: 300, hp: 400, desc: '+400 Max HP (3x Merges into Sanguis Vita)' },
+      scepter: { key: 'scepter', name: 'Archmage Scepter', price: 240, mp: 300, desc: '+300 Max Mana (3x Merges into Terra Sanctum)' },
+      shield: { key: 'shield', name: 'Aegis Shield', price: 220, armor: 15, desc: '+15 HP Regen / Armor (3x Merges into Aether Scale)' },
+      corona: { key: 'corona', name: 'Corona Ignifera', price: 280, strength: 30, hp: 200, desc: '+30 DMG, +200 HP (3x Merges into Corona Umbra)' },
+      fulgur: { key: 'fulgur', name: 'Fulgur Stone', price: 240, mp: 250, intelligence: 25, desc: '+25 INT, +250 Mana (3x Merges into Fulgur Mortis)' },
+      magic_reborn: { key: 'magic_reborn', name: 'Magic Reborn', price: 300, desc: 'One-time potion: Halves respawn time or +10 HP (3x Merges into Mortis Ultima)' }
+    };
 
+    const itemDetails = MOBA_ITEM_CATALOG[itemKey];
     if (!itemDetails) return;
 
     if (this.mobaState.gold < itemDetails.price) {
@@ -30099,10 +30108,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       return;
     }
 
-    // Find empty slot in 3x2 grid inventory
+    if (!Array.isArray(this.mobaState.inventory)) {
+      this.mobaState.inventory = [null, null, null, null, null, null, null, null];
+    }
+
+    // Find empty slot in 4x2 grid inventory (8 slots)
     const freeIndex = this.mobaState.inventory.findIndex(slot => slot === null);
     if (freeIndex === -1) {
-      this.log("🎒 Inventory is Full! Max 6 items.", "error");
+      this.log("🎒 Inventory is Full! Max 8 items. Merge 3 identical items to free slots.", "error");
       this.mobaPlaySound('back');
       return;
     }
@@ -30123,21 +30136,210 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.heroStats.maxMp += itemDetails.mp;
       this.mobaState.heroStats.mp += itemDetails.mp;
     }
+    if (itemDetails.intelligence) {
+      this.mobaState.heroStats.intelligence = (this.mobaState.heroStats.intelligence || 0) + itemDetails.intelligence;
+    }
 
     this.log(`🎒 Purchased ${itemDetails.name}!`, "success");
     this.mobaPlaySound('confirm');
 
-    // Update HUD Stats and Inventory visually
+    // Auto check if 3 identical items can be merged into 1 legendary item
+    const mergeKey = this.checkMobaMergeable();
+    if (mergeKey) {
+      this.tryMergeInventoryItems(mergeKey);
+    } else {
+      this.mobaUpdateInventoryUI();
+    }
+  }
+
+  checkMobaMergeable() {
+    if (!this.mobaState || !Array.isArray(this.mobaState.inventory)) return null;
+    const mergeRecipes = this.getMobaMergeRecipes();
+    const counts = {};
+    this.mobaState.inventory.forEach(item => {
+      if (item && item.key && mergeRecipes[item.key]) {
+        counts[item.key] = (counts[item.key] || 0) + 1;
+      }
+    });
+    for (const k in counts) {
+      if (counts[k] >= 3) return k;
+    }
+    return null;
+  }
+
+  getMobaMergeRecipes() {
+    return {
+      blade: {
+        resultKey: 'aether_fortis',
+        name: 'Aether Fortis',
+        desc: 'LEGENDARY BLADE: +95 Damage, +20% Critical Strike, +15 Armor',
+        strength: 95,
+        armor: 15,
+        price: 600,
+        image: 'aether-fortis.png'
+      },
+      boots: {
+        resultKey: 'caelum_feather',
+        name: 'Caelum Feather',
+        desc: 'MYTHIC WINGS: +8.0 Speed, +500 Max HP, +300 Mana',
+        speed: 8.0,
+        hp: 500,
+        mp: 300,
+        price: 480,
+        image: 'caelum-dust.png'
+      },
+      heart: {
+        resultKey: 'sanguis_vita',
+        name: 'Sanguis Vita',
+        desc: 'IMMORTAL HEART: +1500 Max HP, +20 Armor, +30 HP/s Regen',
+        hp: 1500,
+        armor: 20,
+        price: 900,
+        image: 'sanguis-vita.png'
+      },
+      scepter: {
+        resultKey: 'terra_sanctum',
+        name: 'Terra Sanctum',
+        desc: 'ARCHMAGE RELIC: +1100 Max MP, +60 Intelligence, -25% Spell CD',
+        mp: 1100,
+        intelligence: 60,
+        price: 720,
+        image: 'terra-sanctum.png'
+      },
+      shield: {
+        resultKey: 'aether_scale',
+        name: 'Aether Scale',
+        desc: 'DIVINE BULWARK: +48 Armor, +550 Max HP, 200 Shield',
+        armor: 48,
+        hp: 550,
+        price: 660,
+        image: 'aether-scale.png'
+      },
+      corona: {
+        resultKey: 'corona_umbra',
+        name: 'Corona Umbra',
+        desc: 'SOLAR ECLIPSE: +90 DMG, +600 Max HP, +15 Armor',
+        strength: 90,
+        hp: 600,
+        armor: 15,
+        price: 840,
+        image: 'corona-umbra.png'
+      },
+      fulgur: {
+        resultKey: 'fulgur_mortis',
+        name: 'Fulgur Mortis',
+        desc: 'THUNDER SCEPTRE: +80 INT, +800 Max MP, +30 DMG',
+        intelligence: 80,
+        mp: 800,
+        strength: 30,
+        price: 720,
+        image: 'fulgur-mortis.png'
+      },
+      magic_reborn: {
+        resultKey: 'mortis_ultima',
+        name: 'Mortis Ultima',
+        desc: 'DIVINE RESURRECTION: Instantly revives with 100% HP & MP when fallen, or heals +800 HP!',
+        price: 900,
+        image: 'mortis-ultima.png'
+      }
+    };
+  }
+
+  tryMergeInventoryItems(autoKey = null) {
+    if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return;
+    const mergeKey = autoKey || this.checkMobaMergeable();
+    if (!mergeKey) {
+      this.log("🎒 Need 3 identical items in inventory to merge!", "info");
+      this.showMobaAlert("Need 3 identical items to merge into 1 Legendary!", "text-yellow-300");
+      return;
+    }
+
+    const recipes = this.getMobaMergeRecipes();
+    const recipe = recipes[mergeKey];
+    if (!recipe) return;
+
+    // Locate the 3 slots with this item
+    const matchingIndices = [];
+    for (let i = 0; i < this.mobaState.inventory.length; i++) {
+      const it = this.mobaState.inventory[i];
+      if (it && it.key === mergeKey) {
+        matchingIndices.push(i);
+        if (matchingIndices.length === 3) break;
+      }
+    }
+
+    if (matchingIndices.length < 3) return;
+
+    // Deduct the 3 individual items' stats
+    matchingIndices.forEach(idx => {
+      const it = this.mobaState.inventory[idx];
+      if (it) {
+        if (it.strength) this.mobaState.heroStats.damage -= it.strength;
+        if (it.speed) this.mobaState.heroStats.speed -= it.speed;
+        if (it.armor) this.mobaState.heroStats.armor = Math.max(0, (this.mobaState.heroStats.armor || 0) - it.armor);
+        if (it.hp) {
+          this.mobaState.heroStats.maxHp -= it.hp;
+          this.mobaState.heroStats.hp = Math.min(this.mobaState.heroStats.hp, this.mobaState.heroStats.maxHp);
+        }
+        if (it.mp) {
+          this.mobaState.heroStats.maxMp -= it.mp;
+          this.mobaState.heroStats.mp = Math.min(this.mobaState.heroStats.mp, this.mobaState.heroStats.maxMp);
+        }
+        if (it.intelligence) this.mobaState.heroStats.intelligence = Math.max(0, (this.mobaState.heroStats.intelligence || 0) - it.intelligence);
+      }
+      this.mobaState.inventory[idx] = null;
+    });
+
+    // Place the merged item in the first slot
+    const targetSlot = matchingIndices[0];
+    const mergedItem = {
+      key: recipe.resultKey,
+      name: recipe.name,
+      desc: recipe.desc,
+      strength: recipe.strength || 0,
+      armor: recipe.armor || 0,
+      speed: recipe.speed || 0,
+      hp: recipe.hp || 0,
+      mp: recipe.mp || 0,
+      intelligence: recipe.intelligence || 0,
+      price: recipe.price || 600,
+      isMerged: true
+    };
+    this.mobaState.inventory[targetSlot] = mergedItem;
+
+    // Add merged item stats
+    if (mergedItem.strength) this.mobaState.heroStats.damage += mergedItem.strength;
+    if (mergedItem.speed) this.mobaState.heroStats.speed += mergedItem.speed;
+    if (mergedItem.armor) this.mobaState.heroStats.armor = (this.mobaState.heroStats.armor || 0) + mergedItem.armor;
+    if (mergedItem.hp) {
+      this.mobaState.heroStats.maxHp += mergedItem.hp;
+      this.mobaState.heroStats.hp += mergedItem.hp;
+    }
+    if (mergedItem.mp) {
+      this.mobaState.heroStats.maxMp += mergedItem.mp;
+      this.mobaState.heroStats.mp += mergedItem.mp;
+    }
+    if (mergedItem.intelligence) this.mobaState.heroStats.intelligence = (this.mobaState.heroStats.intelligence || 0) + mergedItem.intelligence;
+
+    // Celebratory effects
+    this.mobaPlaySound('confirm');
+    if (this.mobaState.currentPos) {
+      this.addMobaCombatText(this.mobaState.currentPos[0], 2.5, this.mobaState.currentPos[2], `✨ 3x MERGED!`, '#f59e0b');
+    }
+    this.showMobaAlert(`✨ 3 ITEMS MERGED INTO ${mergedItem.name}! (+2 SLOTS FREED)`, 'text-amber-300');
+    this.log(`✨ 3 items merged into 1: ${mergedItem.name}!`, "success");
+
     this.mobaUpdateInventoryUI();
   }
 
   sellMobaItem(index) {
-    if (!this.mobaState || !this.mobaState.playing || index < 0 || index >= 6) return;
+    if (!this.mobaState || !this.mobaState.playing || !Array.isArray(this.mobaState.inventory)) return;
+    if (index < 0 || index >= this.mobaState.inventory.length) return;
     const item = this.mobaState.inventory[index];
     if (!item) return;
 
     // Refund 60% of original price
-    const refund = Math.floor(item.price * 0.6);
+    const refund = Math.floor((item.price || 200) * 0.6);
     this.mobaState.gold += refund;
 
     // Remove stats boost
@@ -30151,6 +30353,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (item.mp) {
       this.mobaState.heroStats.maxMp -= item.mp;
       this.mobaState.heroStats.mp = Math.min(this.mobaState.heroStats.mp, this.mobaState.heroStats.maxMp);
+    }
+    if (item.intelligence) {
+      this.mobaState.heroStats.intelligence = Math.max(0, (this.mobaState.heroStats.intelligence || 0) - item.intelligence);
     }
 
     this.mobaState.inventory[index] = null;
@@ -30191,7 +30396,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   useMobaItem(index) {
-    if (!this.mobaState || !this.mobaState.playing || index < 0 || index >= 6) return;
+    if (!this.mobaState || !this.mobaState.playing || !Array.isArray(this.mobaState.inventory)) return;
+    if (index < 0 || index >= this.mobaState.inventory.length) return;
     const item = this.mobaState.inventory[index];
     if (!item) return;
 
@@ -30205,7 +30411,6 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.showMobaAlert(`✨ RESPAWN TIME HALVED: ${this._playerRespawnRemaining.toFixed(1)}s!`, 'text-blue-400');
           this.mobaPlaySound('confirm');
           
-          // Consume item
           this.mobaState.inventory[index] = null;
           this.mobaUpdateInventoryUI();
         } else {
@@ -30214,11 +30419,40 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       } else {
         // Player is alive, drink for +10 HP heal
         stats.hp = Math.min(stats.maxHp, stats.hp + 10);
-        this.addMobaCombatText(this.mobaState.currentPos[0], 2.2, this.mobaState.currentPos[2], `+10 HP`, '#10b981');
+        if (this.mobaState.currentPos) {
+          this.addMobaCombatText(this.mobaState.currentPos[0], 2.2, this.mobaState.currentPos[2], `+10 HP`, '#10b981');
+        }
         this.log("🔮 Magic Reborn consumed! Healed +10 HP.", "success");
         this.mobaPlaySound('confirm');
 
-        // Consume item
+        this.mobaState.inventory[index] = null;
+        this.mobaUpdateInventoryUI();
+      }
+    } else if (item.key === 'mortis_ultima') {
+      // Legendary Divine Rebirth Potion
+      const stats = this.mobaState.heroStats;
+      if (stats.hp <= 0) {
+        // Instant full revival!
+        this._playerRespawnRemaining = 0;
+        const respOverlay = document.getElementById('moba-respawn-overlay');
+        if (respOverlay) respOverlay.classList.add('hidden');
+        stats.hp = stats.maxHp;
+        stats.mp = stats.maxMp;
+        this.log("🌟 Mortis Ultima consumed! Instant divine rebirth!", "success");
+        this.showMobaAlert("🌟 DIVINE REBIRTH! INSTANTLY RESURRECTED AT 100%!", "text-yellow-300");
+        this.mobaPlaySound('confirm');
+        this.mobaState.inventory[index] = null;
+        this.mobaUpdateInventoryUI();
+      } else {
+        // Super heal +800 HP & +400 MP!
+        stats.hp = Math.min(stats.maxHp, stats.hp + 800);
+        stats.mp = Math.min(stats.maxMp, (stats.mp || 0) + 400);
+        if (this.mobaState.currentPos) {
+          this.addMobaCombatText(this.mobaState.currentPos[0], 2.2, this.mobaState.currentPos[2], `+800 HP!`, '#fbbf24');
+        }
+        this.log("🌟 Mortis Ultima consumed! Healed +800 HP & +400 MP!", "success");
+        this.showMobaAlert("🌟 MORTIS ULTIMA: +800 HP & +400 MP RESTORED!", "text-yellow-300");
+        this.mobaPlaySound('confirm');
         this.mobaState.inventory[index] = null;
         this.mobaUpdateInventoryUI();
       }
@@ -31124,7 +31358,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (this.mobaState.heroStats) {
           this.mobaState.heroStats.hp = this.mobaState.heroStats.maxHp;
           this.mobaState.heroStats.mp = this.mobaState.heroStats.maxMp;
-          const basePos = this.mobaState.team === 'RED' ? [-36.0, 0, -36.0] : [36.0, 0, 36.0];
+          const basePos = this.mobaState.team === 'RED' ? [-32.0, 0, -32.0] : [32.0, 0, 32.0];
           this.mobaState.currentPos = [...basePos];
           this.mobaState.targetPos = null;
           this.mobaState.targetEntity = null;
@@ -31394,17 +31628,18 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // BASE FOUNTAIN HEALING ZONE
     // =========================================================================
     if (this.mobaState.playing && !this.mobaState.winner) {
-      const healRateHP = 80.0; // 80 HP per second
-      const healRateMP = 60.0; // 60 MP per second
+      const healRateHP = 160.0; // 160 HP per second fast fountain healing
+      const healRateMP = 100.0; // 100 MP per second
 
-      // 1. Heal the local player if near their team's base (scaled 2.0x)
+      // 1. Heal the local player if near their team's base fountain platform
       if (this.mobaState.heroStats && this.mobaState.heroStats.hp > 0) {
         const playerTeam = this.mobaState.team;
         const playerPos = this.mobaState.currentPos;
-        const baseCenter = playerTeam === 'RED' ? [-31.0, 0, -31.0] : [31.0, 0, 31.0];
+        const baseCenter = playerTeam === 'RED' ? [-33.0, 0, -33.0] : [33.0, 0, 33.0];
         const distToBase = Math.hypot(playerPos[0] - baseCenter[0], playerPos[2] - baseCenter[2]);
 
-        if (distToBase < 13.0) {
+        // Healing radius strictly covers the fountain platform & courtyard (11.0m)
+        if (distToBase < 11.0) {
           const stats = this.mobaState.heroStats;
           const oldHp = stats.hp;
           stats.hp = Math.min(stats.maxHp, stats.hp + dt * healRateHP);
@@ -31423,15 +31658,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       }
 
-      // 2. Heal friendly bot players if near their team's base (scaled 2.0x)
+      // 2. Heal friendly bot players if near their team's base fountain platform
       if (this.mobaState.players) {
         this.mobaState.players.forEach(b => {
           if (b.hp > 0 && b.pos) {
             const botTeam = b.team;
-            const baseCenter = botTeam === 'RED' ? [-31.0, 0, -31.0] : [31.0, 0, 31.0];
+            const baseCenter = botTeam === 'RED' ? [-33.0, 0, -33.0] : [33.0, 0, 33.0];
             const distToBase = Math.hypot(b.pos[0] - baseCenter[0], b.pos[2] - baseCenter[2]);
 
-            if (distToBase < 13.0) {
+            // Healing radius covers the fountain platform & courtyard (11.0m)
+            if (distToBase < 11.0) {
               const oldHp = b.hp;
               b.hp = Math.min(b.maxHp, b.hp + dt * healRateHP);
               b.mp = Math.min(b.maxMp || 250, (b.mp || 0) + dt * healRateMP);
@@ -31734,28 +31970,61 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (!grid) return;
     grid.innerHTML = '';
 
-    for (let i = 0; i < 6; i++) {
+    // Toggle merge button visibility
+    const mergeBtn = document.getElementById('moba-btn-merge');
+    const mergeKey = this.checkMobaMergeable();
+    if (mergeBtn) {
+      if (mergeKey) {
+        mergeBtn.classList.remove('hidden');
+        mergeBtn.classList.add('flex');
+        mergeBtn.innerHTML = `<span>✨ MERGE 3x</span>`;
+        mergeBtn.title = `3x matching items found! Click to forge Legendary ${mergeKey.toUpperCase()}!`;
+      } else {
+        mergeBtn.classList.add('hidden');
+        mergeBtn.classList.remove('flex');
+      }
+    }
+
+    if (!Array.isArray(this.mobaState.inventory)) {
+      this.mobaState.inventory = [null, null, null, null, null, null, null, null];
+    }
+
+    const itemImages = {
+      blade: 'aether-gladius.png',
+      boots: 'lux-feather.png',
+      heart: 'silva-heart.png',
+      scepter: 'vita-mindza.png',
+      shield: 'ventus-aegis.png',
+      corona: 'corona-ignifera.png',
+      fulgur: 'fulgur-stone.png',
+      magic_reborn: 'aqua-sanctum.png',
+      aether_fortis: 'aether-fortis.png',
+      caelum_feather: 'caelum-dust.png',
+      sanguis_vita: 'sanguis-vita.png',
+      terra_sanctum: 'terra-sanctum.png',
+      aether_scale: 'aether-scale.png',
+      corona_umbra: 'corona-umbra.png',
+      fulgur_mortis: 'fulgur-mortis.png',
+      mortis_ultima: 'mortis-ultima.png'
+    };
+
+    for (let i = 0; i < 8; i++) {
       const item = this.mobaState.inventory[i];
       const slot = document.createElement('div');
-      slot.className = 'w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 border border-slate-700 bg-slate-950/80 rounded flex items-center justify-center text-center text-slate-400 select-none relative cursor-pointer hover:border-red-500 overflow-hidden p-[0.5px]';
+      const borderClass = item && item.isMerged ? 'border-yellow-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'border-slate-700';
+      slot.className = `w-5 h-5 sm:w-8 sm:h-8 md:w-10 md:h-10 border ${borderClass} bg-slate-950/80 rounded flex items-center justify-center text-center text-slate-400 select-none relative cursor-pointer hover:border-amber-400 overflow-hidden p-[0.5px]`;
       if (item) {
-        const itemImages = {
-          blade: 'aether-gladius.png',
-          boots: 'lux-feather.png',
-          heart: 'silva-heart.png',
-          scepter: 'vita-mindza.png',
-          shield: 'ventus-aegis.png',
-          magic_reborn: 'aqua-sanctum.png'
-        };
         const imageFile = itemImages[item.key] || 'aether-gladius.png';
         const imagePath = `assets/textures/moba/invertory/${imageFile}`;
+        const starBadge = item.isMerged ? `<div class="absolute bottom-0 left-0 bg-yellow-500/90 text-slate-950 font-black text-[5.5px] sm:text-[7.5px] px-0.5 rounded-tr leading-none z-20">★ LEG</div>` : '';
 
         slot.innerHTML = `
           <div class="absolute inset-0 bg-cover bg-center opacity-90" style="background-image: url('${imagePath}');"></div>
           <div class="absolute inset-0 bg-black/40 hover:bg-transparent transition-colors flex items-center justify-center">
-            <span class="font-bold text-slate-100 text-[6.5px] sm:text-[9.5px] md:text-[11px] leading-tight text-shadow z-10 bg-black/60 px-0.5 rounded truncate max-w-[95%]">${item.name.split(' ').pop()}</span>
+            <span class="font-bold text-slate-100 text-[6px] sm:text-[8.5px] md:text-[10px] leading-tight text-shadow z-10 bg-black/60 px-0.5 rounded truncate max-w-[95%]">${item.name.split(' ').pop()}</span>
           </div>
-          <div class="absolute top-0 right-0 bg-red-600 hover:bg-red-500 text-white rounded-full w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 flex items-center justify-center font-bold text-[6px] sm:text-[8.5px] md:text-[10px] z-20" onclick="event.stopPropagation(); app.sellMobaItem(${i})">×</div>
+          ${starBadge}
+          <div class="absolute top-0 right-0 bg-red-600 hover:bg-red-500 text-white rounded-full w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 flex items-center justify-center font-bold text-[6px] sm:text-[8.5px] md:text-[10px] z-20" onclick="event.stopPropagation(); app.sellMobaItem(${i})" title="Sell item for 60% gold">×</div>
         `;
         slot.title = `${item.name}: ${item.desc} (Click to consume/use, click top cross to SELL)`;
         slot.setAttribute('onclick', `app.useMobaItem(${i})`);
@@ -31767,7 +32036,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         slot.setAttribute('ontouchstart', `app.showMobaHudTooltip("${tooltipStr}")`);
         slot.setAttribute('ontouchend', 'app.hideMobaHudTooltip()');
       } else {
-        slot.innerHTML = `<span class="opacity-30 text-[7.5px] sm:text-[10px] md:text-xs font-mono">${i + 1}</span>`;
+        slot.innerHTML = `<span class="opacity-30 text-[7px] sm:text-[9px] md:text-xs font-mono">${i + 1}</span>`;
         slot.setAttribute('onmouseenter', `app.showMobaHudTooltip("Empty Inventory Slot ${i + 1}")`);
         slot.setAttribute('onmouseleave', 'app.hideMobaHudTooltip()');
       }
@@ -31797,7 +32066,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
       const slotEl = document.getElementById(`moba-spell-${spellKeys[i]}`);
       if (slotEl) {
-        const tooltipStr = `${spellKeys[i].toUpperCase()}: ${spell.name} - ${spell.desc} (Cost: ${spell.cost} Mana, CD: ${spell.cooldown}s)`;
+        const tooltipStr = `[${spellKeys[i].toUpperCase()} / ${i + 1}]: ${spell.name} - ${spell.desc} (Cost: ${spell.cost} Mana, CD: ${spell.cooldown}s)`;
         slotEl.setAttribute('onmouseenter', `app.showMobaHudTooltip("${tooltipStr}")`);
         slotEl.setAttribute('ontouchstart', `app.showMobaHudTooltip("${tooltipStr}")`);
       }
@@ -33030,8 +33299,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.creeps.forEach(creep => {
       if (creep.hp <= 0) return;
 
-      const creepColor = creep.team === 'RED' ? [0.95, 0.25, 0.25] : [0.25, 0.35, 0.95];
+      const mult = creep.scaleMultiplier || 1.0;
+      const isBuffed = mult > 1.05 || creep.isBuffed;
+      const creepColor = creep.team === 'RED'
+        ? (isBuffed ? [1.0, 0.45, 0.15] : [0.95, 0.25, 0.25])
+        : (isBuffed ? [0.18, 0.70, 1.0] : [0.25, 0.35, 0.95]);
       const cYaw = creep.yaw || 0;
+      const cScale = 0.65 * mult;
 
       if (botModel && botModel.soldierMesh) {
         // Animate creeps: Use 'attack' when attacking or engaged in combat, 'walk' when moving, 'idle' when standing
@@ -33050,15 +33324,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.05);
-        // Draw at 0.65 scale (making them smaller than heroes which are drawn at 1.25)
-        this.drawBotMeshPart(progInfo, botModel.soldierMesh, creep.pos, cYaw, 0, 0, 0, 0.65, 0.65, 0.65, creepColor, 0.3, 0.2, 0, 0.1);
+        // Draw at cScale (0.65 baseline * mult, +30% bigger when empowered)
+        this.drawBotMeshPart(progInfo, botModel.soldierMesh, creep.pos, cYaw, 0, 0, 0, cScale, cScale, cScale, creepColor, 0.3, 0.2, 0, 0.1);
       } else if (creepFallbackMesh) {
         gl.bindVertexArray(creepFallbackMesh.vao);
-        const size = 0.55;
+        const size = 0.55 * mult;
         this.instanceMatrix[0] = size; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
         this.instanceMatrix[4] = 0; this.instanceMatrix[5] = size; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
         this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = size; this.instanceMatrix[11] = 0;
-        this.instanceMatrix[12] = creep.pos[0]; this.instanceMatrix[13] = 0.35; this.instanceMatrix[14] = creep.pos[2]; this.instanceMatrix[15] = 1.0;
+        this.instanceMatrix[12] = creep.pos[0]; this.instanceMatrix[13] = 0.35 * mult; this.instanceMatrix[14] = creep.pos[2]; this.instanceMatrix[15] = 1.0;
 
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(creepColor));
@@ -34088,7 +34362,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.mobaState.creeps.forEach(c => {
           if (c.hp > 0 && c.pos) {
             const isEnemy = c.team !== this.mobaState.team;
-            drawDualBar3D(c.pos, 1.3, c.hp, c.maxHp, c.mp || 100, c.maxMp || 100, 1.25, 0.09, isEnemy);
+            const mult = c.scaleMultiplier || 1.0;
+            const barHeight = 1.3 * mult;
+            const barWidth = 1.25 * mult;
+            drawDualBar3D(c.pos, barHeight, c.hp, c.maxHp, c.mp || 100, c.maxMp || 100, barWidth, 0.09, isEnemy);
           }
         });
       }
@@ -34759,10 +35036,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.projectiles = [];
     this.mobaState.combatTexts = [];
     this.mobaState.kills = { RED: 0, BLACK: 0 };
-    this.mobaState.inventory = [null, null, null, null, null, null];
+    this.mobaState.inventory = [null, null, null, null, null, null, null, null];
     this.mobaState.targetEntity = null;
     this.mobaState.currentTargetId = null;
     this._playerRespawnRemaining = 0;
+    this._playerDeaths = 0;
 
     const respOverlay = document.getElementById('moba-respawn-overlay');
     if (respOverlay) {
@@ -34827,7 +35105,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 880, maxHp: 880, mp: 450, maxMp: 450, damage: 75, speed: 4.2, attackRange: 2.5, attackCooldown: 0.88, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [32.0, 0, 32.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1 }
     ];
 
-    // Spawn first creep wave
+    // Track creep buff multipliers per team & lane (+30% when team destroys a tower on that road)
+    this.mobaState.laneCreepBuffs = {
+      RED: { top: 1.0, mid: 1.0, bot: 1.0 },
+      BLACK: { top: 1.0, mid: 1.0, bot: 1.0 }
+    };
+
+    // Spawn first creep wave (3 lanes * 4 creeps = 12 creeps per team)
     this.mobaState.creeps = [];
     this.spawnMobaCreepWave();
 
@@ -34871,6 +35155,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   spawnMobaCreepWave() {
     if (!this.mobaState) return;
     if (!this.mobaState.creeps) this.mobaState.creeps = [];
+    if (!this.mobaState.laneCreepBuffs) {
+      this.mobaState.laneCreepBuffs = {
+        RED: { top: 1.0, mid: 1.0, bot: 1.0 },
+        BLACK: { top: 1.0, mid: 1.0, bot: 1.0 }
+      };
+    }
     const idSuffix = Date.now().toString(36);
     const lanes = ['top', 'mid', 'bot'];
 
@@ -34878,10 +35168,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const redWaypoints = globalForestLayoutEngine.getCreepWaypoints(lane, 'RED');
       const blackWaypoints = globalForestLayoutEngine.getCreepWaypoints(lane, 'BLACK');
 
-      // 2 RED Creeps per lane
-      for (let i = 0; i < 2; i++) {
-        const jitterX = (i - 0.5) * 0.9;
-        const jitterZ = (0.5 - i) * 0.9;
+      // 4 RED Creeps per lane (3 lanes * 4 = 12 RED creeps total)
+      const redBuff = (this.mobaState.laneCreepBuffs.RED && this.mobaState.laneCreepBuffs.RED[lane]) || 1.0;
+      const redHp = Math.round(300 * redBuff);
+      const redDmg = Math.round(22 * redBuff);
+      const isRedBuffed = redBuff > 1.05;
+
+      for (let i = 0; i < 4; i++) {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const jitterX = (col - 0.5) * 1.3;
+        const jitterZ = (row - 0.5) * 1.5;
         const startP = redWaypoints[0];
         this.mobaState.creeps.push({
           id: `creep_red_${lane}_${idSuffix}_${i}`,
@@ -34889,24 +35186,33 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           lane,
           waypoints: redWaypoints,
           waypointIndex: 1,
-          hp: 300,
-          maxHp: 300,
+          hp: redHp,
+          maxHp: redHp,
           mp: 100,
           maxMp: 100,
-          damage: 22,
+          damage: redDmg,
           speed: 2.6,
           attackRange: 1.8,
           attackCooldown: 1.0,
           attackTimer: 0,
           pos: [startP[0] + jitterX, 0, startP[2] + jitterZ],
-          type: 'melee'
+          type: 'melee',
+          scaleMultiplier: redBuff,
+          isBuffed: isRedBuffed
         });
       }
 
-      // 2 BLACK Creeps per lane
-      for (let i = 0; i < 2; i++) {
-        const jitterX = (i - 0.5) * 0.9;
-        const jitterZ = (0.5 - i) * 0.9;
+      // 4 BLACK Creeps per lane (3 lanes * 4 = 12 BLACK creeps total)
+      const blackBuff = (this.mobaState.laneCreepBuffs.BLACK && this.mobaState.laneCreepBuffs.BLACK[lane]) || 1.0;
+      const blackHp = Math.round(300 * blackBuff);
+      const blackDmg = Math.round(22 * blackBuff);
+      const isBlackBuffed = blackBuff > 1.05;
+
+      for (let i = 0; i < 4; i++) {
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const jitterX = (col - 0.5) * 1.3;
+        const jitterZ = (row - 0.5) * 1.5;
         const startP = blackWaypoints[0];
         this.mobaState.creeps.push({
           id: `creep_black_${lane}_${idSuffix}_${i}`,
@@ -34914,17 +35220,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           lane,
           waypoints: blackWaypoints,
           waypointIndex: 1,
-          hp: 300,
-          maxHp: 300,
+          hp: blackHp,
+          maxHp: blackHp,
           mp: 100,
           maxMp: 100,
-          damage: 22,
+          damage: blackDmg,
           speed: 2.6,
           attackRange: 1.8,
           attackCooldown: 1.0,
           attackTimer: 0,
           pos: [startP[0] + jitterX, 0, startP[2] + jitterZ],
-          type: 'melee'
+          type: 'melee',
+          scaleMultiplier: blackBuff,
+          isBuffed: isBlackBuffed
         });
       }
     });
@@ -34989,7 +35297,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
     if (this.mobaState.creeps) {
       this.mobaState.creeps.forEach(c => {
-        if (c.hp > 0 && c.pos) units.push({ pos: c.pos, isCreep: true });
+        if (c.hp > 0 && c.pos) units.push({ pos: c.pos, isCreep: true, scale: c.scaleMultiplier || 1.0 });
       });
     }
 
@@ -35001,7 +35309,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const dx = u2.pos[0] - u1.pos[0];
         const dz = u2.pos[2] - u1.pos[2];
         const dist = Math.hypot(dx, dz);
-        const minDist = (u1.isCreep && u2.isCreep) ? 0.75 : 0.95;
+        const s1 = u1.scale || 1.0;
+        const s2 = u2.scale || 1.0;
+        const minDist = (u1.isCreep && u2.isCreep) ? (0.75 * (s1 + s2) * 0.5) : (1.0 * Math.max(s1, s2));
         if (dist < minDist && dist > 0.01) {
           const overlap = (minDist - dist) * 0.5;
           const nx = (dx / dist) * overlap;
@@ -35808,11 +36118,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         b.invisibilityTimer = Math.max(0, b.invisibilityTimer - dt);
       }
 
-      const basePos = b.team === 'RED' ? [-38.0, 0, -38.0] : [38.0, 0, 38.0];
-      const enemyBasePos = b.team === 'RED' ? [38.0, 0, 38.0] : [-38.0, 0, -38.0];
+      const botOffset = (b.id.charCodeAt(b.id.length - 1) % 3 - 1) * 2.5;
+      const basePos = b.team === 'RED' ? [-32.0 + botOffset, 0, -32.0 - botOffset] : [32.0 - botOffset, 0, 32.0 + botOffset];
+      const enemyBasePos = b.team === 'RED' ? [32.0, 0, 32.0] : [-32.0, 0, -32.0];
 
-      // Low health tactical retreat to base fountain (< 22% HP)
-      if (b.hp < b.maxHp * 0.22) {
+      // Low health tactical retreat to base fountain (< 25% HP), remains retreating until restored to >= 90% HP
+      if (b.isRetreating || b.hp < b.maxHp * 0.25) {
+        b.isRetreating = true;
         // If bot has mobility dash or stealth, use it to escape!
         const heroKey = (b.selectedHero || '').toLowerCase();
         if ((heroKey === 'arissa' || heroKey === 'erika') && b.spellsCooldown[1] <= 0 && b.mp >= 45) {
@@ -35824,7 +36136,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const dx = basePos[0] - b.pos[0];
         const dz = basePos[2] - b.pos[2];
         const dist = Math.hypot(dx, dz);
-        if (dist > 2.0) {
+        if (dist > 2.8) {
           const step = Math.min(dist, (b.speed || 4.2) * (b.invisibilityTimer > 0 ? 1.35 : 1.0) * dt);
           b.pos[0] += (dx / dist) * step;
           b.pos[2] += (dz / dist) * step;
@@ -35833,8 +36145,29 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           b.moving = true;
         } else {
           b.moving = false;
-          b.hp = Math.min(b.maxHp, b.hp + dt * 100);
-          b.mp = Math.min(b.maxMp || 450, (b.mp || 0) + dt * 80);
+        }
+
+        // Base fountain healing when near staging platform
+        const distToBaseCenter = Math.hypot(b.pos[0] - (b.team === 'RED' ? -32.0 : 32.0), b.pos[2] - (b.team === 'RED' ? -32.0 : 32.0));
+        if (distToBaseCenter < 12.0) {
+          b.hp = Math.min(b.maxHp, b.hp + dt * 160);
+          b.mp = Math.min(b.maxMp || 450, (b.mp || 0) + dt * 100);
+
+          if (Math.random() < 0.08) {
+            if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+            this.mobaState.vfxBursts.push({
+              x: b.pos[0] + (Math.random() - 0.5) * 1.5,
+              z: b.pos[2] + (Math.random() - 0.5) * 1.5,
+              radius: 0.6,
+              color: [0.1, 0.9, 0.2]
+            });
+          }
+        }
+
+        // Once healed back to >= 90% HP, exit retreat mode and resume advancing along lane
+        if (b.hp >= b.maxHp * 0.90) {
+          b.isRetreating = false;
+          b.waypointIndex = 1;
         }
         return;
       }
@@ -36531,7 +36864,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (this.speechAnnouncer) {
           this.speechAnnouncer.speak("Hero fallen! Respawning at base...", { profileId: 1, introChime: false });
         }
-        this._playerRespawnRemaining = 20.0;
+        this._playerDeaths = (this._playerDeaths || 0) + 1;
+        // Base respawn 15.0s, increases by +3s per death
+        const respawnTime = 15.0 + Math.max(0, this._playerDeaths - 1) * 3.0;
+        this._playerRespawnRemaining = respawnTime;
         this.mobaState.targetPos = null;
         this.mobaState.targetEntity = null;
         this.mobaState.currentTargetId = null;
@@ -36539,15 +36875,20 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.mobaState.kills[attackerTeam]++;
         }
 
-        // Show the respawn overlay instantly
+        // Show the respawn overlay instantly with death penalty detail
         const respOverlay = document.getElementById('moba-respawn-overlay');
         if (respOverlay) {
           respOverlay.classList.remove('hidden');
         }
         const respCountdown = document.getElementById('moba-respawn-countdown');
         if (respCountdown) {
-          respCountdown.textContent = "20.0s";
+          respCountdown.textContent = `${respawnTime.toFixed(1)}s`;
         }
+        const respPenalty = document.getElementById('moba-respawn-penalty-text');
+        if (respPenalty) {
+          respPenalty.textContent = `+3s per death penalty applied (Death #${this._playerDeaths} • ${respawnTime.toFixed(0)}s total)`;
+        }
+        this.showMobaAlert(`💀 HERO FALLEN! Respawning in ${respawnTime.toFixed(0)}s (+3s death penalty)`, 'text-rose-400');
       }
       return;
     }
@@ -36585,7 +36926,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.showMobaAlert(`💀 ALLY ${target.name} HAS FALLEN!`, 'text-rose-400');
         }
 
-        // Bot respawn after 10s
+        // Bot respawn with +3s per death penalty
+        target.deaths = (target.deaths || 0) + 1;
+        const botRespawnDelay = 8000 + (target.deaths * 3000);
         setTimeout(() => {
           if (target && this.mobaState && this.mobaState.playing) {
             target.hp = target.maxHp;
@@ -36595,11 +36938,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             target.invisibilityTimer = 0;
             target.stunnedTimer = 0;
             target.rootedTimer = 0;
+            target.isRetreating = false;
+            target.waypointIndex = 1;
             target.spellsCooldown = [0, 0, 0, 0];
-            const bBase = target.team === 'RED' ? [-38.0, 0, -38.0] : [38.0, 0, 38.0];
+            const botOffset = (target.id.charCodeAt(target.id.length - 1) % 3 - 1) * 2.5;
+            const bBase = target.team === 'RED' ? [-32.0 + botOffset, 0, -32.0 - botOffset] : [32.0 - botOffset, 0, 32.0 + botOffset];
             target.pos = [...bBase];
           }
-        }, 10000);
+        }, botRespawnDelay);
       }
 
       // Creep kill
@@ -36609,13 +36955,49 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       }
 
-      // Tower destruction
+      // Tower destruction -> Empower creeps on the same road by +30% size and power
       if (target.range && (target.id && target.id.includes('tower'))) {
+        const destroyedLane = target.lane || 'mid';
+        if (!this.mobaState.laneCreepBuffs) {
+          this.mobaState.laneCreepBuffs = {
+            RED: { top: 1.0, mid: 1.0, bot: 1.0 },
+            BLACK: { top: 1.0, mid: 1.0, bot: 1.0 }
+          };
+        }
+        if (this.mobaState.laneCreepBuffs[attackerTeam]) {
+          const prevBuff = this.mobaState.laneCreepBuffs[attackerTeam][destroyedLane] || 1.0;
+          this.mobaState.laneCreepBuffs[attackerTeam][destroyedLane] = prevBuff * 1.30;
+        }
+
+        // Immediately empower all alive creeps of attackerTeam on this road
+        if (this.mobaState.creeps) {
+          this.mobaState.creeps.forEach(c => {
+            if (c.team === attackerTeam && c.lane === destroyedLane && c.hp > 0) {
+              c.scaleMultiplier = (c.scaleMultiplier || 1.0) * 1.30;
+              const bonusHp = Math.round(c.maxHp * 0.30);
+              c.maxHp += bonusHp;
+              c.hp += bonusHp;
+              c.damage = Math.round((c.damage || 22) * 1.30);
+              c.isBuffed = true;
+
+              if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+              this.mobaState.vfxBursts.push({
+                x: c.pos[0],
+                z: c.pos[2],
+                radius: 2.0,
+                color: attackerTeam === 'RED' ? [1.0, 0.45, 0.1] : [0.2, 0.65, 1.0]
+              });
+            }
+          });
+        }
+
+        const laneName = destroyedLane.toUpperCase();
         if (attackerTeam === this.mobaState.team) {
           this.mobaState.gold = (this.mobaState.gold || 0) + 180;
-          this.showMobaAlert(`🏰 ENEMY TOWER DESTROYED! +180 GOLD`, 'text-emerald-400');
+          this.showMobaAlert(`🏰 ENEMY ${laneName} TOWER DESTROYED! Our ${laneName} creeps empowered +30% size & power! +180 GOLD`, 'text-emerald-400');
+          this.mobaPlaySound('confirm');
         } else {
-          this.showMobaAlert(`🏰 OUR TOWER HAS FALLEN!`, 'text-rose-400');
+          this.showMobaAlert(`🏰 OUR ${laneName} TOWER HAS FALLEN! Enemy ${laneName} creeps empowered +30% size & power!`, 'text-rose-400');
         }
       }
 
@@ -36740,10 +37122,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const alertEl = document.getElementById('moba-alert');
     if (!alertEl) return;
     alertEl.textContent = msg;
-    alertEl.className = `bg-black/80 border border-amber-500/50 ${colorClass} px-4 py-1.5 rounded-full text-xs font-black tracking-wide shadow-xl transition-all duration-300 transform scale-100 pointer-events-auto`;
+    alertEl.className = `bg-black/85 border border-amber-500/60 ${colorClass} px-3.5 py-1 sm:px-4 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-black tracking-wide shadow-2xl transition-all duration-300 transform scale-100 pointer-events-auto text-center truncate max-w-full backdrop-blur-sm`;
     clearTimeout(this._mobaAlertTimer);
     this._mobaAlertTimer = setTimeout(() => {
-      alertEl.className = 'bg-black/60 border border-amber-500/40 text-amber-400 px-4 py-1.5 rounded-full text-xs font-bold tracking-wide shadow-xl transition-all duration-300 transform scale-0 pointer-events-auto';
+      alertEl.className = 'bg-black/60 border border-amber-500/40 text-amber-400 px-3.5 py-1 sm:px-4 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-bold tracking-wide shadow-xl transition-all duration-300 transform scale-0 pointer-events-auto text-center truncate max-w-full';
     }, 2800);
   }
 

@@ -6685,11 +6685,47 @@ body.pong-active .joystick-label {
 /* ==========================================================================
    MOBILE PORTRAIT AND MOBILE LAYOUT OVERRIDES (INVENTORY FIT & COMPACT)
    ========================================================================== */
-@media (max-width: 768px) {
-  /* Footer container: zero excess padding/margins to use full space */
+@media (max-width: 768px), (orientation: portrait) {
+  /* Action buttons (Attack, Shop, Camera) sit tightly above footer with zero wasted empty space */
+  #moba-middle-action-buttons {
+    margin-bottom: 6px !important;
+  }
+
+  /* Audio & Info buttons docked on side for portrait view (never overlap with attack button on right) */
+  #moba-audio-controls {
+    top: 44px !important;
+    left: 8px !important;
+    right: auto !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 4px !important;
+    z-index: 25 !important;
+  }
+
+  #moba-audio-controls button {
+    padding: 2px 6px !important;
+    font-size: 9px !important;
+    border-radius: 8px !important;
+  }
+
+  /* Footer container: sits flush at bottom, no empty space, fully covers safe area */
   #moba-hud-bottom {
-    padding: 1px 2px !important;
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 2px 3px max(3px, env(safe-area-inset-bottom, 0px)) 3px !important;
     gap: 2px !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
+    background: rgba(0, 0, 0, 0.96) !important;
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    min-height: auto !important;
   }
 
   /* Left cluster: packed neatly to the left without wasted padding or margins */
@@ -6697,16 +6733,26 @@ body.pong-active .joystick-label {
     padding: 0 !important;
     margin: 0 !important;
     gap: 2px !important;
+    flex-shrink: 0 !important;
+    display: flex !important;
+    align-items: center !important;
   }
 
   /* Compact portrait */
   #moba-hud-bottom .shrink-0 .relative,
   #moba-hud-bottom #moba-portrait-img {
-    width: 28px !important;
-    height: 28px !important;
+    width: 24px !important;
+    height: 24px !important;
   }
 
-  /* Energy and mana bars: slim height, width strictly untouched as requested */
+  /* Energy and mana bars: slim height, width carefully scaled to preserve space */
+  #moba-hud-bottom .w-20.sm\:w-32,
+  #moba-hud-bottom .w-20 {
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+  }
+
   #moba-hero-hp-container {
     height: 3.5px !important;
     min-height: 3.5px !important;
@@ -6726,21 +6772,11 @@ body.pong-active .joystick-label {
     height: 100% !important;
   }
 
-  /* Compact attributes: zero wasted margin */
-  #moba-hud-bottom .flex.flex-col.justify-center.border-l,
-  #moba-hud-bottom .flex.flex-col.justify-center {
-    border-left: none !important;
-    padding-left: 1px !important;
-    margin: 0 !important;
-  }
-
-  #moba-hud-bottom .grid-cols-2 {
-    gap-x: 1.5px !important;
-    gap-y: 0.5px !important;
-  }
-
-  #moba-hud-bottom .grid-cols-2 span {
-    font-size: 7px !important;
+  /* Hide raw attributes on portrait/mobile screens to guarantee 100% room for spells & 8 inventory slots */
+  #moba-hero-attributes,
+  #moba-hud-bottom .flex.flex-col.justify-center.pl-0\.5,
+  #moba-hud-bottom .flex.flex-col.justify-center.pl-1 {
+    display: none !important;
   }
 
   /* For mobile devices description is an independent popup OUT from footer */
@@ -6757,83 +6793,90 @@ body.pong-active .joystick-label {
     z-index: 100 !important;
   }
 
-  /* Magic spell slots: larger to use space */
-  .moba-spell-slot {
-    width: 36px !important;
-    height: 36px !important;
-    min-width: 36px !important;
-    min-height: 36px !important;
-    padding: 1px !important;
-    margin: 0 !important;
-    border-radius: 4px !important;
-  }
-
-  .moba-spell-slot span,
-  .moba-spell-slot div {
-    font-size: 7.5px !important;
-  }
-
-  /* Right cluster: inventory grid firmly anchored to the right, no margin/padding */
-  #moba-footer-right-group {
-    margin: 0 !important;
-    margin-left: auto !important;
-    padding: 0 !important;
-    gap: 2px !important;
-  }
-
-  /* Inventory grid: larger cells to use space while all 6 slots stay 100% visible */
-  #moba-inventory-grid {
-    gap: 1px !important;
-    padding: 0.5px !important;
-    margin: 0 !important;
-  }
-
-  #moba-inventory-grid > div {
-    width: 25px !important;
-    height: 25px !important;
-    min-width: 25px !important;
-    min-height: 25px !important;
-    font-size: 8px !important;
-    border-radius: 3px !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  #moba-inventory-grid > div div.absolute.top-0.right-0 {
-    width: 10px !important;
-    height: 10px !important;
-    font-size: 7px !important;
-  }
-
-  #moba-gold {
-    font-size: 9px !important;
-  }
-}
-
-@media (max-width: 400px) {
-  /* Extra-compact mobile screens */
-  #moba-hud-bottom {
-    padding: 1px 1px !important;
-    gap: 1.5px !important;
-  }
-
-  #moba-footer-left-group {
-    gap: 1.5px !important;
-  }
-
+  /* Magic spell slots: generous dimension for touch controls, fitted cleanly */
   .moba-spell-slot {
     width: 32px !important;
     height: 32px !important;
     min-width: 32px !important;
     min-height: 32px !important;
+    padding: 1px !important;
+    margin: 0 !important;
+    border-radius: 5px !important;
+  }
+
+  .moba-spell-slot span,
+  .moba-spell-slot div {
+    font-size: 7px !important;
+  }
+
+  /* Right cluster: inventory grid firmly anchored to the right, no margin/padding, never cut off */
+  #moba-footer-right-group {
+    margin: 0 !important;
+    margin-left: auto !important;
+    padding: 0 !important;
+    gap: 2.5px !important;
+    flex-shrink: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  /* 4x2 Inventory grid: all 8 cells 100% visible on screen with zero cutoff */
+  #moba-inventory-grid {
+    gap: 1.5px !important;
+    padding: 1px !important;
+    margin: 0 !important;
+    display: grid !important;
+    grid-template-columns: repeat(4, 20px) !important;
+    grid-template-rows: repeat(2, 20px) !important;
+    box-sizing: border-box !important;
   }
 
   #moba-inventory-grid > div {
-    width: 23px !important;
-    height: 23px !important;
-    min-width: 23px !important;
-    min-height: 23px !important;
-    font-size: 7.5px !important;
+    width: 20px !important;
+    height: 20px !important;
+    min-width: 20px !important;
+    min-height: 20px !important;
+    font-size: 7px !important;
+    border-radius: 3px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  #moba-inventory-grid > div div.absolute.top-0.right-0 {
+    width: 8px !important;
+    height: 8px !important;
+    font-size: 6px !important;
+  }
+
+  #moba-btn-merge {
+    font-size: 7px !important;
+    padding: 1px 2px !important;
+    white-space: nowrap !important;
+  }
+
+  #moba-gold {
+    font-size: 8.5px !important;
+  }
+}
+
+@media (max-width: 350px) {
+  .moba-spell-slot {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    min-height: 28px !important;
+  }
+  #moba-inventory-grid {
+    grid-template-columns: repeat(4, 18px) !important;
+    grid-template-rows: repeat(2, 18px) !important;
+  }
+  #moba-inventory-grid > div {
+    width: 18px !important;
+    height: 18px !important;
+    min-width: 18px !important;
+    min-height: 18px !important;
+    font-size: 6px !important;
   }
 }
 

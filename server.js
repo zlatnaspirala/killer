@@ -10,7 +10,13 @@ import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const PORT = 3000;
+const portArgIdx = process.argv.indexOf('--port');
+const cliPort = portArgIdx !== -1 && process.argv[portArgIdx + 1] ? parseInt(process.argv[portArgIdx + 1], 10) : null;
+const hostArgIdx = process.argv.indexOf('--host');
+const cliHost = hostArgIdx !== -1 && process.argv[hostArgIdx + 1] ? process.argv[hostArgIdx + 1] : null;
+
+const PORT = cliPort || (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
+const HOST = cliHost || process.env.HOST || '0.0.0.0';
 const DIST_DIR = path.join(__dirname, 'dist');
 
 const executionLogs = [];
@@ -543,8 +549,12 @@ var Module = (function() {
   });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`C++ Graphics Backend Server listening on port ${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`\n  VITE v5.1.4  ready in 42 ms\n`);
+  console.log(`  ➜  Local:   http://localhost:${PORT}/`);
+  console.log(`  ➜  Network: http://${HOST}:${PORT}/`);
+  console.log(`Server listening on http://localhost:${PORT}`);
+  console.log(`ready on http://localhost:${PORT}`);
 });
 
 // ============================================================================
