@@ -22,6 +22,7 @@ uniform vec3 uLightColor;
 uniform vec3 uFillLightDir;
 uniform vec3 uFillLightColor;
 uniform float uTime;
+uniform float u_alpha;
 
 // Filament Advanced Material Controls
 uniform highp int uMatType;        // 0..15 material type (Wood, Rock, Metal, Marble, etc.)
@@ -542,6 +543,7 @@ void main() {
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0 / 2.2));
 
-    fragColor = vec4(color, 1.0);
+    float finalAlpha = (u_alpha > 0.0) ? clamp(u_alpha, 0.0, 1.0) : 1.0;
+    fragColor = vec4(color, finalAlpha);
 }
 

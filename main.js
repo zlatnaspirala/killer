@@ -7452,13 +7452,21 @@ void main() {
 
     let anim = null;
     if (preferredAnim) {
-      anim = animations.find(a => a.name.toLowerCase().includes(preferredAnim.toLowerCase()));
+      if (preferredAnim === 'attack') {
+        anim = animations.find(a => a.name.toLowerCase().includes('attack') && !a.name.toLowerCase().includes('dead'));
+      } else {
+        anim = animations.find(a => a.name.toLowerCase().includes(preferredAnim.toLowerCase()));
+      }
     }
     if (!anim) {
       anim = animations.find(a => a.name.toLowerCase().includes('walk')) || animations[0];
     }
     const duration = anim.duration;
-    const time = (duration && duration > 0) ? (animTime % duration) : 0;
+    let time = (duration && duration > 0) ? (animTime % duration) : 0;
+    // Safety clamp: when attacking, never let time reach beyond 0.65s into any death keyframes
+    if (preferredAnim === 'attack' && duration > 0.65 && anim.name.toLowerCase().includes('attack')) {
+      time = animTime % 0.65;
+    }
 
     const fromRotationTranslationScale = (out, q, v, s) => {
       const x = q[0], y = q[1], z = q[2], w = q[3];
@@ -8224,14 +8232,43 @@ void main() {
           anim.channels.forEach(chan => {
             const sampler = anim.samplers[chan.sampler];
             if (sampler) {
-              const timestamps = getAccessorData(sampler.input);
-              const values = getAccessorData(sampler.output);
-              if (timestamps && values) {
+              const rawTimestamps = getAccessorData(sampler.input);
+              const rawValues = getAccessorData(sampler.output);
+              if (rawTimestamps && rawValues && rawTimestamps.length > 0) {
+                const count = rawTimestamps.length;
+                const stride = chan.target.path === 'rotation' ? 4 : 3;
+
+                // Build keyframe list and sort by timestamp ascending to eliminate any out-of-order frames
+                const keyframes = [];
+                for (let i = 0; i < count; i++) {
+                  const val = [];
+                  for (let s = 0; s < stride; s++) {
+                    val.push(rawValues[i * stride + s]);
+                  }
+                  keyframes.push({ t: rawTimestamps[i], val });
+                }
+                keyframes.sort((a, b) => a.t - b.t);
+
+                // If first keyframe starts after 0.001s, prepend a t=0.0 frame copying initial pose for smooth start
+                if (keyframes.length > 0 && keyframes[0].t > 0.001) {
+                  keyframes.unshift({ t: 0.0, val: [...keyframes[0].val] });
+                }
+
+                const finalCount = keyframes.length;
+                const sortedTs = new Float32Array(finalCount);
+                const sortedVals = new Float32Array(finalCount * stride);
+                for (let i = 0; i < finalCount; i++) {
+                  sortedTs[i] = keyframes[i].t;
+                  for (let s = 0; s < stride; s++) {
+                    sortedVals[i * stride + s] = keyframes[i].val[s];
+                  }
+                }
+
                 channels.push({
                   targetNode: chan.target.node,
                   targetPath: chan.target.path,
-                  timestamps: timestamps,
-                  values: values
+                  timestamps: sortedTs,
+                  values: sortedVals
                 });
               }
             }
@@ -8245,6 +8282,34 @@ void main() {
             });
           }
         });
+
+        // Fix Erika attack animation: now that channels are sorted, cleanly trim to upright strike (t <= 0.633s)
+        // and smoothly loop back to ready attack pose without entering the falling/dead frames
+        if (url && url.toLowerCase().includes('erika')) {
+          const erikaAttack = animations.find(a => a.name.toLowerCase().includes('attack') && !a.name.toLowerCase().includes('dead'));
+          if (erikaAttack) {
+            const maxT = 0.633;
+            erikaAttack.duration = 0.65;
+            erikaAttack.channels.forEach(ch => {
+              const ts = ch.timestamps;
+              let cutIdx = 0;
+              for (let i = 0; i < ts.length; i++) {
+                if (ts[i] <= maxT) cutIdx = i;
+                else break;
+              }
+              const stride = ch.targetPath === 'rotation' ? 4 : 3;
+              const newTs = Array.from(ts.slice(0, cutIdx + 1));
+              const newVals = Array.from(ch.values.slice(0, (cutIdx + 1) * stride));
+              // Append smooth loop-back frame at t = 0.65s matching the initial ready strike pose
+              newTs.push(0.65);
+              for (let k = 0; k < stride; k++) {
+                newVals.push(newVals[k]);
+              }
+              ch.timestamps = new Float32Array(newTs);
+              ch.values = new Float32Array(newVals);
+            });
+          }
+        }
       }
 
       if (allPos.length > 0) {
@@ -8689,6 +8754,11 @@ void main() {
     const baseY = typeof pos[1] === 'number' ? pos[1] : 0.0;
     this.instanceMatrix[12] = pos[0]; this.instanceMatrix[13] = baseY + 0.075; this.instanceMatrix[14] = pos[2]; this.instanceMatrix[15] = 1.0;
 
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    const alphaVal = 0.55 + 0.12 * Math.sin(timestamp * 0.003);
+    if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, alphaVal);
+
     Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
     gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
     if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
@@ -8711,8 +8781,11 @@ void main() {
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
       if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(baseColor));
+      if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, alphaVal * 0.9);
       gl.drawElements(gl.TRIANGLES, innerRing.indexCount, gl.UNSIGNED_SHORT, 0);
     }
+    if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+    gl.disable(gl.BLEND);
   }
 
   drawErikaSpiralEffect(progInfo, team, pos, timestamp, isLocal = false, customScale = null) {
@@ -8746,7 +8819,11 @@ void main() {
     const cS = Math.cos(vortexSpin) * effScale;
     const sS = Math.sin(vortexSpin) * effScale;
 
-    // 1. PRIMARY SPIRAL DISC - exact same dimensions, elevation, and layer placement as other heroes
+    // 1. PRIMARY SPIRAL DISC - translucent swirling mystic mandala
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    const spiralAlpha = isPedestal ? 0.75 : (0.52 + 0.12 * Math.sin(timestamp * 0.004));
+
     gl.bindVertexArray(spiralMesh.vao);
     this.instanceMatrix[0] = cS;   this.instanceMatrix[1] = 0;      this.instanceMatrix[2] = -sS;  this.instanceMatrix[3] = 0;
     this.instanceMatrix[4] = 0;    this.instanceMatrix[5] = yThick; this.instanceMatrix[6] = 0;    this.instanceMatrix[7] = 0;
@@ -8759,7 +8836,7 @@ void main() {
     if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, isPedestal ? 0.35 : 0.15);
     if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, isPedestal ? 0.15 : 0.85);
     if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(finalColor));
-    if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+    if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, spiralAlpha);
     gl.drawElements(gl.TRIANGLES, spiralMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
     // 2. INNER ACCENT RING for local hero in gameplay (identical to other heroes using meshBuffers[6])
@@ -8776,8 +8853,11 @@ void main() {
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
       if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(baseColor));
+      if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, spiralAlpha * 0.85);
       gl.drawElements(gl.TRIANGLES, innerRing.indexCount, gl.UNSIGNED_SHORT, 0);
     }
+    if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+    gl.disable(gl.BLEND);
   }
 
   getSphereLOD(isSmallHolder = false) {
@@ -29627,13 +29707,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const isRoulette = this.state.demoScene && this.state.demoScene.includes('12_roulette');
     const isBingo = this.state.demoScene && this.state.demoScene.includes('13_bingo');
     const isPong = this.state.demoScene && this.state.demoScene.includes('14_pong');
+    const isMinigames = isSlotMachine || isSlidingPuzzle || isPlinko || isRoulette || isBingo || isPong;
     const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba');
-    const isFPS = this.state.cameraMode === 3 && !isSlotMachine && !isSlidingPuzzle && !isPlinko && !isRoulette && !isBingo && !isPong && !isMoba;
+    const isFPS = this.state.cameraMode === 3 && !isMinigames && !isMoba;
 
-    // Get tab panels
+    // The project page layout ALWAYS remains visible so global tabs (post-processing, materials, scene) are accessible!
     const projLayout = document.querySelector('.project-page-layout');
-    const mobaDash = document.getElementById('project-moba-dashboard');
-    const minigamesDash = document.getElementById('project-minigames-dashboard');
+    if (projLayout) {
+      projLayout.style.display = 'grid';
+    }
 
     // Get main level buttons
     const btnCompiler = document.querySelector('[data-tab="live-editor"]');
@@ -29645,48 +29727,77 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (btnWasm) btnWasm.style.display = isFPS ? '' : 'none';
     if (btnHeaders) btnHeaders.style.display = isFPS ? '' : 'none';
 
-    // Toggle per-project views inside the "Project" tab
+    // Subtab buttons inside Project tab
+    const btnMoba = document.getElementById('btn-subtab-moba');
+    const btnMinigames = document.getElementById('btn-subtab-minigames');
+    const btnMap = document.getElementById('btn-subtab-map-settings');
+    const btnFpsDmg = document.getElementById('btn-subtab-fps-damage');
+    const btnPlayerCtrl = document.getElementById('btn-subtab-player-controller');
+    const btnItems = document.getElementById('btn-subtab-items');
+    const btnCollision = document.getElementById('btn-subtab-collision-register');
+
+    // Demo-specific tabs: only show when relevant demo is active
+    if (btnMoba) btnMoba.style.display = isMoba ? '' : 'none';
+    if (btnMinigames) btnMinigames.style.display = isMinigames ? '' : 'none';
+    if (btnMap) btnMap.style.display = isFPS ? '' : 'none';
+    if (btnFpsDmg) btnFpsDmg.style.display = isFPS ? '' : 'none';
+    if (btnPlayerCtrl) btnPlayerCtrl.style.display = isFPS ? '' : 'none';
+    if (btnItems) btnItems.style.display = isFPS ? '' : 'none';
+    if (btnCollision) btnCollision.style.display = isFPS ? '' : 'none';
+
+    // Global tabs: ALWAYS displayed for all demos! (Post-Processing, Materials & Shaders, Scene Hierarchy, Voice Announcer, C++ Code Bridge)
+    const btnPost = document.getElementById('btn-subtab-postprocessing');
+    const btnMat = document.getElementById('btn-subtab-materials');
+    const btnScene = document.getElementById('btn-subtab-scene-objects');
+    const btnVoice = document.getElementById('btn-subtab-voice-announcer');
+    const btnCpp = document.getElementById('btn-subtab-cpp-bridge');
+    if (btnPost) btnPost.style.display = '';
+    if (btnMat) btnMat.style.display = '';
+    if (btnScene) btnScene.style.display = '';
+    if (btnVoice) btnVoice.style.display = '';
+    if (btnCpp) btnCpp.style.display = '';
+
+    // If current active subtab button is hidden or none active, activate the best matching subtab
+    const activeBtn = document.querySelector('.proj-subtab-btn.active');
+    if (!activeBtn || activeBtn.style.display === 'none') {
+      let targetSubtab = 'scene-objects';
+      if (isMoba) targetSubtab = 'moba-dashboard';
+      else if (isMinigames) targetSubtab = 'minigames-dashboard';
+      else if (isFPS) targetSubtab = 'map-settings';
+
+      const targetBtn = document.querySelector(`.proj-subtab-btn[data-subtab="${targetSubtab}"]`);
+      if (targetBtn) {
+        targetBtn.click();
+      }
+    }
+
+    // Sync stats displays for MOBA
     if (isMoba) {
-      if (projLayout) projLayout.style.display = 'none';
-      if (mobaDash) {
-        mobaDash.style.display = 'block';
-        // Sync stats displays
-        const lvlEl = document.getElementById('moba-dash-level');
-        const dmgEl = document.getElementById('moba-dash-damage');
-        const rangeEl = document.getElementById('moba-dash-range');
-        const speedEl = document.getElementById('moba-dash-speed');
-        const buffsEl = document.getElementById('moba-dash-buffs');
+      const lvlEl = document.getElementById('moba-dash-level');
+      const dmgEl = document.getElementById('moba-dash-damage');
+      const rangeEl = document.getElementById('moba-dash-range');
+      const speedEl = document.getElementById('moba-dash-speed');
+      const buffsEl = document.getElementById('moba-dash-buffs');
 
-        if (this.mobaState && this.mobaState.heroStats) {
-          if (lvlEl) lvlEl.textContent = `Level ${this.mobaState.heroStats.level || 1}`;
-          if (dmgEl) dmgEl.textContent = `${this.mobaState.heroStats.damage || 55} AD`;
-          if (rangeEl) rangeEl.textContent = `${this.mobaState.heroStats.attackRange || 1.5} Units`;
-          if (speedEl) speedEl.textContent = `${(this.mobaState.heroStats.speed || 6.2).toFixed(1)} Units/s`;
-          
-          let activeBuffs = [];
-          if (this._mobaGodMode) activeBuffs.push('✨ God Mode');
-          if (this._mobaOneShot) activeBuffs.push('🔥 One-Shot');
-          if (this._mobaSuperSpeed) activeBuffs.push('⚡ Super Speed');
-          if (this.mobaState.heroStats.hasWeapon) activeBuffs.push('⚔️ Demonic Glaive');
-          if (this.mobaState.heroStats.hasBoots) activeBuffs.push('🥾 Hermes Boots');
-          if (this.mobaState.heroStats.hasShield) activeBuffs.push('🛡️ Aegis Shield');
+      if (this.mobaState && this.mobaState.heroStats) {
+        if (lvlEl) lvlEl.textContent = `Level ${this.mobaState.heroStats.level || 1}`;
+        if (dmgEl) dmgEl.textContent = `${this.mobaState.heroStats.damage || 55} AD`;
+        if (rangeEl) rangeEl.textContent = `${this.mobaState.heroStats.attackRange || 1.5} Units`;
+        if (speedEl) speedEl.textContent = `${(this.mobaState.heroStats.speed || 6.2).toFixed(1)} Units/s`;
+        
+        let activeBuffs = [];
+        if (this._mobaGodMode) activeBuffs.push('✨ God Mode');
+        if (this._mobaOneShot) activeBuffs.push('🔥 One-Shot');
+        if (this._mobaSuperSpeed) activeBuffs.push('⚡ Super Speed');
+        if (this.mobaState.heroStats.hasWeapon) activeBuffs.push('⚔️ Demonic Glaive');
+        if (this.mobaState.heroStats.hasBoots) activeBuffs.push('🥾 Hermes Boots');
+        if (this.mobaState.heroStats.hasShield) activeBuffs.push('🛡️ Aegis Shield');
 
-          if (buffsEl) {
-            buffsEl.textContent = activeBuffs.length > 0 ? activeBuffs.join(', ') : 'No Buffs Active';
-            buffsEl.className = activeBuffs.length > 0 ? 'font-bold text-amber-400 text-[11px]' : 'text-slate-500 italic text-[11px]';
-          }
+        if (buffsEl) {
+          buffsEl.textContent = activeBuffs.length > 0 ? activeBuffs.join(', ') : 'No Buffs Active';
+          buffsEl.className = activeBuffs.length > 0 ? 'font-bold text-amber-400 text-[11px]' : 'text-slate-500 italic text-[11px]';
         }
       }
-      if (minigamesDash) minigamesDash.style.display = 'none';
-    } else if (isSlotMachine || isSlidingPuzzle || isPlinko || isRoulette || isBingo || isPong) {
-      if (projLayout) projLayout.style.display = 'none';
-      if (mobaDash) mobaDash.style.display = 'none';
-      if (minigamesDash) minigamesDash.style.display = 'block';
-    } else {
-      // Default to FPS Scene Hierarchies / Maps Layout if we are in C++ engine FPS
-      if (projLayout) projLayout.style.display = 'grid';
-      if (mobaDash) mobaDash.style.display = 'none';
-      if (minigamesDash) minigamesDash.style.display = 'none';
     }
   }
 
@@ -31729,6 +31840,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       return burst.timer > 0;
     });
 
+    // 10b. Update GPU particles
+    this.updateGpuParticles(dt);
+
     // 11. Combat floating text timers
     if (this.mobaState.combatTexts) {
       this.mobaState.combatTexts = this.mobaState.combatTexts.filter(item => {
@@ -31951,10 +32065,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (container && this.mobaState.combatTexts && this.mobaState.combatTexts.length > 0) {
       let html = '';
       this.mobaState.combatTexts.forEach(item => {
-        const screen = this.mobaWorldToScreen(item.x, item.y + (1.0 - item.timer / item.maxTimer) * 1.5, item.z);
+        const floatProgress = 1.0 - (item.timer / item.maxTimer);
+        const floatY = (item.isSpell || item.isCrit ? 1.4 : 0.7) * floatProgress;
+        const screen = this.mobaWorldToScreen(item.x, item.y + floatY, item.z);
         if (screen) {
-          const alpha = Math.min(1.0, item.timer / 0.3);
-          html += `<div style="position:absolute; left:${screen[0]}px; top:${screen[1]}px; transform:translate(-50%, -50%); color:${item.color}; font-size:14px; font-weight:900; text-shadow:0 0 4px #000, 0 1px 2px #000; pointer-events:none; opacity:${alpha}; font-family:monospace;">${item.text}</div>`;
+          const alpha = Math.min(1.0, item.timer / 0.22);
+          const fontSize = item.isCrit ? '18px' : (item.isSpell ? '15px' : '11px');
+          const fontWeight = (item.isSpell || item.isCrit) ? '900' : '600';
+          const shadow = (item.isSpell || item.isCrit)
+            ? '0 0 5px rgba(0,0,0,0.9), 0 1px 2px #000'
+            : '0 1px 2px rgba(0,0,0,0.7)';
+          html += `<div style="position:absolute; left:${screen[0]}px; top:${screen[1]}px; transform:translate(-50%, -50%); color:${item.color}; font-size:${fontSize}; font-weight:${fontWeight}; text-shadow:${shadow}; pointer-events:none; opacity:${alpha}; font-family:monospace; user-select:none;">${item.text}</div>`;
         }
       });
       container.innerHTML = html;
@@ -33366,10 +33487,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const model = (this.mobaHeroModels && this.mobaHeroModels[glbPath]);
 
         if (model && model.soldierMesh) {
-          const animTime = timestamp * 0.0012 + (p.id ? p.id.charCodeAt(0) : 0);
+          const timeSinceAttack = timestamp - (p.lastAttackTime || 0);
+          const isAttacking = timeSinceAttack < 400;
           const isMoving = p.moving || false;
-          const isAttacking = (timestamp - (p.lastAttackTime || 0)) < 400;
           const animToPlay = isAttacking ? 'attack' : (isMoving ? 'walk' : 'idle');
+          const animTime = isAttacking
+            ? (timeSinceAttack * 0.0016)
+            : (timestamp * 0.0012 + (p.id ? p.id.charCodeAt(0) : 0));
           if (model.soldierSkeletonData) {
             const skinMatrices = this.evaluateSpecificSkeleton(model.soldierSkeletonData, animTime, animToPlay);
             if (skinMatrices) {
@@ -33521,10 +33645,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const model = (this.mobaHeroModels && this.mobaHeroModels[glbPath]);
 
       if (model && model.soldierMesh) {
+        const timeSinceAttack = timestamp - (this.mobaState.lastAttackTime || 0);
+        const isAttacking = timeSinceAttack < 400;
         const isMoving = !!this.mobaState.isWalking || (this.mobaState.velocity && Math.hypot(this.mobaState.velocity[0], this.mobaState.velocity[2]) > 0.1);
-        const isAttacking = (timestamp - (this.mobaState.lastAttackTime || 0)) < 350;
         const animToPlay = isAttacking ? 'attack' : (isMoving ? 'walk' : 'idle');
-        const animTime = timestamp * 0.0012;
+        const animTime = isAttacking
+          ? (timeSinceAttack * 0.0016)
+          : (timestamp * 0.0012);
         if (model.soldierSkeletonData) {
           const skinMatrices = this.evaluateSpecificSkeleton(model.soldierSkeletonData, animTime, animToPlay);
           if (skinMatrices) {
@@ -33678,7 +33805,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const isBlink = vfx.type === 'blinkDepart' || vfx.type === 'blinkArrive';
 
       if (isUltimate && ultimateMesh) {
-        // Grand multi-tier sacred mandala on the arena ground
+        // Grand multi-tier sacred mandala on the arena ground with luminous transparency
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.depthMask(false);
         gl.bindVertexArray(ultimateMesh.vao);
         const uScale = vfx.radius * (0.65 + 0.45 * progress);
         const spin = timestamp * 0.001;
@@ -33694,8 +33824,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.1);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.05, 0.52 * (1.0 - progress * 0.3)));
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
         gl.drawElements(gl.TRIANGLES, ultimateMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
 
         // Volumetric Holographic Trick Pillar of Ritual Light (Multi-slice vertical column)
         gl.enable(gl.BLEND);
@@ -33850,7 +33984,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         gl.depthMask(true);
         gl.disable(gl.BLEND);
       } else if (novaMesh) {
-        // Sacred Nova expanding starburst & triangle mandala on ground
+        // Sacred Nova expanding starburst & triangle mandala on ground with soft transparency
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.depthMask(false);
         gl.bindVertexArray(novaMesh.vao);
         const nScale = vfx.radius * (0.5 + 0.7 * progress);
         const spin = timestamp * 0.0015;
@@ -33866,8 +34003,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.12);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.9);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.46 * (1.0 - progress * 0.4)));
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
         gl.drawElements(gl.TRIANGLES, novaMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
 
         // Volumetric Holographic Mandala Shockwave Ascending
         if (volMandala) {
@@ -34058,9 +34199,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.disable(gl.BLEND);
         }
       } else if (vfx.type === 'cloneBurst') {
-        // Holographic Clone Summoning Mandala Pulse
+        // Holographic Clone Summoning Mandala Pulse with ethereal transparency
         const ringM = this.meshBuffers[6] || this.meshBuffers[0];
         if (ringM) {
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+          gl.depthMask(false);
           gl.bindVertexArray(ringM.vao);
           const cScale = vfx.radius * (0.5 + progress * 1.2);
           this.instanceMatrix[0] = cScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
@@ -34070,15 +34214,22 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.48 * (1.0 - progress)));
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.2, 0.4, 1.8]));
           gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+          gl.depthMask(true);
+          gl.disable(gl.BLEND);
         }
       } else if (vfx.type === 'fireTrail') {
         // Blazing Flame Dash Trail Patch
         const sphereM = this.meshBuffers[0];
         if (sphereM) {
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+          gl.depthMask(false);
           gl.bindVertexArray(sphereM.vao);
           const fScale = vfx.radius * (1.0 - progress * 0.4);
           this.instanceMatrix[0] = fScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
@@ -34088,40 +34239,60 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.55 * (1.0 - progress)));
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.9, 0.6, 0.1]));
           gl.drawElements(gl.TRIANGLES, sphereM.indexCount, gl.UNSIGNED_SHORT, 0);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+          gl.depthMask(true);
+          gl.disable(gl.BLEND);
         }
       } else if (ringMesh) {
+        // Transparent Expanding Spell Burst Ring
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.depthMask(false);
         gl.bindVertexArray(ringMesh.vao);
-        const scale = vfx.radius * (2.0 - (vfx.timer / maxT));
+        const scale = vfx.radius * (1.2 + 0.8 * progress);
+        const ringAlpha = Math.max(0.04, (1.0 - progress) * (vfx.isSpell ? 0.52 : 0.28));
         this.instanceMatrix[0] = scale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.05; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
         this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = scale; this.instanceMatrix[11] = 0;
         this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.04; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, ringAlpha);
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
         gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
       }
     });
 
-    // Render movement green/red clicks ripples using sacred star
+    // Render movement green/red clicks ripples using sacred star with soft fade
     if (ringMesh) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.depthMask(false);
       gl.bindVertexArray(ringMesh.vao);
       this.mobaState.clickRipples.forEach(ripple => {
         const t = (0.5 - ripple.timer) / 0.5;
         const scale = 1.2 * t;
 
         this.instanceMatrix[0] = scale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.05; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.04; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
         this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = scale; this.instanceMatrix[11] = 0;
         this.instanceMatrix[12] = ripple.x; this.instanceMatrix[13] = 0.02; this.instanceMatrix[14] = ripple.z; this.instanceMatrix[15] = 1.0;
 
         gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.05, (1.0 - t) * 0.65));
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(ripple.color));
         gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
       });
+      if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
 
       // Render red targeting reticle underneath current targetEntity
       if (this.mobaState.targetEntity && this.mobaState.targetEntity.hp > 0) {
@@ -34391,6 +34562,211 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           drawDualBar3D(this.mobaState.trons.BLACK.pos, 3.8, this.mobaState.trons.BLACK.hp, 2500, this.mobaState.trons.BLACK.mp || 1000, 1000, 3.6, 0.20, isEnemy);
         }
       }
+    }
+
+    // 9. Draw high-performance cheap GPU particles for magic bursts, sparks, and ambient stardust
+    this.drawGpuParticles(progInfo);
+  }
+
+  initGpuParticleSystem() {
+    if (this._gpuParticleSystemInitialized) return;
+    this._gpuParticleSystemInitialized = true;
+    const gl = this.gl;
+    if (!gl) return;
+
+    const vsSource = `#version 300 es
+      layout(location = 0) in vec3 a_position;
+      layout(location = 1) in vec4 a_color;
+      layout(location = 2) in float a_size;
+
+      uniform mat4 u_viewProj;
+
+      out vec4 v_color;
+
+      void main() {
+        v_color = a_color;
+        gl_Position = u_viewProj * vec4(a_position, 1.0);
+        float w = max(0.1, gl_Position.w);
+        gl_PointSize = clamp(a_size * (320.0 / w), 2.0, 72.0);
+      }
+    `;
+
+    const fsSource = `#version 300 es
+      precision mediump float;
+      in vec4 v_color;
+      out vec4 fragColor;
+
+      void main() {
+        vec2 coord = gl_PointCoord - vec2(0.5);
+        float dist = length(coord);
+        if (dist > 0.5) discard;
+        float falloff = smoothstep(0.5, 0.05, dist);
+        fragColor = vec4(v_color.rgb, v_color.a * falloff);
+      }
+    `;
+
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs, vsSource);
+    gl.compileShader(vs);
+
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, fsSource);
+    gl.compileShader(fs);
+
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      console.warn('[GpuParticleSystem] Shader link failed:', gl.getProgramInfoLog(prog));
+      return;
+    }
+
+    this._gpuParticleProg = {
+      prog,
+      uViewProj: gl.getUniformLocation(prog, 'u_viewProj')
+    };
+
+    // Circular particle pool on CPU: max 1200 particles
+    this.MAX_GPU_PARTICLES = 1200;
+    this._gpuParticles = [];
+    for (let i = 0; i < this.MAX_GPU_PARTICLES; i++) {
+      this._gpuParticles.push({
+        active: false,
+        x: 0, y: 0, z: 0,
+        vx: 0, vy: 0, vz: 0,
+        r: 1, g: 1, b: 1, a: 1,
+        size: 10,
+        life: 0,
+        maxLife: 1
+      });
+    }
+    this._gpuParticleNextIdx = 0;
+
+    // Interleaved buffer: [x, y, z, r, g, b, a, size] = 8 floats per particle
+    this.FLOATS_PER_PARTICLE = 8;
+    this._gpuParticleBufferData = new Float32Array(this.MAX_GPU_PARTICLES * this.FLOATS_PER_PARTICLE);
+
+    this._gpuParticleVao = gl.createVertexArray();
+    gl.bindVertexArray(this._gpuParticleVao);
+
+    this._gpuParticleVbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._gpuParticleVbo);
+    gl.bufferData(gl.ARRAY_BUFFER, this._gpuParticleBufferData.byteLength, gl.DYNAMIC_DRAW);
+
+    const FSIZE = Float32Array.BYTES_PER_ELEMENT;
+    const stride = this.FLOATS_PER_PARTICLE * FSIZE;
+
+    // loc 0: position (vec3)
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
+
+    // loc 1: color (vec4)
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, stride, 3 * FSIZE);
+
+    // loc 2: size (float)
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 1, gl.FLOAT, false, stride, 7 * FSIZE);
+
+    gl.bindVertexArray(null);
+  }
+
+  spawnMobaGpuParticles(x, y, z, count, color = [1.0, 0.7, 0.2, 1.0], speed = 2.5, size = 12.0, life = 0.5, spreadY = 1.0) {
+    if (!this._gpuParticleSystemInitialized) this.initGpuParticleSystem();
+    if (!this._gpuParticles) return;
+
+    for (let c = 0; c < count; c++) {
+      const p = this._gpuParticles[this._gpuParticleNextIdx];
+      this._gpuParticleNextIdx = (this._gpuParticleNextIdx + 1) % this.MAX_GPU_PARTICLES;
+
+      const angle = Math.random() * Math.PI * 2;
+      const elev = (Math.random() - 0.2) * spreadY;
+      const spd = speed * (0.4 + Math.random() * 0.8);
+
+      p.active = true;
+      p.x = x + (Math.random() - 0.5) * 0.2;
+      p.y = y + (Math.random() - 0.5) * 0.2;
+      p.z = z + (Math.random() - 0.5) * 0.2;
+      p.vx = Math.cos(angle) * spd;
+      p.vy = elev * spd + 0.5;
+      p.vz = Math.sin(angle) * spd;
+      p.r = color[0] !== undefined ? color[0] : 1.0;
+      p.g = color[1] !== undefined ? color[1] : 0.8;
+      p.b = color[2] !== undefined ? color[2] : 0.3;
+      p.a = color[3] !== undefined ? color[3] : 1.0;
+      p.size = size * (0.7 + Math.random() * 0.6);
+      p.life = life * (0.6 + Math.random() * 0.7);
+      p.maxLife = p.life;
+    }
+  }
+
+  updateGpuParticles(dt) {
+    if (!this._gpuParticles) return;
+    const gravity = -3.5;
+    for (let i = 0; i < this.MAX_GPU_PARTICLES; i++) {
+      const p = this._gpuParticles[i];
+      if (!p.active) continue;
+      p.life -= dt;
+      if (p.life <= 0) {
+        p.active = false;
+        continue;
+      }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z += p.vz * dt;
+      p.vy += gravity * dt;
+    }
+  }
+
+  drawGpuParticles(progInfo) {
+    if (!this._gpuParticleSystemInitialized || !this._gpuParticleProg || !this._gpuParticles) return;
+    const gl = this.gl;
+    if (!gl) return;
+
+    let activeCount = 0;
+    const buf = this._gpuParticleBufferData;
+    const stride = this.FLOATS_PER_PARTICLE;
+
+    for (let i = 0; i < this.MAX_GPU_PARTICLES; i++) {
+      const p = this._gpuParticles[i];
+      if (!p.active) continue;
+      const lifeFrac = Math.max(0.0, p.life / p.maxLife);
+      const idx = activeCount * stride;
+      buf[idx] = p.x;
+      buf[idx + 1] = p.y;
+      buf[idx + 2] = p.z;
+      buf[idx + 3] = p.r;
+      buf[idx + 4] = p.g;
+      buf[idx + 5] = p.b;
+      buf[idx + 6] = p.a * lifeFrac;
+      buf[idx + 7] = p.size;
+      activeCount++;
+    }
+
+    if (activeCount === 0) return;
+
+    gl.useProgram(this._gpuParticleProg.prog);
+    gl.uniformMatrix4fv(this._gpuParticleProg.uViewProj, false, this.viewProjMatrix);
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive luminous glow!
+    gl.depthMask(false);
+
+    gl.bindVertexArray(this._gpuParticleVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this._gpuParticleVbo);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, buf.subarray(0, activeCount * stride));
+
+    gl.drawArrays(gl.POINTS, 0, activeCount);
+
+    gl.bindVertexArray(null);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+
+    // Rebind main shader prog
+    if (progInfo && progInfo.prog) {
+      gl.useProgram(progInfo.prog);
     }
   }
 
@@ -36835,10 +37211,22 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.vfxBursts.push({
       x: targetPos[0],
       z: targetPos[2],
-      radius: isSpell ? 1.6 : 0.9,
-      timer: 0.35,
-      color: isSpell ? [1.0, 0.4, 0.1] : [1.0, 0.1, 0.1]
+      radius: isSpell ? 1.6 : 0.42,
+      timer: isSpell ? 0.38 : 0.18,
+      maxTimer: isSpell ? 0.38 : 0.18,
+      isSpell: Boolean(isSpell),
+      color: isSpell ? [1.0, 0.4, 0.1] : [1.0, 0.85, 0.7]
     });
+
+    // Cheap CPU forced GPU particle emission
+    if (this.spawnMobaGpuParticles) {
+      if (isSpell) {
+        this.spawnMobaGpuParticles(targetPos[0], 0.9, targetPos[2], 28, [1.0, 0.5, 0.15, 0.9], 3.0, 14.0, 0.6);
+      } else {
+        // Less effect for normal attack: just 4 small subtle sparks
+        this.spawnMobaGpuParticles(targetPos[0], 0.7, targetPos[2], 4, [1.0, 0.9, 0.7, 0.65], 1.4, 7.0, 0.25);
+      }
+    }
 
     // 1. Damage to Local Player
     if (target.isPlayer || target === this.mobaState) {
@@ -36847,12 +37235,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const absorb = Math.min(stats.shield, finalDmg);
         stats.shield -= absorb;
         finalDmg -= absorb;
-        this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], `ABSORB ${absorb}`, '#38bdf8');
+        this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], `ABSORB ${absorb}`, '#38bdf8', true, false);
       }
 
       if (finalDmg > 0) {
         stats.hp = Math.max(0, stats.hp - finalDmg);
-        this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], `-${finalDmg}`, '#f87171');
+        const pDmgColor = isCrit ? '#fbbf24' : (isSpell ? '#f87171' : '#fca5a5');
+        this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], `-${finalDmg}`, pDmgColor, isSpell, isCrit);
         this.playMobaZombieVoice('damage', true);
         if (this.speechAnnouncer) {
           this.speechAnnouncer.triggerActionVoice('damage');
@@ -36898,11 +37287,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const absorb = Math.min(target.shield, finalDmg);
       target.shield -= absorb;
       finalDmg -= absorb;
-      this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], `ABSORB ${absorb}`, '#38bdf8');
+      this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], `ABSORB ${absorb}`, '#38bdf8', true, false);
     }
 
     target.hp = Math.max(0, (target.hp || 0) - finalDmg);
-    this.addMobaCombatText(targetPos[0], 1.8, targetPos[2], `-${finalDmg}`, isCrit ? '#fbbf24' : '#ef4444');
+    const entDmgColor = isCrit ? '#fbbf24' : (isSpell ? '#ef4444' : '#fca5a5');
+    this.addMobaCombatText(targetPos[0], 1.8, targetPos[2], `-${finalDmg}`, entDmgColor, isSpell, isCrit);
     if (!isTower && (!target.id || !target.id.startsWith('tron_'))) {
       this.playMobaZombieVoice('damage', false);
     }
@@ -37087,17 +37477,21 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
   }
 
-  addMobaCombatText(wx, wy, wz, text, color = '#f87171') {
+  addMobaCombatText(wx, wy, wz, text, color = '#f87171', isSpell = false, isCrit = false) {
     if (!this.mobaState) return;
     if (!this.mobaState.combatTexts) this.mobaState.combatTexts = [];
+    const spread = (isSpell || isCrit) ? 0.35 : 0.15;
+    const dur = (isSpell || isCrit) ? 0.85 : 0.50;
     this.mobaState.combatTexts.push({
-      x: wx + (Math.random() - 0.5) * 0.4,
-      y: wy + 0.3,
-      z: wz + (Math.random() - 0.5) * 0.4,
+      x: wx + (Math.random() - 0.5) * spread,
+      y: wy + ((isSpell || isCrit) ? 0.3 : 0.12),
+      z: wz + (Math.random() - 0.5) * spread,
       text: text,
       color: color,
-      timer: 0.85,
-      maxTimer: 0.85
+      timer: dur,
+      maxTimer: dur,
+      isSpell: Boolean(isSpell),
+      isCrit: Boolean(isCrit)
     });
   }
 

@@ -6691,9 +6691,9 @@ body.pong-active .joystick-label {
     margin-bottom: 6px !important;
   }
 
-  /* Audio & Info buttons docked on side for portrait view (never overlap with attack button on right) */
+  /* Audio & Info buttons docked on side for portrait view (positioned down at 72px so they never touch Tron UI or attack button) */
   #moba-audio-controls {
-    top: 44px !important;
+    top: 72px !important;
     left: 8px !important;
     right: auto !important;
     flex-direction: column !important;
@@ -6772,11 +6772,21 @@ body.pong-active .joystick-label {
     height: 100% !important;
   }
 
-  /* Hide raw attributes on portrait/mobile screens to guarantee 100% room for spells & 8 inventory slots */
-  #moba-hero-attributes,
-  #moba-hud-bottom .flex.flex-col.justify-center.pl-0\.5,
-  #moba-hud-bottom .flex.flex-col.justify-center.pl-1 {
-    display: none !important;
+  /* Hero props: positioned in the space after the last magic slot */
+  #moba-hero-attributes {
+    display: flex !important;
+    padding-left: 2px !important;
+    margin: 0 !important;
+    border-left: 1px solid rgba(255, 255, 255, 0.2) !important;
+    flex-shrink: 0 !important;
+  }
+
+  #moba-hero-attributes .grid {
+    gap: 1px 2px !important;
+  }
+
+  #moba-hero-attributes span {
+    font-size: 6.5px !important;
   }
 
   /* For mobile devices description is an independent popup OUT from footer */

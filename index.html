@@ -1119,34 +1119,6 @@
                     </div>
                   </div>
 
-                  <!-- SLEEK REAL-TIME STATS (Between Bars and Spells, zero margin) -->
-                  <div id="moba-hero-attributes" class="flex flex-col justify-center pl-0.5 sm:pl-1 h-full shrink-0 select-none m-0">
-                    <span class="text-amber-400 font-extrabold uppercase tracking-wider text-[6.5px] sm:text-[8px] hidden sm:block mb-0.5">Attributes</span>
-                    <div class="grid grid-cols-2 gap-x-0.5 sm:gap-x-1 gap-y-0.5 text-[6.5px] sm:text-[8.5px] md:text-[9.5px] font-mono text-slate-300 font-extrabold leading-none">
-                      <div class="flex items-center space-x-0.5" title="Attack Power (⚔️ ATK)">
-                        <span>⚔️</span>
-                        <span id="moba-stat-atk" class="text-rose-400 font-black">55</span>
-                      </div>
-                      <div class="flex items-center space-x-0.5" title="Movement Speed (👟 MS)">
-                        <span>👟</span>
-                        <span id="moba-stat-speed" class="text-sky-400 font-black">4.5</span>
-                      </div>
-                      <div class="flex items-center space-x-0.5" title="Defense / Armor (🛡️ DEF)">
-                        <span>🛡️</span>
-                        <span id="moba-stat-def" class="text-emerald-400 font-black">12</span>
-                      </div>
-                      <div class="flex items-center space-x-0.5" title="Intelligence / Spellpower (🔮 INT)">
-                        <span>🔮</span>
-                        <span id="moba-stat-int" class="text-purple-400 font-black">24</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Dedicated Footer Description Box: Hidden on mobile to free maximum space for larger cells; handled by floating popup -->
-                  <div id="moba-footer-description" class="hidden" style="display: none !important;">
-                    <div id="moba-footer-description-content">Hover over an ability or item to view details.</div>
-                  </div>
-
                   <!-- SPELLS GRID (4x1) - Directly adjacent to stats, using space for larger cells -->
                   <div class="flex items-center space-x-0.5 sm:space-x-1 shrink-0 p-0 m-0">
                     <!-- Spell Q -->
@@ -1196,6 +1168,34 @@
                       <div class="relative text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-red-400 truncate bg-black/70 px-0.5 rounded text-center w-full font-black animate-pulse leading-tight" id="moba-spell-r-name">ECLIPSE</div>
                       <div id="moba-spell-r-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">20s</div>
                     </div>
+                  </div>
+
+                  <!-- HERO PROPS / REAL-TIME ATTRIBUTES (Positioned in empty space after last magic) -->
+                  <div id="moba-hero-attributes" class="flex flex-col justify-center pl-1 sm:pl-2 h-full shrink-0 select-none m-0 border-l border-white/20">
+                    <span class="text-amber-400 font-extrabold uppercase tracking-wider text-[6px] sm:text-[7.5px] hidden sm:block mb-0.5">Hero Props</span>
+                    <div class="grid grid-cols-2 gap-x-1 sm:gap-x-1.5 gap-y-0.5 text-[6.5px] sm:text-[8px] md:text-[9px] font-mono text-slate-300 font-extrabold leading-none">
+                      <div class="flex items-center space-x-0.5" title="Attack Power (⚔️ ATK)">
+                        <span>⚔️</span>
+                        <span id="moba-stat-atk" class="text-rose-400 font-black">55</span>
+                      </div>
+                      <div class="flex items-center space-x-0.5" title="Movement Speed (👟 MS)">
+                        <span>👟</span>
+                        <span id="moba-stat-speed" class="text-sky-400 font-black">4.5</span>
+                      </div>
+                      <div class="flex items-center space-x-0.5" title="Defense / Armor (🛡️ DEF)">
+                        <span>🛡️</span>
+                        <span id="moba-stat-def" class="text-emerald-400 font-black">12</span>
+                      </div>
+                      <div class="flex items-center space-x-0.5" title="Intelligence / Spellpower (🔮 INT)">
+                        <span>🔮</span>
+                        <span id="moba-stat-int" class="text-purple-400 font-black">24</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Dedicated Footer Description Box: Hidden on mobile to free maximum space for larger cells; handled by floating popup -->
+                  <div id="moba-footer-description" class="hidden" style="display: none !important;">
+                    <div id="moba-footer-description-content">Hover over an ability or item to view details.</div>
                   </div>
                 </div>
 
@@ -2734,8 +2734,71 @@
         </div>
         <!-- Tab 8: PROJECT WORKSPACE TAB (Scene Objects, Player Controller, Collision Register, FPS Damage System, C++ Bridge) -->
         <div class="tab-content" id="tab-project">
-          <!-- 🎮 MOBA Custom Project Dashboard (MOBA Shop Style!) -->
-          <div id="project-moba-dashboard" style="display: none;" class="w-full h-full bg-slate-950 font-sans text-slate-300 p-6 overflow-y-auto space-y-6">
+          <div class="project-page-layout">
+            <!-- Project Sub-Nav Bar: Global tabs + Demo-specific tabs -->
+            <div class="project-subnav" id="project-subnav">
+              <!-- Demo-specific: MOBA Arena Dashboard -->
+              <button class="proj-subtab-btn" data-subtab="moba-dashboard" id="btn-subtab-moba">
+                <span class="subtab-icon">⚔️</span>
+                <span>MOBA Arena</span>
+              </button>
+              <!-- Demo-specific: Arcade Config -->
+              <button class="proj-subtab-btn" data-subtab="minigames-dashboard" id="btn-subtab-minigames">
+                <span class="subtab-icon">🎰</span>
+                <span>Arcade Config</span>
+              </button>
+              <!-- Demo-specific: Quake/FPS MAP Settings -->
+              <button class="proj-subtab-btn" data-subtab="map-settings" id="btn-subtab-map-settings">
+                <span class="subtab-icon">🗺️</span>
+                <span>MAP Settings</span>
+              </button>
+              <!-- Demo-specific: Quake/FPS Damage -->
+              <button class="proj-subtab-btn" data-subtab="fps-damage" id="btn-subtab-fps-damage">
+                <span class="subtab-icon">🎯</span>
+                <span>FPS Damage</span>
+              </button>
+              <!-- Demo-specific: Player Controller (Quake/FPS) -->
+              <button class="proj-subtab-btn" data-subtab="player-controller" id="btn-subtab-player-controller">
+                <span class="subtab-icon">🕹️</span>
+                <span>Player Controller</span>
+              </button>
+              <!-- Demo-specific: ITEMS (Quake/FPS) -->
+              <button class="proj-subtab-btn" data-subtab="items" id="btn-subtab-items">
+                <span class="subtab-icon">💎</span>
+                <span>ITEMS</span>
+              </button>
+              <!-- Demo-specific: Collision Register (Quake/FPS) -->
+              <button class="proj-subtab-btn" data-subtab="collision-register" id="btn-subtab-collision-register">
+                <span class="subtab-icon">🛡️</span>
+                <span>Collision Register</span>
+              </button>
+
+              <!-- GLOBAL TABS (Always available for ALL demos!) -->
+              <button class="proj-subtab-btn" data-subtab="postprocessing" id="btn-subtab-postprocessing">
+                <span class="subtab-icon">✨</span>
+                <span>POST PROCESSING</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="materials" id="btn-subtab-materials">
+                <span class="subtab-icon">🔮</span>
+                <span>Materials &amp; Shaders</span>
+              </button>
+              <button class="proj-subtab-btn active" data-subtab="scene-objects" id="btn-subtab-scene-objects">
+                <span class="subtab-icon">📦</span>
+                <span>Scene Hierarchy</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="voice-announcer" id="btn-subtab-voice-announcer">
+                <span class="subtab-icon">🎙️</span>
+                <span>Voice Announcer &amp; Speech</span>
+              </button>
+              <button class="proj-subtab-btn" data-subtab="cpp-bridge" id="btn-subtab-cpp-bridge">
+                <span class="subtab-icon">⚡</span>
+                <span>C++ Code Bridge</span>
+              </button>
+            </div>
+
+            <!-- Subtab: MOBA Custom Project Dashboard -->
+            <div class="proj-subcontent p-0" id="subtab-moba-dashboard">
+              <div id="project-moba-dashboard" class="w-full h-full bg-slate-950 font-sans text-slate-300 p-6 overflow-y-auto space-y-6">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-amber-500/20 pb-4 gap-4">
               <div>
                 <span class="text-[10px] text-amber-500 font-bold uppercase tracking-widest">Forest of Hollow Blood</span>
@@ -2857,96 +2920,53 @@
                 </div>
               </div>
             </div>
-          </div>
-
-          <!-- 🎲 Classic Minigames Custom Project Dashboard -->
-          <div id="project-minigames-dashboard" style="display: none;" class="w-full h-full bg-slate-950 font-sans text-slate-300 p-6 overflow-y-auto space-y-6">
-            <div class="border-b border-white/10 pb-4">
-              <span class="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Arcade Platform Workspace</span>
-              <h1 class="text-2xl font-black text-white tracking-tight uppercase flex items-center gap-2">
-                <span>🎰</span> Arcade Config Dashboard
-              </h1>
-              <p class="text-xs text-slate-400">Adjust active game settings, balance rewards, and run simulations live.</p>
             </div>
 
-            <!-- Arcade Dashboard Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <!-- Card 1: Physics & Speed Tweak -->
-              <div class="bg-slate-900 border border-white/5 rounded-2xl p-5 space-y-4 shadow-xl">
-                <h3 class="text-xs font-bold text-blue-400 uppercase tracking-widest border-b border-slate-800 pb-2">
-                  ⚙️ Active Physics Calibration
-                </h3>
-                <div class="space-y-4 text-xs">
-                  <div>
-                    <label class="block text-slate-400 mb-1">Global Target Speed Scaling</label>
-                    <input type="range" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full accent-blue-500" oninput="app.setArcadeSpeed(this.value)">
-                    <div class="flex justify-between text-[10px] text-slate-500 mt-1">
-                      <span>0.5x (Slowmotion)</span>
-                      <span>1.0x (Normal)</span>
-                      <span>2.0x (Ludicrous)</span>
+            <!-- Subtab: Arcade Minigames Custom Project Dashboard -->
+            <div class="proj-subcontent p-0" id="subtab-minigames-dashboard">
+              <div id="project-minigames-dashboard" class="w-full h-full bg-slate-950 font-sans text-slate-300 p-6 overflow-y-auto space-y-6">
+                <div class="border-b border-white/10 pb-4">
+                  <span class="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Arcade Platform Workspace</span>
+                  <h1 class="text-2xl font-black text-white tracking-tight uppercase flex items-center gap-2">
+                    <span>🎰</span> Arcade Config Dashboard
+                  </h1>
+                  <p class="text-xs text-slate-400">Adjust active game settings, balance rewards, and run simulations live.</p>
+                </div>
+
+                <!-- Arcade Dashboard Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <!-- Card 1: Physics & Speed Tweak -->
+                  <div class="bg-slate-900 border border-white/5 rounded-2xl p-5 space-y-4 shadow-xl">
+                    <h3 class="text-xs font-bold text-blue-400 uppercase tracking-widest border-b border-slate-800 pb-2">
+                      ⚙️ Active Physics Calibration
+                    </h3>
+                    <div class="space-y-4 text-xs">
+                      <div>
+                        <label class="block text-slate-400 mb-1">Global Target Speed Scaling</label>
+                        <input type="range" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full accent-blue-500" oninput="app.setArcadeSpeed(this.value)">
+                        <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                          <span>0.5x (Slowmotion)</span>
+                          <span>1.0x (Normal)</span>
+                          <span>2.0x (Ludicrous)</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Card 2: Interactive Playground Tools -->
+                  <div class="bg-slate-900 border border-white/5 rounded-2xl p-5 space-y-4 shadow-xl">
+                    <h3 class="text-xs font-bold text-blue-400 uppercase tracking-widest border-b border-slate-800 pb-2">
+                      🛠️ Sandbox Tools
+                    </h3>
+                    <p class="text-xs text-slate-400">Inject tokens or simulate rapid plays for debugging the current active arcade mini-game.</p>
+                    <div class="flex gap-2">
+                      <button onclick="app.injectArcadeCredits()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs uppercase tracking-wide transition-all cursor-pointer">
+                        💰 Inject Credits / Balance
+                      </button>
                     </div>
                   </div>
                 </div>
               </div>
-
-              <!-- Card 2: Interactive Playground Tools -->
-              <div class="bg-slate-900 border border-white/5 rounded-2xl p-5 space-y-4 shadow-xl">
-                <h3 class="text-xs font-bold text-blue-400 uppercase tracking-widest border-b border-slate-800 pb-2">
-                  🛠️ Sandbox Tools
-                </h3>
-                <p class="text-xs text-slate-400">Inject tokens or simulate rapid plays for debugging the current active arcade mini-game.</p>
-                <div class="flex gap-2">
-                  <button onclick="app.injectArcadeCredits()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded-xl text-xs uppercase tracking-wide transition-all cursor-pointer">
-                    💰 Inject Credits / Balance
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="project-page-layout">
-            <!-- Project Sub-Nav Bar -->
-            <div class="project-subnav" id="project-subnav">
-              <button class="proj-subtab-btn active" data-subtab="scene-objects">
-                <span class="subtab-icon">📦</span>
-                <span>Scene Hierarchy</span>
-              </button>
-              <button class="proj-subtab-btn" data-subtab="map-settings">
-                <span class="subtab-icon">🗺️</span>
-                <span>MAP Settings</span>
-              </button>
-              <button class="proj-subtab-btn" data-subtab="materials">
-                <span class="subtab-icon">✨</span>
-                <span>Materials &amp; Shaders</span>
-              </button>
-              <button class="proj-subtab-btn" data-subtab="postprocessing">
-                <span class="subtab-icon">✨</span>
-                <span>POST PROCESSING</span>
-              </button>
-              <button class="proj-subtab-btn" data-subtab="items">
-                <span class="subtab-icon">💎</span>
-                <span>ITEMS</span>
-              </button>
-              <button class="proj-subtab-btn" data-subtab="player-controller">
-                <span class="subtab-icon">🕹️</span>
-                <span>Player Controller</span>
-              </button>
-              <button class="proj-subtab-btn" data-subtab="collision-register">
-                <span class="subtab-icon">🛡️</span>
-                <span>Collision Register</span>
-              </button>
-              <button class="proj-subtab-btn" data-subtab="fps-damage">
-                <span class="subtab-icon">🎯</span>
-                <span>FPS Damage Group</span>
-              </button>
-              <button class="proj-subtab-btn" data-subtab="voice-announcer" id="btn-subtab-voice-announcer">
-                <span class="subtab-icon">🎙️</span>
-                <span>Voice Announcer &amp; Speech</span>
-              </button>
-              <button class="proj-subtab-btn" data-subtab="cpp-bridge">
-                <span class="subtab-icon">⚡</span>
-                <span>C++ Code Bridge</span>
-              </button>
             </div>
 
             <!-- Subtab 0: MAP Settings (4 Quake Maps, Spawns & Item Pedestals) -->
