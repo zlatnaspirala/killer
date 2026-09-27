@@ -7357,15 +7357,26 @@ void main() {
     trunkData.name = "ProceduralTreeTrunk";
     this.mobaTreeTrunkMesh = this.buildMeshBuffer(trunkData);
 
-    // 2. Procedural multi-lobed organic oak canopy
-    const oakCanopyData = ProceduralGeometryFactory.createOrganicCanopy(1.5, 14, 14, 42, 0.28);
-    oakCanopyData.name = "ProceduralOakCanopy";
-    this.mobaOakCanopyMesh = this.buildMeshBuffer(oakCanopyData);
+    // 2. Procedural sharp, dark-looking gothic branches (replacing leafy foliage canopies)
+    const sharpBranchesData = ProceduralGeometryFactory.createSharpDarkBranches(42);
+    sharpBranchesData.name = "ProceduralSharpDarkBranches";
+    this.mobaSharpBranchesMesh = this.buildMeshBuffer(sharpBranchesData);
+    this.mobaOakCanopyMesh = this.mobaSharpBranchesMesh;
 
-    // 3. Procedural conical needle canopy for pines
-    const pineCanopyData = ProceduralGeometryFactory.createCone(1.3, 2.0, 14, 4, 0.15);
-    pineCanopyData.name = "ProceduralPineCanopy";
-    this.mobaPineCanopyMesh = this.buildMeshBuffer(pineCanopyData);
+    // 3. Procedural tall gothic spire branches (replacing pine cone canopies)
+    const sharpSpireData = ProceduralGeometryFactory.createSharpSpireBranches(88);
+    sharpSpireData.name = "ProceduralSharpSpireBranches";
+    this.mobaSharpSpireBranchesMesh = this.buildMeshBuffer(sharpSpireData);
+    this.mobaPineCanopyMesh = this.mobaSharpSpireBranchesMesh;
+
+    // 3b. Procedural Ravens (Soaring in flight & Perched on sharp branches/stones)
+    const ravenFlyingData = ProceduralGeometryFactory.createRavenFlyingMesh();
+    ravenFlyingData.name = "ProceduralRavenFlying";
+    this.mobaRavenFlyingMesh = this.buildMeshBuffer(ravenFlyingData);
+
+    const ravenPerchedData = ProceduralGeometryFactory.createRavenPerchedMesh();
+    ravenPerchedData.name = "ProceduralRavenPerched";
+    this.mobaRavenPerchedMesh = this.buildMeshBuffer(ravenPerchedData);
 
     // 4. Procedural faceted rugged boulder
     const boulderData = ProceduralGeometryFactory.createBoulder(1.0, 77);
@@ -29801,6 +29812,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
   }
 
+  isHeroAlive() {
+    if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner) return false;
+    if (this._playerRespawnRemaining !== undefined && this._playerRespawnRemaining > 0) return false;
+    if (this.mobaState.heroStats && this.mobaState.heroStats.hp <= 0) return false;
+    return true;
+  }
+
+  canHeroReceiveGold() {
+    return this.isHeroAlive();
+  }
+
   // Developer sandbox companion methods
   mobaInjectGold(amount) {
     if (this.mobaState && this.mobaState.playing) {
@@ -30220,13 +30242,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     if (!Array.isArray(this.mobaState.inventory)) {
-      this.mobaState.inventory = [null, null, null, null, null, null, null, null];
+      this.mobaState.inventory = [null, null, null, null, null, null];
     }
 
-    // Find empty slot in 4x2 grid inventory (8 slots)
+    // Find empty slot in 3x2 grid inventory (6 slots)
     const freeIndex = this.mobaState.inventory.findIndex(slot => slot === null);
     if (freeIndex === -1) {
-      this.log("🎒 Inventory is Full! Max 8 items. Merge 3 identical items to free slots.", "error");
+      this.log("🎒 Inventory is Full! Max 6 items. Merge 3 identical items to free slots.", "error");
       this.mobaPlaySound('back');
       return;
     }
@@ -30797,7 +30819,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
               stunDuration: 1.6,
               color: [1.0, 0.35, 0.05],
               title: "☄️ SKY METEOR IMPACT! -380",
-              alert: "☄️ CELESTIAL SKY FIREBALL CRASHED!"
+              alert: "☄️ CELESTIAL SKY FIREBALL CRASHED!",
+              isPlayer: true,
+              attacker: 'player'
             });
 
             app.mobaState.vfxBursts.push({
@@ -31313,7 +31337,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const myTeam = this.mobaState.team;
 
     if (spell.cast) {
-      spell.cast(this, playerPos, myTeam);
+      this._mobaCurrentSpellCaster = 'player';
+      try {
+        spell.cast(this, playerPos, myTeam);
+      } finally {
+        this._mobaCurrentSpellCaster = null;
+      }
     }
 
     // Broadcast cast spell to remote peers
@@ -31592,11 +31621,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
                 color: this.mobaState.team === 'RED' ? [1.0, 0.4, 0.1] : [0.2, 0.7, 1.0],
                 attackerTeam: this.mobaState.team,
                 isPlayer: true,
+                attacker: 'player',
                 isMagic: false,
                 isCrit: isCrit
               });
             } else {
-              this.applyMobaDamage(target, totalDmg, this.mobaState.team, false, isCrit);
+              this.applyMobaDamage(target, totalDmg, this.mobaState.team, false, isCrit, null, 0, 'player');
             }
           }
         }
@@ -31694,7 +31724,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         });
 
         if (dist <= proj.speed * dt + 0.35) {
-          this.applyMobaDamage(target, proj.damage, proj.attackerTeam, proj.isSpell, false);
+          const projAttacker = proj.attacker || (proj.isPlayer ? 'player' : proj.attackerTeam);
+          this.applyMobaDamage(target, proj.damage, proj.attackerTeam, proj.isSpell, false, null, 0, projAttacker);
           // Spawn fiery impact detonation
           if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
           this.mobaState.vfxBursts.push({
@@ -31731,6 +31762,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // 5b. Update advanced magic systems (sky meteors, clones, proximity mines)
     this.updateMobaAdvancedMagic(dt);
+
+    // 5c. Update atmospheric ravens (flight paths, startle physics, ambient cawing)
+    this.updateMobaRavens(dt);
 
     // 6. Resolve unit-to-unit soft separation
     this.resolveUnitSeparation();
@@ -31815,17 +31849,24 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
     this.mobaUpdateAbilitiesCooldownUI();
 
-    // 9. Passive Gold & Mana regeneration (+1 gold per 2s, +5 mana per 1s)
+    // 9. Passive Gold & Mana regeneration (+2 gold per 1 minute = +1 gold every 30s, +5 mana per 1s)
     this.mobaState.goldTimer = (this.mobaState.goldTimer || 0) + dt;
     if (this.mobaState.goldTimer >= 1.0) {
       this.mobaState.goldTimer -= 1.0;
-      this.mobaState.heroStats.mp = Math.min(this.mobaState.heroStats.maxMp, this.mobaState.heroStats.mp + 5);
+      if (this.canHeroReceiveGold()) {
+        this.mobaState.heroStats.mp = Math.min(this.mobaState.heroStats.maxMp, this.mobaState.heroStats.mp + 5);
+      }
       
-      // Secondary accumulator to give exactly +1 gold every 2 seconds
-      this.mobaState.passiveGoldTicks = (this.mobaState.passiveGoldTicks || 0) + 1;
-      if (this.mobaState.passiveGoldTicks >= 2) {
+      // Auto increase per one minute will be +2 only (+1 gold per 30 seconds)
+      // When hero is dead: NO GOLD
+      if (this.canHeroReceiveGold()) {
+        this.mobaState.passiveGoldTicks = (this.mobaState.passiveGoldTicks || 0) + 1;
+        if (this.mobaState.passiveGoldTicks >= 30) {
+          this.mobaState.passiveGoldTicks = 0;
+          this.mobaState.gold = (this.mobaState.gold || 0) + 1;
+        }
+      } else {
         this.mobaState.passiveGoldTicks = 0;
-        this.mobaState.gold = (this.mobaState.gold || 0) + 1;
       }
     }
 
@@ -32009,7 +32050,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // 3. Match Kills and Clock
     const rKills = (this.mobaState.kills && this.mobaState.kills.RED) || 0;
     const bKills = (this.mobaState.kills && this.mobaState.kills.BLACK) || 0;
-    const goldVal = this.mobaState.gold || 200;
+    const goldVal = this.mobaState.gold !== undefined ? this.mobaState.gold : 200;
 
     if (c.rKills !== rKills && el.textRedKills) { c.rKills = rKills; el.textRedKills.textContent = rKills; }
     if (c.bKills !== bKills && el.textBlackKills) { c.bKills = bKills; el.textBlackKills.textContent = bKills; }
@@ -32107,7 +32148,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     if (!Array.isArray(this.mobaState.inventory)) {
-      this.mobaState.inventory = [null, null, null, null, null, null, null, null];
+      this.mobaState.inventory = [null, null, null, null, null, null];
     }
 
     const itemImages = {
@@ -32129,23 +32170,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       mortis_ultima: 'mortis-ultima.png'
     };
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 6; i++) {
       const item = this.mobaState.inventory[i];
       const slot = document.createElement('div');
       const borderClass = item && item.isMerged ? 'border-yellow-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'border-slate-700';
-      slot.className = `w-5 h-5 sm:w-8 sm:h-8 md:w-10 md:h-10 border ${borderClass} bg-slate-950/80 rounded flex items-center justify-center text-center text-slate-400 select-none relative cursor-pointer hover:border-amber-400 overflow-hidden p-[0.5px]`;
+      slot.className = `w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 border ${borderClass} bg-slate-950/80 rounded-md flex items-center justify-center text-center text-slate-400 select-none relative cursor-pointer hover:border-amber-400 overflow-hidden p-[0.5px] shadow-sm`;
       if (item) {
         const imageFile = itemImages[item.key] || 'aether-gladius.png';
         const imagePath = `assets/textures/moba/invertory/${imageFile}`;
-        const starBadge = item.isMerged ? `<div class="absolute bottom-0 left-0 bg-yellow-500/90 text-slate-950 font-black text-[5.5px] sm:text-[7.5px] px-0.5 rounded-tr leading-none z-20">★ LEG</div>` : '';
+        const starBadge = item.isMerged ? `<div class="absolute bottom-0 left-0 bg-yellow-500/90 text-slate-950 font-black text-[6.5px] sm:text-[8px] px-1 rounded-tr leading-tight z-20 shadow">★ LEG</div>` : '';
 
         slot.innerHTML = `
-          <div class="absolute inset-0 bg-cover bg-center opacity-90" style="background-image: url('${imagePath}');"></div>
+          <div class="absolute inset-0 bg-cover bg-center opacity-90 group-hover:scale-105 transition-transform" style="background-image: url('${imagePath}');"></div>
           <div class="absolute inset-0 bg-black/40 hover:bg-transparent transition-colors flex items-center justify-center">
-            <span class="font-bold text-slate-100 text-[6px] sm:text-[8.5px] md:text-[10px] leading-tight text-shadow z-10 bg-black/60 px-0.5 rounded truncate max-w-[95%]">${item.name.split(' ').pop()}</span>
+            <span class="font-black text-slate-100 text-[7px] sm:text-[9.5px] md:text-[11px] leading-tight text-shadow z-10 bg-black/60 px-1 py-0.5 rounded truncate max-w-[95%]">${item.name.split(' ').pop()}</span>
           </div>
           ${starBadge}
-          <div class="absolute top-0 right-0 bg-red-600 hover:bg-red-500 text-white rounded-full w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 flex items-center justify-center font-bold text-[6px] sm:text-[8.5px] md:text-[10px] z-20" onclick="event.stopPropagation(); app.sellMobaItem(${i})" title="Sell item for 60% gold">×</div>
+          <div class="absolute top-0 right-0 bg-red-600 hover:bg-red-500 text-white rounded-full w-3 h-3 sm:w-4 sm:h-4 md:w-4.5 md:h-4.5 flex items-center justify-center font-bold text-[7.5px] sm:text-[9.5px] md:text-[11px] z-20 shadow-md cursor-pointer active:scale-90 transition-transform leading-none" onclick="event.stopPropagation(); app.sellMobaItem(${i})" title="Sell item for 60% gold">×</div>
         `;
         slot.title = `${item.name}: ${item.desc} (Click to consume/use, click top cross to SELL)`;
         slot.setAttribute('onclick', `app.useMobaItem(${i})`);
@@ -32157,7 +32198,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         slot.setAttribute('ontouchstart', `app.showMobaHudTooltip("${tooltipStr}")`);
         slot.setAttribute('ontouchend', 'app.hideMobaHudTooltip()');
       } else {
-        slot.innerHTML = `<span class="opacity-30 text-[7px] sm:text-[9px] md:text-xs font-mono">${i + 1}</span>`;
+        slot.innerHTML = `<span class="opacity-35 text-[9px] sm:text-[11px] md:text-sm font-mono font-bold">${i + 1}</span>`;
         slot.setAttribute('onmouseenter', `app.showMobaHudTooltip("Empty Inventory Slot ${i + 1}")`);
         slot.setAttribute('onmouseleave', 'app.hideMobaHudTooltip()');
       }
@@ -32928,10 +32969,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       }
 
-      // Draw Tree Foliage Canopies (with u_matType 16 mixed leaf texture and time-based sway)
-      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 16);
+      // Draw Sharp, Dark-Looking Branches (Replacing all leafy and conical canopies)
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Standard PBR dark bark/wood shader
 
       const timeFactor = timestamp * 0.0016; // smooth wind wave speed
+      const sharpBranchesMesh = this.mobaSharpBranchesMesh || this.mobaOakCanopyMesh;
+      const sharpSpireMesh = this.mobaSharpSpireBranchesMesh || this.mobaPineCanopyMesh || sharpBranchesMesh;
 
       for (let i = 0; i < globalForestLayoutEngine.trees.length; i++) {
         const t = globalForestLayoutEngine.trees[i];
@@ -32941,83 +32984,61 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const sc = t.scale;
         const groundY = t.y || 0.0;
 
-        // Calculate custom wind sway offset unique to each tree's coordinate position
+        // Subtle wind sway for rigid sharp branches
         const treePhase = t.x * 0.22 + t.z * 0.18;
-        const windSwayAmp = 0.16 * sc; // Sway offset scale
+        const windSwayAmp = 0.09 * sc;
         const swayX = Math.sin(timeFactor + treePhase) * windSwayAmp;
         const swayZ = Math.cos(timeFactor * 0.85 + treePhase) * (windSwayAmp * 0.7);
 
-        if (t.type === 'pine' && pineMesh) {
-          gl.bindVertexArray(pineMesh.vao);
-          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.7);
-          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
-          if (progInfo.uBaseColor) {
-            this._mobaColorBuf[0] = t.foliageColor[0]; this._mobaColorBuf[1] = t.foliageColor[1]; this._mobaColorBuf[2] = t.foliageColor[2];
-            gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
-          }
+        const isSpire = (t.type === 'pine' || t.type === 'ancient_spire');
+        const activeBranchMesh = isSpire ? sharpSpireMesh : sharpBranchesMesh;
+        if (!activeBranchMesh) continue;
 
-          // Conical pine skirt (2 tiers in cheap mode, 3 in full mode)
-          const tiers = isCheapMat ? [
-            { yOff: 1.35 * sc, rSc: 1.05 * sc, hSc: 1.15 * sc, swayMult: 0.40 },
-            { yOff: 2.25 * sc, rSc: 0.65 * sc, hSc: 0.95 * sc, swayMult: 0.95 }
-          ] : [
-            { yOff: 1.2 * sc, rSc: 1.05 * sc, hSc: 1.0 * sc, swayMult: 0.35 },
-            { yOff: 1.85 * sc, rSc: 0.82 * sc, hSc: 0.9 * sc, swayMult: 0.70 },
-            { yOff: 2.45 * sc, rSc: 0.55 * sc, hSc: 0.8 * sc, swayMult: 1.05 }
-          ];
-          for (let j = 0; j < tiers.length; j++) {
-            const tier = tiers[j];
-            const tSwayX = swayX * tier.swayMult;
-            const tSwayZ = swayZ * tier.swayMult;
+        gl.bindVertexArray(activeBranchMesh.vao);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.88);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.04);
+        if (progInfo.uBaseColor) {
+          // Dark charred gothic branch color
+          this._mobaColorBuf[0] = (t.foliageColor && t.foliageColor[0]) || 0.09;
+          this._mobaColorBuf[1] = (t.foliageColor && t.foliageColor[1]) || 0.08;
+          this._mobaColorBuf[2] = (t.foliageColor && t.foliageColor[2]) || 0.08;
+          gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+        }
 
-            this.instanceMatrix[0] = tier.rSc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = tier.hSc; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-            this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = tier.rSc; this.instanceMatrix[11] = 0;
-            this.instanceMatrix[12] = t.x + tSwayX; this.instanceMatrix[13] = groundY + tier.yOff; this.instanceMatrix[14] = t.z + tSwayZ; this.instanceMatrix[15] = 1.0;
+        // Draw central sharp branch crown atop trunk
+        const cosT = Math.cos(t.rotY || 0);
+        const sinT = Math.sin(t.rotY || 0);
+        const crownY = groundY + (isSpire ? 1.35 : 1.55) * sc * (t.heightScale || 1.0);
+
+        this.instanceMatrix[0] = cosT * sc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinT * sc; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sc * (t.heightScale || 1.0); this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sinT * sc; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosT * sc; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = t.x + swayX; this.instanceMatrix[13] = crownY; this.instanceMatrix[14] = t.z + swayZ; this.instanceMatrix[15] = 1.0;
+
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        gl.drawElements(gl.TRIANGLES, activeBranchMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // Secondary sharp branch clusters on spreading limbs (fractal gothic branches)
+        if (!isCheapMat && this.mobaBranchTips && this.mobaBranchTips.length > 0 && !isSpire) {
+          for (let bIdx = 0; bIdx < this.mobaBranchTips.length; bIdx++) {
+            const tip = this.mobaBranchTips[bIdx];
+            const rx = tip[0] * cosT - tip[2] * sinT;
+            const rz = tip[0] * sinT + tip[2] * cosT;
+            const tipX = t.x + rx * sc + swayX * 0.7;
+            const tipY = groundY + tip[1] * sc * (t.heightScale || 1.0);
+            const tipZ = t.z + rz * sc + swayZ * 0.7;
+            const cSc = sc * 0.44;
+            const branchRot = (t.rotY || 0) + bIdx * 1.05;
+            const bCos = Math.cos(branchRot);
+            const bSin = Math.sin(branchRot);
+
+            this.instanceMatrix[0] = bCos * cSc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -bSin * cSc; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = cSc * 1.1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = bSin * cSc; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = bCos * cSc; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = tipX; this.instanceMatrix[13] = tipY; this.instanceMatrix[14] = tipZ; this.instanceMatrix[15] = 1.0;
 
             gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-            gl.drawElements(gl.TRIANGLES, pineMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-          }
-        } else if (oakMesh) {
-          gl.bindVertexArray(oakMesh.vao);
-          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.75);
-          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
-          if (progInfo.uBaseColor) {
-            this._mobaColorBuf[0] = t.foliageColor[0]; this._mobaColorBuf[1] = t.foliageColor[1]; this._mobaColorBuf[2] = t.foliageColor[2];
-            gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
-          }
-
-          // Central oak crown
-          const canopyY = groundY + 1.8 * sc;
-          this.instanceMatrix[0] = sc * 1.1; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sc * 1.05; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sc * 1.1; this.instanceMatrix[11] = 0;
-          this.instanceMatrix[12] = t.x + swayX; this.instanceMatrix[13] = canopyY; this.instanceMatrix[14] = t.z + swayZ; this.instanceMatrix[15] = 1.0;
-
-          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-          gl.drawElements(gl.TRIANGLES, oakMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-
-          // Secondary foliage clusters on spreading branch tips (skipped in cheap mode to keep mobile FPS high)
-          if (!isCheapMat && this.mobaBranchTips && this.mobaBranchTips.length > 0) {
-            const cosT = Math.cos(t.rotY || 0);
-            const sinT = Math.sin(t.rotY || 0);
-            for (let bIdx = 0; bIdx < this.mobaBranchTips.length; bIdx++) {
-              const tip = this.mobaBranchTips[bIdx];
-              const rx = tip[0] * cosT - tip[2] * sinT;
-              const rz = tip[0] * sinT + tip[2] * cosT;
-              const tipX = t.x + rx * sc + swayX * 0.7;
-              const tipY = groundY + tip[1] * sc;
-              const tipZ = t.z + rz * sc + swayZ * 0.7;
-              const cSc = sc * 0.48;
-
-              this.instanceMatrix[0] = cSc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-              this.instanceMatrix[4] = 0; this.instanceMatrix[5] = cSc * 0.92; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-              this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cSc; this.instanceMatrix[11] = 0;
-              this.instanceMatrix[12] = tipX; this.instanceMatrix[13] = tipY; this.instanceMatrix[14] = tipZ; this.instanceMatrix[15] = 1.0;
-
-              gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-              gl.drawElements(gl.TRIANGLES, oakMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-            }
+            gl.drawElements(gl.TRIANGLES, activeBranchMesh.indexCount, gl.UNSIGNED_SHORT, 0);
           }
         }
       }
@@ -33249,6 +33270,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.drawElements(gl.TRIANGLES, frogMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
       }
+    }
+
+    // Draw Procedural Ravens (Perched on high sharp branches/stones & soaring in the sky)
+    if (globalForestLayoutEngine.ravens && globalForestLayoutEngine.ravens.length > 0) {
+      this.drawMobaRavens(progInfo, camX, camZ, timestamp, isCheapMat);
     }
 
     // 1. Draw RED and BLACK Base Trons and Base circular fields
@@ -34908,6 +34934,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.28);
         osc.start();
         osc.stop(ctx.currentTime + 0.28);
+      } else if (type === 'raven_caw') {
+        // Throat resonance & harsh downward formant for realistic gothic raven caw
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(320, ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(260, ctx.currentTime + 0.14);
+        osc.frequency.linearRampToValueAtTime(210, ctx.currentTime + 0.35);
+        gain.gain.setValueAtTime(0.09 * sfxVol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.38);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.38);
       }
     } catch (err) {
       // Audio context block by browser gesture
@@ -35412,7 +35448,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.projectiles = [];
     this.mobaState.combatTexts = [];
     this.mobaState.kills = { RED: 0, BLACK: 0 };
-    this.mobaState.inventory = [null, null, null, null, null, null, null, null];
+    this.mobaState.inventory = [null, null, null, null, null, null];
     this.mobaState.targetEntity = null;
     this.mobaState.currentTargetId = null;
     this._playerRespawnRemaining = 0;
@@ -35620,6 +35656,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // 1. Resolve procedural forest tree collisions (tightly fitted to tree trunk dimensions)
     globalForestLayoutEngine.resolveTreeCollisions(pos, radius);
 
+    // 1b. Resolve procedural forest stone / boulder collisions against characters
+    if (globalForestLayoutEngine.resolveBoulderCollisions) {
+      globalForestLayoutEngine.resolveBoulderCollisions(pos, radius);
+    }
+
     // 2. Solid obstacles in arena (Active Trons and Defensive Towers)
     const obstacles = [];
 
@@ -35732,6 +35773,177 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     return 0.0;
+  }
+
+  drawMobaRavens(progInfo, camX, camZ, timestamp, isCheapMat) {
+    const flyingMesh = this.mobaRavenFlyingMesh;
+    const perchedMesh = this.mobaRavenPerchedMesh;
+    if (!flyingMesh && !perchedMesh) return;
+
+    const gl = this.gl;
+    if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Standard PBR
+    if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.35); // Sleek glossy feathers
+    if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.15); // Specular iridescence
+    if (progInfo.uBaseColor) {
+      this._mobaColorBuf[0] = 0.05; this._mobaColorBuf[1] = 0.05; this._mobaColorBuf[2] = 0.06;
+      gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
+    }
+
+    const maxRavenDistSq = (isCheapMat ? 40.0 : 68.0) ** 2;
+    const ravens = globalForestLayoutEngine.ravens;
+
+    for (let i = 0; i < ravens.length; i++) {
+      const r = ravens[i];
+      const dx = r.x - camX, dz = r.z - camZ;
+      if (dx * dx + dz * dz > maxRavenDistSq) continue;
+
+      const sc = r.scale || 0.45;
+
+      if (r.type === 'perched' && !r.isStartled && perchedMesh) {
+        // Render Perched Raven atop sharp branch or boulder
+        gl.bindVertexArray(perchedMesh.vao);
+
+        // Alert head scanning twitch animation
+        const alertTwitch = Math.sin(timestamp * 0.0025 + r.phase) > 0.65 
+          ? Math.sin(timestamp * 0.015 + r.phase) * 0.28 
+          : 0.0;
+        const currentRotY = (r.rotY || 0) + alertTwitch;
+        const cosR = Math.cos(currentRotY);
+        const sinR = Math.sin(currentRotY);
+
+        this.instanceMatrix[0] = cosR * sc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinR * sc; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sc; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sinR * sc; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosR * sc; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = r.x; this.instanceMatrix[13] = r.y; this.instanceMatrix[14] = r.z; this.instanceMatrix[15] = 1.0;
+
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        gl.drawElements(gl.TRIANGLES, perchedMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      } else if (flyingMesh) {
+        // Render Flying / Soaring Raven (or startled perched raven ascending)
+        gl.bindVertexArray(flyingMesh.vao);
+
+        const cosR = Math.cos(r.rotY || 0);
+        const sinR = Math.sin(r.rotY || 0);
+        const rollZ = r.rollZ || 0.0;
+        const cosRoll = Math.cos(rollZ);
+        const sinRoll = Math.sin(rollZ);
+
+        // Natural wing flapping with intermittent soaring glides
+        const flapPhase = timestamp * 0.009 + r.phase;
+        const isGliding = (Math.sin(flapPhase * 0.3) > 0.45);
+        const flap = isGliding ? 0.0 : Math.sin(flapPhase) * 0.35;
+
+        // Construct 3D banking and flapping model matrix
+        this.instanceMatrix[0] = cosR * sc * cosRoll; 
+        this.instanceMatrix[1] = sinRoll * sc; 
+        this.instanceMatrix[2] = -sinR * sc * cosRoll; 
+        this.instanceMatrix[3] = 0;
+
+        this.instanceMatrix[4] = -sinRoll * sc * sinR; 
+        this.instanceMatrix[5] = sc * (1.0 + flap * 0.15); 
+        this.instanceMatrix[6] = -sinRoll * sc * cosR; 
+        this.instanceMatrix[7] = 0;
+
+        this.instanceMatrix[8] = sinR * sc; 
+        this.instanceMatrix[9] = 0; 
+        this.instanceMatrix[10] = cosR * sc; 
+        this.instanceMatrix[11] = 0;
+
+        this.instanceMatrix[12] = r.x; 
+        this.instanceMatrix[13] = r.y; 
+        this.instanceMatrix[14] = r.z; 
+        this.instanceMatrix[15] = 1.0;
+
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        gl.drawElements(gl.TRIANGLES, flyingMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
+    }
+  }
+
+  updateMobaRavens(dt) {
+    if (!globalForestLayoutEngine.ravens || globalForestLayoutEngine.ravens.length === 0) return;
+
+    const ravens = globalForestLayoutEngine.ravens;
+    const playerPos = (this.mobaState && this.mobaState.currentPos) || [0, 0, 0];
+
+    // Gather positions of active characters (player hero, bots, creeps) to trigger startled raven flight
+    const unitPositions = [playerPos];
+    if (this.mobaState && this.mobaState.players) {
+      for (let i = 0; i < this.mobaState.players.length; i++) {
+        const p = this.mobaState.players[i];
+        if (p.hp > 0 && p.pos) unitPositions.push(p.pos);
+      }
+    }
+    if (this.mobaState && this.mobaState.creeps) {
+      for (let i = 0; i < this.mobaState.creeps.length; i++) {
+        const c = this.mobaState.creeps[i];
+        if (c.hp > 0 && c.pos) unitPositions.push(c.pos);
+      }
+    }
+
+    for (let i = 0; i < ravens.length; i++) {
+      const r = ravens[i];
+
+      // Ambient periodic raven caws
+      if (r.cawCooldown !== undefined) {
+        r.cawCooldown -= dt;
+        if (r.cawCooldown <= 0) {
+          r.cawCooldown = 18.0 + Math.random() * 22.0;
+          const distToCam = Math.hypot(r.x - playerPos[0], r.z - playerPos[2]);
+          if (distToCam < 28.0) {
+            this.mobaPlaySound('raven_caw');
+          }
+        }
+      }
+
+      if (r.type === 'perched') {
+        if (!r.isStartled) {
+          // Check proximity to any moving character
+          for (let u = 0; u < unitPositions.length; u++) {
+            const uPos = unitPositions[u];
+            const distSq = (r.x - uPos[0]) ** 2 + (r.z - uPos[2]) ** 2;
+            if (distSq < 22.0) { // ~4.7m startle radius
+              r.isStartled = true;
+              r.flightProgress = 0.0;
+              this.mobaPlaySound('raven_caw');
+              break;
+            }
+          }
+        } else {
+          // Raven is startled: flies upward in an evasive spiral into the sky!
+          r.flightProgress += dt * 0.45;
+          const spiralAngle = r.flightProgress * Math.PI * 3.0;
+          const spiralRadius = r.flightProgress * 6.5;
+          r.x = r.baseX + Math.cos(spiralAngle) * spiralRadius;
+          r.z = r.baseZ + Math.sin(spiralAngle) * spiralRadius;
+          r.y = r.baseY + Math.min(14.0, r.flightProgress * 12.0);
+          r.rotY = -spiralAngle + Math.PI * 0.5;
+          r.rollZ = 0.32;
+
+          // After reaching high altitude, convert to soaring flight
+          if (r.flightProgress >= 1.0) {
+            r.type = 'flying';
+            r.cx = r.x;
+            r.cz = r.z;
+            r.radius = 12.0;
+            r.baseAltitude = r.y;
+            r.speed = 0.42;
+            r.angle = spiralAngle;
+          }
+        }
+
+      } else if (r.type === 'flying') {
+        // Soaring circular orbit across the map
+        r.angle += (r.speed || 0.4) * dt;
+        r.x = r.cx + Math.cos(r.angle) * r.radius;
+        r.z = r.cz + Math.sin(r.angle) * r.radius;
+        r.y = r.baseAltitude + Math.sin(r.angle * 2.0 + r.phase) * 0.8;
+        // Direction tangent
+        r.rotY = -r.angle + (r.speed > 0 ? Math.PI * 0.5 : -Math.PI * 0.5);
+        r.rollZ = (r.speed > 0 ? 0.22 : -0.22);
+      }
+    }
   }
 
   updateMobaCreeps(dt) {
@@ -35849,7 +36061,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (creep.attackTimer <= 0) {
             creep.attackTimer = creep.attackCooldown || 1.0;
             creep.lastAttackTime = performance.now();
-            this.applyMobaDamage(target, creep.damage, creep.team, false, false);
+            this.applyMobaDamage(target, creep.damage, creep.team, false, false, null, 0, creep);
           }
         } else if (!creep.rootedTimer || creep.rootedTimer <= 0) {
           // Walk toward target
@@ -35971,7 +36183,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           damage: t.damage || 70,
           color: t.team === 'RED' ? [1.0, 0.25, 0.1] : [0.15, 0.6, 1.0],
           attackerTeam: t.team,
-          isTower: true
+          isTower: true,
+          attacker: 'tower'
         });
       }
     });
@@ -35995,6 +36208,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // Deduct mana & set cooldown
     b.mp = Math.max(0, b.mp - cost);
     b.spellsCooldown[spellIndex] = spell.cooldown || 12.0;
+
+    this._mobaCurrentBotCaster = b;
+    try {
+      this._executeMobaBotSpell(b, heroName, spellIndex, target);
+    } finally {
+      this._mobaCurrentBotCaster = null;
+    }
+  }
+
+  _executeMobaBotSpell(b, heroName, spellIndex, target) {
 
     const bPos = b.pos;
     const myTeam = b.team;
@@ -36769,10 +36992,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
                 damage: hitDamage,
                 isCrit: isCrit,
                 color: b.team === 'RED' ? [1.0, 0.3, 0.1] : [0.2, 0.6, 1.0],
-                attackerTeam: b.team
+                attackerTeam: b.team,
+                isPlayer: false,
+                attacker: b
               });
             } else {
-              this.applyMobaDamage(bestTarget, hitDamage, b.team, false, isCrit);
+              this.applyMobaDamage(bestTarget, hitDamage, b.team, false, isCrit, null, 0, b);
             }
           }
         } else if (!b.rootedTimer || b.rootedTimer <= 0) {
@@ -36841,7 +37066,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             color: m.color || [1.0, 0.4, 0.05],
             isMagic: true
           });
-          this.mobaDamageInRadius([m.x, 0, m.z], m.radius || 5.5, m.damage || 350, m.heroTeam, true, true, m.statusEffect, m.stunDuration);
+          const meteorAttacker = m.attacker || (m.isPlayer ? 'player' : 'bot');
+          this.mobaDamageInRadius([m.x, 0, m.z], m.radius || 5.5, m.damage || 350, m.heroTeam, true, true, m.statusEffect, m.stunDuration, meteorAttacker);
           this.triggerMobaScreenShake(0.7);
           this.mobaPlaySound('explosion');
           this.showMobaAlert(m.alert || "☄️ SKY FIREBALL CRASHED!");
@@ -36904,7 +37130,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
               color: [1.0, 0.7, 0.1],
               isMagic: true
             });
-            this.mobaDamageInRadius([mine.x, 0, mine.z], mine.blastRadius || 4.8, mine.damage || 195, mine.team, true, true);
+            const mineAttacker = mine.attacker || (mine.isPlayer ? 'player' : 'bot');
+            this.mobaDamageInRadius([mine.x, 0, mine.z], mine.blastRadius || 4.8, mine.damage || 195, mine.team, true, true, null, 0, mineAttacker);
             this.triggerMobaScreenShake(0.5);
             this.mobaPlaySound('explosion');
             this.showMobaAlert("💥 PROXIMITY BOOM DETONATED! -195");
@@ -36978,7 +37205,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             this.resolveMobaCollision(clone.pos, 0.6);
           } else if (clone.attackTimer <= 0) {
             clone.attackTimer = 0.85;
-            this.applyMobaDamage(closestTarget, clone.damage || 35, clone.team, false, false);
+            this.applyMobaDamage(closestTarget, clone.damage || 35, clone.team, false, false, null, 0, clone);
             this.mobaPlaySound('hit');
           }
         }
@@ -37033,10 +37260,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           speed: 18.0,
           damage: stats.damage || 55,
           color: this.mobaState.team === 'RED' ? [1.0, 0.4, 0.1] : [0.2, 0.6, 1.0],
-          attackerTeam: this.mobaState.team
+          attackerTeam: this.mobaState.team,
+          isPlayer: true,
+          attacker: 'player'
         });
       } else {
-        this.applyMobaDamage(target, stats.damage || 55, this.mobaState.team, false, false);
+        this.applyMobaDamage(target, stats.damage || 55, this.mobaState.team, false, false, null, 0, 'player');
       }
     } else {
       // Step closer to attack target
@@ -37132,8 +37361,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     return closest;
   }
 
-  applyMobaDamage(target, amount, attackerTeam, isSpell = false, isCrit = false, statusType = null, statusDuration = 0) {
+  applyMobaDamage(target, amount, attackerTeam, isSpell = false, isCrit = false, statusType = null, statusDuration = 0, attackerEntity = null) {
     if (!target || !this.mobaState) return;
+
+    const isPlayerAttacker = (attackerEntity === 'player' || (attackerEntity && attackerEntity.isPlayer) || attackerEntity === this.mobaState);
+    const isPlayerKill = this.isHeroAlive() && isPlayerAttacker;
 
     // Dev Hack: God Mode check
     const isPlayerTarget = (target.isPlayer || target === this.mobaState);
@@ -37307,8 +37539,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.mobaState.kills[attackerTeam]++;
         }
         if (attackerTeam === this.mobaState.team) {
-          this.mobaState.gold = (this.mobaState.gold || 0) + 120;
-          this.showMobaAlert(`⚔️ ENEMY CHAMPION SLAIN! +120 GOLD`, 'text-emerald-400');
+          if (isPlayerKill) {
+            this.mobaState.gold = (this.mobaState.gold || 0) + 120;
+            this.showMobaAlert(`⚔️ ENEMY CHAMPION SLAIN! +120 GOLD`, 'text-emerald-400');
+            this.addMobaCombatText(targetPos[0], 2.4, targetPos[2], `+120 🪙`, '#fbbf24');
+          } else {
+            // Friendly kill (ally minion/bot/tower killed enemy) -> No gold for hero
+            this.showMobaAlert(`⚔️ ALLY SLAIN ENEMY ${target.name || 'CHAMPION'}!`, 'text-emerald-400');
+          }
           if (this.speechAnnouncer) {
             this.speechAnnouncer.triggerActionVoice('kill');
           }
@@ -37340,8 +37578,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
       // Creep kill
       if (target.type === 'melee' || (target.id && target.id.startsWith('creep_'))) {
-        if (attackerTeam === this.mobaState.team) {
+        if (attackerTeam === this.mobaState.team && isPlayerKill) {
           this.mobaState.gold = (this.mobaState.gold || 0) + 24;
+          this.addMobaCombatText(targetPos[0], 2.4, targetPos[2], `+24 🪙`, '#fbbf24');
         }
       }
 
@@ -37383,8 +37622,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
         const laneName = destroyedLane.toUpperCase();
         if (attackerTeam === this.mobaState.team) {
-          this.mobaState.gold = (this.mobaState.gold || 0) + 180;
-          this.showMobaAlert(`🏰 ENEMY ${laneName} TOWER DESTROYED! Our ${laneName} creeps empowered +30% size & power! +180 GOLD`, 'text-emerald-400');
+          if (isPlayerKill) {
+            this.mobaState.gold = (this.mobaState.gold || 0) + 180;
+            this.showMobaAlert(`🏰 ENEMY ${laneName} TOWER DESTROYED BY YOU! Our ${laneName} creeps empowered +30% size & power! +180 GOLD`, 'text-emerald-400');
+            this.addMobaCombatText(targetPos[0], 2.5, targetPos[2], `+180 🪙`, '#fbbf24');
+          } else {
+            // Friendly kill (creeps/bots killed tower) -> No gold for hero
+            this.showMobaAlert(`🏰 ENEMY ${laneName} TOWER DESTROYED! Our ${laneName} creeps empowered +30% size & power!`, 'text-emerald-400');
+          }
           this.mobaPlaySound('confirm');
         } else {
           this.showMobaAlert(`🏰 OUR ${laneName} TOWER HAS FALLEN! Enemy ${laneName} creeps empowered +30% size & power!`, 'text-rose-400');
@@ -37419,14 +37664,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
   }
 
-  mobaDamageInRadius(center, radius, damage, myTeam, isSpell = true, isCrit = false, statusType = null, statusDuration = 0) {
+  mobaDamageInRadius(center, radius, damage, myTeam, isSpell = true, isCrit = false, statusType = null, statusDuration = 0, attackerEntity = null) {
     if (!this.mobaState) return;
+
+    const actualAttacker = attackerEntity || (this._mobaCurrentBotCaster ? this._mobaCurrentBotCaster : 'player');
 
     // Check player
     if (this.mobaState.team !== myTeam && this.mobaState.heroStats.hp > 0) {
       const d = Math.hypot(this.mobaState.currentPos[0] - center[0], this.mobaState.currentPos[2] - center[2]);
       if (d <= radius) {
-        this.applyMobaDamage({ isPlayer: true, pos: this.mobaState.currentPos }, damage, myTeam, isSpell, isCrit, statusType, statusDuration);
+        this.applyMobaDamage({ isPlayer: true, pos: this.mobaState.currentPos }, damage, myTeam, isSpell, isCrit, statusType, statusDuration, actualAttacker);
       }
     }
 
@@ -37436,7 +37683,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (p.team !== myTeam && p.hp > 0 && p.pos) {
           const d = Math.hypot(p.pos[0] - center[0], p.pos[2] - center[2]);
           if (d <= radius) {
-            this.applyMobaDamage(p, damage, myTeam, isSpell, isCrit, statusType, statusDuration);
+            this.applyMobaDamage(p, damage, myTeam, isSpell, isCrit, statusType, statusDuration, actualAttacker);
           }
         }
       });
@@ -37448,7 +37695,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (c.team !== myTeam && c.hp > 0 && c.pos) {
           const d = Math.hypot(c.pos[0] - center[0], c.pos[2] - center[2]);
           if (d <= radius) {
-            this.applyMobaDamage(c, damage, myTeam, isSpell, isCrit, statusType, statusDuration);
+            this.applyMobaDamage(c, damage, myTeam, isSpell, isCrit, statusType, statusDuration, actualAttacker);
           }
         }
       });
@@ -37460,7 +37707,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (t.team !== myTeam && t.hp > 0 && t.pos) {
           const d = Math.hypot(t.pos[0] - center[0], t.pos[2] - center[2]);
           if (d <= radius) {
-            this.applyMobaDamage(t, damage, myTeam, isSpell, isCrit);
+            this.applyMobaDamage(t, damage, myTeam, isSpell, isCrit, null, 0, actualAttacker);
           }
         }
       });
@@ -37472,7 +37719,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (enemyTron && enemyTron.hp > 0 && enemyTron.pos) {
       const d = Math.hypot(enemyTron.pos[0] - center[0], enemyTron.pos[2] - center[2]);
       if (d <= radius + 1.5) {
-        this.applyMobaDamage(enemyTron, damage, myTeam, isSpell, isCrit);
+        this.applyMobaDamage(enemyTron, damage, myTeam, isSpell, isCrit, null, 0, actualAttacker);
       }
     }
   }

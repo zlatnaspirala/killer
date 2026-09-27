@@ -1082,98 +1082,47 @@
               </div>
 
               <!-- BOTTOM PANEL (Portrait, HP/Mana, Spells, Inventory, Gold) -->
-              <div id="moba-hud-bottom" class="absolute bottom-0 left-0 right-0 bg-black/95 border-t border-white/20 px-1 py-0.5 sm:px-2 sm:py-1 flex items-center justify-between pointer-events-auto z-50 shadow-2xl flex-nowrap gap-0.5 sm:gap-1.5 max-w-full min-h-[44px] sm:h-20 md:h-24">
+              <div id="moba-hud-bottom" class="absolute bottom-0 left-0 right-0 bg-black/70 backdrop-blur-md border-t border-white/20 px-2 py-1 sm:px-3 sm:py-1.5 flex flex-col justify-between pointer-events-auto z-50 shadow-2xl gap-1 max-w-full min-h-[76px] sm:min-h-[88px] sm:h-24 md:min-h-[96px] md:h-28 opacity-70 hover:opacity-100 active:opacity-100 transition-opacity duration-200">
                 <!-- Interactive Independent Tooltip/Description Floating Banner (Anchored cleanly above footer, guaranteed never covered) -->
                 <div id="moba-hud-description" class="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 bg-slate-950/95 border border-amber-500/80 px-3 py-1.5 rounded-lg text-center text-amber-300 text-[10px] sm:text-[12.5px] font-black tracking-wide transition-all duration-200 pointer-events-none opacity-0 select-none z-[100] shadow-[0_8px_30px_rgba(0,0,0,0.95)] max-w-[94%] sm:max-w-xl w-max flex items-center justify-center space-x-2">
                   <span class="text-amber-400">🔮</span>
                   <span id="moba-hud-description-text" class="text-slate-100 font-bold">Hover or touch an item or ability to view description.</span>
                 </div>
 
-                <!-- LEFT CLUSTER: Hero, Bars, Attributes, and Magic Slots moved left to use space (zero wasted padding/margin) -->
-                <div id="moba-footer-left-group" class="flex items-center space-x-0.5 sm:space-x-1.5 shrink-0 min-w-0 p-0 m-0">
-                  <!-- HERO INFO & STATS -->
-                  <div class="flex items-center space-x-0.5 sm:space-x-1 shrink-0 p-0 m-0">
+                <!-- TOP TIER: HERO STATUS, HP/MANA BARS, PROPS & GOLD (Spans full width, plenty of space for everything) -->
+                <div id="moba-hud-top-tier" class="w-full flex items-center justify-between gap-1 sm:gap-2 shrink-0">
+                  <!-- Hero Portrait & HP/MP Bars -->
+                  <div id="moba-hero-info" class="flex items-center space-x-1.5 sm:space-x-2 shrink-0 p-0 m-0">
                     <!-- Portrait -->
-                    <div class="relative w-7 h-7 sm:w-12 sm:h-12 md:w-16 md:h-16 bg-black/40 border border-white/20 rounded overflow-hidden flex items-center justify-center shrink-0">
+                    <div class="relative w-6 h-6 sm:w-8 sm:h-8 md:w-9 md:h-9 bg-black/40 border border-white/20 rounded overflow-hidden flex items-center justify-center shrink-0">
                       <img id="moba-portrait-img" src="assets/textures/moba/hero-image/arissa.png" class="w-full h-full object-cover" onerror="this.style.display='none'; document.getElementById('moba-portrait-placeholder').style.display='block';" />
-                      <span id="moba-portrait-placeholder" class="text-base sm:text-2xl hidden">👤</span>
-                      <div id="moba-team-tag" class="absolute bottom-0 left-0 right-0 text-center text-[6px] sm:text-[8px] font-black text-white uppercase py-0 bg-red-600">RED</div>
+                      <span id="moba-portrait-placeholder" class="text-xs sm:text-base hidden">👤</span>
+                      <div id="moba-team-tag" class="absolute bottom-0 left-0 right-0 text-center text-[5.5px] sm:text-[7px] font-black text-white uppercase py-0 bg-red-600 leading-none">RED</div>
                     </div>
 
-                    <!-- HP & MANA BARS (Width strictly preserved: w-20 sm:w-32 md:w-36. Sleek slim height) -->
-                    <div class="w-20 sm:w-32 md:w-36 space-y-0.5 shrink-0 p-0 m-0">
+                    <!-- HP & MANA BARS -->
+                    <div class="w-24 sm:w-36 md:w-44 space-y-0.5 shrink-0 p-0 m-0">
                       <div class="text-[8px] sm:text-[10px] font-black text-slate-100 flex justify-between items-center leading-none">
-                        <span id="moba-hero-name" class="truncate max-w-[46px] sm:max-w-none">Arissa</span>
+                        <span id="moba-hero-name" class="truncate max-w-[55px] sm:max-w-none">Arissa</span>
                         <span class="text-[7px] sm:text-[8px] text-amber-400 font-mono">LVL 1</span>
                       </div>
-                      <!-- HP (Slim Height, width untouched) -->
-                      <div id="moba-hero-hp-container" class="w-full bg-black/70 h-[3.5px] sm:h-[4.5px] rounded-full overflow-hidden border border-emerald-500/30 relative">
+                      <!-- HP -->
+                      <div id="moba-hero-hp-container" class="w-full bg-black/70 h-[4px] sm:h-[6px] rounded-full overflow-hidden border border-emerald-500/30 relative">
                         <div id="moba-hero-hp-bar" class="bg-gradient-to-r from-emerald-500 via-emerald-400 to-green-300 h-full transition-all duration-100" style="width: 100%; box-shadow: 0 0 6px rgba(16, 185, 129, 0.85);"></div>
                         <span id="moba-hero-hp-text" class="hidden">550/550</span>
                       </div>
-                      <!-- MANA (Slim Height, width untouched) -->
-                      <div id="moba-hero-mp-container" class="w-full bg-black/70 h-[2.5px] sm:h-[3.5px] rounded-full overflow-hidden border border-blue-500/30 relative">
+                      <!-- MANA -->
+                      <div id="moba-hero-mp-container" class="w-full bg-black/70 h-[3px] sm:h-[4.5px] rounded-full overflow-hidden border border-blue-500/30 relative">
                         <div id="moba-hero-mp-bar" class="bg-gradient-to-r from-blue-600 to-sky-400 h-full transition-all duration-100" style="width: 100%; box-shadow: 0 0 6px rgba(59, 130, 246, 0.85);"></div>
                         <span id="moba-hero-mp-text" class="hidden">240/240</span>
                       </div>
                     </div>
                   </div>
 
-                  <!-- SPELLS GRID (4x1) - Directly adjacent to stats, using space for larger cells -->
-                  <div class="flex items-center space-x-0.5 sm:space-x-1 shrink-0 p-0 m-0">
-                    <!-- Spell Q -->
-                    <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-q"
-                         onmouseenter="app.showMobaHudTooltip('[Q / 1]: Area Blast - Deals heavy magical area damage to nearby enemies and creeps (Cost: 40 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('[Q / 1]: Area Blast - Deals heavy magical area damage to nearby enemies and creeps (Cost: 40 Mana)')" ontouchend="app.hideMobaHudTooltip()">
-                      <div id="moba-spell-q-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-1.png');"></div>
-                      <div class="relative flex justify-between items-center w-full leading-none">
-                        <span class="bg-black/70 px-0.5 rounded text-[7px] sm:text-[9.5px] md:text-xs font-black text-slate-200 font-mono" title="Keyboard shortcut: 1 or Q">Q/1</span>
-                        <span class="text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-q-cost">40</span>
-                      </div>
-                      <div class="relative text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-q-name">Blast</div>
-                      <div id="moba-spell-q-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">3s</div>
-                    </div>
-
-                    <!-- Spell W -->
-                    <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-w"
-                         onmouseenter="app.showMobaHudTooltip('[W / 2]: Blink Dash - Instantly teleports the hero toward the cursor target location (Cost: 50 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('[W / 2]: Blink Dash - Instantly teleports the hero toward the cursor target location (Cost: 50 Mana)')" ontouchend="app.hideMobaHudTooltip()">
-                      <div id="moba-spell-w-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-2.png');"></div>
-                      <div class="relative flex justify-between items-center w-full leading-none">
-                        <span class="bg-black/70 px-0.5 rounded text-[7px] sm:text-[9.5px] md:text-xs font-black text-slate-200 font-mono" title="Keyboard shortcut: 2 or W">W/2</span>
-                        <span class="text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-w-cost">50</span>
-                      </div>
-                      <div class="relative text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-w-name">Blink</div>
-                      <div id="moba-spell-w-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">6s</div>
-                    </div>
-
-                    <!-- Spell E -->
-                    <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-e"
-                         onmouseenter="app.showMobaHudTooltip('[E / 3]: Barrier Field - Creates a temporary shield that absorbs incoming damage (Cost: 60 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('[E / 3]: Barrier Field - Creates a temporary shield that absorbs incoming damage (Cost: 60 Mana)')" ontouchend="app.hideMobaHudTooltip()">
-                      <div id="moba-spell-e-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-3.png');"></div>
-                      <div class="relative flex justify-between items-center w-full leading-none">
-                        <span class="bg-black/70 px-0.5 rounded text-[7px] sm:text-[9.5px] md:text-xs font-black text-slate-200 font-mono" title="Keyboard shortcut: 3 or E">E/3</span>
-                        <span class="text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-e-cost">60</span>
-                      </div>
-                      <div class="relative text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-e-name">Barrier</div>
-                      <div id="moba-spell-e-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">8s</div>
-                    </div>
-
-                    <!-- Spell R (Ultimate) -->
-                    <div class="moba-spell-slot relative w-8 h-8 sm:w-14 sm:h-14 md:w-18 md:h-18 bg-black/40 border-2 border-red-500/60 rounded-md overflow-hidden cursor-pointer hover:border-red-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-r"
-                         onmouseenter="app.showMobaHudTooltip('[R / 4]: Hollow Eclipse Ultimate - Massive devastating ultimate slow and extreme area damage (Cost: 110 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('[R / 4]: Hollow Eclipse Ultimate - Massive devastating ultimate slow and extreme area damage (Cost: 110 Mana)')" ontouchend="app.hideMobaHudTooltip()">
-                      <div id="moba-spell-r-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-4.png');"></div>
-                      <div class="relative flex justify-between items-center w-full leading-none">
-                        <span class="bg-red-900/90 px-0.5 rounded text-[7px] sm:text-[9.5px] md:text-xs font-black text-red-200 font-mono" title="Keyboard shortcut: 4 or R">R/4</span>
-                        <span class="text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-r-cost">110</span>
-                      </div>
-                      <div class="relative text-[7px] sm:text-[8.5px] md:text-[10px] font-bold text-red-400 truncate bg-black/70 px-0.5 rounded text-center w-full font-black animate-pulse leading-tight" id="moba-spell-r-name">ECLIPSE</div>
-                      <div id="moba-spell-r-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[10px] sm:text-[13px] md:text-sm font-mono font-bold text-amber-400" style="display: none;">20s</div>
-                    </div>
-                  </div>
-
-                  <!-- HERO PROPS / REAL-TIME ATTRIBUTES (Positioned in empty space after last magic) -->
-                  <div id="moba-hero-attributes" class="flex flex-col justify-center pl-1 sm:pl-2 h-full shrink-0 select-none m-0 border-l border-white/20">
-                    <span class="text-amber-400 font-extrabold uppercase tracking-wider text-[6px] sm:text-[7.5px] hidden sm:block mb-0.5">Hero Props</span>
-                    <div class="grid grid-cols-2 gap-x-1 sm:gap-x-1.5 gap-y-0.5 text-[6.5px] sm:text-[8px] md:text-[9px] font-mono text-slate-300 font-extrabold leading-none">
+                  <!-- HERO PROPS / REAL-TIME ATTRIBUTES -->
+                  <div id="moba-hero-attributes" class="flex items-center space-x-1.5 sm:space-x-2 shrink-0 select-none m-0 px-1 sm:px-2 border-l border-r border-white/10">
+                    <span class="text-amber-400 font-extrabold uppercase tracking-wider text-[6.5px] sm:text-[8px] hidden md:inline">Stats:</span>
+                    <div class="flex items-center space-x-1.5 sm:space-x-2.5 text-[7px] sm:text-[8.5px] md:text-[9.5px] font-mono text-slate-300 font-extrabold leading-none">
                       <div class="flex items-center space-x-0.5" title="Attack Power (⚔️ ATK)">
                         <span>⚔️</span>
                         <span id="moba-stat-atk" class="text-rose-400 font-black">55</span>
@@ -1193,37 +1142,88 @@
                     </div>
                   </div>
 
-                  <!-- Dedicated Footer Description Box: Hidden on mobile to free maximum space for larger cells; handled by floating popup -->
-                  <div id="moba-footer-description" class="hidden" style="display: none !important;">
-                    <div id="moba-footer-description-content">Hover over an ability or item to view details.</div>
-                  </div>
-                </div>
-
-                <!-- RIGHT CLUSTER: INVENTORY GRID (4x2) & GOLD & MERGE - Docked with ml-auto to ensure all 8 cells are 100% visible -->
-                <div id="moba-footer-right-group" class="flex items-center space-x-1 sm:space-x-1.5 justify-end shrink-0 ml-auto p-0 m-0">
                   <!-- Gold & Merge Action -->
-                  <div class="flex flex-col items-end space-y-0.5 shrink-0 p-0 m-0">
-                    <div class="flex items-center space-x-0.5 shrink-0 p-0 m-0">
-                      <span class="text-amber-400 text-[9.5px] sm:text-xs md:text-sm font-black font-mono" id="moba-gold">600</span>
-                      <span class="text-amber-400 text-[8.5px] sm:text-xs">🪙</span>
+                  <div id="moba-gold-container" class="flex items-center space-x-1.5 sm:space-x-2 shrink-0 ml-auto p-0 m-0">
+                    <div class="flex items-center space-x-0.5 shrink-0 p-0 m-0 bg-black/40 px-1.5 py-0.5 rounded border border-amber-500/20">
+                      <span class="text-amber-400 text-[10px] sm:text-xs md:text-sm font-black font-mono" id="moba-gold">600</span>
+                      <span class="text-amber-400 text-[9px] sm:text-xs">🪙</span>
                     </div>
                     <!-- Shiny 3-Item Merge Button (Pulses when 3 mergeable items exist) -->
                     <button id="moba-btn-merge" class="hidden items-center space-x-0.5 bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 border border-yellow-300 text-slate-950 font-black px-1.5 py-0.5 rounded text-[7.5px] sm:text-[9px] cursor-pointer animate-pulse shadow-[0_0_8px_rgba(251,191,36,0.8)] active:scale-95 transition-all" onclick="app.tryMergeInventoryItems()" title="Merge 3 identical items into Legendary Artifact!">
                       <span>✨ MERGE</span>
                     </button>
                   </div>
+                </div>
 
-                  <!-- 4x2 Grid (All 8 cells clearly visible, zero cut-off, expanded inventory) -->
-                  <div id="moba-inventory-grid" class="grid grid-cols-4 grid-rows-2 gap-[1px] bg-black/40 border border-white/10 p-[0.5px] rounded shrink-0 m-0">
-                    <div class="w-5 h-5 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-xs text-slate-500 cursor-pointer">1</div>
-                    <div class="w-5 h-5 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-xs text-slate-500 cursor-pointer">2</div>
-                    <div class="w-5 h-5 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-xs text-slate-500 cursor-pointer">3</div>
-                    <div class="w-5 h-5 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-xs text-slate-500 cursor-pointer">4</div>
-                    <div class="w-5 h-5 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-xs text-slate-500 cursor-pointer">5</div>
-                    <div class="w-5 h-5 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-xs text-slate-500 cursor-pointer">6</div>
-                    <div class="w-5 h-5 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-xs text-slate-500 cursor-pointer">7</div>
-                    <div class="w-5 h-5 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[7px] sm:text-xs text-slate-500 cursor-pointer">8</div>
+                <!-- BOTTOM TIER: COMBAT SPELLS (LEFT) & INVENTORY ITEMS (RIGHT) -->
+                <div id="moba-hud-bottom-tier" class="w-full flex items-center justify-between gap-1 sm:gap-3 shrink-0">
+                  <!-- SPELLS GRID (4x1) -->
+                  <div id="moba-spells-container" class="flex items-center space-x-1 sm:space-x-2 shrink-0 p-0 m-0">
+                    <!-- Spell Q -->
+                    <div class="moba-spell-slot relative w-11 h-11 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-q"
+                         onmouseenter="app.showMobaHudTooltip('[Q / 1]: Area Blast - Deals heavy magical area damage to nearby enemies and creeps (Cost: 40 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('[Q / 1]: Area Blast - Deals heavy magical area damage to nearby enemies and creeps (Cost: 40 Mana)')" ontouchend="app.hideMobaHudTooltip()">
+                      <div id="moba-spell-q-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-1.png');"></div>
+                      <div class="relative flex justify-between items-center w-full leading-none">
+                        <span class="bg-black/70 px-0.5 rounded text-[8px] sm:text-[10px] md:text-xs font-black text-slate-200 font-mono" title="Keyboard shortcut: 1 or Q">Q/1</span>
+                        <span class="text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-q-cost">40</span>
+                      </div>
+                      <div class="relative text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-q-name">Blast</div>
+                      <div id="moba-spell-q-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[12px] sm:text-[14px] md:text-base font-mono font-bold text-amber-400" style="display: none;">3s</div>
+                    </div>
+
+                    <!-- Spell W -->
+                    <div class="moba-spell-slot relative w-11 h-11 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-w"
+                         onmouseenter="app.showMobaHudTooltip('[W / 2]: Blink Dash - Instantly teleports the hero toward the cursor target location (Cost: 50 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('[W / 2]: Blink Dash - Instantly teleports the hero toward the cursor target location (Cost: 50 Mana)')" ontouchend="app.hideMobaHudTooltip()">
+                      <div id="moba-spell-w-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-2.png');"></div>
+                      <div class="relative flex justify-between items-center w-full leading-none">
+                        <span class="bg-black/70 px-0.5 rounded text-[8px] sm:text-[10px] md:text-xs font-black text-slate-200 font-mono" title="Keyboard shortcut: 2 or W">W/2</span>
+                        <span class="text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-w-cost">50</span>
+                      </div>
+                      <div class="relative text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-w-name">Blink</div>
+                      <div id="moba-spell-w-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[12px] sm:text-[14px] md:text-base font-mono font-bold text-amber-400" style="display: none;">6s</div>
+                    </div>
+
+                    <!-- Spell E -->
+                    <div class="moba-spell-slot relative w-11 h-11 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-e"
+                         onmouseenter="app.showMobaHudTooltip('[E / 3]: Barrier Field - Creates a temporary shield that absorbs incoming damage (Cost: 60 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('[E / 3]: Barrier Field - Creates a temporary shield that absorbs incoming damage (Cost: 60 Mana)')" ontouchend="app.hideMobaHudTooltip()">
+                      <div id="moba-spell-e-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-3.png');"></div>
+                      <div class="relative flex justify-between items-center w-full leading-none">
+                        <span class="bg-black/70 px-0.5 rounded text-[8px] sm:text-[10px] md:text-xs font-black text-slate-200 font-mono" title="Keyboard shortcut: 3 or E">E/3</span>
+                        <span class="text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-e-cost">60</span>
+                      </div>
+                      <div class="relative text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-e-name">Barrier</div>
+                      <div id="moba-spell-e-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[12px] sm:text-[14px] md:text-base font-mono font-bold text-amber-400" style="display: none;">8s</div>
+                    </div>
+
+                    <!-- Spell R (Ultimate) -->
+                    <div class="moba-spell-slot relative w-11 h-11 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-black/40 border-2 border-red-500/60 rounded-md overflow-hidden cursor-pointer hover:border-red-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-r"
+                         onmouseenter="app.showMobaHudTooltip('[R / 4]: Hollow Eclipse Ultimate - Massive devastating ultimate slow and extreme area damage (Cost: 110 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('[R / 4]: Hollow Eclipse Ultimate - Massive devastating ultimate slow and extreme area damage (Cost: 110 Mana)')" ontouchend="app.hideMobaHudTooltip()">
+                      <div id="moba-spell-r-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-4.png');"></div>
+                      <div class="relative flex justify-between items-center w-full leading-none">
+                        <span class="bg-red-900/90 px-0.5 rounded text-[8px] sm:text-[10px] md:text-xs font-black text-red-200 font-mono" title="Keyboard shortcut: 4 or R">R/4</span>
+                        <span class="text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-r-cost">110</span>
+                      </div>
+                      <div class="relative text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-red-400 truncate bg-black/70 px-0.5 rounded text-center w-full font-black animate-pulse leading-tight" id="moba-spell-r-name">ECLIPSE</div>
+                      <div id="moba-spell-r-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[12px] sm:text-[14px] md:text-base font-mono font-bold text-amber-400" style="display: none;">20s</div>
+                    </div>
                   </div>
+
+                  <!-- INVENTORY GRID (3x2, 6 Slots) -->
+                  <div id="moba-inventory-container" class="flex items-center shrink-0 ml-auto p-0 m-0">
+                    <div id="moba-inventory-grid" class="grid grid-cols-3 grid-rows-2 gap-[2px] bg-black/40 border border-white/10 p-[1.5px] rounded shrink-0 m-0">
+                      <div class="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">1</div>
+                      <div class="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">2</div>
+                      <div class="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">3</div>
+                      <div class="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">4</div>
+                      <div class="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">5</div>
+                      <div class="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-black/50 border border-white/10 rounded flex items-center justify-center text-[8px] sm:text-xs text-slate-500 cursor-pointer">6</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Hidden mobile description fallback -->
+                <div id="moba-footer-description" class="hidden" style="display: none !important;">
+                  <div id="moba-footer-description-content">Hover over an ability or item to view details.</div>
                 </div>
               </div>
             </div>

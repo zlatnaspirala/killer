@@ -391,6 +391,561 @@ export class ProceduralGeometryFactory {
   }
 
   /**
+   * Generates a complex cluster of sharp, dark-looking gothic branches (replacing leafy foliage canopies)
+   * Featuring jagged forks, crooked elbows, thorny secondary spurs, and needle-sharp branch tips.
+   */
+  static createSharpDarkBranches(seed = 42) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    // Central twisted base collar
+    const collarPts = [
+      [0.0, 0.0, 0.0],
+      [0.02, 0.35, -0.01],
+      [-0.03, 0.72, 0.02],
+      [0.01, 1.05, -0.02]
+    ];
+    const collarRadii = [0.17, 0.14, 0.11, 0.095];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, collarPts, collarRadii, 6);
+
+    // 1. Sharp Spreading Claw Limb 1 (North-East)
+    const b1Pts = [
+      [0.01, 1.05, -0.02],
+      [0.38, 1.38, 0.24],
+      [0.85, 1.82, 0.45],
+      [1.32, 2.36, 0.58],
+      [1.78, 2.98, 0.68],
+      [2.15, 3.52, 0.74]
+    ];
+    const b1Radii = [0.082, 0.060, 0.042, 0.026, 0.014, 0.005]; // sharp needle tip
+    this.addTubeBranch(positions, normals, uvs, barys, indices, b1Pts, b1Radii, 6);
+
+    // Sub-thorns on Limb 1
+    const t1a = [
+      [0.38, 1.38, 0.24],
+      [0.62, 1.72, 0.08],
+      [0.86, 2.08, -0.06]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, t1a, [0.038, 0.020, 0.005], 5);
+
+    const t1b = [
+      [0.85, 1.82, 0.45],
+      [1.12, 2.12, 0.72],
+      [1.38, 2.38, 1.02]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, t1b, [0.032, 0.016, 0.005], 5);
+
+    const t1c = [
+      [1.32, 2.36, 0.58],
+      [1.52, 2.75, 0.42],
+      [1.68, 3.12, 0.28]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, t1c, [0.024, 0.012, 0.005], 5);
+
+    // 2. Sharp Spreading Claw Limb 2 (North-West)
+    const b2Pts = [
+      [0.01, 1.05, -0.02],
+      [-0.42, 1.40, 0.28],
+      [-0.92, 1.88, 0.62],
+      [-1.40, 2.44, 0.92],
+      [-1.82, 3.05, 1.18],
+      [-2.20, 3.58, 1.35]
+    ];
+    const b2Radii = [0.080, 0.058, 0.040, 0.024, 0.013, 0.005];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, b2Pts, b2Radii, 6);
+
+    // Sub-thorns on Limb 2
+    const t2a = [
+      [-0.42, 1.40, 0.28],
+      [-0.68, 1.76, 0.12],
+      [-0.92, 2.15, -0.05]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, t2a, [0.036, 0.018, 0.005], 5);
+
+    const t2b = [
+      [-0.92, 1.88, 0.62],
+      [-1.28, 2.12, 0.44],
+      [-1.62, 2.32, 0.26]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, t2b, [0.030, 0.015, 0.005], 5);
+
+    // 3. Sharp Spreading Claw Limb 3 (South-West)
+    const b3Pts = [
+      [0.01, 1.05, -0.02],
+      [-0.38, 1.35, -0.36],
+      [-0.84, 1.84, -0.74],
+      [-1.28, 2.38, -1.08],
+      [-1.70, 2.96, -1.36],
+      [-2.08, 3.48, -1.55]
+    ];
+    const b3Radii = [0.078, 0.056, 0.038, 0.022, 0.012, 0.005];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, b3Pts, b3Radii, 6);
+
+    // Sub-thorns on Limb 3
+    const t3a = [
+      [-0.38, 1.35, -0.36],
+      [-0.66, 1.68, -0.18],
+      [-0.92, 1.98, -0.04]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, t3a, [0.034, 0.017, 0.005], 5);
+
+    const t3b = [
+      [-0.84, 1.84, -0.74],
+      [-1.15, 2.15, -0.52],
+      [-1.42, 2.42, -0.32]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, t3b, [0.028, 0.014, 0.005], 5);
+
+    // 4. Sharp Spreading Claw Limb 4 (South-East)
+    const b4Pts = [
+      [0.01, 1.05, -0.02],
+      [0.36, 1.36, -0.38],
+      [0.82, 1.85, -0.78],
+      [1.25, 2.42, -1.14],
+      [1.65, 3.02, -1.42],
+      [2.02, 3.55, -1.62]
+    ];
+    const b4Radii = [0.076, 0.054, 0.036, 0.021, 0.012, 0.005];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, b4Pts, b4Radii, 6);
+
+    // Sub-thorns on Limb 4
+    const t4a = [
+      [0.82, 1.85, -0.78],
+      [1.12, 2.14, -0.56],
+      [1.38, 2.38, -0.38]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, t4a, [0.030, 0.015, 0.005], 5);
+
+    // 5. Crown Sky-Piercing Jagged Needles (Twin Forks + Center Spire)
+    const spireAPts = [
+      [0.01, 1.05, -0.02],
+      [-0.12, 1.72, 0.08],
+      [-0.18, 2.45, 0.16],
+      [-0.24, 3.20, 0.22],
+      [-0.28, 3.92, 0.28],
+      [-0.32, 4.55, 0.32]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, spireAPts, [0.082, 0.058, 0.040, 0.024, 0.012, 0.005], 6);
+
+    const spireBPts = [
+      [0.01, 1.05, -0.02],
+      [0.14, 1.75, -0.06],
+      [0.22, 2.48, -0.12],
+      [0.28, 3.25, -0.18],
+      [0.34, 3.98, -0.22],
+      [0.38, 4.62, -0.26]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, spireBPts, [0.080, 0.056, 0.038, 0.022, 0.011, 0.005], 6);
+
+    const spireCPts = [
+      [0.01, 1.05, -0.02],
+      [0.02, 1.85, 0.02],
+      [0.04, 2.70, 0.01],
+      [0.05, 3.55, -0.01],
+      [0.06, 4.38, -0.02],
+      [0.08, 5.08, -0.03]
+    ];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, spireCPts, [0.075, 0.050, 0.032, 0.018, 0.009, 0.004], 6);
+
+    const branchTips = [
+      [2.15, 3.52, 0.74],
+      [-2.20, 3.58, 1.35],
+      [-2.08, 3.48, -1.55],
+      [2.02, 3.55, -1.62],
+      [-0.32, 4.55, 0.32],
+      [0.38, 4.62, -0.26],
+      [0.08, 5.08, -0.03]
+    ];
+
+    return { positions, normals, uvs, barys, indices, branchTips };
+  }
+
+  /**
+   * Generates a tall, gothic spire of twisted sharp dagger branches (replacing pine cone canopies)
+   */
+  static createSharpSpireBranches(seed = 88) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    // Central twisted column
+    const spinePts = [
+      [0.0, 0.0, 0.0],
+      [0.02, 0.65, 0.01],
+      [-0.02, 1.35, -0.02],
+      [0.03, 2.10, 0.02],
+      [-0.01, 2.90, -0.01],
+      [0.02, 3.75, 0.01],
+      [0.0, 4.65, 0.0],
+      [0.01, 5.45, 0.0]
+    ];
+    const spineRadii = [0.18, 0.15, 0.12, 0.095, 0.072, 0.050, 0.028, 0.006];
+    this.addTubeBranch(positions, normals, uvs, barys, indices, spinePts, spineRadii, 6);
+
+    // Radiating sharp dagger limbs in staggered spiral tiers
+    const tierCount = 8;
+    for (let t = 0; t < tierCount; t++) {
+      const frac = (t + 1) / (tierCount + 1);
+      const yBase = frac * 4.2 + 0.3;
+      const angle = t * 2.39996 + 0.4; // golden ratio angle for organic spiral distribution
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      const length = (1.0 - frac * 0.55) * 1.55; // lower limbs are longer, upper are shorter
+      const upAngle = 0.35 + frac * 0.35; // limbs curve upward
+
+      const limbPts = [
+        [cosA * 0.08, yBase, sinA * 0.08],
+        [cosA * length * 0.45, yBase + 0.22, sinA * length * 0.45],
+        [cosA * length * 0.82, yBase + length * upAngle, sinA * length * 0.82],
+        [cosA * length, yBase + length * upAngle + 0.35, sinA * length]
+      ];
+      const limbRadii = [0.065 * (1.0 - frac * 0.4), 0.042 * (1.0 - frac * 0.4), 0.020, 0.005];
+      this.addTubeBranch(positions, normals, uvs, barys, indices, limbPts, limbRadii, 5);
+
+      // Side spur
+      if (t % 2 === 0) {
+        const spurAngle = angle + 0.7;
+        const sCos = Math.cos(spurAngle);
+        const sSin = Math.sin(spurAngle);
+        const spurPts = [
+          limbPts[1],
+          [limbPts[1][0] + sCos * 0.35, limbPts[1][1] + 0.28, limbPts[1][2] + sSin * 0.35],
+          [limbPts[1][0] + sCos * 0.65, limbPts[1][1] + 0.55, limbPts[1][2] + sSin * 0.65]
+        ];
+        this.addTubeBranch(positions, normals, uvs, barys, indices, spurPts, [0.028, 0.015, 0.004], 4);
+      }
+    }
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates a 3D procedural raven in soaring/flight pose (Corvus corax)
+   * With sleek body, throat hackles, hooked sharp beak, wedge-shaped diamond tail, and spread wings with fingered primaries.
+   */
+  static createRavenFlyingMesh() {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    // 1. Sleek Aerodynamic Torso (Ellipsoidal rings along Z axis)
+    const torsoZ = [-0.35, -0.22, -0.06, 0.12, 0.28];
+    const torsoW = [0.05,  0.13,  0.17,  0.15, 0.09]; // X radius
+    const torsoH = [0.04,  0.10,  0.14,  0.12, 0.08]; // Y radius
+    const torsoY = [-0.02, -0.01,  0.0,   0.02, 0.05]; // Y center offset
+
+    const torsoRingVerts = 8;
+    const baseTorsoIdx = positions.length / 3;
+
+    for (let i = 0; i < torsoZ.length; i++) {
+      const z = torsoZ[i];
+      const rx = torsoW[i];
+      const ry = torsoH[i];
+      const cy = torsoY[i];
+      const v = i / (torsoZ.length - 1);
+
+      for (let s = 0; s <= torsoRingVerts; s++) {
+        const u = s / torsoRingVerts;
+        const theta = u * Math.PI * 2;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
+
+        const px = cosT * rx;
+        const py = cy + sinT * ry;
+        const pz = z;
+
+        positions.push(px, py, pz);
+        const nx = cosT / (rx || 1);
+        const ny = sinT / (ry || 1);
+        const nz = (i - 2) * 0.3;
+        const nlen = Math.hypot(nx, ny, nz) || 1;
+        normals.push(nx / nlen, ny / nlen, nz / nlen);
+        uvs.push(u, v);
+        barys.push((s + i) % 3 === 0 ? 1 : 0, (s + i) % 3 === 1 ? 1 : 0, (s + i) % 3 === 2 ? 1 : 0);
+      }
+    }
+
+    const stride = torsoRingVerts + 1;
+    for (let i = 0; i < torsoZ.length - 1; i++) {
+      for (let s = 0; s < torsoRingVerts; s++) {
+        const i0 = baseTorsoIdx + i * stride + s;
+        const i1 = i0 + 1;
+        const i2 = baseTorsoIdx + (i + 1) * stride + s;
+        const i3 = i2 + 1;
+        indices.push(i0, i2, i1);
+        indices.push(i1, i2, i3);
+      }
+    }
+
+    // 2. Head & Throat Hackles (lifted forward from torso)
+    const headZ = [0.28, 0.36, 0.44, 0.49];
+    const headR = [0.08, 0.09, 0.075, 0.045];
+    const headY = [0.05, 0.09, 0.12, 0.12];
+    const baseHeadIdx = positions.length / 3;
+
+    for (let i = 0; i < headZ.length; i++) {
+      const z = headZ[i];
+      const r = headR[i];
+      const cy = headY[i];
+      const v = i / (headZ.length - 1);
+
+      for (let s = 0; s <= 6; s++) {
+        const u = s / 6;
+        const theta = u * Math.PI * 2;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
+        // throat hackles flare slightly downward at bottom of head
+        const rEff = (sinT < -0.3 && i === 1) ? r * 1.3 : r;
+
+        positions.push(cosT * rEff, cy + sinT * rEff, z);
+        const nlen = Math.hypot(cosT, sinT, 0.2) || 1;
+        normals.push(cosT / nlen, sinT / nlen, 0.2 / nlen);
+        uvs.push(u, v);
+        barys.push((s + i) % 3 === 0 ? 1 : 0, (s + i) % 3 === 1 ? 1 : 0, (s + i) % 3 === 2 ? 1 : 0);
+      }
+    }
+    const hStride = 7;
+    for (let i = 0; i < headZ.length - 1; i++) {
+      for (let s = 0; s < 6; s++) {
+        const i0 = baseHeadIdx + i * hStride + s;
+        const i1 = i0 + 1;
+        const i2 = baseHeadIdx + (i + 1) * hStride + s;
+        const i3 = i2 + 1;
+        indices.push(i0, i2, i1);
+        indices.push(i1, i2, i3);
+      }
+    }
+
+    // 3. Formidable Curved Sharp Beak
+    const beakBase = positions.length / 3;
+    positions.push(-0.035, 0.11, 0.49); normals.push(-0.7, 0.3, 0.6); uvs.push(0, 0); barys.push(1, 0, 0);
+    positions.push( 0.035, 0.11, 0.49); normals.push( 0.7, 0.3, 0.6); uvs.push(1, 0); barys.push(0, 1, 0);
+    positions.push( 0.0,   0.14, 0.49); normals.push( 0.0, 0.9, 0.4); uvs.push(0.5, 0); barys.push(0, 0, 1);
+    positions.push( 0.0,   0.08, 0.49); normals.push( 0.0,-0.9, 0.4); uvs.push(0.5, 0); barys.push(1, 0, 0);
+    // Beak tip (sharp downward hook at z = 0.72)
+    positions.push( 0.0,   0.065, 0.72); normals.push( 0.0, -0.4, 0.9); uvs.push(0.5, 1); barys.push(0, 1, 0);
+
+    indices.push(beakBase + 2, beakBase + 0, beakBase + 4);
+    indices.push(beakBase + 1, beakBase + 2, beakBase + 4);
+    indices.push(beakBase + 3, beakBase + 1, beakBase + 4);
+    indices.push(beakBase + 0, beakBase + 3, beakBase + 4);
+
+    // 4. Characteristic Diamond / Wedge-Shaped Tail
+    const tailBase = positions.length / 3;
+    positions.push( 0.0,   0.0,  -0.32); normals.push(0, 1, 0); uvs.push(0.5, 0); barys.push(1, 0, 0);
+    positions.push(-0.16,  0.0,  -0.52); normals.push(0, 1, 0); uvs.push(0.0, 0.5); barys.push(0, 1, 0);
+    positions.push( 0.16,  0.0,  -0.52); normals.push(0, 1, 0); uvs.push(1.0, 0.5); barys.push(0, 0, 1);
+    positions.push( 0.0,  -0.02, -0.74); normals.push(0, 1, 0); uvs.push(0.5, 1.0); barys.push(1, 0, 0);
+    positions.push( 0.0,  -0.01, -0.32); normals.push(0, -1, 0); uvs.push(0.5, 0); barys.push(0, 1, 0);
+    positions.push(-0.16, -0.01, -0.52); normals.push(0, -1, 0); uvs.push(0.0, 0.5); barys.push(0, 0, 1);
+    positions.push( 0.16, -0.01, -0.52); normals.push(0, -1, 0); uvs.push(1.0, 0.5); barys.push(1, 0, 0);
+    positions.push( 0.0,  -0.03, -0.74); normals.push(0, -1, 0); uvs.push(0.5, 1.0); barys.push(0, 1, 0);
+
+    indices.push(tailBase + 0, tailBase + 1, tailBase + 2);
+    indices.push(tailBase + 1, tailBase + 3, tailBase + 2);
+    indices.push(tailBase + 4, tailBase + 6, tailBase + 5);
+    indices.push(tailBase + 5, tailBase + 6, tailBase + 7);
+
+    // 5. Broad Spread Wings with Primary Feather Tines (Left & Right)
+    const lWingBase = positions.length / 3;
+    const wingVertsLeft = [
+      [-0.10, 0.02, 0.15], [-0.10, 0.01, -0.10],
+      [-0.55, 0.06, 0.12], [-0.60, 0.03, -0.16],
+      [-1.05, 0.09, 0.06], [-1.15, 0.04, -0.18],
+      [-1.40, 0.10,  0.02],
+      [-1.48, 0.08, -0.07],
+      [-1.42, 0.06, -0.16],
+      [-1.30, 0.04, -0.24]
+    ];
+    for (let p of wingVertsLeft) {
+      positions.push(p[0], p[1], p[2]);
+      normals.push(0.1, 0.98, -0.05);
+      uvs.push(Math.abs(p[0]) / 1.5, (p[2] + 0.25) / 0.4);
+      barys.push(1, 0, 0);
+    }
+    indices.push(lWingBase + 0, lWingBase + 2, lWingBase + 1);
+    indices.push(lWingBase + 1, lWingBase + 2, lWingBase + 3);
+    indices.push(lWingBase + 2, lWingBase + 4, lWingBase + 3);
+    indices.push(lWingBase + 3, lWingBase + 4, lWingBase + 5);
+    indices.push(lWingBase + 4, lWingBase + 6, lWingBase + 7);
+    indices.push(lWingBase + 4, lWingBase + 7, lWingBase + 5);
+    indices.push(lWingBase + 5, lWingBase + 7, lWingBase + 8);
+    indices.push(lWingBase + 5, lWingBase + 8, lWingBase + 9);
+
+    const rWingBase = positions.length / 3;
+    for (let p of wingVertsLeft) {
+      positions.push(-p[0], p[1], p[2]);
+      normals.push(-0.1, 0.98, -0.05);
+      uvs.push(Math.abs(p[0]) / 1.5, (p[2] + 0.25) / 0.4);
+      barys.push(0, 1, 0);
+    }
+    indices.push(rWingBase + 0, rWingBase + 1, rWingBase + 2);
+    indices.push(rWingBase + 1, rWingBase + 3, rWingBase + 2);
+    indices.push(rWingBase + 2, rWingBase + 3, rWingBase + 4);
+    indices.push(rWingBase + 3, rWingBase + 5, rWingBase + 4);
+    indices.push(rWingBase + 4, rWingBase + 7, rWingBase + 6);
+    indices.push(rWingBase + 4, rWingBase + 5, rWingBase + 7);
+    indices.push(rWingBase + 5, rWingBase + 8, rWingBase + 7);
+    indices.push(rWingBase + 5, rWingBase + 9, rWingBase + 8);
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates a 3D procedural raven in perched pose (Corvus corax)
+   * With folded wings, standing upright, hooked sharp beak, perched claws, and glossy dark plumage.
+   */
+  static createRavenPerchedMesh() {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    // 1. Upright Tilted Torso (tilted backward ~32 degrees)
+    const torsoRings = [
+      { y: 0.08, z: -0.04, rx: 0.09, rz: 0.11 },
+      { y: 0.18, z: -0.02, rx: 0.13, rz: 0.14 },
+      { y: 0.28, z:  0.03, rx: 0.12, rz: 0.13 },
+      { y: 0.38, z:  0.08, rx: 0.09, rz: 0.10 }
+    ];
+    const baseTorso = positions.length / 3;
+    const ringSegs = 8;
+    for (let i = 0; i < torsoRings.length; i++) {
+      const ring = torsoRings[i];
+      const v = i / (torsoRings.length - 1);
+      for (let s = 0; s <= ringSegs; s++) {
+        const u = s / ringSegs;
+        const theta = u * Math.PI * 2;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
+        const px = cosT * ring.rx;
+        const pz = ring.z + sinT * ring.rz;
+        const py = ring.y;
+        positions.push(px, py, pz);
+        const nlen = Math.hypot(cosT, 0.3, sinT) || 1;
+        normals.push(cosT / nlen, 0.3 / nlen, sinT / nlen);
+        uvs.push(u, v);
+        barys.push((s + i) % 3 === 0 ? 1 : 0, (s + i) % 3 === 1 ? 1 : 0, (s + i) % 3 === 2 ? 1 : 0);
+      }
+    }
+    const tStride = ringSegs + 1;
+    for (let i = 0; i < torsoRings.length - 1; i++) {
+      for (let s = 0; s < ringSegs; s++) {
+        const i0 = baseTorso + i * tStride + s;
+        const i1 = i0 + 1;
+        const i2 = baseTorso + (i + 1) * tStride + s;
+        const i3 = i2 + 1;
+        indices.push(i0, i2, i1);
+        indices.push(i1, i2, i3);
+      }
+    }
+
+    // 2. Alert Lifted Head & Throat Hackles
+    const headRings = [
+      { y: 0.38, z: 0.08, r: 0.085 },
+      { y: 0.44, z: 0.12, r: 0.075 },
+      { y: 0.48, z: 0.15, r: 0.055 }
+    ];
+    const baseHead = positions.length / 3;
+    for (let i = 0; i < headRings.length; i++) {
+      const ring = headRings[i];
+      const v = i / (headRings.length - 1);
+      for (let s = 0; s <= 6; s++) {
+        const u = s / 6;
+        const theta = u * Math.PI * 2;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
+        const rEff = (sinT < -0.2 && i === 1) ? ring.r * 1.25 : ring.r;
+        positions.push(cosT * rEff, ring.y + sinT * rEff * 0.8, ring.z);
+        normals.push(cosT, 0.4, sinT);
+        uvs.push(u, v);
+        barys.push((s + i) % 3 === 0 ? 1 : 0, (s + i) % 3 === 1 ? 1 : 0, (s + i) % 3 === 2 ? 1 : 0);
+      }
+    }
+    const hStride = 7;
+    for (let i = 0; i < headRings.length - 1; i++) {
+      for (let s = 0; s < 6; s++) {
+        const i0 = baseHead + i * hStride + s;
+        const i1 = i0 + 1;
+        const i2 = baseHead + (i + 1) * hStride + s;
+        const i3 = i2 + 1;
+        indices.push(i0, i2, i1);
+        indices.push(i1, i2, i3);
+      }
+    }
+
+    // 3. Sharp Hooked Beak (pointing slightly down)
+    const bBase = positions.length / 3;
+    positions.push(-0.03, 0.48, 0.18); normals.push(-0.7, 0.2, 0.7); uvs.push(0, 0); barys.push(1, 0, 0);
+    positions.push( 0.03, 0.48, 0.18); normals.push( 0.7, 0.2, 0.7); uvs.push(1, 0); barys.push(0, 1, 0);
+    positions.push( 0.0,  0.51, 0.18); normals.push( 0.0, 0.9, 0.4); uvs.push(0.5, 0); barys.push(0, 0, 1);
+    positions.push( 0.0,  0.45, 0.18); normals.push( 0.0,-0.9, 0.4); uvs.push(0.5, 0); barys.push(1, 0, 0);
+    positions.push( 0.0,  0.42, 0.38); normals.push( 0.0, -0.3, 0.95); uvs.push(0.5, 1); barys.push(0, 1, 0);
+
+    indices.push(bBase + 2, bBase + 0, bBase + 4);
+    indices.push(bBase + 1, bBase + 2, bBase + 4);
+    indices.push(bBase + 3, bBase + 1, bBase + 4);
+    indices.push(bBase + 0, bBase + 3, bBase + 4);
+
+    // 4. Folded Wings tucked against flanks
+    const lwBase = positions.length / 3;
+    const lWingFolded = [
+      [-0.10, 0.32,  0.06],
+      [-0.14, 0.22, -0.02],
+      [-0.12, 0.10, -0.15],
+      [-0.04, 0.01, -0.30]
+    ];
+    for (let p of lWingFolded) {
+      positions.push(p[0], p[1], p[2]); normals.push(-0.9, 0.2, -0.3); uvs.push(0, 0); barys.push(1, 0, 0);
+    }
+    indices.push(lwBase + 0, lwBase + 1, lwBase + 2);
+    indices.push(lwBase + 1, lwBase + 3, lwBase + 2);
+
+    const rwBase = positions.length / 3;
+    for (let p of lWingFolded) {
+      positions.push(-p[0], p[1], p[2]); normals.push(0.9, 0.2, -0.3); uvs.push(1, 0); barys.push(0, 1, 0);
+    }
+    indices.push(rwBase + 0, rwBase + 2, rwBase + 1);
+    indices.push(rwBase + 1, rwBase + 2, rwBase + 3);
+
+    // 5. Downward Folded Wedge Tail
+    const tBase = positions.length / 3;
+    positions.push( 0.0,   0.09, -0.12); normals.push(0, 0.3, -0.9); uvs.push(0.5, 0); barys.push(1, 0, 0);
+    positions.push(-0.09,  0.04, -0.26); normals.push(0, 0.3, -0.9); uvs.push(0, 0.5); barys.push(0, 1, 0);
+    positions.push( 0.09,  0.04, -0.26); normals.push(0, 0.3, -0.9); uvs.push(1, 0.5); barys.push(0, 0, 1);
+    positions.push( 0.0,  -0.02, -0.42); normals.push(0, 0.3, -0.9); uvs.push(0.5, 1); barys.push(1, 0, 0);
+    indices.push(tBase + 0, tBase + 1, tBase + 2);
+    indices.push(tBase + 1, tBase + 3, tBase + 2);
+
+    // 6. Clutching Talons / Feet (resting on branch or stone at y = 0.0)
+    const clawBase = positions.length / 3;
+    positions.push(-0.05, 0.08, -0.01); normals.push(0, 1, 0); uvs.push(0, 0); barys.push(1, 0, 0);
+    positions.push(-0.07, 0.00,  0.08); normals.push(0, 1, 0); uvs.push(0, 1); barys.push(0, 1, 0);
+    positions.push(-0.03, 0.00,  0.09); normals.push(0, 1, 0); uvs.push(1, 1); barys.push(0, 0, 1);
+    positions.push(-0.05, 0.00, -0.06); normals.push(0, 1, 0); uvs.push(0.5, 0); barys.push(1, 0, 0);
+
+    positions.push( 0.05, 0.08, -0.01); normals.push(0, 1, 0); uvs.push(0, 0); barys.push(0, 1, 0);
+    positions.push( 0.07, 0.00,  0.08); normals.push(0, 1, 0); uvs.push(0, 1); barys.push(0, 0, 1);
+    positions.push( 0.03, 0.00,  0.09); normals.push(0, 1, 0); uvs.push(1, 1); barys.push(1, 0, 0);
+    positions.push( 0.05, 0.00, -0.06); normals.push(0, 1, 0); uvs.push(0.5, 0); barys.push(0, 1, 0);
+
+    indices.push(clawBase + 0, clawBase + 1, clawBase + 2);
+    indices.push(clawBase + 0, clawBase + 2, clawBase + 3);
+    indices.push(clawBase + 4, clawBase + 6, clawBase + 5);
+    indices.push(clawBase + 4, clawBase + 7, clawBase + 6);
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
    * Generates a multi-faceted rugged boulder geometry
    */
   static createBoulder(radius = 1.0, seed = 77) {
@@ -1884,6 +2439,7 @@ export class ProceduralForestLayoutEngine {
     this.waterLilies = [];
     this.wildFlowers = [];
     this.frogs = [];
+    this.ravens = [];
     this.towers = [];
     this.lanePaths = {
       top: [],
@@ -2069,6 +2625,7 @@ export class ProceduralForestLayoutEngine {
     this.boulders = [];
     this.bushes = [];
     this.grass = [];
+    this.ravens = [];
 
     const rng = new PRNG(998877);
     const treeTypes = ['oak', 'pine', 'willow', 'ancient_spire'];
@@ -2116,33 +2673,33 @@ export class ProceduralForestLayoutEngine {
         const heightScale = rng.range(0.9, 1.3);
         const rotY = rng.range(0, Math.PI * 2);
 
-        // Natural forest foliage palette variations
+        // Sharp, dark gothic branch palette variations (replacing green leaf canopies)
         const foliagePalettes = {
           oak: [
-            [0.12, 0.48, 0.18], // Lush emerald
-            [0.18, 0.55, 0.22], // Radiant canopy
-            [0.08, 0.38, 0.12]  // Deep hollow green
+            [0.08, 0.07, 0.08], // Charred midnight black
+            [0.11, 0.09, 0.09], // Deep dark umber bark
+            [0.13, 0.10, 0.11]  // Weathered dark gothic wood
           ],
           pine: [
-            [0.06, 0.35, 0.16], // Dark pine needle
-            [0.09, 0.42, 0.20], // Forest evergreen
-            [0.04, 0.28, 0.14]  // Deep shadow conifer
+            [0.06, 0.06, 0.07], // Obsidian dark spike
+            [0.09, 0.08, 0.08], // Dark scorched wood
+            [0.07, 0.06, 0.07]  // Deep charcoal
           ],
           willow: [
-            [0.22, 0.42, 0.20], // Weeping moss
-            [0.45, 0.15, 0.18], // Hollow blood willow (crimson fronds)
-            [0.15, 0.45, 0.30]  // Misty green
+            [0.14, 0.08, 0.09], // Blood-tinged dark snag
+            [0.10, 0.07, 0.08], // Hollow black brier
+            [0.12, 0.08, 0.09]  // Dark crimson-black branch
           ],
           ancient_spire: [
-            [0.10, 0.40, 0.15],
-            [0.25, 0.50, 0.20]
+            [0.07, 0.07, 0.08], // Ancient charred spire
+            [0.10, 0.09, 0.09]  // Dark gothic ironwood
           ]
         };
 
         const trunkPalette = [
-          [0.32, 0.20, 0.12], // Deep bark
-          [0.26, 0.16, 0.10], // Dark oak wood
-          [0.38, 0.24, 0.14]  // Weathered pine
+          [0.12, 0.09, 0.08], // Dark ebony trunk
+          [0.09, 0.07, 0.07], // Scorched black bark
+          [0.14, 0.10, 0.09]  // Weathered dark bloodwood
         ];
 
         const pList = foliagePalettes[type] || foliagePalettes.oak;
@@ -2365,6 +2922,9 @@ export class ProceduralForestLayoutEngine {
         color: [0.18, 0.56, 0.16] // Vibrant moss frog green
       });
     }
+
+    // 5. Generate Procedural Ravens (Perched on high sharp branches/stones & circling in the sky)
+    this.generateRavens();
   }
 
   /**
@@ -2382,7 +2942,105 @@ export class ProceduralForestLayoutEngine {
   }
 
   /**
-   * Collision resolution against procedural trees
+   * Generates procedural raven flock: perched on sharp tree branches & boulders, and soaring across the sky
+   */
+  generateRavens() {
+    this.ravens = [];
+    const ravenRng = new PRNG(773311);
+
+    // 1. Perched Ravens atop sharp branches and prominent boulders
+    const perchedCount = Math.min(this.trees.length, 24);
+    for (let i = 0; i < perchedCount; i++) {
+      if (ravenRng.next() < 0.40) continue;
+      const t = this.trees[i];
+      const branchAngle = ravenRng.range(0, Math.PI * 2);
+      const branchRad = ravenRng.range(0.8, 1.6) * (t.scale || 1.0);
+      const rx = t.x + Math.cos(branchAngle) * branchRad;
+      const rz = t.z + Math.sin(branchAngle) * branchRad;
+      const ry = (t.y || 0) + (2.1 + ravenRng.range(0.5, 1.4)) * (t.heightScale || 1.0) * (t.scale || 1.0);
+
+      this.ravens.push({
+        id: `raven_perch_tree_${this.ravens.length}`,
+        type: 'perched',
+        perchedType: 'branch',
+        x: rx,
+        y: ry,
+        z: rz,
+        baseX: rx,
+        baseY: ry,
+        baseZ: rz,
+        scale: ravenRng.range(0.38, 0.48),
+        rotY: ravenRng.range(0, Math.PI * 2),
+        phase: ravenRng.range(0, 10.0),
+        isStartled: false,
+        flightProgress: 0.0,
+        cawCooldown: ravenRng.range(5.0, 18.0)
+      });
+    }
+
+    // Perched Ravens on boulders / rocks
+    for (let i = 0; i < Math.min(this.boulders.length, 16); i++) {
+      if (ravenRng.next() < 0.45) continue;
+      const b = this.boulders[i];
+      const rx = b.x + ravenRng.range(-0.15, 0.15);
+      const rz = b.z + ravenRng.range(-0.15, 0.15);
+      const ry = (b.y || 0) + (b.scale || 1.0) * 0.72;
+
+      this.ravens.push({
+        id: `raven_perch_rock_${this.ravens.length}`,
+        type: 'perched',
+        perchedType: 'rock',
+        x: rx,
+        y: ry,
+        z: rz,
+        baseX: rx,
+        baseY: ry,
+        baseZ: rz,
+        scale: ravenRng.range(0.38, 0.46),
+        rotY: ravenRng.range(0, Math.PI * 2),
+        phase: ravenRng.range(0, 10.0),
+        isStartled: false,
+        flightProgress: 0.0,
+        cawCooldown: ravenRng.range(5.0, 18.0)
+      });
+    }
+
+    // 2. Circling / Soaring Ravens in the sky
+    const soaringZones = [
+      { cx: 0, cz: 0, r: 16.0, alt: 12.0, spd: 0.40 },         // Center river & ancient rune shrine
+      { cx: -18, cz: -18, r: 14.5, alt: 10.5, spd: 0.46 },     // Red jungle canopy
+      { cx: 18, cz: 18, r: 14.5, alt: 10.8, spd: -0.44 },      // Black jungle canopy
+      { cx: -14, cz: 18, r: 18.0, alt: 13.0, spd: 0.38 },      // Top lane river crossing
+      { cx: 14, cz: -18, r: 18.0, alt: 12.8, spd: -0.42 },     // Bot lane river crossing
+      { cx: -28, cz: 0, r: 15.0, alt: 12.5, spd: 0.44 },       // Western forest perimeter
+      { cx: 28, cz: 0, r: 15.0, alt: 12.2, spd: -0.45 },       // Eastern forest perimeter
+      { cx: 0, cz: 28, r: 16.5, alt: 13.8, spd: 0.36 }        // Northern ancient spire territory
+    ];
+
+    soaringZones.forEach((z, idx) => {
+      this.ravens.push({
+        id: `raven_sky_${idx}`,
+        type: 'flying',
+        cx: z.cx,
+        cz: z.cz,
+        radius: z.r + ravenRng.range(-2.0, 2.0),
+        baseAltitude: z.alt + ravenRng.range(-0.8, 1.2),
+        speed: z.spd * ravenRng.range(0.9, 1.15),
+        angle: ravenRng.range(0, Math.PI * 2),
+        scale: ravenRng.range(0.42, 0.52),
+        phase: ravenRng.range(0, 10.0),
+        x: z.cx,
+        y: z.alt,
+        z: z.cz,
+        rotY: 0,
+        rollZ: 0,
+        cawCooldown: ravenRng.range(8.0, 25.0)
+      });
+    });
+  }
+
+  /**
+   * Collision resolution against procedural trees and boulders/stones
    */
   resolveTreeCollisions(pos, unitRadius = 0.5) {
     if (!pos) return;
@@ -2398,6 +3056,31 @@ export class ProceduralForestLayoutEngine {
         ? Math.min(tree.collisionRadius, 0.25 * (tree.scale || 1.0) + 0.04)
         : 0.25;
       const minDist = effUnitRadius + treeR;
+      if (dist < minDist && dist > 0.0001) {
+        const push = minDist - dist;
+        pos[0] += (dx / dist) * push;
+        pos[2] += (dz / dist) * push;
+      }
+    }
+
+    // Always resolve collision against procedural stones / boulders
+    this.resolveBoulderCollisions(pos, unitRadius);
+  }
+
+  /**
+   * Dedicated robust collision resolution against procedural boulders / stones
+   */
+  resolveBoulderCollisions(pos, unitRadius = 0.5) {
+    if (!pos || !this.boulders || this.boulders.length === 0) return;
+    const effUnitRadius = Math.min(unitRadius, 0.45);
+    for (let i = 0; i < this.boulders.length; i++) {
+      const b = this.boulders[i];
+      const dx = pos[0] - b.x;
+      const dz = pos[2] - b.z;
+      const dist = Math.hypot(dx, dz);
+      // The procedural boulder mesh has base radius ~1.0; effective physical ground radius is ~0.82 * scale
+      const bRadius = (b.scale || 1.0) * 0.82;
+      const minDist = effUnitRadius + bRadius;
       if (dist < minDist && dist > 0.0001) {
         const push = minDist - dist;
         pos[0] += (dx / dist) * push;
