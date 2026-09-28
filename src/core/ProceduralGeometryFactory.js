@@ -2948,42 +2948,69 @@ export class ProceduralForestLayoutEngine {
     this.ravens = [];
     const ravenRng = new PRNG(773311);
 
-    // 1. Perched Ravens atop sharp branches and prominent boulders
-    const perchedCount = Math.min(this.trees.length, 24);
-    for (let i = 0; i < perchedCount; i++) {
-      if (ravenRng.next() < 0.40) continue;
+    // 1. Perched Ravens atop tree branches across the whole forest
+    // Rich gothic atmosphere: populate ravens sitting high on branches of trees
+    const treeTotal = this.trees.length;
+    for (let i = 0; i < treeTotal; i++) {
       const t = this.trees[i];
-      const branchAngle = ravenRng.range(0, Math.PI * 2);
-      const branchRad = ravenRng.range(0.8, 1.6) * (t.scale || 1.0);
-      const rx = t.x + Math.cos(branchAngle) * branchRad;
-      const rz = t.z + Math.sin(branchAngle) * branchRad;
-      const ry = (t.y || 0) + (2.1 + ravenRng.range(0.5, 1.4)) * (t.heightScale || 1.0) * (t.scale || 1.0);
+      // 70% of trees across the map host perched ravens
+      const treeRoll = ravenRng.next();
+      if (treeRoll < 0.30) continue;
 
-      this.ravens.push({
-        id: `raven_perch_tree_${this.ravens.length}`,
-        type: 'perched',
-        perchedType: 'branch',
-        x: rx,
-        y: ry,
-        z: rz,
-        baseX: rx,
-        baseY: ry,
-        baseZ: rz,
-        scale: ravenRng.range(0.38, 0.48),
-        rotY: ravenRng.range(0, Math.PI * 2),
-        phase: ravenRng.range(0, 10.0),
-        isStartled: false,
-        flightProgress: 0.0,
-        cawCooldown: ravenRng.range(5.0, 18.0)
-      });
+      // Larger trees can have multiple ravens on different branch levels
+      const ravensOnTree = (treeRoll > 0.78) ? 2 : 1;
+      for (let rIdx = 0; rIdx < ravensOnTree; rIdx++) {
+        const branchAngle = ravenRng.range(0, Math.PI * 2);
+        // Vary branch radius and height according to tree archetype
+        let branchRad = ravenRng.range(0.7, 1.6) * (t.scale || 1.0);
+        let branchHeight = 2.1 + (rIdx * 0.95) + ravenRng.range(0.3, 1.4);
+
+        if (t.type === 'oak') {
+          branchRad = ravenRng.range(0.9, 1.9) * (t.scale || 1.0);
+          branchHeight = 2.2 + (rIdx * 0.9) + ravenRng.range(0.2, 1.5);
+        } else if (t.type === 'pine') {
+          branchRad = ravenRng.range(0.5, 1.3) * (t.scale || 1.0);
+          branchHeight = 1.8 + (rIdx * 1.1) + ravenRng.range(0.4, 2.0);
+        } else if (t.type === 'willow') {
+          branchRad = ravenRng.range(0.8, 1.7) * (t.scale || 1.0);
+          branchHeight = 1.9 + (rIdx * 0.8) + ravenRng.range(0.2, 1.3);
+        } else if (t.type === 'ancient_spire') {
+          branchRad = ravenRng.range(0.4, 1.2) * (t.scale || 1.0);
+          branchHeight = 2.6 + (rIdx * 1.2) + ravenRng.range(0.5, 2.2);
+        }
+
+        const rx = t.x + Math.cos(branchAngle) * branchRad;
+        const rz = t.z + Math.sin(branchAngle) * branchRad;
+        const ry = (t.y || 0) + branchHeight * (t.heightScale || 1.0) * (t.scale || 1.0);
+
+        this.ravens.push({
+          id: `raven_perch_tree_${this.ravens.length}`,
+          type: 'perched',
+          perchedType: 'branch',
+          treeIndex: i,
+          x: rx,
+          y: ry,
+          z: rz,
+          baseX: rx,
+          baseY: ry,
+          baseZ: rz,
+          scale: ravenRng.range(0.38, 0.49),
+          // Facing along the branch or outward towards the woods
+          rotY: branchAngle + Math.PI * 0.5 + ravenRng.range(-0.6, 0.6),
+          phase: ravenRng.range(0, 10.0),
+          isStartled: false,
+          flightProgress: 0.0,
+          cawCooldown: ravenRng.range(4.0, 16.0)
+        });
+      }
     }
 
     // Perched Ravens on boulders / rocks
-    for (let i = 0; i < Math.min(this.boulders.length, 16); i++) {
-      if (ravenRng.next() < 0.45) continue;
+    for (let i = 0; i < this.boulders.length; i++) {
+      if (ravenRng.next() < 0.35) continue;
       const b = this.boulders[i];
-      const rx = b.x + ravenRng.range(-0.15, 0.15);
-      const rz = b.z + ravenRng.range(-0.15, 0.15);
+      const rx = b.x + ravenRng.range(-0.25, 0.25);
+      const rz = b.z + ravenRng.range(-0.25, 0.25);
       const ry = (b.y || 0) + (b.scale || 1.0) * 0.72;
 
       this.ravens.push({
@@ -3014,7 +3041,12 @@ export class ProceduralForestLayoutEngine {
       { cx: 14, cz: -18, r: 18.0, alt: 12.8, spd: -0.42 },     // Bot lane river crossing
       { cx: -28, cz: 0, r: 15.0, alt: 12.5, spd: 0.44 },       // Western forest perimeter
       { cx: 28, cz: 0, r: 15.0, alt: 12.2, spd: -0.45 },       // Eastern forest perimeter
-      { cx: 0, cz: 28, r: 16.5, alt: 13.8, spd: 0.36 }        // Northern ancient spire territory
+      { cx: 0, cz: 28, r: 16.5, alt: 13.8, spd: 0.36 },        // Northern ancient spire territory
+      { cx: 0, cz: -28, r: 16.5, alt: 13.5, spd: -0.38 },       // Southern ancient spire territory
+      { cx: -32, cz: -32, r: 12.0, alt: 11.5, spd: 0.42 },     // Red Sanctuary Base perimeter
+      { cx: 32, cz: 32, r: 12.0, alt: 11.5, spd: -0.42 },      // Black Sanctuary Base perimeter
+      { cx: -10, cz: 6, r: 14.0, alt: 12.0, spd: 0.39 },       // Mid-river western gorge
+      { cx: 10, cz: -6, r: 14.0, alt: 12.0, spd: -0.39 }       // Mid-river eastern gorge
     ];
 
     soaringZones.forEach((z, idx) => {

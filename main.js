@@ -7465,6 +7465,8 @@ void main() {
     if (preferredAnim) {
       if (preferredAnim === 'attack') {
         anim = animations.find(a => a.name.toLowerCase().includes('attack') && !a.name.toLowerCase().includes('dead'));
+      } else if (preferredAnim === 'dead') {
+        anim = animations.find(a => a.name.toLowerCase().includes('dead') || a.name.toLowerCase().includes('death') || a.name.toLowerCase().includes('die'));
       } else {
         anim = animations.find(a => a.name.toLowerCase().includes(preferredAnim.toLowerCase()));
       }
@@ -7473,10 +7475,16 @@ void main() {
       anim = animations.find(a => a.name.toLowerCase().includes('walk')) || animations[0];
     }
     const duration = anim.duration;
-    let time = (duration && duration > 0) ? (animTime % duration) : 0;
-    // Safety clamp: when attacking, never let time reach beyond 0.65s into any death keyframes
-    if (preferredAnim === 'attack' && duration > 0.65 && anim.name.toLowerCase().includes('attack')) {
-      time = animTime % 0.65;
+    let time = 0;
+    if (preferredAnim === 'dead') {
+      // Freeze in the LAST FRAME of the dead animation: hero body stays lying down!
+      time = Math.min(animTime, (duration && duration > 0.05) ? (duration - 0.03) : (duration || 0));
+    } else {
+      time = (duration && duration > 0) ? (animTime % duration) : 0;
+      // Safety clamp: when attacking, never let time reach beyond 0.65s into any death keyframes
+      if (preferredAnim === 'attack' && duration > 0.65 && anim.name.toLowerCase().includes('attack')) {
+        time = animTime % 0.65;
+      }
     }
 
     const fromRotationTranslationScale = (out, q, v, s) => {
@@ -7629,13 +7637,19 @@ void main() {
     // Pick requested animation (attack, dead, idle, walk, salute) or fallback
     let anim = null;
     if (preferredAnim) {
-      anim = animations.find(a => a.name.toLowerCase().includes(preferredAnim.toLowerCase()));
+      if (preferredAnim === 'dead') {
+        anim = animations.find(a => a.name.toLowerCase().includes('dead') || a.name.toLowerCase().includes('death') || a.name.toLowerCase().includes('die'));
+      } else {
+        anim = animations.find(a => a.name.toLowerCase().includes(preferredAnim.toLowerCase()));
+      }
     }
     if (!anim) {
       anim = animations.find(a => a.name.toLowerCase().includes('walk')) || animations[0];
     }
     const duration = anim.duration;
-    const time = (duration && duration > 0) ? (animTime % duration) : 0;
+    const time = (preferredAnim === 'dead')
+      ? Math.min(animTime, (duration && duration > 0.05) ? (duration - 0.03) : (duration || 0))
+      : ((duration && duration > 0) ? (animTime % duration) : 0);
 
     const fromRotationTranslationScale = (out, q, v, s) => {
       const x = q[0], y = q[1], z = q[2], w = q[3];
@@ -29122,6 +29136,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       btnShop.onclick = () => {
         modalShop.classList.remove('hidden');
         modalShop.style.display = 'flex';
+        this.updateMobaShopUI();
         this.mobaPlaySound('select');
       };
     }
@@ -29176,7 +29191,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const imagePath = `assets/textures/moba/invertory/${imageFile}`;
 
         const card = document.createElement('div');
-        card.className = `p-3 border rounded-lg bg-slate-900/90 hover:bg-slate-800 transition-all ${item.color} flex items-center space-x-3`;
+        card.className = `p-3 border rounded-lg bg-slate-900/90 hover:bg-slate-800 transition-all ${item.color} flex items-center space-x-3 cursor-pointer group`;
+        card.ondblclick = () => this.buyMobaItem(item.key);
         card.innerHTML = `
           <div class="w-12 h-12 bg-cover bg-center rounded border border-white/10 shrink-0" style="background-image: url('${imagePath}');"></div>
           <div class="flex-1 flex flex-col justify-between h-full">
@@ -29186,23 +29202,41 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             </div>
             <div class="flex items-center justify-between mt-1.5">
               <span class="text-[10px] text-amber-400 font-bold font-mono">🪙 ${item.price} Gold</span>
-              <button class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[9px] py-0.5 px-2 rounded active:scale-95 transition-all cursor-pointer" onclick="app.buyMobaItem('${item.key}')">BUY</button>
+              <button class="moba-shop-buy-btn bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[9px] py-0.5 px-2 rounded active:scale-95 transition-all cursor-pointer" data-item-key="${item.key}" data-item-price="${item.price}" onclick="app.buyMobaItem('${item.key}')">BUY</button>
             </div>
           </div>
         `;
         shopContainer.appendChild(card);
       });
+      this.updateMobaShopUI();
     }
 
-    // Connect Keyboard input listener hooks for abilities Q, W, E, R or 1, 2, 3, 4
+    // Connect Keyboard input listener hooks for abilities Q, W, E, R or 1, 2, 3, 4, or B for Shop
     if (this._mobaKeyHandler) window.removeEventListener('keydown', this._mobaKeyHandler);
     this._mobaKeyHandler = (e) => {
       if (!this.mobaState || !this.mobaState.playing) return;
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
       const key = e.key.toLowerCase();
       if (key === 'q' || key === '1') this.castMobaSpell(0);
       else if (key === 'w' || key === '2') this.castMobaSpell(1);
       else if (key === 'e' || key === '3') this.castMobaSpell(2);
       else if (key === 'r' || key === '4') this.castMobaSpell(3);
+      else if (key === 'b') {
+        const modalShop = document.getElementById('moba-shop-modal');
+        if (modalShop) {
+          const isOpen = modalShop.style.display === 'flex' && !modalShop.classList.contains('hidden');
+          if (isOpen) {
+            modalShop.classList.add('hidden');
+            modalShop.style.display = 'none';
+            this.mobaPlaySound('back');
+          } else {
+            modalShop.classList.remove('hidden');
+            modalShop.style.display = 'flex';
+            this.updateMobaShopUI();
+            this.mobaPlaySound('select');
+          }
+        }
+      }
     };
     window.addEventListener('keydown', this._mobaKeyHandler);
 
@@ -29830,6 +29864,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.log(`💰 Dev Hack: Injected ${amount} Gold!`, "success");
       this.mobaPlaySound('confirm');
       this.updateProjectTabs();
+      this.updateMobaShopUI(this.mobaState.gold);
     } else {
       this.log("⚠️ No active MOBA match running.", "error");
     }
@@ -30283,6 +30318,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     } else {
       this.mobaUpdateInventoryUI();
     }
+    this.updateMobaShopUI(this.mobaState.gold);
   }
 
   checkMobaMergeable() {
@@ -30496,6 +30532,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaPlaySound('back');
 
     this.mobaUpdateInventoryUI();
+    this.updateMobaShopUI(this.mobaState.gold);
   }
 
   showMobaHudTooltip(text) {
@@ -30567,6 +30604,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (stats.hp <= 0) {
         // Instant full revival!
         this._playerRespawnRemaining = 0;
+        this.scatterCorpseRavens('player');
+        this.mobaState.deathTimestamp = null;
+        this.mobaState.corpsePos = null;
         const respOverlay = document.getElementById('moba-respawn-overlay');
         if (respOverlay) respOverlay.classList.add('hidden');
         stats.hp = stats.maxHp;
@@ -31494,6 +31534,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           respOverlay.classList.add('hidden');
         }
 
+        // Scatter feasting ravens into the sky on respawn
+        this.scatterCorpseRavens('player');
+        this.mobaState.deathTimestamp = null;
+        this.mobaState.corpsePos = null;
+
         // Restore health and mana
         if (this.mobaState.heroStats) {
           this.mobaState.heroStats.hp = this.mobaState.heroStats.maxHp;
@@ -31984,6 +32029,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         textBlackKills: document.getElementById('moba-black-kills'),
         textTimer: document.getElementById('moba-timer'),
         textGold: document.getElementById('moba-gold'),
+        shopGoldDisplay: document.getElementById('moba-shop-gold-display'),
         textHeroName: document.getElementById('moba-hero-name'),
         heroImg: document.getElementById('moba-portrait-img'),
         placeholder: document.getElementById('moba-portrait-placeholder'),
@@ -32054,7 +32100,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     if (c.rKills !== rKills && el.textRedKills) { c.rKills = rKills; el.textRedKills.textContent = rKills; }
     if (c.bKills !== bKills && el.textBlackKills) { c.bKills = bKills; el.textBlackKills.textContent = bKills; }
-    if (c.gold !== goldVal && el.textGold) { c.gold = goldVal; el.textGold.textContent = goldVal; }
+    if (c.gold !== goldVal) {
+      c.gold = goldVal;
+      if (el.textGold) el.textGold.textContent = goldVal;
+      const shopGold = el.shopGoldDisplay || document.getElementById('moba-shop-gold-display');
+      if (shopGold) shopGold.textContent = goldVal;
+      this.updateMobaShopUI(goldVal);
+    }
 
     const totalSec = Math.floor(this.mobaState.matchTimer || 0);
     if (c.timerSec !== totalSec && el.textTimer) {
@@ -32125,6 +32177,33 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       container.innerHTML = '';
       c.hadCombatText = false;
     }
+  }
+
+  updateMobaShopUI(goldVal) {
+    const gold = goldVal !== undefined ? goldVal : ((this.mobaState && this.mobaState.gold !== undefined) ? this.mobaState.gold : 200);
+    const shopGoldEl = document.getElementById('moba-shop-gold-display');
+    if (shopGoldEl) {
+      shopGoldEl.textContent = gold;
+    }
+    const hudGoldEl = document.getElementById('moba-gold');
+    if (hudGoldEl) {
+      hudGoldEl.textContent = gold;
+    }
+
+    // Dynamically update purchase buttons and affordability styling in the base shop
+    const buyBtns = document.querySelectorAll('.moba-shop-buy-btn');
+    buyBtns.forEach(btn => {
+      const price = parseInt(btn.getAttribute('data-item-price') || '0', 10);
+      if (gold < price) {
+        btn.classList.remove('bg-amber-500', 'hover:bg-amber-400', 'text-slate-950');
+        btn.classList.add('bg-slate-700', 'hover:bg-slate-600', 'text-slate-300', 'opacity-70');
+        btn.title = `Requires 🪙 ${price} Gold (Need ${price - gold} more)`;
+      } else {
+        btn.classList.remove('bg-slate-700', 'hover:bg-slate-600', 'text-slate-300', 'opacity-70');
+        btn.classList.add('bg-amber-500', 'hover:bg-amber-400', 'text-slate-950');
+        btn.title = `Click to purchase for 🪙 ${price} Gold`;
+      }
+    });
   }
 
   mobaUpdateInventoryUI() {
@@ -33491,15 +33570,32 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const charMesh = this.meshBuffers[0]; // Use sphere as fallback representation
     if (this.mobaState.players) {
       this.mobaState.players.forEach(p => {
-        if (p.hp <= 0) return; // Dead
         if (p.id === this.net.localPlayerId) return; // Drawn separately next
 
-        const pYaw = p.yaw || 0;
+        const isBotDead = (p.hp <= 0);
+        if (isBotDead) {
+          if (!p.corpsePos && p.pos) {
+            p.corpsePos = [...p.pos];
+            p.corpseYaw = p.yaw || 0;
+            p.deathTimestamp = timestamp;
+            this.spawnCorpseRavens(p.corpsePos, p.id || 'bot');
+          }
+        } else if (p.corpsePos) {
+          // Bot respawned: scatter feeding ravens
+          this.scatterCorpseRavens(p.id || 'bot');
+          p.corpsePos = null;
+          p.deathTimestamp = null;
+        }
+
+        const bPos = isBotDead ? (p.corpsePos || p.pos) : p.pos;
+        const pYaw = isBotDead ? (p.corpseYaw || p.yaw || 0) : (p.yaw || 0);
         const color = p.team === 'RED' ? [0.9, 0.2, 0.2] : [0.2, 0.4, 0.9];
         const heroName = p.selectedHero || 'Arissa';
 
-        // Draw unique sacred geometry circle under hero feet!
-        this.drawHeroSacredCircle(progInfo, heroName, p.team, p.pos, timestamp, false);
+        // Draw unique sacred geometry circle under hero feet ONLY if alive
+        if (!isBotDead) {
+          this.drawHeroSacredCircle(progInfo, heroName, p.team, p.pos, timestamp, false);
+        }
 
         const glbPath = {
           Arissa: 'assets/models/moba-characters/arissa.glb',
@@ -33513,35 +33609,47 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const model = (this.mobaHeroModels && this.mobaHeroModels[glbPath]);
 
         if (model && model.soldierMesh) {
-          const timeSinceAttack = timestamp - (p.lastAttackTime || 0);
-          const isAttacking = timeSinceAttack < 400;
-          const isMoving = p.moving || false;
-          const animToPlay = isAttacking ? 'attack' : (isMoving ? 'walk' : 'idle');
-          const animTime = isAttacking
-            ? (timeSinceAttack * 0.0016)
-            : (timestamp * 0.0012 + (p.id ? p.id.charCodeAt(0) : 0));
+          let animToPlay = 'idle';
+          let animTime = 0;
+          if (isBotDead) {
+            animToPlay = 'dead';
+            const deathElapsed = Math.max(0, (timestamp - (p.deathTimestamp || timestamp)) * 0.001);
+            const deadAnim = model.soldierSkeletonData && model.soldierSkeletonData.animations.find(a => a.name.toLowerCase().includes('dead'));
+            const deadDuration = (deadAnim && deadAnim.duration) ? deadAnim.duration : 2.4;
+            // Freeze in last frame of dead anim
+            animTime = Math.min(deathElapsed, Math.max(0, deadDuration - 0.03));
+          } else {
+            const timeSinceAttack = timestamp - (p.lastAttackTime || 0);
+            const isAttacking = timeSinceAttack < 400;
+            const isMoving = p.moving || false;
+            animToPlay = isAttacking ? 'attack' : (isMoving ? 'walk' : 'idle');
+            animTime = isAttacking
+              ? (timeSinceAttack * 0.0016)
+              : (timestamp * 0.0012 + (p.id ? p.id.charCodeAt(0) : 0));
+          }
           if (model.soldierSkeletonData) {
             const skinMatrices = this.evaluateSpecificSkeleton(model.soldierSkeletonData, animTime, animToPlay);
             if (skinMatrices) {
               this.updateGenericMeshBuffer(model.soldierMesh, model.soldierSkeletonData, skinMatrices);
             }
           }
-          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, isBotDead ? 0.95 : 0.85);
           if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.05);
-          this.drawBotMeshPart(progInfo, model.soldierMesh, p.pos, pYaw, 0, 0, 0, 1.25, 1.25, 1.25, color, 0.3, 0.2, 0, 0.1);
+          const drawCol = isBotDead ? [0.65, 0.50, 0.50] : color;
+          this.drawBotMeshPart(progInfo, model.soldierMesh, bPos, pYaw, 0, 0, 0, 1.25, 1.25, 1.25, drawCol, 0.3, 0.2, 0, 0.1);
         } else if (charMesh) {
           gl.bindVertexArray(charMesh.vao);
           this.instanceMatrix[0] = 0.85; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
           this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.85; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
           this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.85; this.instanceMatrix[11] = 0;
-          this.instanceMatrix[12] = p.pos[0]; this.instanceMatrix[13] = 0.42; this.instanceMatrix[14] = p.pos[2]; this.instanceMatrix[15] = 1.0;
+          this.instanceMatrix[12] = bPos[0]; this.instanceMatrix[13] = 0.42; this.instanceMatrix[14] = bPos[2]; this.instanceMatrix[15] = 1.0;
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(color));
           gl.drawElements(gl.TRIANGLES, charMesh.indexCount, gl.UNSIGNED_SHORT, 0);
         }
 
-        // Draw holographic barrier dome around bot if shielded
-        if (p.shield && p.shield > 0 && this.sacredSpellMeshes && this.sacredSpellMeshes.shieldDome) {
+        // Draw holographic barrier dome around bot if shielded and alive
+        if (!isBotDead && p.shield && p.shield > 0 && this.sacredSpellMeshes && this.sacredSpellMeshes.shieldDome) {
           gl.enable(gl.BLEND);
           gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
           gl.depthMask(false);
@@ -33573,16 +33681,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // 5. Draw Local Player Hero
     if (!this.mobaState.winner) {
-      const playerPos = this.mobaState.currentPos;
-      const playerYaw = this.mobaState.currentYaw || this.mobaState.rotation || 0;
+      const isDead = (this._playerRespawnRemaining !== undefined && this._playerRespawnRemaining > 0) || (this.mobaState.heroStats && this.mobaState.heroStats.hp <= 0);
+      const playerPos = (isDead && this.mobaState.corpsePos) ? this.mobaState.corpsePos : this.mobaState.currentPos;
+      const playerYaw = (isDead && this.mobaState.corpseYaw !== undefined) ? this.mobaState.corpseYaw : (this.mobaState.currentYaw || this.mobaState.rotation || 0);
       const myColor = this.mobaState.team === 'RED' ? [0.9, 0.25, 0.25] : [0.25, 0.35, 0.95];
       const myHeroName = this.mobaState.selectedHero || 'Arissa';
 
-      // Draw local hero's unique sacred geometry circle under feet!
-      this.drawHeroSacredCircle(progInfo, myHeroName, this.mobaState.team, playerPos, timestamp, true);
+      // Draw local hero's unique sacred geometry circle under feet ONLY when alive!
+      if (!isDead) {
+        this.drawHeroSacredCircle(progInfo, myHeroName, this.mobaState.team, playerPos, timestamp, true);
+      }
 
-      // Render active barrier shield dome if active
-      if (this.mobaState.heroStats.shield > 0 && this.sacredSpellMeshes && this.sacredSpellMeshes.shieldDome) {
+      // Render active barrier shield dome if active and alive
+      if (!isDead && this.mobaState.heroStats.shield > 0 && this.sacredSpellMeshes && this.sacredSpellMeshes.shieldDome) {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive neon glow blending
         gl.depthMask(false); // Disable depth writing for seamless translucent rendering
@@ -33652,7 +33763,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
       }
 
-      const isInvisible = (this.mobaState.invisibilityTimer && this.mobaState.invisibilityTimer > 0);
+      const isInvisible = !isDead && (this.mobaState.invisibilityTimer && this.mobaState.invisibilityTimer > 0);
       if (isInvisible) {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -33671,22 +33782,36 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const model = (this.mobaHeroModels && this.mobaHeroModels[glbPath]);
 
       if (model && model.soldierMesh) {
-        const timeSinceAttack = timestamp - (this.mobaState.lastAttackTime || 0);
-        const isAttacking = timeSinceAttack < 400;
-        const isMoving = !!this.mobaState.isWalking || (this.mobaState.velocity && Math.hypot(this.mobaState.velocity[0], this.mobaState.velocity[2]) > 0.1);
-        const animToPlay = isAttacking ? 'attack' : (isMoving ? 'walk' : 'idle');
-        const animTime = isAttacking
-          ? (timeSinceAttack * 0.0016)
-          : (timestamp * 0.0012);
+        let animToPlay = 'idle';
+        let animTime = 0;
+        if (isDead) {
+          animToPlay = 'dead';
+          // Calculate elapsed death time
+          const deathElapsed = Math.max(0, (timestamp - (this.mobaState.deathTimestamp || timestamp)) * 0.001);
+          // Find duration of dead animation
+          const deadAnim = model.soldierSkeletonData && model.soldierSkeletonData.animations.find(a => a.name.toLowerCase().includes('dead'));
+          const deadDuration = (deadAnim && deadAnim.duration) ? deadAnim.duration : 2.4;
+          // Clamp at the final frame of the dead animation (freeze lying on the ground!)
+          animTime = Math.min(deathElapsed, Math.max(0, deadDuration - 0.03));
+        } else {
+          const timeSinceAttack = timestamp - (this.mobaState.lastAttackTime || 0);
+          const isAttacking = timeSinceAttack < 400;
+          const isMoving = !!this.mobaState.isWalking || (this.mobaState.velocity && Math.hypot(this.mobaState.velocity[0], this.mobaState.velocity[2]) > 0.1);
+          animToPlay = isAttacking ? 'attack' : (isMoving ? 'walk' : 'idle');
+          animTime = isAttacking
+            ? (timeSinceAttack * 0.0016)
+            : (timestamp * 0.0012);
+        }
         if (model.soldierSkeletonData) {
           const skinMatrices = this.evaluateSpecificSkeleton(model.soldierSkeletonData, animTime, animToPlay);
           if (skinMatrices) {
             this.updateGenericMeshBuffer(model.soldierMesh, model.soldierSkeletonData, skinMatrices);
           }
         }
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.9);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, isDead ? 0.95 : 0.9);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
-        this.drawBotMeshPart(progInfo, model.soldierMesh, playerPos, playerYaw, 0, 0, 0, 1.25, 1.25, 1.25, [1.0, 1.0, 1.0], 0.0, 0.0, 0, 0.0);
+        const heroTint = isDead ? [0.68, 0.65, 0.70] : [1.0, 1.0, 1.0];
+        this.drawBotMeshPart(progInfo, model.soldierMesh, playerPos, playerYaw, 0, 0, 0, 1.25, 1.25, 1.25, heroTint, 0.0, 0.0, 0, 0.0);
       } else if (charMesh) {
         gl.bindVertexArray(charMesh.vao);
         this.instanceMatrix[0] = 0.85; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
@@ -35451,6 +35576,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.inventory = [null, null, null, null, null, null];
     this.mobaState.targetEntity = null;
     this.mobaState.currentTargetId = null;
+    this.mobaState.deathTimestamp = null;
+    this.mobaState.corpsePos = null;
+    this.mobaState.corpseYaw = 0;
+    this.corpseRavens = [];
     this._playerRespawnRemaining = 0;
     this._playerDeaths = 0;
 
@@ -35553,6 +35682,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     this.mobaUpdateAbilitiesUI();
+    this.mobaUpdateInventoryUI();
+    this.updateMobaShopUI(this.mobaState.gold);
     this.updateFPSOverlays();
     if (this.speechAnnouncer) {
       this.speechAnnouncer.triggerActionVoice('matchStart', true);
@@ -35859,9 +35990,96 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         gl.drawElements(gl.TRIANGLES, flyingMesh.indexCount, gl.UNSIGNED_SHORT, 0);
       }
     }
+
+    // 2. Render Corpse-Feasting Ravens (eating fallen hero / champion body)
+    if (this.corpseRavens && this.corpseRavens.length > 0) {
+      for (let i = 0; i < this.corpseRavens.length; i++) {
+        const cr = this.corpseRavens[i];
+        if (cr.stage === 'dispersed') continue;
+
+        const cdx = cr.x - camX, cdz = cr.z - camZ;
+        if (cdx * cdx + cdz * cdz > maxRavenDistSq) continue;
+
+        const sc = cr.scale || 0.44;
+
+        if (cr.stage === 'feeding' && perchedMesh) {
+          // Feasting raven perched on or beside corpse pecking into the body!
+          gl.bindVertexArray(perchedMesh.vao);
+
+          const cosR = Math.cos(cr.rotY || 0);
+          const sinR = Math.sin(cr.rotY || 0);
+          const pitch = cr.pitch || 0.0;
+          const cosP = Math.cos(pitch);
+          const sinP = Math.sin(pitch);
+
+          // 3D rotation: yaw facing corpse + downward pecking pitch
+          this.instanceMatrix[0] = cosR * sc; 
+          this.instanceMatrix[1] = 0; 
+          this.instanceMatrix[2] = -sinR * sc; 
+          this.instanceMatrix[3] = 0;
+
+          this.instanceMatrix[4] = sinR * sinP * sc; 
+          this.instanceMatrix[5] = cosP * sc; 
+          this.instanceMatrix[6] = cosR * sinP * sc; 
+          this.instanceMatrix[7] = 0;
+
+          this.instanceMatrix[8] = sinR * cosP * sc; 
+          this.instanceMatrix[9] = -sinP * sc; 
+          this.instanceMatrix[10] = cosR * cosP * sc; 
+          this.instanceMatrix[11] = 0;
+
+          this.instanceMatrix[12] = cr.x; 
+          this.instanceMatrix[13] = cr.y; 
+          this.instanceMatrix[14] = cr.z; 
+          this.instanceMatrix[15] = 1.0;
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          gl.drawElements(gl.TRIANGLES, perchedMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        } else if ((cr.stage === 'swooping' || cr.stage === 'scattering') && flyingMesh) {
+          // Swooping in or scattering upward into sky with wings flapping
+          gl.bindVertexArray(flyingMesh.vao);
+
+          const cosR = Math.cos(cr.rotY || 0);
+          const sinR = Math.sin(cr.rotY || 0);
+          const rollZ = cr.rollZ || 0.0;
+          const cosRoll = Math.cos(rollZ);
+          const sinRoll = Math.sin(rollZ);
+
+          const flapSpeed = cr.stage === 'scattering' ? 0.024 : 0.012;
+          const flap = Math.sin(timestamp * flapSpeed + (cr.seed || 0)) * 0.40;
+
+          this.instanceMatrix[0] = cosR * sc * cosRoll; 
+          this.instanceMatrix[1] = sinRoll * sc; 
+          this.instanceMatrix[2] = -sinR * sc * cosRoll; 
+          this.instanceMatrix[3] = 0;
+
+          this.instanceMatrix[4] = -sinRoll * sc * sinR; 
+          this.instanceMatrix[5] = sc * (1.0 + flap * 0.22); 
+          this.instanceMatrix[6] = -sinRoll * sc * cosR; 
+          this.instanceMatrix[7] = 0;
+
+          this.instanceMatrix[8] = sinR * sc; 
+          this.instanceMatrix[9] = 0; 
+          this.instanceMatrix[10] = cosR * sc; 
+          this.instanceMatrix[11] = 0;
+
+          this.instanceMatrix[12] = cr.x; 
+          this.instanceMatrix[13] = cr.y; 
+          this.instanceMatrix[14] = cr.z; 
+          this.instanceMatrix[15] = 1.0;
+
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          gl.drawElements(gl.TRIANGLES, flyingMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+      }
+    }
   }
 
   updateMobaRavens(dt) {
+    // 1. Update corpse-feasting ravens (swooping to dead bodies, pecking, eating, scattering on respawn)
+    this.updateCorpseRavens(dt, performance.now());
+
     if (!globalForestLayoutEngine.ravens || globalForestLayoutEngine.ravens.length === 0) return;
 
     const ravens = globalForestLayoutEngine.ravens;
@@ -35943,6 +36161,169 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         r.rotY = -r.angle + (r.speed > 0 ? Math.PI * 0.5 : -Math.PI * 0.5);
         r.rollZ = (r.speed > 0 ? 0.22 : -0.22);
       }
+    }
+  }
+
+  spawnCorpseRavens(pos, ownerId = 'player') {
+    if (!pos) return;
+    this.corpseRavens = this.corpseRavens || [];
+    // Disperse previous ravens for this owner if any
+    for (let i = 0; i < this.corpseRavens.length; i++) {
+      if (this.corpseRavens[i].ownerId === ownerId) {
+        this.corpseRavens[i].stage = 'dispersed';
+      }
+    }
+    this.corpseRavens = this.corpseRavens.filter(r => r.stage !== 'dispersed');
+
+    const cX = pos[0], cY = pos[1] || 0, cZ = pos[2];
+    const ravenConfigs = [
+      { ox: 0.32, oz: 0.18, oy: 0.02, sc: 0.44, peckSpeed: 3.2, delay: 0.2 },
+      { ox: -0.28, oz: 0.40, oy: 0.02, sc: 0.42, peckSpeed: 2.8, delay: 0.5 },
+      { ox: 0.12, oz: -0.38, oy: 0.02, sc: 0.46, peckSpeed: 3.6, delay: 0.8 },
+      { ox: -0.06, oz: 0.10, oy: 0.24, sc: 0.40, peckSpeed: 4.2, delay: 1.1 }, // perched atop corpse chest!
+      { ox: -0.42, oz: -0.15, oy: 0.02, sc: 0.45, peckSpeed: 2.6, delay: 1.4 },
+      { ox: 0.42, oz: -0.52, oy: 0.02, sc: 0.41, peckSpeed: 3.1, delay: 1.7 }
+    ];
+
+    ravenConfigs.forEach((cfg, idx) => {
+      const approachAngle = (idx / ravenConfigs.length) * Math.PI * 2 + Math.random() * 0.4;
+      const approachDist = 10.0 + Math.random() * 6.0;
+      const startX = cX + Math.cos(approachAngle) * approachDist;
+      const startZ = cZ + Math.sin(approachAngle) * approachDist;
+      const startY = cY + 9.0 + Math.random() * 4.0;
+
+      const targetX = cX + cfg.ox;
+      const targetY = cY + cfg.oy;
+      const targetZ = cZ + cfg.oz;
+
+      const rotY = Math.atan2(cX - targetX, cZ - targetZ);
+
+      this.corpseRavens.push({
+        id: `corpse_raven_${ownerId}_${idx}_${Date.now()}`,
+        ownerId: ownerId,
+        stage: 'swooping',
+        swoopDelay: cfg.delay,
+        swoopProgress: 0.0,
+        startX: startX,
+        startY: startY,
+        startZ: startZ,
+        targetX: targetX,
+        targetY: targetY,
+        targetZ: targetZ,
+        x: startX,
+        y: startY,
+        z: startZ,
+        rotY: rotY,
+        pitch: 0.0,
+        rollZ: 0.0,
+        scale: cfg.sc,
+        peckSpeed: cfg.peckSpeed,
+        peckTimer: Math.random() * 3.0,
+        cawCooldown: 2.0 + Math.random() * 4.0,
+        scatterProgress: 0.0,
+        scatterAngle: approachAngle + Math.PI * 0.8 + Math.random() * 0.4,
+        hopTimer: Math.random() * 3.0,
+        hopY: 0.0,
+        seed: idx * 1.7
+      });
+    });
+  }
+
+  scatterCorpseRavens(ownerId = 'player') {
+    if (!this.corpseRavens || this.corpseRavens.length === 0) return;
+    let didCaw = false;
+    for (let i = 0; i < this.corpseRavens.length; i++) {
+      const r = this.corpseRavens[i];
+      if (r.ownerId === ownerId && r.stage !== 'dispersed') {
+        r.stage = 'scattering';
+        r.scatterProgress = 0.0;
+        r.baseScatterX = r.x;
+        r.baseScatterY = r.y;
+        r.baseScatterZ = r.z;
+        if (!didCaw) {
+          didCaw = true;
+          this.mobaPlaySound('raven_caw');
+        }
+      }
+    }
+  }
+
+  updateCorpseRavens(dt, timestamp) {
+    if (!this.corpseRavens || this.corpseRavens.length === 0) return;
+    const playerPos = (this.mobaState && this.mobaState.currentPos) || [0, 0, 0];
+
+    for (let i = 0; i < this.corpseRavens.length; i++) {
+      const r = this.corpseRavens[i];
+      if (r.stage === 'dispersed') continue;
+
+      if (r.stage === 'swooping') {
+        r.swoopDelay -= dt;
+        if (r.swoopDelay <= 0) {
+          r.swoopProgress += dt * 0.85;
+          if (r.swoopProgress >= 1.0) {
+            r.swoopProgress = 1.0;
+            r.stage = 'feeding';
+            r.x = r.targetX;
+            r.y = r.targetY;
+            r.z = r.targetZ;
+            r.pitch = 0.0;
+            r.rollZ = 0.0;
+          } else {
+            const t = r.swoopProgress;
+            const easeT = t * t * (3 - 2 * t);
+            r.x = r.startX + (r.targetX - r.startX) * easeT;
+            r.y = r.startY + (r.targetY - r.startY) * (t ** 1.3) + Math.sin(t * Math.PI) * 1.5;
+            r.z = r.startZ + (r.targetZ - r.startZ) * easeT;
+            r.rotY = Math.atan2(r.targetX - r.startX, r.targetZ - r.startZ);
+            r.rollZ = Math.sin(t * Math.PI) * 0.28;
+          }
+        }
+      } else if (r.stage === 'feeding') {
+        r.x = r.targetX;
+        r.z = r.targetZ;
+        r.peckTimer += dt * r.peckSpeed;
+
+        // Dynamic raven pecking motion: sharp downward jab into the body, then tilt up to swallow
+        const peckVal = Math.sin(r.peckTimer);
+        const isPecking = peckVal > 0.15;
+        r.pitch = isPecking ? (0.28 + peckVal * 0.42) : -0.06;
+
+        // Occasional little hop
+        r.hopTimer += dt;
+        if (r.hopTimer > 3.8) r.hopTimer = 0.0;
+        r.hopY = (r.hopTimer < 0.3) ? Math.sin(r.hopTimer / 0.3 * Math.PI) * 0.10 : 0.0;
+        r.y = r.targetY + r.hopY;
+
+        // Feeding sounds
+        if (r.cawCooldown !== undefined) {
+          r.cawCooldown -= dt;
+          if (r.cawCooldown <= 0) {
+            r.cawCooldown = 7.0 + Math.random() * 11.0;
+            const dist = Math.hypot(r.x - playerPos[0], r.z - playerPos[2]);
+            if (dist < 32.0) {
+              this.mobaPlaySound('raven_caw');
+            }
+          }
+        }
+      } else if (r.stage === 'scattering') {
+        r.scatterProgress += dt * 0.65;
+        const spAngle = r.scatterAngle + r.scatterProgress * Math.PI * 2.5;
+        const spRadius = r.scatterProgress * 9.0;
+        r.x = r.baseScatterX + Math.cos(spAngle) * spRadius;
+        r.z = r.baseScatterZ + Math.sin(spAngle) * spRadius;
+        r.y = r.baseScatterY + r.scatterProgress * 16.0;
+        r.rotY = -spAngle + Math.PI * 0.5;
+        r.rollZ = 0.35;
+
+        if (r.scatterProgress >= 1.0) {
+          r.stage = 'dispersed';
+        }
+      }
+    }
+
+    // Clean up dispersed ravens
+    if (this.corpseRavens.some(r => r.stage === 'dispersed')) {
+      this.corpseRavens = this.corpseRavens.filter(r => r.stage !== 'dispersed');
     }
   }
 
@@ -37489,6 +37870,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         // Base respawn 15.0s, increases by +3s per death
         const respawnTime = 15.0 + Math.max(0, this._playerDeaths - 1) * 3.0;
         this._playerRespawnRemaining = respawnTime;
+        this.mobaState.deathTimestamp = performance.now();
+        this.mobaState.corpsePos = [...this.mobaState.currentPos];
+        this.mobaState.corpseYaw = this.mobaState.currentYaw || this.mobaState.rotation || 0;
+        this.spawnCorpseRavens(this.mobaState.corpsePos, 'player');
         this.mobaState.targetPos = null;
         this.mobaState.targetEntity = null;
         this.mobaState.currentTargetId = null;
@@ -37535,6 +37920,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
       // Bot champion kill
       if (target.isBot) {
+        target.deathTimestamp = performance.now();
+        target.corpsePos = [...target.pos];
+        target.corpseYaw = target.yaw || 0;
+        this.spawnCorpseRavens(target.corpsePos, target.id || 'bot');
+
         if (this.mobaState.kills && this.mobaState.kills[attackerTeam] !== undefined) {
           this.mobaState.kills[attackerTeam]++;
         }
@@ -37559,6 +37949,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const botRespawnDelay = 8000 + (target.deaths * 3000);
         setTimeout(() => {
           if (target && this.mobaState && this.mobaState.playing) {
+            this.scatterCorpseRavens(target.id || 'bot');
+            target.deathTimestamp = null;
+            target.corpsePos = null;
             target.hp = target.maxHp;
             target.mp = target.maxMp || 400;
             target.shield = 0;
