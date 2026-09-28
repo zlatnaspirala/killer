@@ -20,7 +20,7 @@ const HOST = cliHost || process.env.HOST || '0.0.0.0';
 const DIST_DIR = path.join(__dirname, 'dist');
 
 const executionLogs = [];
-const MAX_LOGS = 100;
+const MAX_LOGS = 20;
 
 function addLog(entry) {
   executionLogs.unshift({
