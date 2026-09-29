@@ -30753,25 +30753,43 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       erika: [
         {
           key: 'Q',
-          name: 'Frostbite Ice Stun',
-          shortName: 'Ice Stun',
+          name: 'Poisonous Thistle Sowing',
+          shortName: 'Poison Plant',
           cost: 45,
           cooldown: 11.0,
-          desc: 'Freezes enemies in 4.8m with glacial ice, dealing 125 damage and STUNNING for 2.2s',
+          desc: 'Sows a poisonous plant on the battlefield. Any enemy entering its 5.0m radius is slowed by 55% and contracts a disease dealing 18 damage/s. Destroyed after 3 enemy attacks.',
           icon: 'assets/textures/moba/magics/erika-1.png',
           cast: (app, playerPos, myTeam) => {
-            app.mobaState.vfxBursts.push({
-              type: 'iceStunNova',
-              x: playerPos[0],
-              z: playerPos[2],
+            const forward = app.mobaState.currentYaw || 0;
+            const targetX = playerPos[0] + Math.sin(forward) * 2.5;
+            const targetZ = playerPos[2] + Math.cos(forward) * 2.5;
+
+            if (!app.mobaState.plants) app.mobaState.plants = [];
+            app.mobaState.plants.push({
+              id: 'plant_toxic_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+              isPlant: true,
+              type: 'poisonous',
+              team: myTeam,
+              pos: [targetX, 0, targetZ],
+              hp: 3,
+              maxHp: 3,
               radius: 5.0,
-              timer: 1.1,
-              maxTimer: 1.1,
-              color: [0.2, 0.85, 1.0]
+              timer: 20.0,
+              maxTimer: 20.0
             });
-            app.mobaDamageInRadius(playerPos, 4.8, 125, myTeam, true, false, 'stun', 2.2);
-            app.mobaPlaySound('freeze');
-            app.showMobaAlert("❄️ GLACIAL FROSTBITE STUN!");
+
+            app.mobaState.vfxBursts.push({
+              type: 'scorchFire',
+              x: targetX,
+              z: targetZ,
+              radius: 3.5,
+              timer: 0.8,
+              maxTimer: 0.8,
+              color: [0.35, 0.95, 0.15]
+            });
+
+            app.mobaPlaySound('confirm');
+            app.showMobaAlert("🤢 SOWED POISONOUS THISTLE PLANT!");
           }
         },
         {
@@ -30811,26 +30829,43 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         },
         {
           key: 'E',
-          name: 'Glacial Armor',
-          shortName: 'Frost Guard',
+          name: 'Luminous Healing Herbs Sowing',
+          shortName: 'Heal Herbs',
           cost: 55,
           cooldown: 19.0,
-          desc: 'Envelops in crystal frost shield absorbing 260 damage',
+          desc: 'Plants a luminous healing herb on the battlefield. Any friendly character within its 5.0m radius recovers 25 HP per second. Destroyed after 3 enemy attacks.',
           icon: 'assets/textures/moba/magics/erika-3.png',
           cast: (app, playerPos, myTeam) => {
-            app.mobaState.heroStats.shield = (app.mobaState.heroStats.shield || 0) + 260;
-            app.mobaState.heroStats.shieldTimer = 5.5;
+            const forward = app.mobaState.currentYaw || 0;
+            const targetX = playerPos[0] + Math.sin(forward) * 2.5;
+            const targetZ = playerPos[2] + Math.cos(forward) * 2.5;
+
+            if (!app.mobaState.plants) app.mobaState.plants = [];
+            app.mobaState.plants.push({
+              id: 'plant_heal_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+              isPlant: true,
+              type: 'luminous',
+              team: myTeam,
+              pos: [targetX, 0, targetZ],
+              hp: 3,
+              maxHp: 3,
+              radius: 5.0,
+              timer: 20.0,
+              maxTimer: 20.0
+            });
+
             app.mobaState.vfxBursts.push({
-              type: 'iceStunNova',
-              x: playerPos[0],
-              z: playerPos[2],
+              type: 'scorchFire',
+              x: targetX,
+              z: targetZ,
               radius: 3.5,
               timer: 0.8,
               maxTimer: 0.8,
-              color: [0.35, 0.9, 1.0]
+              color: [0.15, 0.85, 0.95]
             });
-            app.mobaDamageInRadius(playerPos, 3.2, 50, myTeam, true);
-            app.mobaPlaySound('freeze');
+
+            app.mobaPlaySound('confirm');
+            app.showMobaAlert("🌿 SOWED LUMINOUS HEALING HERBS!");
           }
         },
         {
@@ -31582,16 +31617,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     if (this.mobaState.invisibilityTimer && this.mobaState.invisibilityTimer > 0) {
       this.mobaState.invisibilityTimer = Math.max(0, this.mobaState.invisibilityTimer - dt);
     }
+    if (this.mobaState.slowTimer && this.mobaState.slowTimer > 0) {
+      this.mobaState.slowTimer = Math.max(0, this.mobaState.slowTimer - dt);
+    }
 
     const isStunned = (this.mobaState.stunnedTimer || 0) > 0;
     const isRooted = (this.mobaState.rootedTimer || 0) > 0;
     const isStealthed = (this.mobaState.invisibilityTimer || 0) > 0;
+    const isSlowed = (this.mobaState.slowTimer || 0) > 0;
 
     // Cooldown on player basic attack
     this.mobaState.attackTimer = Math.max(0, (this.mobaState.attackTimer || 0) - dt);
 
     const baseSpeed = (this.mobaState.heroStats && this.mobaState.heroStats.speed) || 6.2;
-    const speed = baseSpeed * (isStealthed ? 1.35 : 1.0);
+    let speed = baseSpeed * (isStealthed ? 1.35 : 1.0);
+    if (isSlowed) {
+      speed *= 0.45;
+    }
     const attackRange = (this.mobaState.heroStats && this.mobaState.heroStats.attackRange) || 5.0;
 
     // 1. Player targeting & combat movement
@@ -33902,6 +33944,88 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       });
     }
 
+    // 5cc. Render Erika's Poisonous Plants and Luminous Herbs
+    if (this.mobaState.plants && this.mobaState.plants.length > 0) {
+      const cylMesh = this.meshBuffers[3] || this.meshBuffers[0];
+      const sphereMesh = this.meshBuffers[0];
+      const ringMesh = this.meshBuffers[6] || sphereMesh;
+
+      this.mobaState.plants.forEach(plant => {
+        // A. Draw active effect radius boundary on ground
+        if (ringMesh) {
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.depthMask(false);
+          gl.bindVertexArray(ringMesh.vao);
+
+          const rScale = plant.radius || 5.0;
+          const spin = timestamp * 0.0003;
+          const cR = Math.cos(spin) * rScale;
+          const sR = Math.sin(spin) * rScale;
+
+          this.instanceMatrix[0] = cR; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sR; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.02; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sR; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cR; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = plant.pos[0]; this.instanceMatrix[13] = 0.02; this.instanceMatrix[14] = plant.pos[2]; this.instanceMatrix[15] = 1.0;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.28);
+
+          // Poisonous = green-purple ring; Luminous = glowing teal-green ring
+          const ringColor = plant.type === 'poisonous' ? [0.4, 0.05, 0.55] : [0.05, 0.75, 0.45];
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(ringColor));
+
+          gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+          gl.depthMask(true);
+          gl.disable(gl.BLEND);
+        }
+
+        // B. Draw Stem/Stalk (Cylinder)
+        if (cylMesh) {
+          gl.bindVertexArray(cylMesh.vao);
+          const stemW = 0.22;
+          const stemH = 1.35;
+          this.instanceMatrix[0] = stemW; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = stemH; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = stemW; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = plant.pos[0]; this.instanceMatrix[13] = stemH * 0.5; this.instanceMatrix[14] = plant.pos[2]; this.instanceMatrix[15] = 1.0;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+
+          // Deep green stalk color
+          const stemColor = plant.type === 'poisonous' ? [0.15, 0.42, 0.12] : [0.08, 0.52, 0.22];
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(stemColor));
+          gl.drawElements(gl.TRIANGLES, cylMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+
+        // C. Draw Flower Bulb/Bud (Sphere on top)
+        if (sphereMesh) {
+          gl.bindVertexArray(sphereMesh.vao);
+          const bulbSize = 0.48 + 0.08 * Math.sin(timestamp * 0.006);
+          this.instanceMatrix[0] = bulbSize; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = bulbSize; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = bulbSize; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = plant.pos[0]; this.instanceMatrix[13] = 1.35 + bulbSize * 0.5; this.instanceMatrix[14] = plant.pos[2]; this.instanceMatrix[15] = 1.0;
+
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+
+          // Highly luminescent neon core
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+          const bulbColor = plant.type === 'poisonous' ? [1.5, 0.15, 2.0] : [0.15, 2.0, 0.45];
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(bulbColor));
+          gl.drawElements(gl.TRIANGLES, sphereMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        }
+      });
+    }
+
     // 5e. Render Celestial Sky Meteors / Fireballs from the Sky
     if (this.mobaState.skyMeteors && this.mobaState.skyMeteors.length > 0) {
       const sphereMesh = this.meshBuffers[0];
@@ -35336,6 +35460,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
     }
 
+    // CC. Check Enemy Plants
+    if (this.mobaState.plants) {
+      for (const plant of this.mobaState.plants) {
+        if (plant.team !== this.mobaState.team && plant.hp > 0 && plant.pos) {
+          testCandidate(plant, plant.id, 1.2, 1.5, 45);
+        }
+      }
+    }
+
     // D. Check Enemy Tron Base
     if (this.mobaState.trons) {
       const enemyTronTeam = this.mobaState.team === 'RED' ? 'BLACK' : 'RED';
@@ -35370,6 +35503,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
               if (dx * dx + dz * dz < 2.8) {
                 clickedTarget = p;
                 targetId = p.id;
+                break;
+              }
+            }
+          }
+        }
+        if (!clickedTarget && this.mobaState.plants) {
+          for (const plant of this.mobaState.plants) {
+            if (plant.team !== this.mobaState.team && plant.hp > 0 && plant.pos) {
+              const dx = plant.pos[0] - groundIntersect[0];
+              const dz = plant.pos[2] - groundIntersect[2];
+              if (dx * dx + dz * dz < 2.5) {
+                clickedTarget = plant;
+                targetId = plant.id;
                 break;
               }
             }
@@ -35574,6 +35720,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.combatTexts = [];
     this.mobaState.kills = { RED: 0, BLACK: 0 };
     this.mobaState.inventory = [null, null, null, null, null, null];
+    this.mobaState.plants = [];
     this.mobaState.targetEntity = null;
     this.mobaState.currentTargetId = null;
     this.mobaState.deathTimestamp = null;
@@ -36349,6 +36496,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     };
 
     this.mobaState.creeps.forEach(creep => {
+      if (creep.slowTimer && creep.slowTimer > 0) {
+        creep.slowTimer = Math.max(0, creep.slowTimer - dt);
+      }
+      if (!creep.baseSpeed) creep.baseSpeed = creep.speed || 3.0;
+      const isSlowed = (creep.slowTimer && creep.slowTimer > 0);
+      creep.speed = creep.baseSpeed * (isSlowed ? 0.45 : 1.0);
+
       // Stunned: cannot move or act
       if (creep.stunnedTimer && creep.stunnedTimer > 0) {
         creep.stunnedTimer = Math.max(0, creep.stunnedTimer - dt);
@@ -36691,20 +36845,37 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.mobaPlaySound('explosion');
       }
     } else if (heroKey === 'erika') {
-      if (spellIndex === 0) { // Frostbite Ice Stun (Q)
-        this.mobaState.vfxBursts.push({
-          type: 'iceStunNova',
-          x: bPos[0],
-          z: bPos[2],
-          radius: 5.2,
-          timer: 1.1,
-          maxTimer: 1.1,
-          color: [0.2, 0.85, 1.0]
+      if (spellIndex === 0) { // Poisonous Thistle Sowing (Q)
+        const targetX = bPos[0] + Math.sin(aimYaw) * 2.5;
+        const targetZ = bPos[2] + Math.cos(aimYaw) * 2.5;
+
+        if (!this.mobaState.plants) this.mobaState.plants = [];
+        this.mobaState.plants.push({
+          id: 'plant_toxic_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+          isPlant: true,
+          type: 'poisonous',
+          team: myTeam,
+          pos: [targetX, 0, targetZ],
+          hp: 3,
+          maxHp: 3,
+          radius: 5.0,
+          timer: 20.0,
+          maxTimer: 20.0
         });
-        this.mobaDamageInRadius(bPos, 5.0, 135, myTeam, true, false, 'stun', 2.2);
-        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "❄️ FROSTBITE STUN!", "#38bdf8");
-        this.mobaPlaySound('freeze');
-        this.showMobaAlert(`❄️ ${b.name} CAST GLACIAL FROSTBITE!`);
+
+        this.mobaState.vfxBursts.push({
+          type: 'scorchFire',
+          x: targetX,
+          z: targetZ,
+          radius: 3.5,
+          timer: 0.8,
+          maxTimer: 0.8,
+          color: [0.35, 0.95, 0.15]
+        });
+
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "🤢 SOWED POISONOUS PLANT!", "#a2e635");
+        this.mobaPlaySound('confirm');
+        this.showMobaAlert(`🤢 ${b.name} SOWED POISONOUS THISTLE!`);
       } else if (spellIndex === 1) { // Flame Surge (W)
         const dashDist = 5.5;
         const nx = bPos[0] + Math.sin(aimYaw) * dashDist;
@@ -36729,21 +36900,36 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.mobaDamageInRadius(b.pos, 3.8, 105, myTeam, true);
         this.addMobaCombatText(b.pos[0], 2.4, b.pos[2], "🔥 FLAME SURGE!", "#fb923c");
         this.mobaPlaySound('fire');
-      } else if (spellIndex === 2) { // Glacial Armor (E)
-        b.shield = (b.shield || 0) + 280;
-        b.shieldTimer = 5.5;
+      } else if (spellIndex === 2) { // Luminous Healing Herbs (E)
+        const targetX = bPos[0] + Math.sin(aimYaw) * 2.5;
+        const targetZ = bPos[2] + Math.cos(aimYaw) * 2.5;
+
+        if (!this.mobaState.plants) this.mobaState.plants = [];
+        this.mobaState.plants.push({
+          id: 'plant_heal_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+          isPlant: true,
+          type: 'luminous',
+          team: myTeam,
+          pos: [targetX, 0, targetZ],
+          hp: 3,
+          maxHp: 3,
+          radius: 5.0,
+          timer: 20.0,
+          maxTimer: 20.0
+        });
+
         this.mobaState.vfxBursts.push({
-          type: 'iceStunNova',
-          x: bPos[0],
-          z: bPos[2],
-          radius: 3.6,
+          type: 'scorchFire',
+          x: targetX,
+          z: targetZ,
+          radius: 3.5,
           timer: 0.8,
           maxTimer: 0.8,
-          color: [0.35, 0.9, 1.0]
+          color: [0.15, 0.85, 0.95]
         });
-        this.mobaDamageInRadius(bPos, 3.5, 55, myTeam, true);
-        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "🛡️ GLACIAL ARMOR!", "#38bdf8");
-        this.mobaPlaySound('freeze');
+
+        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "🌿 SOWED HEALING HERBS!", "#4ade80");
+        this.mobaPlaySound('confirm');
       } else if (spellIndex === 3) { // Celestial Meteor Strike (R)
         if (!this.mobaState.skyMeteors) this.mobaState.skyMeteors = [];
         this.mobaState.skyMeteors.push({
@@ -37066,6 +37252,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.players.forEach(b => {
       if (!b.isBot || b.hp <= 0) return;
       if (!b.pos) b.pos = [0, 0, 0];
+
+      if (b.slowTimer && b.slowTimer > 0) {
+        b.slowTimer = Math.max(0, b.slowTimer - dt);
+      }
+      if (!b.baseSpeed) b.baseSpeed = b.speed || 4.2;
+      const isSlowed = (b.slowTimer && b.slowTimer > 0);
+      b.speed = b.baseSpeed * (isSlowed ? 0.45 : 1.0);
 
       // Stunned: cannot move or act
       if (b.stunnedTimer && b.stunnedTimer > 0) {
@@ -37593,6 +37786,121 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         return true;
       });
     }
+
+    // 4. Custom Plants & Herbs (Erika's Poisonous Plants and Luminous Herbs)
+    if (this.mobaState.plants && this.mobaState.plants.length > 0) {
+      this.mobaState.plants = this.mobaState.plants.filter(plant => {
+        plant.timer -= dt;
+
+        if (plant.timer <= 0 || plant.hp <= 0) {
+          if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+          this.mobaState.vfxBursts.push({
+            type: 'plantBurst',
+            x: plant.pos[0],
+            z: plant.pos[2],
+            radius: 3.5,
+            timer: 0.5,
+            maxTimer: 0.5,
+            color: plant.type === 'poisonous' ? [0.2, 0.8, 0.3] : [0.3, 0.9, 0.9]
+          });
+          return false;
+        }
+
+        plant.effectTick = (plant.effectTick || 0) + dt;
+        const isTick = plant.effectTick >= 1.0;
+        if (isTick) plant.effectTick = 0.0;
+
+        const radius = plant.radius || 5.0;
+
+        if (plant.type === 'poisonous') {
+          // Slows and poisons enemy units in range
+          if (this.mobaState.players) {
+            this.mobaState.players.forEach(p => {
+              if (p.team !== plant.team && p.hp > 0 && p.pos) {
+                const dist = Math.hypot(p.pos[0] - plant.pos[0], p.pos[2] - plant.pos[2]);
+                if (dist <= radius) {
+                  p.slowTimer = 2.0;
+                  if (isTick) {
+                    this.applyMobaDamage(p, 18, plant.team, true, false, null, 0, 'poisonous_plant');
+                    this.addMobaCombatText(p.pos[0], 2.2, p.pos[2], "🤢 DISEASE!", "#a3e635");
+                  }
+                }
+              }
+            });
+          }
+
+          if (this.mobaState.creeps) {
+            this.mobaState.creeps.forEach(c => {
+              if (c.team !== plant.team && c.hp > 0 && c.pos) {
+                const dist = Math.hypot(c.pos[0] - plant.pos[0], c.pos[2] - plant.pos[2]);
+                if (dist <= radius) {
+                  c.slowTimer = 2.0;
+                  if (isTick) {
+                    this.applyMobaDamage(c, 12, plant.team, true, false, null, 0, 'poisonous_plant');
+                    this.addMobaCombatText(c.pos[0], 1.8, c.pos[2], "🤢 POISON", "#a3e635");
+                  }
+                }
+              }
+            });
+          }
+
+          if (this.mobaState.team !== plant.team && this.mobaState.heroStats.hp > 0) {
+            const dist = Math.hypot(this.mobaState.currentPos[0] - plant.pos[0], this.mobaState.currentPos[2] - plant.pos[2]);
+            if (dist <= radius) {
+              this.mobaState.slowTimer = 2.0;
+              if (isTick) {
+                this.applyMobaDamage({ isPlayer: true, pos: this.mobaState.currentPos }, 18, plant.team, true, false, null, 0, 'poisonous_plant');
+                this.addMobaCombatText(this.mobaState.currentPos[0], 2.2, this.mobaState.currentPos[2], "🤢 DISEASE!", "#a3e635");
+              }
+            }
+          }
+        } else if (plant.type === 'luminous') {
+          // Heals friendly characters in range
+          if (isTick) {
+            if (this.mobaState.players) {
+              this.mobaState.players.forEach(p => {
+                if (p.team === plant.team && p.hp > 0 && p.pos && p.hp < p.maxHp) {
+                  const dist = Math.hypot(p.pos[0] - plant.pos[0], p.pos[2] - plant.pos[2]);
+                  if (dist <= radius) {
+                    p.hp = Math.min(p.maxHp, p.hp + 25);
+                    this.addMobaCombatText(p.pos[0], 2.4, p.pos[2], "+25 💚", "#4ade80");
+                    if (this.spawnMobaGpuParticles) {
+                      this.spawnMobaGpuParticles(p.pos[0], 0.8, p.pos[2], 5, [0.3, 0.9, 0.5, 0.8], 1.2, 5.0, 0.3);
+                    }
+                  }
+                }
+              });
+            }
+
+            if (this.mobaState.creeps) {
+              this.mobaState.creeps.forEach(c => {
+                if (c.team === plant.team && c.hp > 0 && c.pos && c.hp < c.maxHp) {
+                  const dist = Math.hypot(c.pos[0] - plant.pos[0], c.pos[2] - plant.pos[2]);
+                  if (dist <= radius) {
+                    c.hp = Math.min(c.maxHp, c.hp + 15);
+                    this.addMobaCombatText(c.pos[0], 1.8, c.pos[2], "+15 💚", "#4ade80");
+                  }
+                }
+              });
+            }
+
+            if (this.mobaState.team === plant.team && this.mobaState.heroStats.hp > 0 && this.mobaState.heroStats.hp < this.mobaState.heroStats.maxHp) {
+              const dist = Math.hypot(this.mobaState.currentPos[0] - plant.pos[0], this.mobaState.currentPos[2] - plant.pos[2]);
+              if (dist <= radius) {
+                const stats = this.mobaState.heroStats;
+                stats.hp = Math.min(stats.maxHp, stats.hp + 25);
+                this.addMobaCombatText(this.mobaState.currentPos[0], 2.4, this.mobaState.currentPos[2], "+25 💚", "#4ade80");
+                if (this.spawnMobaGpuParticles) {
+                  this.spawnMobaGpuParticles(this.mobaState.currentPos[0], 0.8, this.mobaState.currentPos[2], 5, [0.3, 0.9, 0.5, 0.8], 1.2, 5.0, 0.3);
+                }
+              }
+            }
+          }
+        }
+
+        return true;
+      });
+    }
   }
 
   mobaTriggerPlayerAttack() {
@@ -37729,6 +38037,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       });
     }
 
+    // Check enemy plants
+    if (this.mobaState.plants) {
+      this.mobaState.plants.forEach(plant => {
+        if (plant.team !== this.mobaState.team && plant.hp > 0 && plant.pos) {
+          const d = Math.hypot(plant.pos[0] - this.mobaState.currentPos[0], plant.pos[2] - this.mobaState.currentPos[2]);
+          if (d < minDist && isInForwardVision(plant.pos)) {
+            minDist = d;
+            closest = plant;
+          }
+        }
+      });
+    }
+
     // Check enemy Tron
     const enemyTronTeam = this.mobaState.team === 'RED' ? 'BLACK' : 'RED';
     const enemyTron = this.mobaState.trons && this.mobaState.trons[enemyTronTeam];
@@ -37816,6 +38137,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
       // Apply 50% damage reduction for stronger armor resistance
       finalDmg = Math.round(finalDmg * 0.5);
+    }
+
+    // Plants custom logic: only take 1 damage from basic attacks and are immune to spells!
+    if (target.isPlant) {
+      if (isSpell) {
+        this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], "IMMUNE", "#38bdf8");
+        return;
+      }
+      finalDmg = 1;
     }
 
     // Sound and visual impact
@@ -37915,7 +38245,22 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     if (target.hp <= 0) {
-      if (!isTower && (!target.id || !target.id.startsWith('tron_'))) {
+      if (target.isPlant) {
+        if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+        this.mobaState.vfxBursts.push({
+          type: 'plantBurst',
+          x: target.pos[0],
+          z: target.pos[2],
+          radius: 3.5,
+          timer: 0.5,
+          maxTimer: 0.5,
+          color: target.type === 'poisonous' ? [0.2, 0.8, 0.3] : [0.3, 0.9, 0.9]
+        });
+        this.addMobaCombatText(targetPos[0], 2.4, targetPos[2], "🥀 DESTROYED!", "#94a3b8");
+        this.mobaPlaySound('confirm');
+      }
+
+      if (!isTower && (!target.id || !target.id.startsWith('tron_')) && !target.isPlant) {
         this.playMobaZombieVoice('dead', false);
       }
       // Bot champion kill
