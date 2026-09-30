@@ -6607,6 +6607,48 @@ body.pong-active .joystick-label {
   pointer-events: none;
 }
 
+/* MOBA 3D: Small 0.6 opacity on all UI elements in gameplay and menu */
+#moba-hud-top,
+#moba-audio-controls,
+#moba-middle-action-buttons > div,
+#moba-hud-bottom,
+#moba-startup-menu .pointer-events-auto,
+#moba-btn-prev-hero,
+#moba-btn-next-hero,
+#moba-hero-loop-bar,
+#moba-col-rooms,
+#moba-col-roster,
+#moba-selected-details,
+#moba-lobby-minibar,
+#moba-shop-modal > div,
+#moba-about-modal > div,
+#moba-gameover-modal > div {
+  opacity: 0.6 !important;
+  transition: opacity 0.25s ease-in-out !important;
+}
+
+#moba-hud-top:hover,
+#moba-hud-top:focus-within,
+#moba-audio-controls:hover,
+#moba-middle-action-buttons > div:hover,
+#moba-hud-bottom:hover,
+#moba-hud-bottom:active,
+#moba-hud-bottom:focus-within,
+#moba-startup-menu .pointer-events-auto:hover,
+#moba-startup-menu .pointer-events-auto:focus-within,
+#moba-btn-prev-hero:hover,
+#moba-btn-next-hero:hover,
+#moba-hero-loop-bar:hover,
+#moba-col-rooms:hover,
+#moba-col-roster:hover,
+#moba-selected-details:hover,
+#moba-lobby-minibar:hover,
+#moba-shop-modal > div:hover,
+#moba-about-modal > div:hover,
+#moba-gameover-modal > div:hover {
+  opacity: 0.95 !important;
+}
+
 #moba-hud-bottom {
   position: absolute !important;
   bottom: 0 !important;
@@ -6616,14 +6658,6 @@ body.pong-active .joystick-label {
   background: rgba(0, 0, 0, 0.7) !important;
   backdrop-filter: blur(8px) !important;
   -webkit-backdrop-filter: blur(8px) !important;
-  opacity: 0.7;
-  transition: opacity 0.2s ease-in-out;
-}
-
-#moba-hud-bottom:hover,
-#moba-hud-bottom:active,
-#moba-hud-bottom:focus-within {
-  opacity: 1;
 }
 
 #moba-startup-menu * {
@@ -6738,7 +6772,7 @@ body.pong-active .joystick-label {
     background: rgba(0, 0, 0, 0.7) !important;
     backdrop-filter: blur(8px) !important;
     -webkit-backdrop-filter: blur(8px) !important;
-    opacity: 0.7;
+    opacity: 0.6 !important;
     transition: opacity 0.2s ease-in-out;
     display: flex !important;
     flex-direction: column !important;
@@ -6751,7 +6785,7 @@ body.pong-active .joystick-label {
   #moba-hud-bottom:hover,
   #moba-hud-bottom:active,
   #moba-hud-bottom:focus-within {
-    opacity: 1 !important;
+    opacity: 0.95 !important;
   }
 
   /* Independent popup floating outside/above the footer */

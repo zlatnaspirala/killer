@@ -8560,6 +8560,7 @@ void main() {
 
     this.log("✅ All 3D Combat Hero models loaded successfully into the carousel system!", "success");
     await this.loadTowerGLB();
+    await this.loadTronMesh();
     this.initSacredGeometryMeshes();
   }
 
@@ -8729,6 +8730,23 @@ void main() {
       } catch (err) {
         console.warn(`[loadTowerGLB] Failed to load from ${url}:`, err);
       }
+    }
+    return null;
+  }
+
+  async loadTronMesh() {
+    if (this.mobaTronMesh) return this.mobaTronMesh;
+    try {
+      const res = await fetch('/assets/models/tron/tron.obj');
+      if (!res.ok) throw new Error("Fetch failed");
+      const text = await res.text();
+      const rawData = this.parseOBJ(text);
+      const mesh = this.buildMeshBuffer(rawData);
+      this.mobaTronMesh = mesh;
+      this.log("🏢 Tron OBJ model loaded successfully from assets/models/tron/tron.obj!", "success");
+      return mesh;
+    } catch(e) {
+      console.warn("Failed to load Tron OBJ model, using high-quality procedural sphere:", e);
     }
     return null;
   }
@@ -9741,8 +9759,10 @@ void main() {
         return;
       }
 
-      if (this.state.cameraMode === 0) {
-        this.state.camRadius = Math.max(0.5, Math.min(30.0, this.state.camRadius + e.deltaY * 0.004));
+      const isRoulette = this.state.demoScene && (this.state.demoScene.includes('12_roulette') || this.state.demoScene.includes('09_roulette') || (this.rouletteState && this.rouletteState.active));
+      if (this.state.cameraMode === 0 || isRoulette) {
+        const minRad = isRoulette ? 0.20 : 0.5;
+        this.state.camRadius = Math.max(minRad, Math.min(30.0, this.state.camRadius + e.deltaY * 0.004));
       } else {
         this.state.moveSpeed = Math.max(0.5, Math.min(30.0, this.state.moveSpeed * (e.deltaY > 0 ? 0.9 : 1.1)));
         this.log(`FP Camera Speed: ${this.state.moveSpeed.toFixed(1)} u/s`, "info");
@@ -10279,10 +10299,10 @@ void main() {
       }, { passive: false });
     }
 
-    // Tabs
-    document.querySelectorAll('.tab-btn').forEach(btn => {
+    // Tabs (Only match buttons with data-tab)
+    document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         e.currentTarget.classList.add('active');
         const tabId = `tab-${e.currentTarget.dataset.tab}`;
@@ -10291,6 +10311,8 @@ void main() {
           targetTab.classList.add('active');
           if (e.currentTarget.dataset.tab === 'viewport') {
             setTimeout(() => this.onResize(), 10);
+            const canvasContainer = document.getElementById('canvas-container');
+            if (canvasContainer) canvasContainer.focus();
           }
         }
       });
@@ -10385,17 +10407,51 @@ void main() {
     }
 
     // Fullscreen toggle
-    const toggleFullscreen = () => {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(()=>{});
-      } else {
-        document.exitFullscreen().catch(()=>{});
+    const toggleFullscreen = (e) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
       }
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(()=>{});
+        } else if (document.documentElement.webkitRequestFullscreen) {
+          document.documentElement.webkitRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(()=>{});
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+      }
+      setTimeout(() => {
+        this.onResize();
+        const tabViewport = document.getElementById('tab-viewport');
+        if (tabViewport && tabViewport.classList.contains('active')) {
+          const canvasContainer = document.getElementById('canvas-container');
+          if (canvasContainer) canvasContainer.focus();
+        }
+      }, 60);
     };
     const btnFs = document.getElementById('btn-fullscreen');
     if (btnFs) btnFs.addEventListener('click', toggleFullscreen);
     const btnTabFs = document.getElementById('btn-tab-fullscreen');
     if (btnTabFs) btnTabFs.addEventListener('click', toggleFullscreen);
+
+    // Fullscreen change listener across browsers
+    const handleFullscreenChange = () => {
+      setTimeout(() => {
+        this.onResize();
+        const tabViewport = document.getElementById('tab-viewport');
+        if (tabViewport && tabViewport.classList.contains('active')) {
+          const canvasContainer = document.getElementById('canvas-container');
+          if (canvasContainer) canvasContainer.focus();
+        }
+      }, 50);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 
     // Listen for tab focus/blur state to make the local hero inactive and reduce taken damage
     document.addEventListener('visibilitychange', () => {
@@ -10835,10 +10891,18 @@ void main() {
         return;
       }
 
-      if (this.state.cameraMode === 0 || (this.state.demoScene && this.state.demoScene.includes('11_plinko'))) {
+      const ds = this.state.demoScene || '';
+      const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
+      const isTableGame = isRoulette || ds.includes('11_plinko') || ds.includes('15_moba') || ds.includes('14_pong') || ds.includes('13_bingo') || ds.includes('10_sliding_puzzle') || ds.includes('09_slot_machine');
+
+      if (isRoulette) {
+        // Deep zoom for Roulette wheel & ball inspection down to 0.20m; strictly remain in orbit mode
+        this.state.camRadius = Math.max(0.20, Math.min(22.0, this.state.camRadius - scaleDelta * 4.0));
+        this.showMobileZoomIndicator(this.state.camRadius, `Roulette View (${this.state.camRadius.toFixed(2)}m)`);
+      } else if (this.state.cameraMode === 0 || isTableGame) {
         const zoomSens = 0.014 * Math.max(0.4, this.state.camRadius * 0.22);
         this.state.camRadius = Math.max(0.4, Math.min(26.0, this.state.camRadius - scaleDelta * 4.0));
-        if (this.state.camRadius <= 0.6 && scaleDelta > 0.08) {
+        if (this.state.camRadius <= 0.6 && scaleDelta > 0.08 && !isTableGame) {
           this.state.cameraMode = 1;
           const camSelect = document.getElementById('camera-mode-select');
           if (camSelect) camSelect.value = "1";
@@ -11323,18 +11387,28 @@ void main() {
           this.pinchZoomState.lastDist = currentDist;
           this.pinchZoomState.lastPinchTime = Date.now();
 
-          // Two-Finger swipe translation (left-right panning) for Roulette
+          // Two-Finger swipe translation (left-right and Z-depth panning) for Roulette
           const ds = this.state.demoScene || '';
           const isRoulette = ds.includes('12_roulette') || ds.includes('09_roulette') || (this.rouletteState && this.rouletteState.active);
+          const isTableGame = isRoulette || ds.includes('11_plinko') || ds.includes('15_moba') || ds.includes('14_pong') || ds.includes('13_bingo') || ds.includes('10_sliding_puzzle') || ds.includes('09_slot_machine');
 
           if (isRoulette) {
             if (this.pinchZoomState.lastCenterX !== undefined && this.pinchZoomState.lastCenterY !== undefined) {
               const dx = currentCenterX - this.pinchZoomState.lastCenterX;
               const dy = currentCenterY - this.pinchZoomState.lastCenterY;
 
-              const panSens = 0.003 * this.state.camRadius;
-              this.state.camTarget[0] -= dx * panSens;
-              this.state.camTarget[2] -= dy * panSens;
+              const cosY = Math.cos(this.state.camYaw);
+              const sinY = Math.sin(this.state.camYaw);
+              // Camera right vector in XZ plane: [cosY, 0, -sinY]
+              // Camera forward/depth vector in XZ plane: [-sinY, 0, -cosY]
+              // Two fingers pan along X (left/right) and Z depth (forward/back) relative to camera!
+              const panSens = 0.0035 * Math.max(0.8, this.state.camRadius);
+              this.state.camTarget[0] += (-dx * cosY - dy * sinY) * panSens;
+              this.state.camTarget[2] += (dx * sinY - dy * cosY) * panSens;
+
+              // Keep within casino table arena bounds
+              this.state.camTarget[0] = Math.max(-14.0, Math.min(14.0, this.state.camTarget[0]));
+              this.state.camTarget[2] = Math.max(-14.0, Math.min(14.0, this.state.camTarget[2]));
             }
           }
 
@@ -11353,11 +11427,19 @@ void main() {
               return;
             }
 
+            if (isRoulette) {
+              // Deep zoom for Roulette wheel & ball inspection down to 0.20m; strictly remain in orbit mode
+              const zoomSens = 0.014 * Math.max(0.35, this.state.camRadius * 0.22);
+              this.state.camRadius = Math.max(0.20, Math.min(22.0, this.state.camRadius - deltaDist * zoomSens));
+              this.showMobileZoomIndicator(this.state.camRadius, `Roulette View (${this.state.camRadius.toFixed(2)}m)`);
+              return;
+            }
+
             // In 3D Plinko table / Orbit Camera mode:
-            if (this.state.cameraMode === 0 || this.state.demoScene.includes('11_plinko')) {
+            if (this.state.cameraMode === 0 || this.state.demoScene.includes('11_plinko') || isTableGame) {
               const zoomSens = 0.014 * Math.max(0.4, this.state.camRadius * 0.22);
               this.state.camRadius = Math.max(0.4, Math.min(26.0, this.state.camRadius - deltaDist * zoomSens));
-              if (this.state.camRadius <= 0.6 && deltaDist > 0.4 && !this.state.demoScene.includes('11_plinko')) {
+              if (this.state.camRadius <= 0.6 && deltaDist > 0.4 && !isTableGame) {
                 // Smooth transition into First-Person view
                 this.state.cameraMode = 1;
                 const camSelect = document.getElementById('camera-mode-select');
@@ -17879,17 +17961,36 @@ else if (typeof define === 'function' && define['amd'])
 
     // 6. Demo-specific teardowns
     // MOBA teardown
-    if (this.mobaState) {
-      this.mobaState.playing = false;
-      this.mobaState.projectiles = [];
-      this.mobaState.creeps = [];
-      this.mobaState.players = [];
-      this.mobaState.lobbyHeroes = [];
-      this.mobaState.inventory = [null, null, null, null, null, null];
-      this.mobaState = null;
+    if (this.mobaState || (oldDemo && oldDemo.includes('15_moba'))) {
+      if (this.mobaState) {
+        this.mobaState.playing = false;
+        this.mobaState.projectiles = [];
+        this.mobaState.creeps = [];
+        this.mobaState.players = [];
+        this.mobaState.lobbyHeroes = [];
+        this.mobaState.plants = [];
+        this.mobaState.vfxBursts = [];
+        this.mobaState.combatTexts = [];
+        this.mobaState.inventory = [null, null, null, null, null, null];
+        this.mobaState = null;
+      }
+      const mobaHud = document.getElementById('moba-hud');
+      if (mobaHud) mobaHud.style.display = 'none';
+      const mobaStartupModal = document.getElementById('moba-startup-modal');
+      if (mobaStartupModal) mobaStartupModal.style.display = 'none';
+      const mobaStartupMenu = document.getElementById('moba-startup-menu');
+      if (mobaStartupMenu) mobaStartupMenu.style.display = 'none';
+      const mobaShop = document.getElementById('moba-shop-modal');
+      if (mobaShop) mobaShop.style.display = 'none';
+      const mobaResp = document.getElementById('moba-respawn-overlay');
+      if (mobaResp) mobaResp.classList.add('hidden');
     }
 
     // Roulette teardown
+    if (this.rouletteTimerInterval) {
+      clearInterval(this.rouletteTimerInterval);
+      this.rouletteTimerInterval = null;
+    }
     if (this.rouletteState) {
       this.rouletteState.active = false;
       this.rouletteState.spinning = false;
@@ -17901,6 +18002,15 @@ else if (typeof define === 'function' && define['amd'])
     if (this.rouletteActors) {
       this.rouletteActors.forEach(a => { if (a) a.betTotal = 0; });
     }
+    const rOverlay = document.getElementById('roulette-overlay');
+    if (rOverlay) rOverlay.style.display = 'none';
+    const rBanner = document.getElementById('roulette-banner');
+    if (rBanner) rBanner.style.display = 'none';
+    const rFab = document.getElementById('roulette-mobile-fab');
+    if (rFab) rFab.style.display = 'none';
+    const rBtn = document.getElementById('roulette-desktop-show-btn');
+    if (rBtn) rBtn.style.display = 'none';
+
     if (this.gl) {
       if (this.rouletteTableTexture) {
         try { this.gl.deleteTexture(this.rouletteTableTexture); } catch (e) {}
@@ -17928,6 +18038,10 @@ else if (typeof define === 'function' && define['amd'])
       this.plinkoState.pegs = [];
       this.plinkoState = null;
     }
+    const plinkoOverlay = document.getElementById('plinko-overlay');
+    if (plinkoOverlay) plinkoOverlay.style.display = 'none';
+    const plinkoBanner = document.getElementById('plinko-banner');
+    if (plinkoBanner) plinkoBanner.style.display = 'none';
 
     // Slot Machine teardown
     if (this.slotMachine) {
@@ -17961,14 +18075,23 @@ else if (typeof define === 'function' && define['amd'])
     }
 
     // FPS teardown
+    if (this.fpsAutoFireInterval) {
+      clearInterval(this.fpsAutoFireInterval);
+      this.fpsAutoFireInterval = null;
+    }
     if (oldDemo && oldDemo.includes('07_fps')) {
       if (document.exitPointerLock) {
         try { document.exitPointerLock(); } catch(e){}
       }
       this.bots = [];
+      this.active3DBots = [];
       this.projectiles = [];
       this.activeDecals = [];
       this.damageNumbers = [];
+    }
+    const fpsStartupOverlay = document.getElementById('fps-startup-overlay');
+    if (fpsStartupOverlay && (!newDemo || !newDemo.includes('07_fps'))) {
+      fpsStartupOverlay.style.display = 'none';
     }
 
     // 7. Hide all overlays and reset document classes
@@ -27055,16 +27178,20 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const aspect = width / (height || 1);
     Mat4.perspective(this.projMatrix, (45 * Math.PI) / 180, aspect, 0.1, 150.0);
 
-    const isFpsMode = this.state.cameraMode === 3 || this.state.cameraMode === 1 || this.state.demoScene.includes('07_fps');
-    const isCharacterDemo = (this.state.demoScene.includes('06_glb') || this.state.demoScene === 'character') && !isFpsMode;
-    const isFpsDemo = this.state.demoScene.includes('07_fps') || isFpsMode;
+    const ds = this.state.demoScene || '';
+    const isStandaloneDemo = ds.includes('12_roulette') || ds.includes('15_moba') || ds.includes('11_plinko') || ds.includes('14_pong') || ds.includes('13_bingo') || ds.includes('10_sliding_puzzle') || ds.includes('09_slot_machine');
+    const isFpsMode = (this.state.cameraMode === 3 || this.state.cameraMode === 1) && !isStandaloneDemo;
+    const isCharacterDemo = (ds.includes('06_glb') || ds === 'character') && !isFpsMode;
+    const isFpsDemo = ds.includes('07_fps') || (isFpsMode && !isCharacterDemo && !isStandaloneDemo);
 
-    // Tick Damage System, Elevators, Teleporters, Network Sync, and Projectiles on every frame
-    this.updateProjectilesAndDamage(dt, timestamp);
-    this.updateElevators(dt);
-    this.updateTeleporters(dt);
-    this.updateHzbTelemetry(dt);
-    this.tickNetworkSync(timestamp);
+    // Tick Damage System, Elevators, Teleporters, Network Sync, and Projectiles ONLY during FPS shooter demo
+    if (isFpsDemo) {
+      this.updateProjectilesAndDamage(dt, timestamp);
+      this.updateElevators(dt);
+      this.updateTeleporters(dt);
+      this.updateHzbTelemetry(dt);
+      this.tickNetworkSync(timestamp);
+    }
 
     if (this.state.demoScene && this.state.demoScene.includes('15_moba')) {
       this.updateMobaGame(dt);
@@ -28480,9 +28607,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const isFpsMode = this.state.cameraMode === 3 || this.state.cameraMode === 1 || this.state.demoScene.includes('07_fps');
+    const isFpsMode = (this.state.cameraMode === 3 || this.state.cameraMode === 1) && !isSlotMachine && !this.state.demoScene.includes('12_roulette') && !this.state.demoScene.includes('15_moba');
     const isCharacterDemo = (this.state.demoScene.includes('06_glb') || this.state.demoScene === 'character') && !isFpsMode;
-    const isFpsDemo = this.state.demoScene.includes('07_fps') || isFpsMode;
+    const isFpsDemo = Boolean(this.state.demoScene && this.state.demoScene.includes('07_fps'));
     const isSlotMachine = this.state.demoScene.includes('09_slot_machine');
     const isMatrix = this.state.demoScene === 'matrix' || this.state.demoScene === '02_metallic_roughness_matrix.cpp';
     const isStudio = this.state.demoScene.includes('03_trefoil') || this.state.demoScene === 'studio';
@@ -28828,6 +28955,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     this.preloadAllMobaHeroes();
     this.loadTowerGLB();
+    this.loadTronMesh();
     this.initSacredGeometryMeshes();
     this.setShaderProgram(4);
     this.toggleCheapMaterial(true);
@@ -28866,8 +28994,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         { id: 'black_tower', team: 'BLACK', pos: [7.0, 0, 7.0], hp: 2400, maxHp: 2400 }
       ],
       trons: {
-        RED: { hp: 2500, maxHp: 2500, pos: [-15.0, 0, -15.0] },
-        BLACK: { hp: 2500, maxHp: 2500, pos: [15.0, 0, 15.0] }
+        RED: { id: 'tron_red', team: 'RED', hp: 2500, maxHp: 2500, pos: [-52.5, 0, -52.5], radius: 2.8 },
+        BLACK: { id: 'tron_black', team: 'BLACK', hp: 2500, maxHp: 2500, pos: [52.5, 0, 52.5], radius: 2.8 }
       },
       spawnTimer: 0.0,
       lobbyHeroes: [
@@ -29156,8 +29284,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       btnCloseGameover.onclick = () => {
         modalGameover.classList.add('hidden');
         modalGameover.style.display = 'none';
-        this.mobaState.playing = false;
-        if (this.updateFPSOverlays) this.updateFPSOverlays();
+        this.leaveMobaParty();
       };
     }
 
@@ -30104,13 +30231,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   leaveMobaParty() {
-    if (this.mobaState.activePartyId) {
+    if (this.mobaState && this.mobaState.activePartyId) {
       this.net.send('moba:leave_party', { partyId: this.mobaState.activePartyId });
     }
-    this.mobaState.activePartyId = null;
-    this.mobaState.party = null;
-    this.mobaState.playing = false;
-    this.mobaState.lockedHero = null;
+    if (this.mobaState) {
+      this.mobaState.activePartyId = null;
+      this.mobaState.party = null;
+      this.mobaState.playing = false;
+      this.mobaState.winner = null;
+      this.mobaState.lockedHero = null;
+      this.mobaState.deathTimestamp = null;
+      this.mobaState.corpsePos = null;
+    }
+    this._playerRespawnRemaining = 0;
     
     const placeholder = document.getElementById('moba-lobby-placeholder');
     const activePanel = document.getElementById('moba-lobby-active-panel');
@@ -30121,6 +30254,34 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     const minibar = document.getElementById('moba-lobby-minibar');
     if (minibar) minibar.classList.add('hidden');
+
+    const startupMenu = document.getElementById('moba-startup-menu');
+    if (startupMenu) {
+      startupMenu.classList.remove('hidden');
+      startupMenu.style.display = 'flex';
+    }
+    const mobaOverlay = document.getElementById('moba-overlay');
+    if (mobaOverlay) {
+      mobaOverlay.classList.add('hidden');
+      mobaOverlay.style.display = 'none';
+    }
+    const mobaHud = document.getElementById('moba-hud');
+    if (mobaHud) {
+      mobaHud.classList.add('hidden');
+      mobaHud.style.display = 'none';
+    }
+    const respOverlay = document.getElementById('moba-respawn-overlay');
+    if (respOverlay) {
+      respOverlay.classList.add('hidden');
+      respOverlay.style.display = 'none';
+    }
+    const modalGameover = document.getElementById('moba-gameover-modal');
+    if (modalGameover) {
+      modalGameover.classList.add('hidden');
+      modalGameover.style.display = 'none';
+    }
+    const isMobile = window.innerWidth < 640 || this.isMobileDevice();
+    this.setMobaMobileView(isMobile ? 'rooms' : 'draft');
 
     if (this.updateFPSOverlays) this.updateFPSOverlays();
 
@@ -30611,6 +30772,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (respOverlay) respOverlay.classList.add('hidden');
         stats.hp = stats.maxHp;
         stats.mp = stats.maxMp;
+        const basePos = this.mobaState.team === 'RED' ? [-46.5, 0, -46.5] : [46.5, 0, 46.5];
+        this.mobaState.currentPos = [...basePos];
+        this.mobaState.targetPos = null;
+        this.mobaState.targetEntity = null;
+        this.mobaState.currentTargetId = null;
         this.log("🌟 Mortis Ultima consumed! Instant divine rebirth!", "success");
         this.showMobaAlert("🌟 DIVINE REBIRTH! INSTANTLY RESURRECTED AT 100%!", "text-yellow-300");
         this.mobaPlaySound('confirm');
@@ -31578,7 +31744,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (this.mobaState.heroStats) {
           this.mobaState.heroStats.hp = this.mobaState.heroStats.maxHp;
           this.mobaState.heroStats.mp = this.mobaState.heroStats.maxMp;
-          const basePos = this.mobaState.team === 'RED' ? [-32.0, 0, -32.0] : [32.0, 0, 32.0];
+          const basePos = this.mobaState.team === 'RED' ? [-46.5, 0, -46.5] : [46.5, 0, 46.5];
           this.mobaState.currentPos = [...basePos];
           this.mobaState.targetPos = null;
           this.mobaState.targetEntity = null;
@@ -31867,11 +32033,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (this.mobaState.heroStats && this.mobaState.heroStats.hp > 0) {
         const playerTeam = this.mobaState.team;
         const playerPos = this.mobaState.currentPos;
-        const baseCenter = playerTeam === 'RED' ? [-33.0, 0, -33.0] : [33.0, 0, 33.0];
+        const baseCenter = playerTeam === 'RED' ? [-49.5, 0, -49.5] : [49.5, 0, 49.5];
         const distToBase = Math.hypot(playerPos[0] - baseCenter[0], playerPos[2] - baseCenter[2]);
 
-        // Healing radius strictly covers the fountain platform & courtyard (11.0m)
-        if (distToBase < 11.0) {
+        // Healing radius strictly covers the fountain platform & courtyard (16.5m)
+        if (distToBase < 16.5) {
           const stats = this.mobaState.heroStats;
           const oldHp = stats.hp;
           stats.hp = Math.min(stats.maxHp, stats.hp + dt * healRateHP);
@@ -31895,11 +32061,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.mobaState.players.forEach(b => {
           if (b.hp > 0 && b.pos) {
             const botTeam = b.team;
-            const baseCenter = botTeam === 'RED' ? [-33.0, 0, -33.0] : [33.0, 0, 33.0];
+            const baseCenter = botTeam === 'RED' ? [-49.5, 0, -49.5] : [49.5, 0, 49.5];
             const distToBase = Math.hypot(b.pos[0] - baseCenter[0], b.pos[2] - baseCenter[2]);
 
-            // Healing radius covers the fountain platform & courtyard (11.0m)
-            if (distToBase < 11.0) {
+            // Healing radius covers the fountain platform & courtyard (16.5m)
+            if (distToBase < 16.5) {
               const oldHp = b.hp;
               b.hp = Math.min(b.maxHp, b.hp + dt * healRateHP);
               b.mp = Math.min(b.maxMp || 250, (b.mp || 0) + dt * healRateMP);
@@ -32587,7 +32753,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (u2.radius) gl.uniform1f(u2.radius, 6.0);
         } else {
           // Red team base altar area light (+10% stronger)
-          if (u2.pos) gl.uniform3fv(u2.pos, [-38.0, 4.5, -38.0]);
+          if (u2.pos) gl.uniform3fv(u2.pos, [-52.5, 4.5, -52.5]);
           if (u2.color) gl.uniform3fv(u2.color, [0.85, 0.32, 0.15]);
           if (u2.intensity) gl.uniform1f(u2.intensity, 2.42);
           if (u2.radius) gl.uniform1f(u2.radius, 22.0);
@@ -32596,7 +32762,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const u3 = progInfo.pointLights[3];
       if (u3 && !isLobby) {
         // Blue team base altar area light (+10% stronger)
-        if (u3.pos) gl.uniform3fv(u3.pos, [38.0, 4.5, 38.0]);
+        if (u3.pos) gl.uniform3fv(u3.pos, [52.5, 4.5, 52.5]);
         if (u3.color) gl.uniform3fv(u3.color, [0.18, 0.55, 0.95]);
         if (u3.intensity) gl.uniform1f(u3.intensity, 2.42);
         if (u3.radius) gl.uniform1f(u3.radius, 22.0);
@@ -32630,10 +32796,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
 
-      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.95);
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.90);
       if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.0);
-      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.08, 0.18, 0.1])); // Forest deep green rock base
-      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 21); // Apply high-fidelity procedural forest floor terrain shader!
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.10, 0.18, 0.11])); // Forest deep green rock & fertile soil base
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Cheap material: simple clean color, let dynamic lighting provide realism
 
       gl.drawElements(gl.TRIANGLES, groundMesh.indexCount, gl.UNSIGNED_SHORT, 0);
       if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Restore default material type
@@ -33037,7 +33203,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const roadMesh = this.mobaRoadMesh || this.meshBuffers[1];
     if (roadMesh) {
       gl.bindVertexArray(roadMesh.vao);
-      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 17); // Organic Weathered Cobblestone Road with Jagged Edges!
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Cheap material: simple clean color, let dynamic lighting give realistic depth!
 
       this.instanceMatrix[0] = 1.0; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
       this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 1.0; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
@@ -33045,11 +33211,40 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.instanceMatrix[12] = 0; this.instanceMatrix[13] = 0.018; this.instanceMatrix[14] = 0; this.instanceMatrix[15] = 1.0;
 
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
-      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.88);
-      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.04);
-      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.22, 0.20, 0.17]));
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.82);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.02);
+      if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.32, 0.30, 0.26])); // Warm weathered cobblestone gray
       gl.drawElements(gl.TRIANGLES, roadMesh.indexCount, gl.UNSIGNED_SHORT, 0);
       if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+    }
+
+    // 0.1b Render Road Trotoar From Rocks (Stone curb sidewalk lining both sides of the roads)
+    const trotoarMesh = this.mobaBoulderMesh || this.meshBuffers[1];
+    if (trotoarMesh && globalForestLayoutEngine.roadTrotoarRocks && globalForestLayoutEngine.roadTrotoarRocks.length > 0) {
+      gl.bindVertexArray(trotoarMesh.vao);
+      if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Simple rock color, not procedural mat!
+      if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.85);
+      if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.02);
+
+      const maxTrotoarDistSq = (isCheapMat ? 38.0 : 56.0) ** 2;
+      for (let i = 0; i < globalForestLayoutEngine.roadTrotoarRocks.length; i++) {
+        const rk = globalForestLayoutEngine.roadTrotoarRocks[i];
+        const dx = rk.x - camX, dz = rk.z - camZ;
+        if (dx * dx + dz * dz > maxTrotoarDistSq) continue; // Distance culling
+
+        const sc = rk.scale;
+        const cosR = Math.cos(rk.rotY || 0);
+        const sinR = Math.sin(rk.rotY || 0);
+
+        this.instanceMatrix[0] = cosR * sc; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinR * sc; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sc * 0.72; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sinR * sc; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosR * sc; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = rk.x; this.instanceMatrix[13] = (rk.y || 0.0) + sc * 0.28; this.instanceMatrix[14] = rk.z; this.instanceMatrix[15] = 1.0;
+
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, rk.color || [0.35, 0.34, 0.32]);
+        gl.drawElements(gl.TRIANGLES, trotoarMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      }
     }
 
     // 0.1 Render Procedural Forest Trees (Trunks & Natural Canopies)
@@ -33170,11 +33365,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // Draw Procedural Underbrush Boulders
       if (boulderMesh && globalForestLayoutEngine.boulders) {
         gl.bindVertexArray(boulderMesh.vao);
-        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 18); // Use moss-covered rock shader!
-        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.92);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Simple clean rock color, let dynamic lighting give depth!
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.88);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.02);
         if (progInfo.uBaseColor) {
-          this._mobaColorBuf[0] = 0.28; this._mobaColorBuf[1] = 0.30; this._mobaColorBuf[2] = 0.32;
+          this._mobaColorBuf[0] = 0.34; this._mobaColorBuf[1] = 0.33; this._mobaColorBuf[2] = 0.31;
           gl.uniform3fv(progInfo.uBaseColor, this._mobaColorBuf);
         }
 
@@ -33403,58 +33598,84 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const baseCube = this.meshBuffers[1];
 
     if (baseSphere && baseCube) {
-      const redPos = (this.mobaState.trons && this.mobaState.trons.RED && this.mobaState.trons.RED.pos) || [-38.0, 0, -38.0];
-      const blackPos = (this.mobaState.trons && this.mobaState.trons.BLACK && this.mobaState.trons.BLACK.pos) || [38.0, 0, 38.0];
+      const redPos = (this.mobaState.trons && this.mobaState.trons.RED && this.mobaState.trons.RED.pos) || [-52.5, 0, -52.5];
+      const blackPos = (this.mobaState.trons && this.mobaState.trons.BLACK && this.mobaState.trons.BLACK.pos) || [52.5, 0, 52.5];
 
-      // Draw Red Base Tron (At dynamic redPos)
-      gl.bindVertexArray(baseSphere.vao);
-      let sizeRed = 1.6 + Math.sin(timestamp * 0.003) * 0.15;
+      // Draw Red Base Tron (Scaled down per user request so it is well-proportioned on base)
+      const redMesh = this.mobaTronMesh || baseSphere;
+      const isRedTronObj = redMesh === this.mobaTronMesh;
+      gl.bindVertexArray(redMesh.vao);
+      let sizeRed = isRedTronObj ? (0.46 + Math.sin(timestamp * 0.003) * 0.03) : (1.1 + Math.sin(timestamp * 0.003) * 0.08);
       const redHpFactor = this.mobaState.trons.RED.hp / 2500;
       if (redHpFactor <= 0) sizeRed = 0.0; // Destroyed
 
-      this.instanceMatrix[0] = sizeRed; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sizeRed; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sizeRed; this.instanceMatrix[11] = 0;
-      this.instanceMatrix[12] = redPos[0]; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = redPos[2]; this.instanceMatrix[15] = 1.0;
+      if (isRedTronObj) {
+        // Spin the Tron model slowly on Y axis
+        const rotY = timestamp * 0.0003;
+        const cosR = Math.cos(rotY) * sizeRed;
+        const sinR = Math.sin(rotY) * sizeRed;
+        this.instanceMatrix[0] = cosR; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinR; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sizeRed; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sinR; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosR; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = redPos[0]; this.instanceMatrix[13] = 0.05; this.instanceMatrix[14] = redPos[2]; this.instanceMatrix[15] = 1.0;
+      } else {
+        this.instanceMatrix[0] = sizeRed; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sizeRed; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sizeRed; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = redPos[0]; this.instanceMatrix[13] = 0.8; this.instanceMatrix[14] = redPos[2]; this.instanceMatrix[15] = 1.0;
+      }
 
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.1);
       if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
       if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.9, 0.1 * redHpFactor, 0.1 * redHpFactor])); // Shuts down when dying
-      gl.drawElements(gl.TRIANGLES, baseSphere.indexCount, gl.UNSIGNED_SHORT, 0);
+      gl.drawElements(gl.TRIANGLES, redMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
-      // Draw spinning decorative base columns for RED
+      // Draw decorative base columns for RED (proportional to scaled-down Tron)
       gl.bindVertexArray(baseCube.vao);
       const redRot = timestamp * 0.001;
-      this.instanceMatrix[0] = Math.cos(redRot) * 0.5; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -Math.sin(redRot) * 0.5; this.instanceMatrix[3] = 0;
-      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 2.5; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-      this.instanceMatrix[8] = Math.sin(redRot) * 0.5; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = Math.cos(redRot) * 0.5; this.instanceMatrix[11] = 0;
-      this.instanceMatrix[12] = redPos[0]; this.instanceMatrix[13] = 1.25; this.instanceMatrix[14] = redPos[2]; this.instanceMatrix[15] = 1.0;
+      this.instanceMatrix[0] = Math.cos(redRot) * 0.32; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -Math.sin(redRot) * 0.32; this.instanceMatrix[3] = 0;
+      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 1.6; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+      this.instanceMatrix[8] = Math.sin(redRot) * 0.32; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = Math.cos(redRot) * 0.32; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[12] = redPos[0]; this.instanceMatrix[13] = 0.8; this.instanceMatrix[14] = redPos[2]; this.instanceMatrix[15] = 1.0;
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       gl.drawElements(gl.TRIANGLES, baseCube.indexCount, gl.UNSIGNED_SHORT, 0);
 
-      // Draw Black Base Tron (At dynamic blackPos)
-      gl.bindVertexArray(baseSphere.vao);
-      let sizeBlack = 1.6 + Math.sin(timestamp * 0.003 + 2.0) * 0.15;
+      // Draw Black Base Tron (At dynamic blackPos, scaled down per user request)
+      const blackMesh = this.mobaTronMesh || baseSphere;
+      const isBlackTronObj = blackMesh === this.mobaTronMesh;
+      gl.bindVertexArray(blackMesh.vao);
+      let sizeBlack = isBlackTronObj ? (0.46 + Math.sin(timestamp * 0.003 + 2.0) * 0.03) : (1.1 + Math.sin(timestamp * 0.003 + 2.0) * 0.08);
       const blackHpFactor = this.mobaState.trons.BLACK.hp / 2500;
       if (blackHpFactor <= 0) sizeBlack = 0.0;
 
-      this.instanceMatrix[0] = sizeBlack; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
-      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sizeBlack; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-      this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sizeBlack; this.instanceMatrix[11] = 0;
-      this.instanceMatrix[12] = blackPos[0]; this.instanceMatrix[13] = 1.0; this.instanceMatrix[14] = blackPos[2]; this.instanceMatrix[15] = 1.0;
+      if (isBlackTronObj) {
+        // Spin the Tron model slowly on Y axis (opposite direction for black base)
+        const rotY = -timestamp * 0.0003;
+        const cosR = Math.cos(rotY) * sizeBlack;
+        const sinR = Math.sin(rotY) * sizeBlack;
+        this.instanceMatrix[0] = cosR; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinR; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sizeBlack; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sinR; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosR; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = blackPos[0]; this.instanceMatrix[13] = 0.05; this.instanceMatrix[14] = blackPos[2]; this.instanceMatrix[15] = 1.0;
+      } else {
+        this.instanceMatrix[0] = sizeBlack; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = sizeBlack; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = sizeBlack; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = blackPos[0]; this.instanceMatrix[13] = 0.8; this.instanceMatrix[14] = blackPos[2]; this.instanceMatrix[15] = 1.0;
+      }
 
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.15 * blackHpFactor, 0.05 * blackHpFactor, 0.9 * blackHpFactor])); // Violet/Black energy core
-      gl.drawElements(gl.TRIANGLES, baseSphere.indexCount, gl.UNSIGNED_SHORT, 0);
+      gl.drawElements(gl.TRIANGLES, blackMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
-      // Draw spinning columns for BLACK
+      // Draw decorative columns for BLACK
       gl.bindVertexArray(baseCube.vao);
       const blackRot = -timestamp * 0.001;
-      this.instanceMatrix[0] = Math.cos(blackRot) * 0.5; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -Math.sin(blackRot) * 0.5; this.instanceMatrix[3] = 0;
-      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 2.5; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
-      this.instanceMatrix[8] = Math.sin(blackRot) * 0.5; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = Math.cos(blackRot) * 0.5; this.instanceMatrix[11] = 0;
-      this.instanceMatrix[12] = blackPos[0]; this.instanceMatrix[13] = 1.25; this.instanceMatrix[14] = blackPos[2]; this.instanceMatrix[15] = 1.0;
+      this.instanceMatrix[0] = Math.cos(blackRot) * 0.32; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -Math.sin(blackRot) * 0.32; this.instanceMatrix[3] = 0;
+      this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 1.6; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+      this.instanceMatrix[8] = Math.sin(blackRot) * 0.32; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = Math.cos(blackRot) * 0.32; this.instanceMatrix[11] = 0;
+      this.instanceMatrix[12] = blackPos[0]; this.instanceMatrix[13] = 0.8; this.instanceMatrix[14] = blackPos[2]; this.instanceMatrix[15] = 1.0;
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       gl.drawElements(gl.TRIANGLES, baseCube.indexCount, gl.UNSIGNED_SHORT, 0);
     }
@@ -35756,19 +35977,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       shieldTimer: 0
     };
 
-    const startPos = this.mobaState.team === 'RED' ? [-36.0, 0, -36.0] : [36.0, 0, 36.0];
+    const startPos = this.mobaState.team === 'RED' ? [-46.5, 0, -46.5] : [46.5, 0, 46.5];
     this.mobaState.currentPos = [...startPos];
     this.mobaState.targetPos = null;
     this.mobaState.velocity = [0, 0, 0];
     this.mobaState.currentYaw = this.mobaState.team === 'RED' ? Math.PI * 0.25 : -Math.PI * 0.75;
 
-    // Trons with dual HP & Mana energy reservoirs (scaled up for enlarged map)
+    // Trons with dual HP & Mana energy reservoirs (scaled nicely for enlarged map with calibrated collision radius)
     this.mobaState.trons = {
-      RED: { id: 'tron_red', team: 'RED', hp: 2500, maxHp: 2500, mp: 1000, maxMp: 1000, pos: [-38.0, 0, -38.0], radius: 5.2 },
-      BLACK: { id: 'tron_black', team: 'BLACK', hp: 2500, maxHp: 2500, mp: 1000, maxMp: 1000, pos: [38.0, 0, 38.0], radius: 5.2 }
+      RED: { id: 'tron_red', team: 'RED', hp: 2500, maxHp: 2500, mp: 1000, maxMp: 1000, pos: [-52.5, 0, -52.5], radius: 2.8 },
+      BLACK: { id: 'tron_black', team: 'BLACK', hp: 2500, maxHp: 2500, mp: 1000, maxMp: 1000, pos: [52.5, 0, 52.5], radius: 2.8 }
     };
 
-    // Initialize Procedural Map Layout & 8 Classic Defensive Towers across all 3 lanes
+    // Initialize Procedural Map Layout & 8 Classic Defensive Towers across all 3 lanes (Halved attack radius)
     globalForestLayoutEngine.initMapLayout();
     this.mobaState.towers = globalForestLayoutEngine.towers.map(t => ({
       id: t.id,
@@ -35780,17 +36001,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       mp: t.mp || 400,
       maxMp: t.maxMp || 400,
       attackTimer: 0,
-      range: t.range || 15.0,
+      range: t.range || 11.25,
       damage: t.damage || 70
     }));
 
-    // Bots deployed across Top, Mid, and Bot lanes with full HP & Mana pools, competitive stats & spell mastery
+    // Bots deployed across Top, Mid, and Bot lanes (scaled up 1.5x)
     this.mobaState.players = [
-      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 680, maxHp: 680, mp: 500, maxMp: 500, damage: 62, speed: 4.2, attackRange: 7.0, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-33.0, 0, -28.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1 },
-      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 950, maxHp: 950, mp: 350, maxMp: 350, damage: 78, speed: 4.0, attackRange: 2.5, attackCooldown: 0.95, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-28.0, 0, -33.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1 },
-      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 740, maxHp: 740, mp: 450, maxMp: 450, damage: 65, speed: 4.3, attackRange: 7.2, attackCooldown: 0.82, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [33.0, 0, 28.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1 },
-      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 780, maxHp: 780, mp: 380, maxMp: 380, damage: 72, speed: 4.5, attackRange: 2.5, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [28.0, 0, 33.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1 },
-      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 880, maxHp: 880, mp: 450, maxMp: 450, damage: 75, speed: 4.2, attackRange: 2.5, attackCooldown: 0.88, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [32.0, 0, 32.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1 }
+      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 680, maxHp: 680, mp: 500, maxMp: 500, damage: 62, speed: 4.2, attackRange: 7.0, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-49.5, 0, -42.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1 },
+      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 950, maxHp: 950, mp: 350, maxMp: 350, damage: 78, speed: 4.0, attackRange: 2.5, attackCooldown: 0.95, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-42.0, 0, -49.5], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1 },
+      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 740, maxHp: 740, mp: 450, maxMp: 450, damage: 65, speed: 4.3, attackRange: 7.2, attackCooldown: 0.82, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [49.5, 0, 42.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1 },
+      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 780, maxHp: 780, mp: 380, maxMp: 380, damage: 72, speed: 4.5, attackRange: 2.5, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [42.0, 0, 49.5], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1 },
+      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 880, maxHp: 880, mp: 450, maxMp: 450, damage: 75, speed: 4.2, attackRange: 2.5, attackCooldown: 0.88, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [48.0, 0, 48.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1 }
     ];
 
     // Track creep buff multipliers per team & lane (+30% when team destroys a tower on that road)
@@ -35945,10 +36166,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // Trons with dynamic positions and accurate collision base radius
     if (this.mobaState && this.mobaState.trons) {
       if (this.mobaState.trons.RED && this.mobaState.trons.RED.pos) {
-        obstacles.push({ x: this.mobaState.trons.RED.pos[0], z: this.mobaState.trons.RED.pos[2], r: this.mobaState.trons.RED.radius || 4.2 });
+        obstacles.push({ x: this.mobaState.trons.RED.pos[0], z: this.mobaState.trons.RED.pos[2], r: this.mobaState.trons.RED.radius || 2.8 });
       }
       if (this.mobaState.trons.BLACK && this.mobaState.trons.BLACK.pos) {
-        obstacles.push({ x: this.mobaState.trons.BLACK.pos[0], z: this.mobaState.trons.BLACK.pos[2], r: this.mobaState.trons.BLACK.radius || 4.2 });
+        obstacles.push({ x: this.mobaState.trons.BLACK.pos[0], z: this.mobaState.trons.BLACK.pos[2], r: this.mobaState.trons.BLACK.radius || 2.8 });
       }
     }
 
@@ -35974,9 +36195,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
     }
 
-    // Outer arena boundary clamp (extent 44.0)
-    pos[0] = Math.max(-44.0, Math.min(44.0, pos[0]));
-    pos[2] = Math.max(-44.0, Math.min(44.0, pos[2]));
+    // Outer arena boundary clamp (extent 66.0, scaled 1.5x from 44.0)
+    pos[0] = Math.max(-66.0, Math.min(66.0, pos[0]));
+    pos[2] = Math.max(-66.0, Math.min(66.0, pos[2]));
   }
 
   resolveUnitSeparation() {
@@ -36489,10 +36710,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // Filter out dead creeps
     this.mobaState.creeps = this.mobaState.creeps.filter(c => c.hp > 0);
 
-    // Enemy base locations (scaled to match the 2.0x larger map)
+    // Enemy base locations (scaled to match 1.5x enlarged map)
     const enemyFountain = {
-      RED: [38.0, 0, 38.0],
-      BLACK: [-38.0, 0, -38.0]
+      RED: [52.5, 0, 52.5],
+      BLACK: [-52.5, 0, -52.5]
     };
 
     this.mobaState.creeps.forEach(creep => {
@@ -37292,8 +37513,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       }
 
       const botOffset = (b.id.charCodeAt(b.id.length - 1) % 3 - 1) * 2.5;
-      const basePos = b.team === 'RED' ? [-32.0 + botOffset, 0, -32.0 - botOffset] : [32.0 - botOffset, 0, 32.0 + botOffset];
-      const enemyBasePos = b.team === 'RED' ? [32.0, 0, 32.0] : [-32.0, 0, -32.0];
+      const basePos = b.team === 'RED' ? [-48.0 + botOffset, 0, -48.0 - botOffset] : [48.0 - botOffset, 0, 48.0 + botOffset];
+      const enemyBasePos = b.team === 'RED' ? [48.0, 0, 48.0] : [-48.0, 0, -48.0];
 
       // Low health tactical retreat to base fountain (< 25% HP), remains retreating until restored to >= 90% HP
       if (b.isRetreating || b.hp < b.maxHp * 0.25) {
@@ -37320,9 +37541,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           b.moving = false;
         }
 
-        // Base fountain healing when near staging platform
-        const distToBaseCenter = Math.hypot(b.pos[0] - (b.team === 'RED' ? -32.0 : 32.0), b.pos[2] - (b.team === 'RED' ? -32.0 : 32.0));
-        if (distToBaseCenter < 12.0) {
+        // Base fountain healing when near staging platform (scaled 1.5x)
+        const distToBaseCenter = Math.hypot(b.pos[0] - (b.team === 'RED' ? -48.0 : 48.0), b.pos[2] - (b.team === 'RED' ? -48.0 : 48.0));
+        if (distToBaseCenter < 18.0) {
           b.hp = Math.min(b.maxHp, b.hp + dt * 160);
           b.mp = Math.min(b.maxMp || 450, (b.mp || 0) + dt * 100);
 
@@ -37436,11 +37657,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // --- TOWER DIVE SAFETY AWARENESS ---
       // Intelligent bots check if an enemy tower is nearby and avoid suiciding unless friendly creeps are tanking
       if (bestTarget && this.mobaState.towers) {
-        const nearestEnemyTower = this.mobaState.towers.find(t => t.team !== b.team && t.hp > 0 && Math.hypot(t.pos[0] - b.pos[0], t.pos[2] - b.pos[2]) < 14.0);
+        const nearestEnemyTower = this.mobaState.towers.find(t => t.team !== b.team && t.hp > 0 && Math.hypot(t.pos[0] - b.pos[0], t.pos[2] - b.pos[2]) < ((t.range || 11.25) + 2.0));
         if (nearestEnemyTower) {
+          const towerRange = nearestEnemyTower.range || 11.25;
           const towerDist = Math.hypot(nearestEnemyTower.pos[0] - b.pos[0], nearestEnemyTower.pos[2] - b.pos[2]);
-          const friendlyCreepsTanking = this.mobaState.creeps && this.mobaState.creeps.some(c => c.team === b.team && c.hp > 0 && Math.hypot(c.pos[0] - nearestEnemyTower.pos[0], c.pos[2] - nearestEnemyTower.pos[2]) < (nearestEnemyTower.range || 15.0));
-          if (!friendlyCreepsTanking && towerDist < 12.0) {
+          const friendlyCreepsTanking = this.mobaState.creeps && this.mobaState.creeps.some(c => c.team === b.team && c.hp > 0 && Math.hypot(c.pos[0] - nearestEnemyTower.pos[0], c.pos[2] - nearestEnemyTower.pos[2]) < towerRange);
+          if (!friendlyCreepsTanking && towerDist < towerRange) {
             // Dangerous! Back away from enemy tower range
             const towDx = b.pos[0] - nearestEnemyTower.pos[0];
             const towDz = b.pos[2] - nearestEnemyTower.pos[2];
@@ -38308,7 +38530,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             target.waypointIndex = 1;
             target.spellsCooldown = [0, 0, 0, 0];
             const botOffset = (target.id.charCodeAt(target.id.length - 1) % 3 - 1) * 2.5;
-            const bBase = target.team === 'RED' ? [-32.0 + botOffset, 0, -32.0 - botOffset] : [32.0 - botOffset, 0, 32.0 + botOffset];
+            const bBase = target.team === 'RED' ? [-46.5 + botOffset, 0, -46.5 - botOffset] : [46.5 - botOffset, 0, 46.5 + botOffset];
             target.pos = [...bBase];
           }
         }, botRespawnDelay);

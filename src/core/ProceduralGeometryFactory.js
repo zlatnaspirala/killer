@@ -1326,11 +1326,12 @@ export class ProceduralGeometryFactory {
       const wps = lanesDict[laneKey];
       if (!wps || wps.length < 2) return;
 
-      const baseWidth = laneKey === 'mid' ? 3.4 : 2.8;
+      // Base width scaled cleanly for 1.5x larger map: mid lane is wider major boulevard, side lanes are classic pathways
+      const baseWidth = laneKey === 'mid' ? 6.2 : 5.2;
       const halfWidth = baseWidth * 0.5;
 
       // Sample along continuous polyline with small steps for high fidelity organic curves
-      const stepDist = 0.9;
+      const stepDist = 1.0;
       let totalDist = 0;
 
       // Calculate cumulative lengths
@@ -1378,20 +1379,28 @@ export class ProceduralGeometryFactory {
 
         // 5 vertices across: [Fringe Left, Stone Edge Left, Crown Center, Stone Edge Right, Fringe Right]
         const vCols = [
-          { off: -(wL + 0.45), y: 0.010, u: 0.0 },
-          { off: -wL,          y: 0.024, u: 0.2 },
-          { off: 0.0,          y: 0.038, u: 0.5 }, // Elevated road crown
-          { off: wR,           y: 0.024, u: 0.8 },
-          { off: wR + 0.45,    y: 0.010, u: 1.0 }
+          { off: -(wL + 0.35), yOffset: 0.012, u: 0.0 },
+          { off: -wL,          yOffset: 0.026, u: 0.2 },
+          { off: 0.0,          yOffset: 0.042, u: 0.5 }, // Elevated road crown
+          { off: wR,           yOffset: 0.026, u: 0.8 },
+          { off: wR + 0.35,    yOffset: 0.012, u: 1.0 }
         ];
 
         for (let c = 0; c < 5; c++) {
           const col = vCols[c];
           const px = cx + nx * col.off;
           const pz = cz + nz * col.off;
+          const baseH = (typeof globalForestLayoutEngine !== 'undefined' && globalForestLayoutEngine.getTerrainHeight)
+            ? globalForestLayoutEngine.getTerrainHeight(px, pz)
+            : 0.0;
+          const py = baseH + col.yOffset;
 
-          positions.push(px, col.y, pz);
-          normals.push(0.0, 1.0, 0.0);
+          positions.push(px, py, pz);
+          // Normal: crown curved slightly outward for realistic road drainage
+          const tiltX = nx * (col.off / Math.max(0.1, wL)) * 0.15;
+          const tiltZ = nz * (col.off / Math.max(0.1, wR)) * 0.15;
+          const nLen = Math.hypot(tiltX, 1.0, tiltZ) || 1.0;
+          normals.push(tiltX / nLen, 1.0 / nLen, tiltZ / nLen);
           uvs.push(col.u, totalDist * 0.45);
           barys.push(1, 0, 0);
         }
@@ -1414,6 +1423,126 @@ export class ProceduralGeometryFactory {
 
           indices.push(i0, i1, i2);
           indices.push(i1, i3, i2);
+        }
+      }
+    });
+
+    return { positions, normals, uvs, barys, indices };
+  }
+
+  /**
+   * Generates continuous 3D stone/rock trotoar (raised sidewalk / rock curb) along both borders of the lanes
+   */
+  static createProceduralRoadTrotoar(lanesDict) {
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const barys = [];
+    const indices = [];
+
+    const rng = new PRNG(883311);
+
+    Object.keys(lanesDict).forEach(laneKey => {
+      const wps = lanesDict[laneKey];
+      if (!wps || wps.length < 2) return;
+
+      const baseWidth = laneKey === 'mid' ? 4.8 : 3.8;
+      const halfWidth = baseWidth * 0.5;
+      const stepDist = 1.0;
+      let totalDist = 0;
+
+      const segLengths = [];
+      let laneLength = 0;
+      for (let i = 0; i < wps.length - 1; i++) {
+        const d = Math.hypot(wps[i + 1][0] - wps[i][0], wps[i + 1][2] - wps[i][2]);
+        segLengths.push(d);
+        laneLength += d;
+      }
+
+      let currentSeg = 0;
+      let distInSeg = 0;
+      let laneStartIndex = positions.length / 3;
+      let crossSections = 0;
+
+      while (totalDist <= laneLength) {
+        while (currentSeg < segLengths.length - 1 && distInSeg > segLengths[currentSeg]) {
+          distInSeg -= segLengths[currentSeg];
+          currentSeg++;
+        }
+
+        const tSeg = Math.min(1.0, Math.max(0.0, distInSeg / Math.max(0.001, segLengths[currentSeg])));
+        const p1 = wps[currentSeg];
+        const p2 = wps[currentSeg + 1] || p1;
+
+        const cx = p1[0] + (p2[0] - p1[0]) * tSeg;
+        const cz = p1[2] + (p2[2] - p1[2]) * tSeg;
+
+        const tdx = p2[0] - p1[0];
+        const tdz = p2[2] - p1[2];
+        const tLen = Math.hypot(tdx, tdz) || 1.0;
+        const nx = -tdz / tLen;
+        const nz = tdx / tLen;
+
+        const wobbleL = Math.sin(totalDist * 0.95) * 0.45 + Math.cos(totalDist * 2.3) * 0.25 + rng.range(-0.1, 0.1);
+        const wobbleR = Math.cos(totalDist * 0.88) * 0.42 + Math.sin(totalDist * 2.5) * 0.28 + rng.range(-0.1, 0.1);
+
+        const wL = halfWidth + wobbleL;
+        const wR = halfWidth + wobbleR;
+
+        // Individual stone slab height variation
+        const slabJitter = (Math.sin(totalDist * 3.8) > 0.0 ? 0.015 : -0.012) + rng.range(-0.01, 0.01);
+        const curbHeight = 0.11 + slabJitter;
+
+        // Left curb profile (3 vertices) and Right curb profile (3 vertices)
+        // Left Trotoar: [Outer Base, Raised Stone Top, Inner Road Base]
+        const leftCurb = [
+          { off: -(wL + 0.60), y: 0.020, nx: -0.85, ny: 0.52, u: 0.0 },
+          { off: -(wL + 0.48), y: curbHeight, nx: -0.25, ny: 0.97, u: 0.5 },
+          { off: -wL,          y: 0.038, nx: 0.70,  ny: 0.71, u: 1.0 }
+        ];
+
+        // Right Trotoar: [Inner Road Base, Raised Stone Top, Outer Base]
+        const rightCurb = [
+          { off: wR,          y: 0.038, nx: -0.70, ny: 0.71, u: 0.0 },
+          { off: wR + 0.48,   y: curbHeight, nx: 0.25,  ny: 0.97, u: 0.5 },
+          { off: wR + 0.60,   y: 0.020, nx: 0.85,  ny: 0.52, u: 1.0 }
+        ];
+
+        // Push 6 vertices per cross section (3 for left trotoar, 3 for right trotoar)
+        for (let c = 0; c < 3; c++) {
+          const v = leftCurb[c];
+          positions.push(cx + nx * v.off, v.y, cz + nz * v.off);
+          normals.push(nx * v.nx, v.ny, nz * v.nx);
+          uvs.push(v.u, totalDist * 0.75);
+          barys.push(1, 0, 0);
+        }
+        for (let c = 0; c < 3; c++) {
+          const v = rightCurb[c];
+          positions.push(cx + nx * v.off, v.y, cz + nz * v.off);
+          normals.push(nx * v.nx, v.ny, nz * v.nx);
+          uvs.push(v.u, totalDist * 0.75);
+          barys.push(0, 1, 0);
+        }
+
+        crossSections++;
+        totalDist += stepDist;
+        distInSeg += stepDist;
+      }
+
+      for (let s = 0; s < crossSections - 1; s++) {
+        const row0 = laneStartIndex + s * 6;
+        const row1 = laneStartIndex + (s + 1) * 6;
+
+        // Left curb strip (vertices 0, 1, 2)
+        for (let c = 0; c < 2; c++) {
+          indices.push(row0 + c, row0 + c + 1, row1 + c);
+          indices.push(row0 + c + 1, row1 + c + 1, row1 + c);
+        }
+
+        // Right curb strip (vertices 3, 4, 5)
+        for (let c = 3; c < 5; c++) {
+          indices.push(row0 + c, row0 + c + 1, row1 + c);
+          indices.push(row0 + c + 1, row1 + c + 1, row1 + c);
         }
       }
     });
@@ -2441,6 +2570,7 @@ export class ProceduralForestLayoutEngine {
     this.frogs = [];
     this.ravens = [];
     this.towers = [];
+    this.roadTrotoarRocks = [];
     this.lanePaths = {
       top: [],
       mid: [],
@@ -2451,73 +2581,145 @@ export class ProceduralForestLayoutEngine {
   }
 
   /**
-   * Initializes the entire procedural layout (Expanded & Enlarged Map Layout)
+   * Initializes the entire procedural layout (Expanded & Enlarged Map Layout scaled 1.5x)
    */
   initMapLayout() {
     if (this.initialized) return;
     this.initialized = true;
 
-    // 1. Classic Dota 3-Lane Waypoint Definitions (Enlarged 35x35 extent map)
+    const S = 1.5; // Scaling factor (1.5x larger map)
+
+    // 1. Classic Dota 3-Lane Waypoint Definitions (Enlarged 35x35 * 1.5 = 52.5 extent map)
     // Top Lane: Curves north along west forest border, crosses top river corner, enters enemy base
     this.lanePaths.top = [
-      [-35.0, 0, -35.0], // Red Base
-      [-35.0, 0, -16.0], // Red Top Tier 2 Tower Area
-      [-35.0, 0, 9.0],   // Red Top Tier 1 Tower Area
-      [-26.0, 0, 26.0],  // River Top Shallows Crossing
-      [-9.0, 0, 35.0],   // Black Top Tier 1 Tower Area
-      [16.0, 0, 35.0],   // Black Top Tier 2 Tower Area
-      [35.0, 0, 35.0]    // Black Base
+      [-35.0 * S, 0, -35.0 * S], // Red Base
+      [-35.0 * S, 0, -16.0 * S], // Red Top Tier 2 Tower Area
+      [-35.0 * S, 0, 9.0 * S],   // Red Top Tier 1 Tower Area
+      [-26.0 * S, 0, 26.0 * S],  // River Top Shallows Crossing
+      [-9.0 * S, 0, 35.0 * S],   // Black Top Tier 1 Tower Area
+      [16.0 * S, 0, 35.0 * S],   // Black Top Tier 2 Tower Area
+      [35.0 * S, 0, 35.0 * S]    // Black Base
     ];
 
     // Mid Lane: Classic straight diagonal through river bridge
     this.lanePaths.mid = [
-      [-35.0, 0, -35.0], // Red Base
-      [-22.0, 0, -22.0], // Red Mid Tier 2 Area
-      [-11.0, 0, -11.0], // Red Mid Tier 1 Tower
-      [0.0, 0, 0.0],     // River Center Shallows & Ancient Runes
-      [11.0, 0, 11.0],   // Black Mid Tier 1 Tower
-      [22.0, 0, 22.0],   // Black Mid Tier 2 Area
-      [35.0, 0, 35.0]    // Black Base
+      [-35.0 * S, 0, -35.0 * S], // Red Base
+      [-22.0 * S, 0, -22.0 * S], // Red Mid Tier 2 Area
+      [-11.0 * S, 0, -11.0 * S], // Red Mid Tier 1 Tower
+      [0.0 * S, 0, 0.0 * S],     // River Center Shallows & Ancient Runes
+      [11.0 * S, 0, 11.0 * S],   // Black Mid Tier 1 Tower
+      [22.0 * S, 0, 22.0 * S],   // Black Mid Tier 2 Area
+      [35.0 * S, 0, 35.0 * S]    // Black Base
     ];
 
     // Bottom Lane: Curves east along south forest border, crosses bottom river corner, enters enemy base
     this.lanePaths.bot = [
-      [-35.0, 0, -35.0], // Red Base
-      [-16.0, 0, -35.0], // Red Bot Tier 2 Tower Area
-      [9.0, 0, -35.0],   // Red Bot Tier 1 Tower Area
-      [26.0, 0, -26.0],  // River Bot Shallows Crossing
-      [35.0, 0, -9.0],   // Black Bot Tier 1 Tower Area
-      [35.0, 0, 16.0],   // Black Bot Tier 2 Tower Area
-      [35.0, 0, 35.0]    // Black Base
+      [-35.0 * S, 0, -35.0 * S], // Red Base
+      [-16.0 * S, 0, -35.0 * S], // Red Bot Tier 2 Tower Area
+      [9.0 * S, 0, -35.0 * S],   // Red Bot Tier 1 Tower Area
+      [26.0 * S, 0, -26.0 * S],  // River Bot Shallows Crossing
+      [35.0 * S, 0, -9.0 * S],   // Black Bot Tier 1 Tower Area
+      [35.0 * S, 0, 16.0 * S],   // Black Bot Tier 2 Tower Area
+      [35.0 * S, 0, 35.0 * S]    // Black Base
     ];
 
     // River bed points (Enlarged across full map diagonal)
     this.riverPath = [
-      [-48.0, 0, 48.0],
-      [-25.0, 0, 25.0],
-      [0.0, 0, 0.0],
-      [25.0, 0, -25.0],
-      [48.0, 0, -48.0]
+      [-48.0 * S, 0, 48.0 * S],
+      [-25.0 * S, 0, 25.0 * S],
+      [0.0 * S, 0, 0.0 * S],
+      [25.0 * S, 0, -25.0 * S],
+      [48.0 * S, 0, -48.0 * S]
     ];
 
-    // 2. Defensive Towers for all 3 classic lanes (Scaled to enlarged map)
+    // 2. Defensive Towers for all 3 classic lanes (Scaled to enlarged map with half attack radius)
     this.towers = [
       // Top Lane
-      { id: 'tower_red_top', team: 'RED', lane: 'top', pos: [-35.0, 0, 9.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
-      { id: 'tower_black_top', team: 'BLACK', lane: 'top', pos: [-9.0, 0, 35.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
+      { id: 'tower_red_top', team: 'RED', lane: 'top', pos: [-35.0 * S, 0, 9.0 * S], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 7.5 * S, attackTimer: 0 },
+      { id: 'tower_black_top', team: 'BLACK', lane: 'top', pos: [-9.0 * S, 0, 35.0 * S], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 7.5 * S, attackTimer: 0 },
       // Mid Lane
-      { id: 'tower_red_mid', team: 'RED', lane: 'mid', pos: [-11.0, 0, -11.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
-      { id: 'tower_black_mid', team: 'BLACK', lane: 'mid', pos: [11.0, 0, 11.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
+      { id: 'tower_red_mid', team: 'RED', lane: 'mid', pos: [-11.0 * S, 0, -11.0 * S], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 7.5 * S, attackTimer: 0 },
+      { id: 'tower_black_mid', team: 'BLACK', lane: 'mid', pos: [11.0 * S, 0, 11.0 * S], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 7.5 * S, attackTimer: 0 },
       // Bottom Lane
-      { id: 'tower_red_bot', team: 'RED', lane: 'bot', pos: [9.0, 0, -35.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
-      { id: 'tower_black_bot', team: 'BLACK', lane: 'bot', pos: [35.0, 0, -9.0], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 15.0, attackTimer: 0 },
+      { id: 'tower_red_bot', team: 'RED', lane: 'bot', pos: [9.0 * S, 0, -35.0 * S], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 7.5 * S, attackTimer: 0 },
+      { id: 'tower_black_bot', team: 'BLACK', lane: 'bot', pos: [35.0 * S, 0, -9.0 * S], hp: 2400, maxHp: 2400, mp: 400, maxMp: 400, damage: 130, range: 7.5 * S, attackTimer: 0 },
       // Base Guardian Towers
-      { id: 'tower_red_base', team: 'RED', lane: 'base', pos: [-28.0, 0, -28.0], hp: 3000, maxHp: 3000, mp: 600, maxMp: 600, damage: 160, range: 16.0, attackTimer: 0 },
-      { id: 'tower_black_base', team: 'BLACK', lane: 'base', pos: [28.0, 0, 28.0], hp: 3000, maxHp: 3000, mp: 600, maxMp: 600, damage: 160, range: 16.0, attackTimer: 0 }
+      { id: 'tower_red_base', team: 'RED', lane: 'base', pos: [-28.0 * S, 0, -28.0 * S], hp: 3000, maxHp: 3000, mp: 600, maxMp: 600, damage: 160, range: 8.0 * S, attackTimer: 0 },
+      { id: 'tower_black_base', team: 'BLACK', lane: 'base', pos: [28.0 * S, 0, 28.0 * S], hp: 3000, maxHp: 3000, mp: 600, maxMp: 600, damage: 160, range: 8.0 * S, attackTimer: 0 }
     ];
 
     // 3. Generate Procedural Forest Trees
     this.generateForestTrees();
+
+    // 4. Generate Road Trotoar Rocks lining both sides of the lanes
+    this.generateRoadTrotoarRocks();
+  }
+
+  /**
+   * Generates decorative trotoar rocks and stone clusters lining the road curbs
+   */
+  generateRoadTrotoarRocks() {
+    this.roadTrotoarRocks = [];
+    const rng = new PRNG(447722);
+    const lanes = [this.lanePaths.top, this.lanePaths.mid, this.lanePaths.bot];
+    lanes.forEach(path => {
+      if (!path || path.length < 2) return;
+      const isMid = (path === this.lanePaths.mid);
+      const halfWidth = (isMid ? 6.2 : 5.2) * 0.5;
+
+      for (let i = 0; i < path.length - 1; i++) {
+        const p1 = path[i];
+        const p2 = path[i + 1];
+        const segDist = Math.hypot(p2[0] - p1[0], p2[2] - p1[2]);
+        if (segDist < 0.1) continue;
+        const dx = (p2[0] - p1[0]) / segDist;
+        const dz = (p2[2] - p1[2]) / segDist;
+        const nx = -dz;
+        const nz = dx;
+
+        // Place stone trotoar curb rocks along both left and right edges every 3.2 to 4.5 meters
+        const step = 3.6;
+        for (let d = 2.0; d < segDist - 1.5; d += step + rng.range(-0.4, 0.5)) {
+          const t = d / segDist;
+          const cx = p1[0] + (p2[0] - p1[0]) * t;
+          const cz = p1[2] + (p2[2] - p1[2]) * t;
+
+          // Left trotoar stone curb rock
+          if (rng.next() < 0.88) {
+            const sideDist = halfWidth + 0.35 + rng.range(-0.15, 0.30);
+            const rx = cx - nx * sideDist;
+            const rz = cz - nz * sideDist;
+            const sc = rng.range(0.28, 0.50);
+            const shade = rng.range(0.30, 0.38);
+            this.roadTrotoarRocks.push({
+              x: rx,
+              z: rz,
+              y: this.getTerrainHeight(rx, rz),
+              scale: sc,
+              rotY: rng.range(0, Math.PI * 2),
+              color: [shade, shade * 0.98, shade * 0.95]
+            });
+          }
+
+          // Right trotoar stone curb rock
+          if (rng.next() < 0.88) {
+            const sideDist = halfWidth + 0.35 + rng.range(-0.15, 0.30);
+            const rx = cx + nx * sideDist;
+            const rz = cz + nz * sideDist;
+            const sc = rng.range(0.28, 0.50);
+            const shade = rng.range(0.30, 0.38);
+            this.roadTrotoarRocks.push({
+              x: rx,
+              z: rz,
+              y: this.getTerrainHeight(rx, rz),
+              scale: sc,
+              rotY: rng.range(0, Math.PI * 2),
+              color: [shade, shade * 0.98, shade * 0.95]
+            });
+          }
+        }
+      }
+    });
   }
 
   /**
@@ -2538,17 +2740,18 @@ export class ProceduralForestLayoutEngine {
    * Keeps lane tracks and bases smooth while giving wild jungle areas organic knolls and rolling topography
    */
   getTerrainHeight(x, z) {
+    const S = 1.5;
     // 1. Riverbed depression along the diagonal x + z = 0
     const distToRiver = Math.abs(x + z) * 0.7071;
     let riverDepth = 0.0;
-    if (distToRiver < 5.8) {
-      const riverT = distToRiver / 5.8;
+    if (distToRiver < 5.8 * S) {
+      const riverT = distToRiver / (5.8 * S);
       riverDepth = -0.42 * (1.0 - riverT * riverT);
     }
 
     // 2. Base sanctuaries and lane clearance: smooth flat ground where combat & lane towers are
-    const redBaseDist = Math.hypot(x - (-35.0), z - (-35.0));
-    const blackBaseDist = Math.hypot(x - 35.0, z - 35.0);
+    const redBaseDist = Math.hypot(x - (-35.0 * S), z - (-35.0 * S));
+    const blackBaseDist = Math.hypot(x - 35.0 * S, z - 35.0 * S);
     const centerRuneDist = Math.hypot(x, z);
 
     let minLaneDist = 999.0;
@@ -2564,24 +2767,24 @@ export class ProceduralForestLayoutEngine {
     }
 
     let jungleWeight = 1.0;
-    if (redBaseDist < 14.0) {
-      jungleWeight = Math.min(jungleWeight, Math.max(0, (redBaseDist - 9.0) / 5.0));
+    if (redBaseDist < 14.0 * S) {
+      jungleWeight = Math.min(jungleWeight, Math.max(0, (redBaseDist - 9.0 * S) / (5.0 * S)));
     }
-    if (blackBaseDist < 14.0) {
-      jungleWeight = Math.min(jungleWeight, Math.max(0, (blackBaseDist - 9.0) / 5.0));
+    if (blackBaseDist < 14.0 * S) {
+      jungleWeight = Math.min(jungleWeight, Math.max(0, (blackBaseDist - 9.0 * S) / (5.0 * S)));
     }
-    if (centerRuneDist < 6.0) {
-      jungleWeight = Math.min(jungleWeight, Math.max(0, (centerRuneDist - 3.5) / 2.5));
+    if (centerRuneDist < 6.0 * S) {
+      jungleWeight = Math.min(jungleWeight, Math.max(0, (centerRuneDist - 3.5 * S) / (2.5 * S)));
     }
-    if (minLaneDist < 6.5) {
-      jungleWeight = Math.min(jungleWeight, Math.max(0, (minLaneDist - 2.8) / 3.7));
+    if (minLaneDist < 6.5 * S) {
+      jungleWeight = Math.min(jungleWeight, Math.max(0, (minLaneDist - 2.8 * S) / (3.7 * S)));
     }
 
     // Smooth sinusoidal multi-octave hill heightmap
-    const hill1 = Math.sin(x * 0.082 + 0.5) * Math.cos(z * 0.074 - 0.4) * 0.78;
-    const hill2 = Math.sin(x * 0.155 - z * 0.138 + 1.2) * 0.42;
-    const hill3 = Math.cos(x * 0.038 + z * 0.045) * 0.25;
-    const microUndulation = Math.sin(x * 0.32 + z * 0.28) * 0.08;
+    const hill1 = Math.sin(x * (0.082 / S) + 0.5) * Math.cos(z * (0.074 / S) - 0.4) * 0.78;
+    const hill2 = Math.sin(x * (0.155 / S) - z * (0.138 / S) + 1.2) * 0.42;
+    const hill3 = Math.cos(x * (0.038 / S) + z * (0.045 / S)) * 0.25;
+    const microUndulation = Math.sin(x * (0.32 / S) + z * (0.28 / S)) * 0.08;
 
     const hillHeight = (hill1 + hill2 + hill3 + microUndulation) * jungleWeight;
 
@@ -2592,18 +2795,19 @@ export class ProceduralForestLayoutEngine {
    * Checks whether [x, z] is inside any lane corridor (which must remain free of trees)
    */
   isPointInLaneOrSanctuary(x, z, laneClearance = 4.8) {
+    const S = 1.5;
     // Red Base Sanctuary (scaled to enlarged map)
-    if (Math.hypot(x - (-35.0), z - (-35.0)) < 11.5) return true;
+    if (Math.hypot(x - (-35.0 * S), z - (-35.0 * S)) < 11.5 * S) return true;
     // Black Base Sanctuary (scaled to enlarged map)
-    if (Math.hypot(x - 35.0, z - 35.0) < 11.5) return true;
+    if (Math.hypot(x - 35.0 * S, z - 35.0 * S) < 11.5 * S) return true;
     // Center River Rune Shrine
-    if (Math.hypot(x, z) < 4.5) return true;
+    if (Math.hypot(x, z) < 4.5 * S) return true;
 
     // Check all 3 classic lanes
     const lanes = [this.lanePaths.top, this.lanePaths.mid, this.lanePaths.bot];
     for (const path of lanes) {
       for (let i = 0; i < path.length - 1; i++) {
-        if (this.distToSegment(x, z, path[i], path[i + 1]) < laneClearance) {
+        if (this.distToSegment(x, z, path[i], path[i + 1]) < laneClearance * S) {
           return true;
         }
       }
@@ -2611,7 +2815,7 @@ export class ProceduralForestLayoutEngine {
 
     // Check towers clearance
     for (const t of this.towers) {
-      if (Math.hypot(x - t.pos[0], z - t.pos[2]) < 4.8) return true;
+      if (Math.hypot(x - t.pos[0], z - t.pos[2]) < 4.8 * S) return true;
     }
 
     return false;
@@ -2630,14 +2834,15 @@ export class ProceduralForestLayoutEngine {
     const rng = new PRNG(998877);
     const treeTypes = ['oak', 'pine', 'willow', 'ancient_spire'];
 
-    // Sample candidate spots across enlarged map (mapExtent 46.0)
-    const mapExtent = 46.0;
-    const step = 4.4;
+    const S = 1.5;
+    // Sample candidate spots across enlarged map (mapExtent 46.0 * 1.5 = 69.0)
+    const mapExtent = 46.0 * S;
+    const step = 4.4 * S;
 
     for (let gx = -mapExtent; gx <= mapExtent; gx += step) {
       for (let gz = -mapExtent; gz <= mapExtent; gz += step) {
-        const jx = gx + rng.range(-1.4, 1.4);
-        const jz = gz + rng.range(-1.4, 1.4);
+        const jx = gx + rng.range(-1.4 * S, 1.4 * S);
+        const jz = gz + rng.range(-1.4 * S, 1.4 * S);
 
         // Keep lanes and bases open
         if (this.isPointInLaneOrSanctuary(jx, jz, 5.0)) continue;
@@ -2745,12 +2950,12 @@ export class ProceduralForestLayoutEngine {
 
     // Procedural wild forest grass generation - Much higher density and coverage with varied grass types
     const grassRng = new PRNG(445566);
-    const grassExtent = 47.0;
-    const grassStep = 1.0; // ultra dense lush grass layout
+    const grassExtent = 47.0 * S;
+    const grassStep = 1.0 * S; // ultra dense lush grass layout
     for (let gx = -grassExtent; gx <= grassExtent; gx += grassStep) {
       for (let gz = -grassExtent; gz <= grassExtent; gz += grassStep) {
-        const jx = gx + grassRng.range(-0.45, 0.45);
-        const jz = gz + grassRng.range(-0.45, 0.45);
+        const jx = gx + grassRng.range(-0.45 * S, 0.45 * S);
+        const jz = gz + grassRng.range(-0.45 * S, 0.45 * S);
 
         // Keep lanes and core bases open, allow slightly closer on edges
         if (this.isPointInLaneOrSanctuary(jx, jz, 2.0)) continue;
@@ -2804,18 +3009,18 @@ export class ProceduralForestLayoutEngine {
     // 1. Procedural River Reeds (Aquatic grass with extra Cattail & aquatic leaf geometry in water/river)
     this.riverReeds = [];
     const reedRng = new PRNG(339911);
-    for (let d = -45.0; d <= 45.0; d += 1.4) {
+    for (let d = -45.0 * S; d <= 45.0 * S; d += 1.4 * S) {
       // Along river diagonal (-d, d)
       const riverCenter = [-d, d];
       // Lateral offset across river bed (-3.2 to 3.2 m from centerline)
-      const lateralOff = reedRng.range(-3.6, 3.6);
+      const lateralOff = reedRng.range(-3.6 * S, 3.6 * S);
       // Unit normal perpendicular to river diagonal (-1, 1) is (1, 1) / sqrt(2)
       const invSqrt2 = 0.7071;
-      const rx = riverCenter[0] + lateralOff * invSqrt2 + reedRng.range(-0.35, 0.35);
-      const rz = riverCenter[1] + lateralOff * invSqrt2 + reedRng.range(-0.35, 0.35);
+      const rx = riverCenter[0] + lateralOff * invSqrt2 + reedRng.range(-0.35 * S, 0.35 * S);
+      const rz = riverCenter[1] + lateralOff * invSqrt2 + reedRng.range(-0.35 * S, 0.35 * S);
 
       // Keep center rune shrine clear
-      if (Math.hypot(rx, rz) < 4.2) continue;
+      if (Math.hypot(rx, rz) < 4.2 * S) continue;
 
       this.riverReeds.push({
         x: rx,
@@ -2837,14 +3042,14 @@ export class ProceduralForestLayoutEngine {
       [0.85, 0.72, 0.98], // Soft Lavender
       [0.99, 0.85, 0.55]  // Sunrise Golden
     ];
-    for (let d = -40.0; d <= 40.0; d += 2.2) {
+    for (let d = -40.0 * S; d <= 40.0 * S; d += 2.2 * S) {
       const riverCenter = [-d, d];
-      const lateralOff = lilyRng.range(-2.8, 2.8);
+      const lateralOff = lilyRng.range(-2.8 * S, 2.8 * S);
       const invSqrt2 = 0.7071;
-      const lx = riverCenter[0] + lateralOff * invSqrt2 + lilyRng.range(-0.4, 0.4);
-      const lz = riverCenter[1] + lateralOff * invSqrt2 + lilyRng.range(-0.4, 0.4);
+      const lx = riverCenter[0] + lateralOff * invSqrt2 + lilyRng.range(-0.4 * S, 0.4 * S);
+      const lz = riverCenter[1] + lateralOff * invSqrt2 + lilyRng.range(-0.4 * S, 0.4 * S);
 
-      if (Math.hypot(lx, lz) < 4.5) continue;
+      if (Math.hypot(lx, lz) < 4.5 * S) continue;
 
       const blossomCol = lilyBlossomColors[Math.floor(lilyRng.next() * lilyBlossomColors.length)];
       this.waterLilies.push({
@@ -2869,16 +3074,16 @@ export class ProceduralForestLayoutEngine {
       [0.95, 0.95, 0.98]  // Mountain Edelweiss White
     ];
 
-    for (let gx = -42.0; gx <= 42.0; gx += 3.8) {
-      for (let gz = -42.0; gz <= 42.0; gz += 3.8) {
+    for (let gx = -42.0 * S; gx <= 42.0 * S; gx += 3.8 * S) {
+      for (let gz = -42.0 * S; gz <= 42.0 * S; gz += 3.8 * S) {
         if (flowerRng.next() > 0.55) continue;
-        const fx = gx + flowerRng.range(-1.4, 1.4);
-        const fz = gz + flowerRng.range(-1.4, 1.4);
+        const fx = gx + flowerRng.range(-1.4 * S, 1.4 * S);
+        const fz = gz + flowerRng.range(-1.4 * S, 1.4 * S);
 
         if (this.isPointInLaneOrSanctuary(fx, fz, 2.2)) continue;
         // Don't place in deep river
         const distDiag = Math.abs(fx + fz) * 0.7071;
-        if (distDiag < 3.2) continue;
+        if (distDiag < 3.2 * S) continue;
 
         const fColor = flowerPalettes[Math.floor(flowerRng.next() * flowerPalettes.length)];
         this.wildFlowers.push({
@@ -2895,7 +3100,7 @@ export class ProceduralForestLayoutEngine {
     // 4. Neutral Riverbank Frogs (Low-poly cute animated frogs)
     this.frogs = [];
     const frogRng = new PRNG(661144);
-    for (let d = -38.0; d <= 38.0; d += 4.5) {
+    for (let d = -38.0 * S; d <= 38.0 * S; d += 4.5 * S) {
       // Place near riverbanks or shallows
       const riverCenter = [-d, d];
       // Place on left or right bank

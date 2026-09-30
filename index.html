@@ -60,7 +60,7 @@
           <span>API DOCS</span>
         </button>
         <!-- Fullscreen Tab Action Button (Saves precious vertical screen real estate!) -->
-        <button id="btn-fullscreen" class="tab-btn ml-auto flex items-center space-x-1 hover:bg-slate-800/40 text-sky-400 font-bold border-l border-slate-800/80 pl-4 transition-all" title="Toggle Fullscreen">
+        <button id="btn-fullscreen" class="ml-auto flex items-center space-x-1 hover:bg-slate-800/40 text-sky-400 font-bold border-l border-slate-800/80 px-4 py-2 text-xs transition-all cursor-pointer" title="Toggle Fullscreen">
           <span class="tab-icon">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="inline-block align-middle"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
           </span>
@@ -1061,28 +1061,22 @@
                   <span id="mobile-zoom-text">Zoom: 18.5x (RTS)</span>
                 </div>
 
-                <!-- Action Controls: Attack Button with Shop Button docked directly UNDER it on the right side -->
+                <!-- Action Controls: Shop Button on the right side -->
                 <div id="moba-middle-action-buttons" class="w-full flex justify-end items-end pointer-events-none mb-3 sm:mb-12 md:mb-16 px-2 sm:px-4 z-30">
                   <div class="flex flex-col items-end space-y-1.5 pointer-events-auto">
-                    <!-- Attack [A] Button -->
-                    <div class="flex items-center space-x-2">
-                      <button id="moba-btn-attack" class="flex items-center space-x-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 border border-red-400/50 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-[0_0_12px_rgba(239,68,68,0.5)] transition-all text-white font-black text-[11px] sm:text-xs cursor-pointer active:scale-95">
-                        <span>⚔️ ATTACK [A]</span>
-                      </button>
-                      <div class="hidden sm:block bg-black/50 px-2 py-0.5 rounded text-[9px] text-slate-300 border border-white/10">
-                        <span class="text-amber-400 font-bold">1 2 3 4</span> or <span class="text-amber-400 font-bold">Q W E R</span>: Magic
-                      </div>
-                    </div>
-                    <!-- Base Shop [B] Button (Stacked directly UNDER Attack) -->
+                    <!-- Base Shop [B] Button -->
                     <button id="moba-btn-shop" class="flex items-center space-x-1.5 bg-gradient-to-r from-amber-600/90 to-amber-500/90 hover:from-amber-600 hover:to-amber-500 border border-amber-400/40 px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-xl shadow-lg transition-all text-white font-bold text-[10.5px] sm:text-xs cursor-pointer active:scale-95">
                       <span>🛒 BASE SHOP [B]</span>
                     </button>
+                    <div class="hidden sm:block bg-black/50 px-2 py-0.5 rounded text-[9px] text-slate-300 border border-white/10">
+                      <span class="text-amber-400 font-bold">1 2 3 4</span> or <span class="text-amber-400 font-bold">Q W E R</span>: Magic
+                    </div>
                   </div>
                 </div>
               </div>
 
               <!-- BOTTOM PANEL (Portrait, HP/Mana, Spells, Inventory, Gold) -->
-              <div id="moba-hud-bottom" class="absolute bottom-0 left-0 right-0 bg-black/70 backdrop-blur-md border-t border-white/20 px-2 py-1 sm:px-3 sm:py-1.5 flex flex-col justify-between pointer-events-auto z-50 shadow-2xl gap-1 max-w-full min-h-[76px] sm:min-h-[88px] sm:h-24 md:min-h-[96px] md:h-28 opacity-70 hover:opacity-100 active:opacity-100 transition-opacity duration-200">
+              <div id="moba-hud-bottom" class="absolute bottom-0 left-0 right-0 bg-black/70 backdrop-blur-md border-t border-white/20 px-2 py-1 sm:px-3 sm:py-1.5 flex flex-col justify-between pointer-events-auto z-50 shadow-2xl gap-1 max-w-full min-h-[76px] sm:min-h-[88px] sm:h-24 md:min-h-[96px] md:h-28 opacity-60 hover:opacity-95 active:opacity-95 transition-opacity duration-200">
                 <!-- Interactive Independent Tooltip/Description Floating Banner (Anchored cleanly above footer, guaranteed never covered) -->
                 <div id="moba-hud-description" class="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 bg-slate-950/95 border border-amber-500/80 px-3 py-1.5 rounded-lg text-center text-amber-300 text-[10px] sm:text-[12.5px] font-black tracking-wide transition-all duration-200 pointer-events-none opacity-0 select-none z-[100] shadow-[0_8px_30px_rgba(0,0,0,0.95)] max-w-[94%] sm:max-w-xl w-max flex items-center justify-center space-x-2">
                   <span class="text-amber-400">🔮</span>
