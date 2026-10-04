@@ -1047,6 +1047,11 @@
                 <div class="bg-slate-950/90 border border-red-500/30 p-5 sm:p-6 rounded-2xl flex flex-col items-center max-w-sm text-center shadow-[0_0_25px_rgba(239,68,68,0.25)] pointer-events-auto">
                   <span class="text-3xl sm:text-4xl drop-shadow-md">💀</span>
                   <h2 class="text-lg sm:text-xl font-black text-rose-400 tracking-wider mt-1.5 uppercase drop-shadow">YOU HAVE FALLEN</h2>
+                  <!-- SHAMEFUL DEATH BADGE & LABEL (Dead from Creep or Tower) -->
+                  <div id="moba-shame-badge" class="hidden mt-2 px-3 py-1.5 rounded-xl bg-red-950/95 border-2 border-red-500 text-red-200 text-[11px] sm:text-xs font-black tracking-wider uppercase animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.7)] items-center space-x-1.5 justify-center">
+                    <span>🤦</span>
+                    <span id="moba-shame-badge-text">SHAMEFUL DEATH! (+2s PENALTY)</span>
+                  </div>
                   <p class="text-[11px] sm:text-xs text-slate-200/90 mt-1.5 leading-relaxed drop-shadow">Wait for respawn or use <strong class="text-cyan-300 font-bold">Magic Reborn</strong> potion from your inventory to half cut respawn time!</p>
                   <div class="text-3xl sm:text-4xl font-black font-mono text-amber-300 mt-3 animate-pulse drop-shadow" id="moba-respawn-countdown">15.0s</div>
                   <div class="text-[10px] sm:text-xs text-amber-400 font-bold mt-1" id="moba-respawn-penalty-text">+3s respawn penalty per death</div>
@@ -1155,13 +1160,13 @@
                   <div id="moba-spells-container" class="flex items-center space-x-1 sm:space-x-2 shrink-0 p-0 m-0">
                     <!-- Spell Q -->
                     <div class="moba-spell-slot relative w-11 h-11 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-black/40 border border-white/20 rounded-md overflow-hidden cursor-pointer hover:border-amber-400 active:scale-95 transition-all flex flex-col justify-between p-0.5 group m-0" id="moba-spell-q"
-                         onmouseenter="app.showMobaHudTooltip('[Q / 1]: Area Blast - Deals heavy magical area damage to nearby enemies and creeps (Cost: 40 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('[Q / 1]: Area Blast - Deals heavy magical area damage to nearby enemies and creeps (Cost: 40 Mana)')" ontouchend="app.hideMobaHudTooltip()">
+                         onmouseenter="app.showMobaHudTooltip('[Q / 1]: Starfall - Calls down radiant tumbling ball particles from the sky, dealing 145 area damage & slow (Cost: 40 Mana)')" onmouseleave="app.hideMobaHudTooltip()" ontouchstart="app.showMobaHudTooltip('[Q / 1]: Starfall - Calls down radiant tumbling ball particles from the sky, dealing 145 area damage & slow (Cost: 40 Mana)')" ontouchend="app.hideMobaHudTooltip()">
                       <div id="moba-spell-q-img" class="absolute inset-0 bg-cover bg-center opacity-85 group-hover:scale-105 transition-transform" style="background-image: url('assets/textures/moba/magics/arissa-1.png');"></div>
                       <div class="relative flex justify-between items-center w-full leading-none">
                         <span class="bg-black/70 px-0.5 rounded text-[8px] sm:text-[10px] md:text-xs font-black text-slate-200 font-mono" title="Keyboard shortcut: 1 or Q">Q/1</span>
                         <span class="text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-sky-300 font-mono bg-black/70 px-0.5 rounded" id="moba-spell-q-cost">40</span>
                       </div>
-                      <div class="relative text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-q-name">Blast</div>
+                      <div class="relative text-[7.5px] sm:text-[9.5px] md:text-[11px] font-bold text-white truncate bg-black/70 px-0.5 rounded text-center w-full leading-tight" id="moba-spell-q-name">Starfall</div>
                       <div id="moba-spell-q-cooldown" class="absolute inset-0 bg-black/80 flex items-center justify-center text-[12px] sm:text-[14px] md:text-base font-mono font-bold text-amber-400" style="display: none;">3s</div>
                     </div>
 
@@ -1247,7 +1252,9 @@
                 <!-- Header: Ultra-compact, fits on single line on mobile -->
                 <div class="flex flex-row justify-between items-center bg-black/40 border border-white/10 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl shadow-xl pointer-events-auto gap-1 sm:gap-2">
                   <div class="flex items-center space-x-1.5 shrink-0">
-                    <span class="bg-red-600 text-white text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase">MOBA 3D</span>
+                    <button id="moba-btn-about-tag" class="bg-red-600 hover:bg-red-500 text-white text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase cursor-pointer flex items-center space-x-1 pointer-events-auto" title="Click for Game Guide & Information">
+                      <span>INFO ℹ️</span>
+                    </button>
                     <h1 class="text-xs sm:text-sm font-black text-white tracking-tight hidden sm:flex items-center space-x-1">
                       <span>FOREST OF HOLLOW BLOOD</span>
                     </h1>
@@ -1271,7 +1278,7 @@
                     </button>
                     <!-- About Button -->
                     <button id="moba-btn-about" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-bold text-slate-200 transition-all cursor-pointer flex items-center space-x-1">
-                      <span>📜 About</span>
+                      <span>📜 Info</span>
                     </button>
                     <input type="text" id="moba-player-name-input" class="bg-black/50 border border-white/15 focus:border-amber-500/50 px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-lg text-[10px] sm:text-xs font-bold text-slate-200 outline-none w-16 sm:w-28" placeholder="Your Name" value="MobaPlayer">
                     <button id="moba-btn-leave-party" class="bg-black/50 hover:bg-black/70 border border-white/10 px-2 py-0.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-bold text-slate-300 transition-all cursor-pointer">Exit</button>
@@ -1538,6 +1545,131 @@
                         </p>
                         <a href="https://github.com/google/filament" target="_blank" rel="noopener noreferrer" class="text-[9px] text-amber-400 hover:underline mt-1 inline-block">Google Filament on GitHub ↗</a>
                       </div>
+                    </div>
+                  </div>
+
+                  <!-- Section: 🎬 ASSETS CREDITS & ATTRIBUTIONS -->
+                  <div class="bg-black/40 border border-slate-800/80 p-3.5 rounded-xl space-y-2.5">
+                    <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center space-x-1.5">
+                      <span>🎬</span> <span>Assets Credits & Attributions</span>
+                    </h3>
+                    <div class="text-[10px] sm:text-[11px] text-slate-300 space-y-3 font-normal leading-normal">
+                      
+                      <!-- New ASSETS CREDITS Card -->
+                      <div class="bg-gradient-to-r from-slate-900 to-slate-950 p-4 rounded-xl border border-amber-500/30 shadow-[0_4px_20px_rgba(245,158,11,0.05)] space-y-2.5 mb-4">
+                        <div class="flex items-center space-x-2 pb-1 border-b border-slate-800">
+                          <span class="text-lg">📜</span>
+                          <strong class="text-amber-400 text-xs sm:text-sm font-black uppercase tracking-wider">ASSETS CREDITS</strong>
+                        </div>
+                        <div class="text-[10px] sm:text-[11px] text-slate-300 space-y-3 leading-relaxed">
+                          
+                          <!-- Mixamo -->
+                          <div class="border-b border-slate-800/50 pb-2">
+                            <span class="text-white font-bold">• Mixamo (<a href="https://www.mixamo.com" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">mixamo.com</a>)</span>: The 3D Soldier character model (<code class="text-amber-300 font-mono text-[9.5px]">soldier.glb</code>) and animations used for the FPS combat bots are provided courtesy of <a href="https://www.mixamo.com" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">Mixamo</a>.
+                            <div class="text-[9.5px] text-slate-400 pl-3.5 mt-1 space-y-0.5 border-l border-slate-800">
+                              <div>• <strong class="text-slate-300">Permitted Use</strong>: Royalty-free use in commercial, personal, and educational 3D game projects.</div>
+                              <div>• <strong class="text-slate-300">Restrictions</strong>: Stand-alone redistribution or resale of raw Mixamo source assets is strictly prohibited.</div>
+                            </div>
+                          </div>
+
+                          <!-- Djinn Bestiary -->
+                          <div class="border-b border-slate-800/50 pb-2">
+                            <span class="text-white font-bold">• Djinn Bestiary — Ancient Oddities – Vol. 1 (13 Free Potions)</span>: Used for high-fidelity inventory item designs and MOBA potion layouts. Licensed for royalty-free use in commercial and personal game development projects.
+                          </div>
+
+                          <!-- Black Fly -->
+                          <div class="border-b border-slate-800/50 pb-2">
+                            <span class="text-white font-bold">• BLACK FLY by Audionautix</span> (<a href="http://audionautix.com" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">http://audionautix.com</a>): Audio background track used for MOBA battle environments. Licensed under Creative Commons Attribution-ShareAlike 3.0 Unported.
+                          </div>
+
+                          <!-- Silverstone -->
+                          <div class="border-b border-slate-800/50 pb-2">
+                            <span class="text-white font-bold">• Music by <a href="https://pixabay.com/users/sonican-38947841/?utm_source=link-attribution&amp;utm_medium=referral&amp;utm_campaign=music&amp;utm_content=379413" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">Dvir Silverstone</a></span> from <a href="https://pixabay.com/" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">Pixabay</a>
+                          </div>
+
+                          <!-- Emmraan -->
+                          <div class="border-b border-slate-800/50 pb-2">
+                            <span class="text-white font-bold">• Music by <a href="https://pixabay.com/users/emmraan-24732583/?utm_source=link-attribution&amp;utm_medium=referral&amp;utm_campaign=music&amp;utm_content=280277" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">Emmraan</a></span> from <a href="https://pixabay.com/" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">Pixabay</a>
+                          </div>
+
+                          <!-- Towers WoW -->
+                          <div class="pb-0">
+                            <span class="text-white font-bold">• Towers WoW</span> (<a href="https://skfb.ly/6XtCI" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">https://skfb.ly/6XtCI</a>) by CGArt is licensed under Creative Commons Attribution (<a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">http://creativecommons.org/licenses/by/4.0/</a>).
+                          </div>
+
+                        </div>
+                      </div>
+                      
+                      <!-- Mixamo Credit -->
+                      <div class="bg-slate-950/70 p-3 rounded-lg border border-slate-800 space-y-1">
+                        <div class="flex items-center justify-between">
+                          <strong class="text-white text-[11px]">Mixamo (mixamo.com)</strong>
+                          <span class="text-[8px] sm:text-[9px] font-mono text-amber-400 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-600/30">Royalty-Free Use</span>
+                        </div>
+                        <p class="text-slate-400 text-[10px]">
+                          The 3D Soldier character model (<code class="text-amber-300 font-mono text-[9px]">soldier.glb</code>) and animations used for the FPS combat bots are provided courtesy of <a href="https://www.mixamo.com" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">Mixamo</a>.
+                        </p>
+                        <div class="text-[9px] text-slate-500 font-medium pl-2 border-l border-slate-800 space-y-0.5">
+                          <div>• <strong class="text-slate-400">Permitted Use:</strong> Royalty-free use in commercial, personal, and educational 3D game projects.</div>
+                          <div>• <strong class="text-slate-400">Restrictions:</strong> Stand-alone redistribution or resale of raw Mixamo source assets is strictly prohibited.</div>
+                        </div>
+                      </div>
+
+                      <!-- Potions Credit -->
+                      <div class="bg-slate-950/70 p-3 rounded-lg border border-slate-800 space-y-1">
+                        <div class="flex items-center justify-between">
+                          <strong class="text-white text-[11px]">Djinn Bestiary — Ancient Oddities – Vol. 1</strong>
+                          <span class="text-[8px] sm:text-[9px] font-mono text-amber-400 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-600/30">Royalty-Free Potions</span>
+                        </div>
+                        <p class="text-slate-400 text-[10px]">
+                          Used for high-fidelity inventory item designs and MOBA potion layouts. Licensed for royalty-free use in commercial and personal game development projects.
+                        </p>
+                      </div>
+
+                      <!-- Black Fly Credit -->
+                      <div class="bg-slate-950/70 p-3 rounded-lg border border-slate-800 space-y-1">
+                        <div class="flex items-center justify-between">
+                          <strong class="text-white text-[11px]">BLACK FLY by Audionautix</strong>
+                          <span class="text-[8px] sm:text-[9px] font-mono text-purple-400 bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-600/30">CC BY-SA 3.0</span>
+                        </div>
+                        <p class="text-slate-400 text-[10px]">
+                          Audio background track used for MOBA battle environments by Jason Shaw at <a href="http://audionautix.com" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">audionautix.com</a>. Licensed under Creative Commons Attribution-ShareAlike 3.0 Unported.
+                        </p>
+                      </div>
+
+                      <!-- Pixabay Silverstone Credit -->
+                      <div class="bg-slate-950/70 p-3 rounded-lg border border-slate-800 space-y-1">
+                        <div class="flex items-center justify-between">
+                          <strong class="text-white text-[11px]">Pixabay Track by Dvir Silverstone</strong>
+                          <span class="text-[8px] sm:text-[9px] font-mono text-purple-400 bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-600/30">Pixabay License</span>
+                        </div>
+                        <p class="text-slate-400 text-[10px]">
+                          Music by <a href="https://pixabay.com/users/sonican-38947841/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=379413" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">Dvir Silverstone</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=379413" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">Pixabay</a>.
+                        </p>
+                      </div>
+
+                      <!-- Pixabay Emmraan Credit -->
+                      <div class="bg-slate-950/70 p-3 rounded-lg border border-slate-800 space-y-1">
+                        <div class="flex items-center justify-between">
+                          <strong class="text-white text-[11px]">Pixabay Track by Emmraan</strong>
+                          <span class="text-[8px] sm:text-[9px] font-mono text-purple-400 bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-600/30">Pixabay License</span>
+                        </div>
+                        <p class="text-slate-400 text-[10px]">
+                          Music by <a href="https://pixabay.com/users/emmraan-24732583/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=280277" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">Emmraan</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=280277" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">Pixabay</a>.
+                        </p>
+                      </div>
+
+                      <!-- Towers WoW Credit -->
+                      <div class="bg-slate-950/70 p-3 rounded-lg border border-slate-800 space-y-1">
+                        <div class="flex items-center justify-between">
+                          <strong class="text-white text-[11px]">Towers WoW by CGArt</strong>
+                          <span class="text-[8px] sm:text-[9px] font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-600/30">CC BY 4.0</span>
+                        </div>
+                        <p class="text-slate-400 text-[10px]">
+                          3D Tower Model by <strong class="text-slate-200">CGArt</strong> (<a href="https://skfb.ly/6XtCI" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">https://skfb.ly/6XtCI</a>) is licensed under Creative Commons Attribution (<a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline">CC BY 4.0</a>).
+                        </p>
+                      </div>
+
                     </div>
                   </div>
 
@@ -1980,7 +2112,7 @@
                 <button class="btn-touch-action btn-touch-shoot" id="btn-touch-shoot" title="Shoot Weapon (Touch / Tap)">🔥 SHOOT</button>
                 <button class="btn-touch-action btn-touch-up" id="btn-touch-up" title="Jump (Space)">▲ JUMP</button>
                 <button class="btn-touch-action btn-touch-down" id="btn-touch-down" title="Descend in Free-Fly (Q)">▼ DOWN</button>
-                <button class="btn-touch-action btn-touch-sprint" id="btn-touch-sprint" title="Toggle 2.5x Sprint Boost">⚡ SPRINT</button>
+                <button class="btn-touch-action btn-touch-sprint" id="btn-touch-sprint" title="Toggle 1.3x Sprint Boost">⚡ SPRINT</button>
                 <button class="btn-touch-action btn-touch-cam" id="btn-touch-cam" title="Toggle FP / Orbit Camera">🎥 CAM</button>
                 <button class="btn-touch-action btn-touch-reset" id="btn-touch-reset" title="Reset Camera View">🎯 RESET</button>
               </div>
@@ -2335,7 +2467,7 @@
                     <div class="key-row"><span class="key-badge">L-Click</span> Fire high-velocity projectile &amp; emit onDamage events</div>
                     <div class="key-row"><span class="key-badge">W/A/S/D</span> Move horizontally relative to camera forward/strafe</div>
                     <div class="key-row"><span class="key-badge">SPACE</span> Jump</div>
-                    <div class="key-row"><span class="key-badge">SHIFT</span> 2.5x Sprint Speed Boost</div>
+                    <div class="key-row"><span class="key-badge">SHIFT</span> 1.3x Sprint Speed Boost</div>
                     <div class="key-row"><span class="key-badge">ESC</span> Unlock mouse cursor</div>
                   </div>
                 </div>
@@ -2904,7 +3036,7 @@
                   </div>
                   <div class="flex items-center justify-between py-1.5">
                     <div>
-                      <span class="font-bold text-white block">Super Speed (2.5x)</span>
+                      <span class="font-bold text-white block">Super Speed (1.3x)</span>
                       <span class="text-[10px] text-slate-500">Boosts champion moving rate.</span>
                     </div>
                     <button id="moba-dash-toggle-speed" onclick="app.mobaToggleSuperSpeed()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold px-3 py-1 rounded-lg">

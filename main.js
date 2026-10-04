@@ -3178,6 +3178,13 @@ void main() {
     }
 
     float finalAlpha = (u_alpha > 0.0001) ? clamp(u_alpha, 0.0, 1.0) : 1.0;
+    if (u_matType == 25) {
+        // High luminous transparency for volumetric holographic magic lattice & runes
+        finalAlpha = min(finalAlpha, 0.38);
+    } else if (u_matType == 22) {
+        // Ethereal transparency for energy/fire magic bursts
+        finalAlpha = min(finalAlpha, 0.50);
+    }
     fragColor = vec4(col, finalAlpha);
 }
 `;
@@ -6337,6 +6344,7 @@ class Hero {
 /// Application State Controller
 class NativeApp {
   constructor() {
+    this.running = true;
     window.app = this;
     window.startFpsMatch = () => this.startFpsMatch();
     window.hideFpsStartupMenu = () => this.hideFpsStartupMenu();
@@ -7202,8 +7210,8 @@ void main() {
 
   resizePostProcFBO() {
     const gl = this.gl;
-    const w = this.canvas.width || 1280;
-    const h = this.canvas.height || 720;
+    const w = Math.max(1, this.canvas.width || 1280);
+    const h = Math.max(1, this.canvas.height || 720);
     if (this.fboWidth === w && this.fboHeight === h && this.sceneFbo) return;
 
     this.fboWidth = w;
@@ -7236,6 +7244,13 @@ void main() {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sceneColorTex, 0);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.sceneDepthTex, 0);
+
+    const fboStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (fboStatus !== gl.FRAMEBUFFER_COMPLETE) {
+      console.warn("[WebGL] Scene FBO not complete, falling back to direct canvas framebuffer:", fboStatus);
+      gl.deleteFramebuffer(this.sceneFbo);
+      this.sceneFbo = null;
+    }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
@@ -8799,7 +8814,7 @@ void main() {
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    const alphaVal = 0.55 + 0.12 * Math.sin(timestamp * 0.003);
+    const alphaVal = 0.36 + 0.08 * Math.sin(timestamp * 0.003);
     if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, alphaVal);
 
     Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
@@ -8865,7 +8880,7 @@ void main() {
     // 1. PRIMARY SPIRAL DISC - translucent swirling mystic mandala
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    const spiralAlpha = isPedestal ? 0.75 : (0.52 + 0.12 * Math.sin(timestamp * 0.004));
+    const spiralAlpha = isPedestal ? 0.75 : (0.35 + 0.08 * Math.sin(timestamp * 0.004));
 
     gl.bindVertexArray(spiralMesh.vao);
     this.instanceMatrix[0] = cS;   this.instanceMatrix[1] = 0;      this.instanceMatrix[2] = -sS;  this.instanceMatrix[3] = 0;
@@ -10299,6 +10314,16 @@ void main() {
       }, { passive: false });
     }
 
+    const projectSubnav = document.getElementById('project-subnav');
+    if (projectSubnav) {
+      projectSubnav.addEventListener('wheel', (e) => {
+        if (e.deltaY !== 0) {
+          e.preventDefault();
+          projectSubnav.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
+    }
+
     // Tabs (Only match buttons with data-tab)
     document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -10313,6 +10338,11 @@ void main() {
             setTimeout(() => this.onResize(), 10);
             const canvasContainer = document.getElementById('canvas-container');
             if (canvasContainer) canvasContainer.focus();
+          }
+          if (e.currentTarget.dataset.tab === 'project') {
+            if (typeof this.updateProjectTabs === 'function') {
+              this.updateProjectTabs();
+            }
           }
         }
       });
@@ -12373,14 +12403,34 @@ else if (typeof define === 'function' && define['amd'])
     const subtabBtns = document.querySelectorAll('.proj-subtab-btn');
     const subContents = document.querySelectorAll('.proj-subcontent');
 
+    const activateSubtab = (subtabKey) => {
+      subtabBtns.forEach(b => {
+        if (b.dataset.subtab === subtabKey) {
+          b.classList.add('active');
+        } else {
+          b.classList.remove('active');
+        }
+      });
+      subContents.forEach(c => {
+        if (c.id === `subtab-${subtabKey}`) {
+          c.classList.add('active');
+          c.style.display = 'flex';
+        } else {
+          c.classList.remove('active');
+          c.style.display = 'none';
+        }
+      });
+    };
+
+    this.activateProjectSubtab = activateSubtab;
+
     subtabBtns.forEach(btn => {
       btn.addEventListener('click', (e) => {
-        subtabBtns.forEach(b => b.classList.remove('active'));
-        subContents.forEach(c => c.classList.remove('active'));
-        e.currentTarget.classList.add('active');
-        const targetId = `subtab-${e.currentTarget.dataset.subtab}`;
-        const targetEl = document.getElementById(targetId);
-        if (targetEl) targetEl.classList.add('active');
+        this._userSelectedProjectSubtab = true;
+        const subtabKey = btn.dataset.subtab || (e.currentTarget && e.currentTarget.dataset.subtab);
+        if (subtabKey) {
+          activateSubtab(subtabKey);
+        }
       });
     });
 
@@ -15326,7 +15376,7 @@ else if (typeof define === 'function' && define['amd'])
 
     gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
     if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-    if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, color);
+    if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, (color instanceof Float32Array) ? color : new Float32Array(color || [1, 1, 1]));
     if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, rough);
     if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, metal);
     if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, pMatType);
@@ -15334,7 +15384,7 @@ else if (typeof define === 'function' && define['amd'])
     if (progInfo.uClearCoat) gl.uniform1f(progInfo.uClearCoat, pClearCoat);
     if (progInfo.uBumpStrength) gl.uniform1f(progInfo.uBumpStrength, 0.0);
 
-    const activeTex = (mesh && mesh.texture) || this.characterTexture || null;
+    const activeTex = (mesh && mesh.texture) ? mesh.texture : ((mesh && (mesh.isCharacterMesh || mesh === this.soldierMesh || mesh === this.characterMesh)) ? this.characterTexture : null);
     if (activeTex && progInfo.uAlbedoMap && progInfo.uUseTexMaps) {
       gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, activeTex);
@@ -27105,44 +27155,58 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
   }
 
   renderLoop(timestamp) {
-    const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba');
-    if (!isMoba) {
-      if (this.mobaAudioElement && !this.mobaAudioElement.paused) {
-        this.mobaAudioElement.pause();
+    if (this.running === false) return;
+    try {
+      const isMoba = Boolean(this.state.demoScene && this.state.demoScene.includes('15_moba'));
+      if (!isMoba) {
+        if (this.mobaAudioElement && !this.mobaAudioElement.paused) {
+          this.mobaAudioElement.pause();
+        }
+      } else {
+        if (!this._mobaMusicInitialized) {
+          this.initMobaMusic();
+        }
       }
-    } else {
-      if (!this._mobaMusicInitialized) {
-        this.initMobaMusic();
+
+      const dt = Math.min((timestamp - this.lastTime) * 0.001, 0.1);
+      this.lastTime = timestamp;
+
+      if (this.skyPulseTimer > 0) {
+        this.skyPulseTimer = Math.max(0, this.skyPulseTimer - dt * 2.0);
       }
-    }
 
-    const dt = Math.min((timestamp - this.lastTime) * 0.001, 0.1);
-    this.lastTime = timestamp;
+      // FPS Meter
+      this.frameCount++;
+      if (timestamp - this.lastFpsUpdate >= 500) {
+        const fps = (this.frameCount * 1000) / (timestamp - this.lastFpsUpdate);
+        const fpsEl = document.getElementById('fps-counter');
+        if (fpsEl) fpsEl.textContent = `${fps.toFixed(1)} FPS`;
+        this.frameCount = 0;
+        this.lastFpsUpdate = timestamp;
+      }
 
-    if (this.skyPulseTimer > 0) {
-      this.skyPulseTimer = Math.max(0, this.skyPulseTimer - dt * 2.0);
-    }
+      this.onResize();
+      this.resizePostProcFBO();
 
-    // FPS Meter
-    this.frameCount++;
-    if (timestamp - this.lastFpsUpdate >= 500) {
-      const fps = (this.frameCount * 1000) / (timestamp - this.lastFpsUpdate);
-      const fpsEl = document.getElementById('fps-counter');
-      if (fpsEl) fpsEl.textContent = `${fps.toFixed(1)} FPS`;
-      this.frameCount = 0;
-      this.lastFpsUpdate = timestamp;
-    }
+      const gl = this.gl;
+      const width = this.canvas.width;
+      const height = this.canvas.height;
 
-    this.onResize();
-    this.resizePostProcFBO();
-
-    const gl = this.gl;
-    const width = this.canvas.width;
-    const height = this.canvas.height;
-
-    // Render 3D Scene to Post-Processing Scene Framebuffer
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
-    gl.viewport(0, 0, width, height);
+      // Render 3D Scene directly to canvas (or post-processing FBO when enabled)
+      const isMobaCheap = isMoba && Boolean(this.state.fpsCheapMaterial);
+      const usePostProc = Boolean(
+        !isMobaCheap &&
+        this.sceneFbo &&
+        this.postProcProg &&
+        this.postProcProg.prog &&
+        this.quadVao &&
+        this.sceneColorTex &&
+        this.sceneDepthTex
+      );
+      this._usePostProcActive = usePostProc;
+      const targetFbo = usePostProc ? this.sceneFbo : null;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, targetFbo);
+      gl.viewport(0, 0, width, height);
 
     // Force depth writing and disable blending BEFORE clearing to guarantee correct depth buffer clearance
     gl.depthMask(true);
@@ -28482,7 +28546,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // =========================================================================
     // POST-PROCESSING MASTER PASS (HZB Occlusion, HDR Bloom, Volumetric Rays)
     // =========================================================================
-    if (this.postProcProg && this.quadVao && this.sceneColorTex && this.sceneDepthTex) {
+    if (targetFbo && this._usePostProcActive && this.postProcProg && this.quadVao && this.sceneColorTex && this.sceneDepthTex) {
       // 1. Unbind FBO and target default screen canvas framebuffer
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, width, height);
@@ -28553,7 +28617,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // HZB Uniforms
       if (this.postProcProg.uHzbEnabled) gl.uniform1i(this.postProcProg.uHzbEnabled, hzb.enabled ? 1 : 0);
       if (this.postProcProg.uHzbViewMode) gl.uniform1i(this.postProcProg.uHzbViewMode, hzbModeInt);
-      if (this.postProcProg.uHzbMipLevel) gl.uniform1f(this.postProcProg.uHzbMipLevel, hzb.mipLevel !== undefined ? hzb.mipLevel : 0);
+      if (this.postProcProg.uHzbMipLevel) gl.uniform1i(this.postProcProg.uHzbMipLevel, Math.floor(hzb.mipLevel !== undefined ? hzb.mipLevel : 0));
       if (this.postProcProg.uHzbSteps) gl.uniform1i(this.postProcProg.uHzbSteps, hzb.steps !== undefined ? hzb.steps : 8);
 
       // Bloom Uniforms (subtle cheap bloom & soft blur preserved in moba mode)
@@ -28567,8 +28631,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (this.postProcProg.uBloomSensitivity) gl.uniform1f(this.postProcProg.uBloomSensitivity, bloom.sensitivity !== undefined ? bloom.sensitivity : 0.65);
       if (this.postProcProg.uBloomIntensity) gl.uniform1f(this.postProcProg.uBloomIntensity, bloomIntensity);
       if (this.postProcProg.uBloomRadius) gl.uniform1f(this.postProcProg.uBloomRadius, bloomRadius);
-      if (this.postProcProg.uBloomAnamorphic) gl.uniform1f(this.postProcProg.uBloomAnamorphic, (bloom.anamorphic && !isMobaCheap) ? 1.0 : 0.0);
-      if (this.postProcProg.uBloomChromatic) gl.uniform1f(this.postProcProg.uBloomChromatic, (bloom.chromatic && !isMobaCheap) ? 1.0 : 0.0);
+      if (this.postProcProg.uBloomAnamorphic) gl.uniform1i(this.postProcProg.uBloomAnamorphic, (bloom.anamorphic && !isMobaCheap) ? 1 : 0);
+      if (this.postProcProg.uBloomChromatic) gl.uniform1i(this.postProcProg.uBloomChromatic, (bloom.chromatic && !isMobaCheap) ? 1 : 0);
 
       // Volumetric Uniforms (disabled in showroom to keep obsidian black floor & eliminate gray fog wash; bypassed in cheap material mode)
       const isLobby = (!this.mobaState || !this.mobaState.playing);
@@ -28590,10 +28654,18 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       gl.bindTexture(gl.TEXTURE_2D, null);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, null);
+    } else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     this.updateDebugOverlay();
-    requestAnimationFrame(this._renderLoopBound);
+    } catch (renderErr) {
+      console.error("[WebGL RenderLoop Error]:", renderErr);
+    } finally {
+      if (this.running !== false) {
+        requestAnimationFrame(this._renderLoopBound);
+      }
+    }
   }
 
   renderBillboardLabels(timestamp) {
@@ -29294,7 +29366,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       shopContainer.innerHTML = '';
       const shopItems = [
         { key: 'blade', name: 'Blade of Blood', price: 200, desc: '+25 Strength / Damage (3x Merges into Aether Fortis: +95 DMG, +15 Armor)', color: 'border-red-600/50' },
-        { key: 'boots', name: 'Boots of Speed', price: 160, desc: '+2.5 Speed (3x Merges into Caelum Feather: +8.0 Speed, +500 HP)', color: 'border-emerald-600/50' },
+        { key: 'boots', name: 'Boots of Speed', price: 160, desc: '+1.3 Speed (Limited to +1.3 max; 3x Merges into Caelum Feather: +1.3 Speed, +500 HP)', color: 'border-emerald-600/50' },
         { key: 'heart', name: 'Heart of Titan', price: 300, desc: '+400 Max Health (3x Merges into Sanguis Vita: +1500 HP, +20 Armor)', color: 'border-cyan-600/50' },
         { key: 'scepter', name: 'Archmage Scepter', price: 240, desc: '+300 Max Mana (3x Merges into Terra Sanctum: +1100 MP, +60 INT)', color: 'border-purple-600/50' },
         { key: 'shield', name: 'Aegis Shield', price: 220, desc: '+15 Health Regen / Armor (3x Merges into Aether Scale: +48 Armor, +550 HP)', color: 'border-amber-600/50' },
@@ -29777,6 +29849,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     // Bind About modal buttons
+    const btnAboutTag = document.getElementById('moba-btn-about-tag');
+    if (btnAboutTag) {
+      btnAboutTag.onclick = (e) => {
+        if (e) e.stopPropagation();
+        this.showMobaAbout();
+      };
+    }
     const btnAboutLobby = document.getElementById('moba-btn-about');
     if (btnAboutLobby) {
       btnAboutLobby.onclick = (e) => {
@@ -29881,65 +29960,39 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const isPong = this.state.demoScene && this.state.demoScene.includes('14_pong');
     const isMinigames = isSlotMachine || isSlidingPuzzle || isPlinko || isRoulette || isBingo || isPong;
     const isMoba = this.state.demoScene && this.state.demoScene.includes('15_moba');
-    const isFPS = this.state.cameraMode === 3 && !isMinigames && !isMoba;
+    const isFPS = (this.state.cameraMode === 3 || (this.state.demoScene && this.state.demoScene.includes('07_fps'))) && !isMinigames && !isMoba;
 
-    // The project page layout ALWAYS remains visible so global tabs (post-processing, materials, scene) are accessible!
+    // The project page layout ALWAYS remains visible with proper flex column layout
     const projLayout = document.querySelector('.project-page-layout');
     if (projLayout) {
-      projLayout.style.display = 'grid';
+      projLayout.style.display = 'flex';
+      projLayout.style.flexDirection = 'column';
     }
 
-    // Get main level buttons
+    // Keep all project tabs visible and accessible to the user
+    const allSubtabBtns = document.querySelectorAll('.proj-subtab-btn');
+    allSubtabBtns.forEach(btn => {
+      btn.style.display = '';
+    });
+
+    // Main header level buttons (Compiler / WASM / Headers) ALWAYS accessible
     const btnCompiler = document.querySelector('[data-tab="live-editor"]');
     const btnWasm = document.querySelector('[data-tab="platform-export"]');
     const btnHeaders = document.querySelector('[data-tab="headers"]');
+    if (btnCompiler) btnCompiler.style.display = '';
+    if (btnWasm) btnWasm.style.display = '';
+    if (btnHeaders) btnHeaders.style.display = '';
 
-    // Grouping: Only show compiler/wasm/headers main tabs when FPS shooter is active live!
-    if (btnCompiler) btnCompiler.style.display = isFPS ? '' : 'none';
-    if (btnWasm) btnWasm.style.display = isFPS ? '' : 'none';
-    if (btnHeaders) btnHeaders.style.display = isFPS ? '' : 'none';
-
-    // Subtab buttons inside Project tab
-    const btnMoba = document.getElementById('btn-subtab-moba');
-    const btnMinigames = document.getElementById('btn-subtab-minigames');
-    const btnMap = document.getElementById('btn-subtab-map-settings');
-    const btnFpsDmg = document.getElementById('btn-subtab-fps-damage');
-    const btnPlayerCtrl = document.getElementById('btn-subtab-player-controller');
-    const btnItems = document.getElementById('btn-subtab-items');
-    const btnCollision = document.getElementById('btn-subtab-collision-register');
-
-    // Demo-specific tabs: only show when relevant demo is active
-    if (btnMoba) btnMoba.style.display = isMoba ? '' : 'none';
-    if (btnMinigames) btnMinigames.style.display = isMinigames ? '' : 'none';
-    if (btnMap) btnMap.style.display = isFPS ? '' : 'none';
-    if (btnFpsDmg) btnFpsDmg.style.display = isFPS ? '' : 'none';
-    if (btnPlayerCtrl) btnPlayerCtrl.style.display = isFPS ? '' : 'none';
-    if (btnItems) btnItems.style.display = isFPS ? '' : 'none';
-    if (btnCollision) btnCollision.style.display = isFPS ? '' : 'none';
-
-    // Global tabs: ALWAYS displayed for all demos! (Post-Processing, Materials & Shaders, Scene Hierarchy, Voice Announcer, C++ Code Bridge)
-    const btnPost = document.getElementById('btn-subtab-postprocessing');
-    const btnMat = document.getElementById('btn-subtab-materials');
-    const btnScene = document.getElementById('btn-subtab-scene-objects');
-    const btnVoice = document.getElementById('btn-subtab-voice-announcer');
-    const btnCpp = document.getElementById('btn-subtab-cpp-bridge');
-    if (btnPost) btnPost.style.display = '';
-    if (btnMat) btnMat.style.display = '';
-    if (btnScene) btnScene.style.display = '';
-    if (btnVoice) btnVoice.style.display = '';
-    if (btnCpp) btnCpp.style.display = '';
-
-    // If current active subtab button is hidden or none active, activate the best matching subtab
+    // Auto-select the most relevant subtab if user hasn't explicitly clicked one yet
     const activeBtn = document.querySelector('.proj-subtab-btn.active');
-    if (!activeBtn || activeBtn.style.display === 'none') {
+    if (!activeBtn || !this._userSelectedProjectSubtab) {
       let targetSubtab = 'scene-objects';
       if (isMoba) targetSubtab = 'moba-dashboard';
       else if (isMinigames) targetSubtab = 'minigames-dashboard';
       else if (isFPS) targetSubtab = 'map-settings';
 
-      const targetBtn = document.querySelector(`.proj-subtab-btn[data-subtab="${targetSubtab}"]`);
-      if (targetBtn) {
-        targetBtn.click();
+      if (typeof this.activateProjectSubtab === 'function') {
+        this.activateProjectSubtab(targetSubtab);
       }
     }
 
@@ -30066,8 +30119,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
   mobaToggleSuperSpeed() {
     this._mobaSuperSpeed = !this._mobaSuperSpeed;
-    if (this.mobaState && this.mobaState.heroStats) {
-      this.mobaState.heroStats.speed = this._mobaSuperSpeed ? 15.5 : 6.2;
+    if (this.recalculateMobaHeroStatsFromInventory) {
+      this.recalculateMobaHeroStatsFromInventory();
+    } else if (this.mobaState && this.mobaState.heroStats) {
+      this.mobaState.heroStats.speed = this._mobaSuperSpeed ? (6.2 * 1.3) : 6.2;
     }
     const btn = document.getElementById('moba-dash-toggle-speed');
     if (btn) {
@@ -30076,7 +30131,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         ? "bg-gradient-to-r from-amber-600 to-amber-500 text-slate-950 font-black px-3 py-1 rounded-lg active:scale-95 transition-all cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.3)]"
         : "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold px-3 py-1 rounded-lg";
     }
-    this.log(`⚡ Speed Hack: ${this._mobaSuperSpeed ? 'ENABLED (2.5x)' : 'DISABLED'}`, "info");
+    this.log(`⚡ Speed Boost: ${this._mobaSuperSpeed ? 'ENABLED (1.3x)' : 'DISABLED'}`, "info");
     this.mobaPlaySound('confirm');
     this.updateProjectTabs();
   }
@@ -30404,6 +30459,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         speed: baseStats.speed, strength: baseStats.strength, agility: baseStats.agility, intelligence: baseStats.intelligence,
         attackRange: baseStats.range, damage: baseStats.damage
       };
+      this.mobaState.heroBaseStats = { ...this.mobaState.heroStats, armor: 0 };
     }
 
     if (this.mobaState.activePartyId) {
@@ -30419,7 +30475,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     const MOBA_ITEM_CATALOG = {
       blade: { key: 'blade', name: 'Blade of Blood', price: 200, strength: 25, desc: '+25 Strength / Damage (3x Merges into Aether Fortis)' },
-      boots: { key: 'boots', name: 'Boots of Speed', price: 160, speed: 2.5, desc: '+2.5 Speed (3x Merges into Caelum Feather)' },
+      boots: { key: 'boots', name: 'Boots of Speed', price: 160, speed: 1.3, desc: '+1.3 Speed (Limited to 1.3 max; 3x Merges into Caelum Feather)' },
       heart: { key: 'heart', name: 'Heart of Titan', price: 300, hp: 400, desc: '+400 Max HP (3x Merges into Sanguis Vita)' },
       scepter: { key: 'scepter', name: 'Archmage Scepter', price: 240, mp: 300, desc: '+300 Max Mana (3x Merges into Terra Sanctum)' },
       shield: { key: 'shield', name: 'Aegis Shield', price: 220, armor: 15, desc: '+15 HP Regen / Armor (3x Merges into Aether Scale)' },
@@ -30441,6 +30497,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.inventory = [null, null, null, null, null, null];
     }
 
+    // Strict limit: maximum 3 of the same item allowed in inventory
+    const sameItemCount = this.mobaState.inventory.filter(slot => slot && slot.key === itemKey).length;
+    if (sameItemCount >= 3) {
+      this.log(`⚠️ Maximum 3 of ${itemDetails.name} allowed!`, "error");
+      this.showMobaAlert(`⚠️ MAX 3 OF ${itemDetails.name.toUpperCase()} ALLOWED! (Merge to Legendary)`, "text-amber-400");
+      this.mobaPlaySound('back');
+      return;
+    }
+
     // Find empty slot in 3x2 grid inventory (6 slots)
     const freeIndex = this.mobaState.inventory.findIndex(slot => slot === null);
     if (freeIndex === -1) {
@@ -30453,21 +30518,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.gold -= itemDetails.price;
     this.mobaState.inventory[freeIndex] = { ...itemDetails, key: itemKey };
 
-    // Apply stats boost
-    if (itemDetails.strength) this.mobaState.heroStats.damage += itemDetails.strength;
-    if (itemDetails.speed) this.mobaState.heroStats.speed += itemDetails.speed;
-    if (itemDetails.armor) this.mobaState.heroStats.armor = (this.mobaState.heroStats.armor || 0) + itemDetails.armor;
-    if (itemDetails.hp) {
-      this.mobaState.heroStats.maxHp += itemDetails.hp;
-      this.mobaState.heroStats.hp += itemDetails.hp;
-    }
-    if (itemDetails.mp) {
-      this.mobaState.heroStats.maxMp += itemDetails.mp;
-      this.mobaState.heroStats.mp += itemDetails.mp;
-    }
-    if (itemDetails.intelligence) {
-      this.mobaState.heroStats.intelligence = (this.mobaState.heroStats.intelligence || 0) + itemDetails.intelligence;
-    }
+    // Strict recalculation of hero stats: speed item limited on 1.3 max (not 2.5)
+    this.recalculateMobaHeroStatsFromInventory();
 
     this.log(`🎒 Purchased ${itemDetails.name}!`, "success");
     this.mobaPlaySound('confirm');
@@ -30480,6 +30532,71 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaUpdateInventoryUI();
     }
     this.updateMobaShopUI(this.mobaState.gold);
+  }
+
+  recalculateMobaHeroStatsFromInventory() {
+    if (!this.mobaState || !this.mobaState.heroStats) return;
+
+    // Cache initial hero base stats if not already cached
+    if (!this.mobaState.heroBaseStats) {
+      const selected = this.mobaState.selectedHero || 'Arissa';
+      const defaultSpeeds = { Arissa: 5.2, Erika: 5.4, 'Woman Mobile': 5.0, Bot: 4.8, Monster: 4.2, Skeletonz: 4.6 };
+      this.mobaState.heroBaseStats = {
+        maxHp: 800,
+        maxMp: 400,
+        damage: 55,
+        speed: defaultSpeeds[selected] || 5.2,
+        armor: 0,
+        intelligence: 14
+      };
+    }
+
+    const base = this.mobaState.heroBaseStats;
+    let extraDamage = 0;
+    let extraHp = 0;
+    let extraMp = 0;
+    let extraArmor = 0;
+    let extraInt = 0;
+    let rawItemSpeed = 0;
+
+    if (Array.isArray(this.mobaState.inventory)) {
+      this.mobaState.inventory.forEach(item => {
+        if (!item) return;
+        if (item.strength) extraDamage += item.strength;
+        if (item.hp) extraHp += item.hp;
+        if (item.mp) extraMp += item.mp;
+        if (item.armor) extraArmor += item.armor;
+        if (item.intelligence) extraInt += item.intelligence;
+        if (item.speed) rawItemSpeed += item.speed;
+      });
+    }
+
+    // Speed item must be strictly limited on 1.3 max (not 2.5)
+    const cappedItemSpeed = Math.min(1.3, Math.max(0, rawItemSpeed));
+
+    const prevMaxHp = this.mobaState.heroStats.maxHp || base.maxHp;
+    const prevMaxMp = this.mobaState.heroStats.maxMp || base.maxMp;
+    const newMaxHp = base.maxHp + extraHp;
+    const newMaxMp = base.maxMp + extraMp;
+
+    this.mobaState.heroStats.damage = base.damage + extraDamage;
+    this.mobaState.heroStats.armor = extraArmor;
+    this.mobaState.heroStats.intelligence = base.intelligence + extraInt;
+    this.mobaState.heroStats.maxHp = newMaxHp;
+    this.mobaState.heroStats.maxMp = newMaxMp;
+
+    let finalSpeed = base.speed + cappedItemSpeed;
+    if (this._mobaSuperSpeed) {
+      finalSpeed *= 1.3; // Speed hack strictly limited to 1.3x
+    }
+    this.mobaState.heroStats.speed = finalSpeed;
+
+    if (newMaxHp !== prevMaxHp) {
+      this.mobaState.heroStats.hp = Math.min(newMaxHp, Math.max(0, (this.mobaState.heroStats.hp || newMaxHp) + (newMaxHp - prevMaxHp)));
+    }
+    if (newMaxMp !== prevMaxMp) {
+      this.mobaState.heroStats.mp = Math.min(newMaxMp, Math.max(0, (this.mobaState.heroStats.mp || newMaxMp) + (newMaxMp - prevMaxMp)));
+    }
   }
 
   checkMobaMergeable() {
@@ -30511,8 +30628,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       boots: {
         resultKey: 'caelum_feather',
         name: 'Caelum Feather',
-        desc: 'MYTHIC WINGS: +8.0 Speed, +500 Max HP, +300 Mana',
-        speed: 8.0,
+        desc: 'MYTHIC WINGS: +1.3 Speed (Limited to 1.3 max), +500 Max HP, +300 Mana',
+        speed: 1.3,
         hp: 500,
         mp: 300,
         price: 480,
@@ -30659,6 +30776,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.showMobaAlert(`✨ 3 ITEMS MERGED INTO ${mergedItem.name}! (+2 SLOTS FREED)`, 'text-amber-300');
     this.log(`✨ 3 items merged into 1: ${mergedItem.name}!`, "success");
 
+    this.recalculateMobaHeroStatsFromInventory();
     this.mobaUpdateInventoryUI();
   }
 
@@ -30672,23 +30790,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const refund = Math.floor((item.price || 200) * 0.6);
     this.mobaState.gold += refund;
 
-    // Remove stats boost
-    if (item.strength) this.mobaState.heroStats.damage -= item.strength;
-    if (item.speed) this.mobaState.heroStats.speed -= item.speed;
-    if (item.armor) this.mobaState.heroStats.armor = Math.max(0, (this.mobaState.heroStats.armor || 0) - item.armor);
-    if (item.hp) {
-      this.mobaState.heroStats.maxHp -= item.hp;
-      this.mobaState.heroStats.hp = Math.min(this.mobaState.heroStats.hp, this.mobaState.heroStats.maxHp);
-    }
-    if (item.mp) {
-      this.mobaState.heroStats.maxMp -= item.mp;
-      this.mobaState.heroStats.mp = Math.min(this.mobaState.heroStats.mp, this.mobaState.heroStats.maxMp);
-    }
-    if (item.intelligence) {
-      this.mobaState.heroStats.intelligence = Math.max(0, (this.mobaState.heroStats.intelligence || 0) - item.intelligence);
-    }
-
     this.mobaState.inventory[index] = null;
+    this.recalculateMobaHeroStatsFromInventory();
+
     this.log(`🎒 Sold ${item.name} for 🪙 ${refund} Gold!`, "info");
     this.mobaPlaySound('back');
 
@@ -30808,23 +30912,26 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       arissa: [
         {
           key: 'Q',
-          name: 'Area Blast',
-          shortName: 'Blast',
+          name: 'Celestial Starfall',
+          shortName: 'Starfall',
           cost: 40,
-          cooldown: 12.0,
-          desc: 'AOE 4.8m damage & sacred knockback shockwave',
+          cooldown: 10.0,
+          desc: 'Calls down radiant celestial ball particles cascading from the heavens, dealing 145 magic damage and applying 35% slow for 2.5s.',
           icon: 'assets/textures/moba/magics/arissa-1.png',
           cast: (app, playerPos, myTeam) => {
             app.mobaState.vfxBursts.push({
-              type: 'areaBlast',
+              type: 'arissaStarfall',
               x: playerPos[0],
               z: playerPos[2],
-              radius: 5.2,
-              timer: 0.65,
-              maxTimer: 0.65,
-              color: [0.08, 0.92, 0.98]
+              radius: 5.4,
+              timer: 1.1,
+              maxTimer: 1.1,
+              color: [0.18, 0.92, 1.0]
             });
-            app.mobaDamageInRadius(playerPos, 4.8, 135, myTeam, true);
+            app.spawnSkyBallParticleShower(playerPos[0], playerPos[2], 5.2, 80, [0.35, 0.9, 1.0, 0.7]);
+            app.mobaDamageInRadius(playerPos, 5.2, 145, myTeam, true, false, 'slow', 2.5);
+            app.addMobaCombatText(playerPos[0], 2.6, playerPos[2], "🌟 CELESTIAL STARFALL!", "#38bdf8");
+            app.mobaPlaySound('magic');
           }
         },
         {
@@ -31734,6 +31841,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (respOverlay) {
           respOverlay.classList.add('hidden');
         }
+        const shameBadge = document.getElementById('moba-shame-badge');
+        if (shameBadge) {
+          shameBadge.classList.add('hidden');
+          shameBadge.classList.remove('flex');
+        }
 
         // Scatter feasting ravens into the sky on respawn
         this.scatterCorpseRavens('player');
@@ -32401,15 +32513,29 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     // Dynamically update purchase buttons and affordability styling in the base shop
     const buyBtns = document.querySelectorAll('.moba-shop-buy-btn');
     buyBtns.forEach(btn => {
+      const itemKey = btn.getAttribute('data-item-key');
+      const sameCount = (this.mobaState && Array.isArray(this.mobaState.inventory)) ?
+        this.mobaState.inventory.filter(s => s && s.key === itemKey).length : 0;
       const price = parseInt(btn.getAttribute('data-item-price') || '0', 10);
-      if (gold < price) {
-        btn.classList.remove('bg-amber-500', 'hover:bg-amber-400', 'text-slate-950');
+
+      if (sameCount >= 3) {
+        btn.classList.remove('bg-amber-500', 'hover:bg-amber-400', 'text-slate-950', 'bg-slate-700', 'hover:bg-slate-600', 'text-slate-300', 'opacity-70');
+        btn.classList.add('bg-slate-800', 'text-amber-400', 'opacity-60', 'cursor-not-allowed');
+        btn.textContent = 'MAX 3';
+        btn.title = `Maximum 3 of this item allowed in inventory (3 is max)`;
+        btn.disabled = true;
+      } else if (gold < price) {
+        btn.classList.remove('bg-amber-500', 'hover:bg-amber-400', 'text-slate-950', 'bg-slate-800', 'text-amber-400', 'cursor-not-allowed');
         btn.classList.add('bg-slate-700', 'hover:bg-slate-600', 'text-slate-300', 'opacity-70');
+        btn.textContent = 'BUY';
         btn.title = `Requires 🪙 ${price} Gold (Need ${price - gold} more)`;
+        btn.disabled = true;
       } else {
-        btn.classList.remove('bg-slate-700', 'hover:bg-slate-600', 'text-slate-300', 'opacity-70');
+        btn.classList.remove('bg-slate-700', 'hover:bg-slate-600', 'text-slate-300', 'opacity-70', 'bg-slate-800', 'text-amber-400', 'cursor-not-allowed');
         btn.classList.add('bg-amber-500', 'hover:bg-amber-400', 'text-slate-950');
+        btn.textContent = 'BUY';
         btn.title = `Click to purchase for 🪙 ${price} Gold`;
+        btn.disabled = false;
       }
     });
   }
@@ -32687,18 +32813,28 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     const isLobby = !this.mobaState.playing;
 
     if (progInfo.uLightDir) {
-      gl.uniform3fv(progInfo.uLightDir, isLobby ? [0.45, 0.85, 0.25] : [0.35, 0.92, 0.4]);
+      gl.uniform3fv(progInfo.uLightDir, new Float32Array(isLobby ? [0.45, 0.85, 0.25] : [0.35, 0.92, 0.4]));
     }
     // Atmospheric dark night lighting for MOBA gameplay (moody moonlight), refined studio key in lobby
     if (progInfo.uLightColor) {
-      gl.uniform3fv(progInfo.uLightColor, isLobby ? [0.88, 0.85, 0.82] : [0.242, 0.231, 0.275]);
+      gl.uniform3fv(progInfo.uLightColor, new Float32Array(isLobby ? [1.10, 1.05, 1.00] : [0.242, 0.231, 0.275]));
     }
     if (progInfo.uFillLightDir) {
-      gl.uniform3fv(progInfo.uFillLightDir, isLobby ? [-0.5, 0.6, -0.4] : [-0.4, 0.65, -0.35]);
+      gl.uniform3fv(progInfo.uFillLightDir, new Float32Array(isLobby ? [-0.5, 0.6, -0.4] : [-0.4, 0.65, -0.35]));
     }
     if (progInfo.uFillLightColor) {
-      gl.uniform3fv(progInfo.uFillLightColor, isLobby ? [0.24, 0.26, 0.30] : [0.088, 0.099, 0.132]);
+      gl.uniform3fv(progInfo.uFillLightColor, new Float32Array(isLobby ? [0.35, 0.38, 0.45] : [0.088, 0.099, 0.132]));
     }
+
+    // Mobile-adaptive positioning metrics: on mobile portrait screens, bring trees and backdrop closer to center
+    const canvasW = this.canvas.width || 1280;
+    const canvasH = this.canvas.height || 720;
+    const mobaAspect = canvasW / (canvasH || 1);
+    const isPortrait = mobaAspect < 1.0;
+    const treeDistX = isPortrait ? Math.max(1.10, Math.min(1.42, mobaAspect * 2.35)) : (mobaAspect < 1.4 ? 2.6 : (mobaAspect < 1.6 ? 3.4 : 4.4));
+    const treeBaseY = isPortrait ? -0.22 : -0.55;
+    const treeZ = isPortrait ? -3.4 : -5.4;
+    const treeScale = isPortrait ? 0.95 : 1.22;
 
     if (progInfo.uNumPointLights && progInfo.pointLights) {
       gl.uniform1i(progInfo.uNumPointLights, 4);
@@ -32708,64 +32844,68 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
       const u0 = progInfo.pointLights[0];
       if (u0) {
-        // Spotlight 0: Studio key light in lobby (5.2 with glowing highlights), localized hero lantern in gameplay (+20% stronger: 3.84)
-        if (u0.pos) gl.uniform3fv(u0.pos, isLobby ? [0.0, 3.2, 4.0] : [pCenterPos[0], pCenterPos[1] + 4.5, pCenterPos[2]]);
-        if (u0.color) gl.uniform3fv(u0.color, isLobby ? [0.95, 0.92, 0.90] : [0.65, 0.60, 0.55]);
-        if (u0.intensity) gl.uniform1f(u0.intensity, isLobby ? 5.2 : 3.84);
-        if (u0.radius) gl.uniform1f(u0.radius, isLobby ? 14.0 : 10.8);
+        // Spotlight 0: Studio key light in lobby, localized hero lantern in gameplay
+        if (u0.pos) gl.uniform3fv(u0.pos, new Float32Array(isLobby ? [0.0, 3.4, 4.0] : [pCenterPos[0], pCenterPos[1] + 4.5, pCenterPos[2]]));
+        if (u0.color) gl.uniform3fv(u0.color, new Float32Array(isLobby ? [1.05, 1.02, 0.98] : [0.65, 0.60, 0.55]));
+        if (u0.intensity) gl.uniform1f(u0.intensity, isLobby ? 5.8 : 3.84);
+        if (u0.radius) gl.uniform1f(u0.radius, isLobby ? 16.0 : 10.8);
       }
       const u1 = progInfo.pointLights[1];
       if (u1) {
         if (isLobby) {
           // Spotlight 1: Balanced soft fill light in lobby menu
-          if (u1.pos) gl.uniform3fv(u1.pos, [0.0, 2.5, -4.5]);
-          if (u1.color) gl.uniform3fv(u1.color, [0.30, 0.35, 0.40]);
-          if (u1.intensity) gl.uniform1f(u1.intensity, 1.85); // Reduced menu fill to prevent over-illumination
-          if (u1.radius) gl.uniform1f(u1.radius, 10.0);
+          if (u1.pos) gl.uniform3fv(u1.pos, new Float32Array([0.0, 2.5, -4.5]));
+          if (u1.color) gl.uniform3fv(u1.color, new Float32Array([0.40, 0.45, 0.55]));
+          if (u1.intensity) gl.uniform1f(u1.intensity, 2.4);
+          if (u1.radius) gl.uniform1f(u1.radius, 12.0);
         } else if (proj0) {
-          // Dynamic firelight attached to active projectile 0
           const pFlicker = Math.sin(timestamp * 0.02) * 0.6;
-          if (u1.pos) gl.uniform3fv(u1.pos, [proj0.x, (proj0.y || 1.0) + 0.35, proj0.z]);
-          if (u1.color) gl.uniform3fv(u1.color, [1.6, 0.8, 0.1]);
+          if (u1.pos) gl.uniform3fv(u1.pos, new Float32Array([proj0.x, (proj0.y || 1.0) + 0.35, proj0.z]));
+          if (u1.color) gl.uniform3fv(u1.color, new Float32Array([1.6, 0.8, 0.1]));
           if (u1.intensity) gl.uniform1f(u1.intensity, 4.5 + pFlicker);
           if (u1.radius) gl.uniform1f(u1.radius, 6.0);
         } else {
-          // Central river/shrine area light (+10% stronger)
-          if (u1.pos) gl.uniform3fv(u1.pos, [0.0, 4.0, 0.0]);
-          if (u1.color) gl.uniform3fv(u1.color, [0.32, 0.50, 0.80]);
-          if (u1.intensity) gl.uniform1f(u1.intensity, 2.42); // 10% stronger area light
+          if (u1.pos) gl.uniform3fv(u1.pos, new Float32Array([0.0, 4.0, 0.0]));
+          if (u1.color) gl.uniform3fv(u1.color, new Float32Array([0.32, 0.50, 0.80]));
+          if (u1.intensity) gl.uniform1f(u1.intensity, 2.42);
           if (u1.radius) gl.uniform1f(u1.radius, 22.0);
         }
       }
       const u2 = progInfo.pointLights[2];
       if (u2) {
         if (isLobby) {
-          if (u2.pos) gl.uniform3fv(u2.pos, [-4.0, 1.5, 1.0]);
-          if (u2.color) gl.uniform3fv(u2.color, [0.0, 0.0, 0.0]);
-          if (u2.intensity) gl.uniform1f(u2.intensity, 0.0);
-          if (u2.radius) gl.uniform1f(u2.radius, 15.0);
+          // Left Tree Crimson Ambient Spotlight
+          if (u2.pos) gl.uniform3fv(u2.pos, new Float32Array([-treeDistX, 2.2, treeZ + 1.2]));
+          if (u2.color) gl.uniform3fv(u2.color, new Float32Array([1.25, 0.35, 0.20]));
+          if (u2.intensity) gl.uniform1f(u2.intensity, 4.2);
+          if (u2.radius) gl.uniform1f(u2.radius, 12.0);
         } else if (proj1) {
-          // Dynamic firelight attached to active projectile 1
           const pFlicker = Math.cos(timestamp * 0.025) * 0.6;
-          if (u2.pos) gl.uniform3fv(u2.pos, [proj1.x, (proj1.y || 1.0) + 0.35, proj1.z]);
-          if (u2.color) gl.uniform3fv(u2.color, [1.6, 0.8, 0.1]);
+          if (u2.pos) gl.uniform3fv(u2.pos, new Float32Array([proj1.x, (proj1.y || 1.0) + 0.35, proj1.z]));
+          if (u2.color) gl.uniform3fv(u2.color, new Float32Array([1.6, 0.8, 0.1]));
           if (u2.intensity) gl.uniform1f(u2.intensity, 4.5 + pFlicker);
           if (u2.radius) gl.uniform1f(u2.radius, 6.0);
         } else {
-          // Red team base altar area light (+10% stronger)
-          if (u2.pos) gl.uniform3fv(u2.pos, [-52.5, 4.5, -52.5]);
-          if (u2.color) gl.uniform3fv(u2.color, [0.85, 0.32, 0.15]);
+          if (u2.pos) gl.uniform3fv(u2.pos, new Float32Array([-52.5, 4.5, -52.5]));
+          if (u2.color) gl.uniform3fv(u2.color, new Float32Array([0.85, 0.32, 0.15]));
           if (u2.intensity) gl.uniform1f(u2.intensity, 2.42);
           if (u2.radius) gl.uniform1f(u2.radius, 22.0);
         }
       }
       const u3 = progInfo.pointLights[3];
-      if (u3 && !isLobby) {
-        // Blue team base altar area light (+10% stronger)
-        if (u3.pos) gl.uniform3fv(u3.pos, [52.5, 4.5, 52.5]);
-        if (u3.color) gl.uniform3fv(u3.color, [0.18, 0.55, 0.95]);
-        if (u3.intensity) gl.uniform1f(u3.intensity, 2.42);
-        if (u3.radius) gl.uniform1f(u3.radius, 22.0);
+      if (u3) {
+        if (isLobby) {
+          // Right Tree Sapphire Ambient Spotlight
+          if (u3.pos) gl.uniform3fv(u3.pos, new Float32Array([treeDistX, 2.2, treeZ + 1.2]));
+          if (u3.color) gl.uniform3fv(u3.color, new Float32Array([0.30, 0.55, 1.25]));
+          if (u3.intensity) gl.uniform1f(u3.intensity, 4.2);
+          if (u3.radius) gl.uniform1f(u3.radius, 12.0);
+        } else {
+          if (u3.pos) gl.uniform3fv(u3.pos, new Float32Array([52.5, 4.5, 52.5]));
+          if (u3.color) gl.uniform3fv(u3.color, new Float32Array([0.18, 0.55, 0.95]));
+          if (u3.intensity) gl.uniform1f(u3.intensity, 2.42);
+          if (u3.radius) gl.uniform1f(u3.radius, 22.0);
+        }
       }
     }
     if (progInfo.uNumSpotLights) {
@@ -32819,13 +32959,296 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const pedestalMesh = this.meshBuffers[7]; // Circular disk surface
       const ringMesh = this.meshBuffers[6];     // Pulsing concentric ring
       const particleMesh = this.meshBuffers[0]; // Orbiting particles
+      const trunkMesh = this.mobaBranchedTrunkMesh || this.mobaTreeTrunkMesh || this.meshBuffers[1];
+      const sharpBranchesMesh = this.mobaSharpBranchesMesh || this.mobaOakCanopyMesh || this.meshBuffers[0];
 
-      // --- PASS 1: OPAQUE HERO MODELS & OBSIDIAN PEDESTALS ---
+      // --- PASS 1: OPAQUE HERO MODELS, OBSIDIAN PEDESTALS & DECORATIVE BACKGROUND TREES ---
+      
+      const drawLobbyCrown = (progInfo, pos, scale, rotY, bIdx) => {
+        const ringMesh = this.meshBuffers[6]; // Ring mesh for crown rim
+        const crownMesh = this.meshBuffers[0]; // Sphere/gem mesh
+        if (!ringMesh) return;
+        const gl = this.gl;
+
+        const cPulse = 1.0 + 0.05 * Math.sin(timestamp * 0.003 + bIdx);
+        const crSc = scale * cPulse;
+        const cosR = Math.cos(rotY) * crSc;
+        const sinR = Math.sin(rotY) * crSc;
+
+        // 1. Imperial Golden Crown Base Rim
+        gl.bindVertexArray(ringMesh.vao);
+        this.instanceMatrix[0] = cosR; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinR; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = crSc * 0.45; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sinR; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosR; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = pos[0]; this.instanceMatrix[13] = pos[1]; this.instanceMatrix[14] = pos[2]; this.instanceMatrix[15] = 1.0;
+
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.22);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.85);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 0.85, 0.18])); // Radiant pure gold
+        gl.drawElements(gl.TRIANGLES, ringMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // 2. Crown Points / Jewels (4 imperial spikes around the crown)
+        if (crownMesh) {
+          gl.bindVertexArray(crownMesh.vao);
+          for (let sp = 0; sp < 4; sp++) {
+            const spAng = rotY + sp * (Math.PI * 0.5);
+            const spRad = crSc * 0.72;
+            const sx = pos[0] + Math.cos(spAng) * spRad;
+            const sz = pos[2] + Math.sin(spAng) * spRad;
+            const sy = pos[1] + crSc * 0.22;
+
+            this.instanceMatrix[0] = crSc * 0.16; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = crSc * 0.38; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = crSc * 0.16; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = sx; this.instanceMatrix[13] = sy; this.instanceMatrix[14] = sz; this.instanceMatrix[15] = 1.0;
+
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.1, 0.9, 0.25]));
+            gl.drawElements(gl.TRIANGLES, crownMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          }
+
+          // Center Crown Ruby Jewel (glowing talisman)
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12);
+          this.instanceMatrix[0] = crSc * 0.18; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = crSc * 0.24; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = crSc * 0.18; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = pos[0]; this.instanceMatrix[13] = pos[1] + crSc * 0.12; this.instanceMatrix[14] = pos[2]; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([2.2, 0.12, 0.08])); // Glowing blood ruby
+          gl.drawElements(gl.TRIANGLES, crownMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        }
+      };
+
+      const drawLobbyRaven = (progInfo, pos, yaw, bIdx) => {
+        const bodyMesh = this.meshBuffers[0]; // Sphere mesh
+        if (!bodyMesh) return;
+
+        const gl = this.gl;
+        gl.bindVertexArray(bodyMesh.vao);
+
+        const cosY = Math.cos(yaw);
+        const sinY = Math.sin(yaw);
+
+        // Raven breathing/bobbing animation
+        const rBob = 0.005 * Math.sin(timestamp * 0.0028 + bIdx * 2.3);
+        const ry = pos[1] + rBob;
+
+        // 1. Draw Body (elongated dark charcoal sphere)
+        this.instanceMatrix[0] = cosY * 0.038; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinY * 0.054; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.028; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sinY * 0.038; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosY * 0.054; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = pos[0]; this.instanceMatrix[13] = ry + 0.015; this.instanceMatrix[14] = pos[2]; this.instanceMatrix[15] = 1.0;
+
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+        if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.88);
+        if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.05);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.025, 0.025, 0.035]));
+        gl.drawElements(gl.TRIANGLES, bodyMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // 2. Draw Head (small dark sphere offset upwards and forwards)
+        const hTurn = 0.22 * Math.sin(timestamp * 0.0018 + bIdx * 1.6);
+        const hCos = Math.cos(yaw + hTurn);
+        const hSin = Math.sin(yaw + hTurn);
+        const hx = pos[0] + sinY * 0.022;
+        const hz = pos[2] + cosY * 0.022;
+        const hy = ry + 0.038;
+
+        this.instanceMatrix[0] = hCos * 0.022; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -hSin * 0.022; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.022; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = hSin * 0.022; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = hCos * 0.022; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = hx; this.instanceMatrix[13] = hy; this.instanceMatrix[14] = hz; this.instanceMatrix[15] = 1.0;
+
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.025, 0.025, 0.035]));
+        gl.drawElements(gl.TRIANGLES, bodyMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // 3. Draw Beak (pointed cone pointing forwards from head)
+        const bx = hx + hSin * 0.016;
+        const bz = hz + hCos * 0.016;
+        const by = hy - 0.003;
+
+        this.instanceMatrix[0] = hCos * 0.006; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -hSin * 0.016; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.006; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = hSin * 0.006; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = hCos * 0.016; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = bx; this.instanceMatrix[13] = by; this.instanceMatrix[14] = bz; this.instanceMatrix[15] = 1.0;
+
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.01, 0.01, 0.012]));
+        gl.drawElements(gl.TRIANGLES, bodyMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // 4. Draw Ominous Glowing Red Eyes (glowing magical particles)
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12); // Neon emissive glow material
+
+        // Left eye
+        const lex = hx - hCos * 0.008 + hSin * 0.012;
+        const ley = hy + 0.004;
+        const lez = hz + hSin * 0.008 + hCos * 0.012;
+        this.instanceMatrix[0] = 0.004; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.004; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = 0.004; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = lex; this.instanceMatrix[13] = ley; this.instanceMatrix[14] = lez; this.instanceMatrix[15] = 1.0;
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([2.8, 0.04, 0.01])); // Glowing red eye
+        gl.drawElements(gl.TRIANGLES, bodyMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // Right eye
+        const rex = hx + hCos * 0.008 + hSin * 0.012;
+        const rey = hy + 0.004;
+        const rez = hz - hSin * 0.008 + hCos * 0.012;
+        this.instanceMatrix[12] = rex; this.instanceMatrix[13] = rey; this.instanceMatrix[14] = rez;
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        gl.drawElements(gl.TRIANGLES, bodyMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0); // Restore default material shader state
+      };
+
+      // Render Two Distant Trees in the Lobby Background (Mobile-Adaptive, with Crowns and Ravens on branches)
+      if (trunkMesh && sharpBranchesMesh) {
+        // 1. Red-tinted Left Tree (Trunk + Central Canopy)
+        this.drawBotMeshPart(
+          progInfo, 
+          trunkMesh, 
+          [-treeDistX, treeBaseY, treeZ], 
+          0.0, 
+          0, 0, 0, 
+          treeScale, treeScale, treeScale, 
+          [0.18, 0.12, 0.08], 
+          0.85, 0.0
+        );
+        this.drawBotMeshPart(
+          progInfo, 
+          sharpBranchesMesh, 
+          [-treeDistX, treeBaseY + 1.55 * treeScale, treeZ], 
+          0.0, 
+          0, 0, 0, 
+          treeScale, treeScale, treeScale, 
+          [0.12, 0.06, 0.06], // Deep gothic red-charred canopy
+          0.88, 0.04
+        );
+
+        // Secondary Branch Crowns, Ornate Golden Crowns & Ravens for Left Tree
+        if (this.mobaBranchTips && this.mobaBranchTips.length > 0) {
+          for (let bIdx = 0; bIdx < this.mobaBranchTips.length; bIdx++) {
+            const tip = this.mobaBranchTips[bIdx];
+            if (!tip || tip.length < 3) continue;
+            const tipX = -treeDistX + tip[0] * treeScale;
+            const tipY = treeBaseY + tip[1] * treeScale;
+            const tipZ = treeZ + tip[2] * treeScale;
+            const cSc = treeScale * 0.45;
+            const branchRot = bIdx * 1.05;
+
+            // Secondary sharp branch cluster crown
+            this.drawBotMeshPart(
+              progInfo,
+              sharpBranchesMesh,
+              [tipX, tipY, tipZ],
+              branchRot,
+              0, 0, 0,
+              cSc, cSc, cSc,
+              [0.11, 0.05, 0.05],
+              0.88, 0.04
+            );
+
+            // Add Ornate Golden Crowns on branch crowns
+            if (bIdx % 2 === 0) {
+              const crownPos = [tipX, tipY + cSc * 0.15, tipZ];
+              drawLobbyCrown(progInfo, crownPos, cSc * 0.38, branchRot + timestamp * 0.0005, bIdx);
+            }
+
+            // Add Resting Ravens perched on branches / crowns
+            if (bIdx % 2 === 1 || bIdx === 0) {
+              const ravenPos = [tipX, tipY + cSc * (bIdx % 2 === 0 ? 0.32 : 0.14), tipZ];
+              const ravenYaw = branchRot + Math.PI * 0.5 + Math.sin(timestamp * 0.001 + bIdx) * 0.2;
+              drawLobbyRaven(progInfo, ravenPos, ravenYaw, bIdx);
+            }
+          }
+        }
+
+        // 2. Blue-tinted Right Tree (Trunk + Central Canopy)
+        this.drawBotMeshPart(
+          progInfo, 
+          trunkMesh, 
+          [treeDistX, treeBaseY, treeZ], 
+          0.0, 
+          0, 0, 0, 
+          treeScale, treeScale, treeScale, 
+          [0.18, 0.12, 0.08], 
+          0.85, 0.0
+        );
+        this.drawBotMeshPart(
+          progInfo, 
+          sharpBranchesMesh, 
+          [treeDistX, treeBaseY + 1.55 * treeScale, treeZ], 
+          0.0, 
+          0, 0, 0, 
+          treeScale, treeScale, treeScale, 
+          [0.06, 0.08, 0.12], // Deep gothic blue-charred canopy
+          0.88, 0.04
+        );
+
+        // Secondary Branch Crowns, Ornate Golden Crowns & Ravens for Right Tree
+        if (this.mobaBranchTips && this.mobaBranchTips.length > 0) {
+          for (let bIdx = 0; bIdx < this.mobaBranchTips.length; bIdx++) {
+            const tip = this.mobaBranchTips[bIdx];
+            if (!tip || tip.length < 3) continue;
+            const tipX = treeDistX + tip[0] * treeScale;
+            const tipY = treeBaseY + tip[1] * treeScale;
+            const tipZ = treeZ + tip[2] * treeScale;
+            const cSc = treeScale * 0.45;
+            const branchRot = bIdx * 1.05;
+
+            // Secondary sharp branch cluster crown
+            this.drawBotMeshPart(
+              progInfo,
+              sharpBranchesMesh,
+              [tipX, tipY, tipZ],
+              branchRot,
+              0, 0, 0,
+              cSc, cSc, cSc,
+              [0.05, 0.07, 0.11],
+              0.88, 0.04
+            );
+
+            // Add Ornate Golden Crowns on branch crowns
+            if (bIdx % 2 === 0) {
+              const crownPos = [tipX, tipY + cSc * 0.15, tipZ];
+              drawLobbyCrown(progInfo, crownPos, cSc * 0.38, branchRot - timestamp * 0.0005, bIdx);
+            }
+
+            // Add Resting Ravens perched on branches / crowns
+            if (bIdx % 2 === 1 || bIdx === 2) {
+              const ravenPos = [tipX, tipY + cSc * (bIdx % 2 === 0 ? 0.32 : 0.14), tipZ];
+              const ravenYaw = branchRot + Math.PI * 0.5 + Math.sin(timestamp * 0.001 + bIdx) * 0.2;
+              drawLobbyRaven(progInfo, ravenPos, ravenYaw, bIdx);
+            }
+          }
+        }
+      }
+
       for (let i = 0; i < list.length; i++) {
         const heroName = list[i];
         const posX = (i - this.mobaCarouselX) * 2.4;
-        const charPos = [posX, 0.0, 0.0];
-        const charYaw = timestamp * 0.0015;
+        
+        // Organic floating/breathing wave offset on the Y-axis so heroes look animated, alive and hovering!
+        const bobOffset = 0.05 * Math.sin(timestamp * 0.0022 + i * 1.6);
+        const charPos = [posX, bobOffset, 0.0];
+        
+        // Gentle rotation of the character mesh to show off the gorgeous 3D model
+        const charYaw = timestamp * 0.0012 + i * 0.6;
+        
         const distToCenter = Math.abs(i - this.mobaCarouselX);
         const scale = Math.max(0.65, 1.25 - distToCenter * 0.35);
 
@@ -32920,12 +33343,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           }
         }
 
-        // 3. Render Hero Character with authentic UV textures & natural diffuse roughness
+        // 3. Render Hero Character with authentic UV textures, organic hover height and idle skeletal animation
         if (model && model.soldierMesh) {
           if (model.soldierSkeletonData) {
-            const skinMatrices = this.evaluateSpecificSkeleton(model.soldierSkeletonData, timestamp * 0.002, 'idle');
-            if (skinMatrices) {
-              this.updateGenericMeshBuffer(model.soldierMesh, model.soldierSkeletonData, skinMatrices);
+            try {
+              // Apply unique staggered animation timers per carousel index so they are asynchronous and beautifully alive!
+              const skinMatrices = this.evaluateSpecificSkeleton(model.soldierSkeletonData, timestamp * 0.0016 + i * 3.3, 'idle');
+              if (skinMatrices) {
+                this.updateGenericMeshBuffer(model.soldierMesh, model.soldierSkeletonData, skinMatrices);
+              }
+            } catch (skErr) {
+              // Safe fallback: continue rendering hero mesh even if animation evaluation encounters an unexpected frame
             }
           }
           if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.9);
@@ -32943,7 +33371,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             this.instanceMatrix[0] = cosY * size; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinY * size; this.instanceMatrix[3] = 0;
             this.instanceMatrix[4] = 0; this.instanceMatrix[5] = size; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
             this.instanceMatrix[8] = sinY * size; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosY * size; this.instanceMatrix[11] = 0;
-            this.instanceMatrix[12] = posX; this.instanceMatrix[13] = 0.5 * size; this.instanceMatrix[14] = 0.0; this.instanceMatrix[15] = 1.0;
+            this.instanceMatrix[12] = posX; this.instanceMatrix[13] = 0.5 * size + bobOffset; this.instanceMatrix[14] = 0.0; this.instanceMatrix[15] = 1.0;
 
             Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
 
@@ -32955,12 +33383,144 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       }
 
-      // --- PASS 2: ADDITIVE GLOW & BLEND PASS FOR PARTICLES, SACRED SCANNERS & INSTANCED TRAILS ---
+      // --- PASS 2: ADDITIVE GLOW & BLEND PASS FOR BACKGROUND EFFECTS, PARTICLES, PROJECTILES & TRAILS ---
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Radiant additive blend with true alpha transparency
       gl.depthMask(false);
       if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 12); // Neon emissive glow material
       if (progInfo.uUseTexMaps) gl.uniform1i(progInfo.uUseTexMaps, 0); // Disallow model texture leakage into VFX
+
+      // 🎇 RENDER CRAZY LOBBY BACKGROUND: Flying Sacred Geometry Projectiles & Ambient Falling Star Particles!
+      const projMesh = (this.sacredSpellMeshes && (this.sacredSpellMeshes.nova || this.sacredSpellMeshes.ultimateCircle)) || this.meshBuffers[0];
+      const activeProjMesh = this.meshBuffers[0]; // fallback sphere mesh for ambient particles
+      if (projMesh) {
+        gl.bindVertexArray(projMesh.vao);
+
+        const projSpin = timestamp * 0.0035;
+        const cosP = Math.cos(projSpin);
+        const sinP = Math.sin(projSpin);
+
+        // Projectile trajectory bounds linked adaptively to the Left & Right tree positions:
+        const pStartX = -treeDistX * 1.08;
+        const pEndX = treeDistX * 1.08;
+        const pSpanX = pEndX - pStartX;
+
+        // A. Flying Red Sacred Geometry Projectile (arcs from left tree to right tree across screen)
+        const loopTime1 = (timestamp * 0.00095) % 4.0; // loops every ~4s
+        const p1 = loopTime1 / 4.0;
+        const px1 = pStartX + p1 * pSpanX;
+        const py1 = treeBaseY + 2.4 - p1 * 1.0 + Math.sin(p1 * Math.PI) * 2.2; // beautiful high arc
+        const pz1 = treeZ + Math.cos(p1 * Math.PI) * 1.2;
+
+        const pScale1 = 0.055; // Small just like particles!
+        this.instanceMatrix[0] = cosP * pScale1; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinP * pScale1; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = pScale1; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sinP * pScale1; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosP * pScale1; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = px1; this.instanceMatrix[13] = py1; this.instanceMatrix[14] = pz1; this.instanceMatrix[15] = 1.0;
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.8, 0.05, 0.02])); // Pure glowing RED
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.9);
+        gl.drawElements(gl.TRIANGLES, projMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // Render Red projectile trailing particles (small spinning red sacred geometry slices)
+        for (let j = 1; j <= 4; j++) {
+          const lag = j * 0.028;
+          const lagP = Math.max(0.0, p1 - lag);
+          const lx = pStartX + lagP * pSpanX;
+          const ly = treeBaseY + 2.4 - lagP * 1.0 + Math.sin(lagP * Math.PI) * 2.2;
+          const lz = treeZ + Math.cos(lagP * Math.PI) * 1.2;
+          const tScale = 0.038 * (1.0 - j * 0.18);
+
+          const lagSpin = projSpin - j * 0.15;
+          const cosL = Math.cos(lagSpin);
+          const sinL = Math.sin(lagSpin);
+
+          this.instanceMatrix[0] = cosL * tScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinL * tScale; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = tScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sinL * tScale; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosL * tScale; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = lx; this.instanceMatrix[13] = ly; this.instanceMatrix[14] = lz; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.2, 0.10, 0.04])); // Pure RED spark tail
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.6 * (1.0 - j * 0.2));
+          gl.drawElements(gl.TRIANGLES, projMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+
+        // B. Flying Red Sacred Geometry Projectile (arcs from right tree to left tree across screen)
+        const loopTime2 = ((timestamp * 0.00095) + 2.0) % 4.0; // offset by 2s so projectiles alternate
+        const p2 = loopTime2 / 4.0;
+        const px2 = pEndX - p2 * pSpanX; // flies from right to left
+        const py2 = treeBaseY + 2.4 - p2 * 1.0 + Math.sin(p2 * Math.PI) * 2.2; // beautiful high arc
+        const pz2 = treeZ - Math.cos(p2 * Math.PI) * 1.2;
+
+        const pScale2 = 0.055; // Small just like particles!
+        const projSpinB = -projSpin;
+        const cosPB = Math.cos(projSpinB);
+        const sinPB = Math.sin(projSpinB);
+
+        this.instanceMatrix[0] = cosPB * pScale2; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinPB * pScale2; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = pScale2; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = sinPB * pScale2; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosPB * pScale2; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = px2; this.instanceMatrix[13] = py2; this.instanceMatrix[14] = pz2; this.instanceMatrix[15] = 1.0;
+        Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.8, 0.05, 0.02])); // Pure glowing RED core
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.9);
+        gl.drawElements(gl.TRIANGLES, projMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+        // Render Red projectile trailing particles (small spinning red sacred geometry slices)
+        for (let j = 1; j <= 4; j++) {
+          const lag = j * 0.028;
+          const lagP = Math.max(0.0, p2 - lag);
+          const lx = pEndX - lagP * pSpanX;
+          const ly = treeBaseY + 2.4 - lagP * 1.0 + Math.sin(lagP * Math.PI) * 2.2;
+          const lz = treeZ - Math.cos(lagP * Math.PI) * 1.2;
+          const tScale = 0.038 * (1.0 - j * 0.18);
+
+          const lagSpinB = projSpinB + j * 0.15;
+          const cosLB = Math.cos(lagSpinB);
+          const sinLB = Math.sin(lagSpinB);
+
+          this.instanceMatrix[0] = cosLB * tScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sinLB * tScale; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = tScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sinLB * tScale; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cosLB * tScale; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = lx; this.instanceMatrix[13] = ly; this.instanceMatrix[14] = lz; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.2, 0.10, 0.04])); // Pure RED spark tail
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.6 * (1.0 - j * 0.2));
+          gl.drawElements(gl.TRIANGLES, projMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+
+        // C. Ambient Falling Magic particles from the sky (Magical Trouble/Tumble) - Smaller and pure RED!
+        if (activeProjMesh) {
+          gl.bindVertexArray(activeProjMesh.vao);
+          const isLobbyCheap = !!(this.state.fpsCheapMaterial || this.isMobileDevice());
+          const totalAmbientParticles = isLobbyCheap ? 10 : 25;
+          for (let p = 0; p < totalAmbientParticles; p++) {
+            const startY = 6.5;
+            const py = startY - ((timestamp * 0.00065 + p * 0.32) % 7.5); // wraps around
+            const px = Math.sin(timestamp * 0.00045 + p * 3.33) * (treeDistX * 1.15);
+            const pz = treeZ + Math.cos(timestamp * 0.00025 + p * 2.15) * 1.5;
+            const pScale = 0.006 + (p % 3) * 0.002; // Smaller particles (was 0.012+)
+
+            this.instanceMatrix[0] = pScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = pScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = pScale; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = px; this.instanceMatrix[13] = py; this.instanceMatrix[14] = pz; this.instanceMatrix[15] = 1.0;
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+
+            const sparkColor = [1.8, 0.03, 0.02]; // Pure radiant RED
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(sparkColor));
+            if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.55 * (1.0 - (startY - py) / 7.5));
+            gl.drawElements(gl.TRIANGLES, activeProjMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+          }
+        }
+      }
 
       const isLobbyCheap = !!(this.state.fpsCheapMaterial || this.isMobileDevice());
       if (!this._mobaLobbyColorBuf) this._mobaLobbyColorBuf = new Float32Array(3);
@@ -32986,7 +33546,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this._mobaLobbyColorBuf[1] = themeColor[1];
         this._mobaLobbyColorBuf[2] = themeColor[2];
 
-        // 1. Orbiting Luminous Particles: Tiny, transparent glowing motes (no large gray balls)
+        // 1. Orbiting Luminous Particles: Tiny, transparent glowing motes (no large gray balls) - Smaller and pure RED!
         if (particleMesh) {
           gl.bindVertexArray(particleMesh.vao);
           const numParticles = isLobbyCheap ? 3 : 6;
@@ -33000,8 +33560,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             const pX = posX + Math.cos(pAngle) * pRad;
             const pZ = Math.sin(pAngle) * pRad;
             
-            // Tiny particle scale (delicate sparkling motes)
-            const pSize = (0.012 + 0.004 * Math.sin(timestamp * 0.0045 + p)) * scale;
+            // Ultra-tiny particle scale (delicate red sparkling motes)
+            const pSize = (0.0035 + 0.001 * Math.sin(timestamp * 0.0045 + p)) * scale;
 
             // Layer A: Translucent soft colored blur aura
             const auraSize = pSize * 2.2;
@@ -33014,7 +33574,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
             if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
             if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.25); // Transparent soft halo
-            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, this._mobaLobbyColorBuf);
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.8, 0.03, 0.02])); // Pure red halo
             gl.drawElements(gl.TRIANGLES, particleMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
             // Layer B: Luminous transparent inner spark core (skipped in cheap mode to halve particle draw calls)
@@ -33028,7 +33588,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
               gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
               if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
               if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 0.80); // Transparent core
-              if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, this._mobaLobbyColorBuf);
+              if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.8, 0.03, 0.02])); // Pure red core
               gl.drawElements(gl.TRIANGLES, particleMesh.indexCount, gl.UNSIGNED_SHORT, 0);
             }
           }
@@ -34320,18 +34880,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.1);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.95);
-        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.05, 0.52 * (1.0 - progress * 0.3)));
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.22 * (1.0 - progress * 0.35)));
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
         gl.drawElements(gl.TRIANGLES, ultimateMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
-        gl.depthMask(true);
-        gl.disable(gl.BLEND);
 
         // Volumetric Holographic Trick Pillar of Ritual Light (Multi-slice vertical column)
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-        gl.depthMask(false);
-
         if (volCylinder) {
           gl.bindVertexArray(volCylinder.vao);
           const pSpin = -timestamp * 0.002;
@@ -34346,6 +34899,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25); // Volumetric Holographic Shader!
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 0.25, 0.45]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.18 * (1.0 - progress * 0.35)));
           gl.drawElements(gl.TRIANGLES, volCylinder.indexCount, gl.UNSIGNED_SHORT, 0);
         }
 
@@ -34364,6 +34918,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.95, 0.35, 0.95]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.18 * (1.0 - progress * 0.35)));
           gl.drawElements(gl.TRIANGLES, volMandala.indexCount, gl.UNSIGNED_SHORT, 0);
         }
 
@@ -34382,14 +34937,140 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.0, 0.9, 0.2]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.20 * (1.0 - progress * 0.35)));
           gl.drawElements(gl.TRIANGLES, holoGimbal.indexCount, gl.UNSIGNED_SHORT, 0);
         }
 
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
+      } else if (vfx.type === 'arissaStarfall') {
+        // ✨ Arissa 1st Magic: Celestial Starfall with small 3D glowing ball particles tumbling from the sky!
+        const sphereM = this.meshBuffers[0];
+        const ringM = this.meshBuffers[6] || sphereM;
+        
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive luminous ethereal glow
+        gl.depthMask(false);
+        
+        // A. Translucent ground celestial rune rings
+        if (ringM) {
+          gl.bindVertexArray(ringM.vao);
+          const rScale = vfx.radius * (0.82 + 0.18 * Math.sin(progress * Math.PI));
+          const spin = timestamp * 0.0012;
+          const cR = Math.cos(spin) * rScale, sR = Math.sin(spin) * rScale;
+          this.instanceMatrix[0] = cR; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sR; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.035; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sR; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cR; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.035; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.1);
+          if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.9);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.28 * (1.0 - progress * 0.4)));
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.25, 0.85, 1.2]));
+          gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
+          
+          // Concentric inner counter-rotating ring
+          const inScale = rScale * 0.52;
+          const inSpin = -timestamp * 0.0022;
+          const cIn = Math.cos(inSpin) * inScale, sIn = Math.sin(inSpin) * inScale;
+          this.instanceMatrix[0] = cIn; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sIn; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 0.03; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sIn; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cIn; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.04; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.02, 0.22 * (1.0 - progress * 0.45)));
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.8, 0.95, 1.4]));
+          gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+        
+        // B. Small glowing ball particles tumbling and cascading from the sky!
+        if (sphereM) {
+          gl.bindVertexArray(sphereM.vao);
+          const numSkyBalls = 18;
+          for (let i = 0; i < numSkyBalls; i++) {
+            const seedAng = (i * 2.39996) + (vfx.x * 0.3); // Golden ratio angle spread
+            const seedRad = (((i * 7 + 3) % 11) / 11.0) * (vfx.radius * 0.78);
+            const ballX = vfx.x + Math.cos(seedAng) * seedRad;
+            const ballZ = vfx.z + Math.sin(seedAng) * seedRad;
+            
+            // Staggered tumbling drop timing so particles cascade from the sky in waves
+            const dropOffset = (i / numSkyBalls) * 0.45;
+            const dropFrac = Math.max(0.0, Math.min(1.0, (progress - dropOffset) / (0.55 + dropOffset * 0.1)));
+            
+            const startY = 10.5 + ((i % 5) * 1.2);
+            let ballY = startY * (1.0 - Math.pow(dropFrac, 1.8)) + 0.2;
+            if (dropFrac >= 0.92) {
+              const bounceT = (dropFrac - 0.92) / 0.08;
+              ballY = 0.2 + Math.sin(bounceT * Math.PI) * 0.35;
+            }
+            
+            const baseScale = 0.18 + ((i % 4) * 0.03);
+            const bScale = baseScale * (dropFrac < 0.92 ? 1.0 : (1.0 + Math.sin((dropFrac - 0.92) / 0.08 * Math.PI) * 0.4));
+            
+            // Tumbling 3-axis rotation for authentic tumbling celestial spheres
+            const tumbleX = timestamp * 0.007 + i * 1.5;
+            const tumbleY = timestamp * 0.009 + i * 2.1;
+            const cTX = Math.cos(tumbleX), sTX = Math.sin(tumbleX);
+            const cTY = Math.cos(tumbleY), sTY = Math.sin(tumbleY);
+            
+            this.instanceMatrix[0] = cTY * bScale; this.instanceMatrix[1] = sTX * sTY * bScale; this.instanceMatrix[2] = -cTX * sTY * bScale; this.instanceMatrix[3] = 0;
+            this.instanceMatrix[4] = 0; this.instanceMatrix[5] = cTX * bScale; this.instanceMatrix[6] = sTX * bScale; this.instanceMatrix[7] = 0;
+            this.instanceMatrix[8] = sTY * bScale; this.instanceMatrix[9] = -sTX * cTY * bScale; this.instanceMatrix[10] = cTX * cTY * bScale; this.instanceMatrix[11] = 0;
+            this.instanceMatrix[12] = ballX; this.instanceMatrix[13] = ballY; this.instanceMatrix[14] = ballZ; this.instanceMatrix[15] = 1.0;
+            
+            Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+            gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+            if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+            if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
+            
+            const ballColor = (i % 3 === 0) 
+              ? [0.3, 0.95, 1.4]
+              : (i % 3 === 1)
+              ? [0.65, 0.85, 1.5]
+              : [1.2, 1.1, 0.6];
+            if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(ballColor));
+            
+            // High transparency for ethereal magic effect
+            const ballAlpha = Math.max(0.04, 0.40 * (1.0 - progress * 0.35));
+            if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, ballAlpha);
+            gl.drawElements(gl.TRIANGLES, sphereM.indexCount, gl.UNSIGNED_SHORT, 0);
+          }
+        }
+        
+        // C. Ascending celestial starlight column with high transparency
+        if (volCylinder) {
+          gl.bindVertexArray(volCylinder.vao);
+          const cScale = vfx.radius * 0.52 * (1.0 - progress * 0.3);
+          const cSpin = timestamp * 0.002;
+          const cC = Math.cos(cSpin) * cScale, sC = Math.sin(cSpin) * cScale;
+          this.instanceMatrix[0] = cC; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sC; this.instanceMatrix[3] = 0;
+          this.instanceMatrix[4] = 0; this.instanceMatrix[5] = 4.5; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+          this.instanceMatrix[8] = sC; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cC; this.instanceMatrix[11] = 0;
+          this.instanceMatrix[12] = vfx.x; this.instanceMatrix[13] = 0.1; this.instanceMatrix[14] = vfx.z; this.instanceMatrix[15] = 1.0;
+          Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
+          gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+          if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
+          if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
+          if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.3, 0.9, 1.3]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.22 * (1.0 - progress)));
+          gl.drawElements(gl.TRIANGLES, volCylinder.indexCount, gl.UNSIGNED_SHORT, 0);
+        }
+        
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
         gl.depthMask(true);
         gl.disable(gl.BLEND);
       } else if (isBarrier && shieldMesh) {
-        // Expanding sacred barrier dome
+        // Expanding sacred barrier dome with translucent glass-like transparency
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.depthMask(false);
         gl.bindVertexArray(shieldMesh.vao);
         const bScale = vfx.radius * (0.8 + 0.3 * Math.sin(progress * Math.PI));
         this.instanceMatrix[0] = bScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
@@ -34402,6 +35083,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.15);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.85);
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.30 * (1.0 - progress * 0.3)));
         gl.drawElements(gl.TRIANGLES, shieldMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
         // Volumetric Holographic Shield Column & Orbital Gimbal
@@ -34458,6 +35140,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.28 * (1.0 - progress)));
           gl.drawElements(gl.TRIANGLES, volCylinder.indexCount, gl.UNSIGNED_SHORT, 0);
         }
         if (holoGimbal) {
@@ -34474,9 +35157,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.95, 0.45, 1.0]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.28 * (1.0 - progress)));
           gl.drawElements(gl.TRIANGLES, holoGimbal.indexCount, gl.UNSIGNED_SHORT, 0);
         }
         if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
         gl.depthMask(true);
         gl.disable(gl.BLEND);
       } else if (novaMesh) {
@@ -34499,18 +35184,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
         if (progInfo.uRoughness) gl.uniform1f(progInfo.uRoughness, 0.12);
         if (progInfo.uMetallic) gl.uniform1f(progInfo.uMetallic, 0.9);
-        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.46 * (1.0 - progress * 0.4)));
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.26 * (1.0 - progress * 0.4)));
         if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color));
         gl.drawElements(gl.TRIANGLES, novaMesh.indexCount, gl.UNSIGNED_SHORT, 0);
-        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
-        gl.depthMask(true);
-        gl.disable(gl.BLEND);
 
         // Volumetric Holographic Mandala Shockwave Ascending
         if (volMandala) {
-          gl.enable(gl.BLEND);
-          gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-          gl.depthMask(false);
           gl.bindVertexArray(volMandala.vao);
           const vScale = nScale * 0.95;
           const vSpin = -timestamp * 0.0025;
@@ -34524,17 +35203,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.15, 0.95, 1.0]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.24 * (1.0 - progress)));
           gl.drawElements(gl.TRIANGLES, volMandala.indexCount, gl.UNSIGNED_SHORT, 0);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
-          gl.depthMask(true);
-          gl.disable(gl.BLEND);
         }
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
       } else if (vfx.type === 'fireExplosion') {
-        // High-energy fiery projectile detonation shockwave & fireball blast
+        // High-energy fiery projectile detonation shockwave & fireball blast with translucent flame glow
         const sphereM = this.meshBuffers[0];
         const ringM = this.meshBuffers[6] || this.meshBuffers[0];
         const blastScale = vfx.radius * Math.sin(progress * Math.PI * 0.5);
         
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.depthMask(false);
+
         // 1. Expanding fireball blast
         if (sphereM) {
           gl.bindVertexArray(sphereM.vao);
@@ -34547,6 +35232,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array(vfx.color || [1.0, 0.4, 0.1]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.35 * (1.0 - progress * 0.5)));
           gl.drawElements(gl.TRIANGLES, sphereM.indexCount, gl.UNSIGNED_SHORT, 0);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
         }
@@ -34564,15 +35250,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.6, 0.6, 0.15]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.28 * (1.0 - progress)));
           gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
         }
 
-        // 3. Holographic Detonation Gimbal Scatter (Reserved exclusively for magic attacks, not default shoot)
+        // 3. Holographic Detonation Gimbal Scatter
         if (holoGimbal && vfx.isMagic) {
-          gl.enable(gl.BLEND);
-          gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-          gl.depthMask(false);
           gl.bindVertexArray(holoGimbal.vao);
           const gScale = blastScale * 1.1;
           const gSpin = timestamp * 0.005;
@@ -34586,11 +35270,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 25);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.8, 0.8, 0.2]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.26 * (1.0 - progress)));
           gl.drawElements(gl.TRIANGLES, holoGimbal.indexCount, gl.UNSIGNED_SHORT, 0);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
-          gl.depthMask(true);
-          gl.disable(gl.BLEND);
         }
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
       } else if (vfx.type === 'treeRoots') {
         // AAA Dota-style Overgrowth: Erupting ancient thorny wooden roots & briar ring
         const ringM = this.meshBuffers[6] || this.meshBuffers[0];
@@ -34598,6 +35284,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const growHeight = Math.sin(progress * Math.PI) * 2.4;
 
         if (ringM) {
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.depthMask(false);
           gl.bindVertexArray(ringM.vao);
           const rScale = vfx.radius * (0.85 + progress * 0.3);
           this.instanceMatrix[0] = rScale; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
@@ -34608,7 +35297,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.15, 0.68, 0.2]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.35 * (1.0 - progress * 0.4)));
           gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+          gl.depthMask(true);
+          gl.disable(gl.BLEND);
         }
 
         if (spikeM && growHeight > 0.05) {
@@ -34632,10 +35325,14 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           }
         }
       } else if (vfx.type === 'iceStunNova') {
-        // AAA Dota-style Glacial Frostbite: Sharp crystalline ice spires bursting from ground
+        // AAA Dota-style Glacial Frostbite: Sharp crystalline ice spires bursting from ground with transparent crystal ice
         const ringM = this.meshBuffers[6] || this.meshBuffers[0];
         const spikeM = this.meshBuffers[9] || this.meshBuffers[0];
         const iceHeight = Math.sin(progress * Math.PI) * 2.8;
+
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.depthMask(false);
 
         if (ringM) {
           gl.bindVertexArray(ringM.vao);
@@ -34649,6 +35346,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.4, 0.9, 1.6]));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.32 * (1.0 - progress)));
           gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
         }
@@ -34669,12 +35367,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
             if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
             if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.65, 1.1, 1.8]));
+            if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.38 * (1.0 - progress * 0.3)));
             gl.drawElements(gl.TRIANGLES, spikeM.indexCount, gl.UNSIGNED_SHORT, 0);
             if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
           }
         }
+        if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
       } else if (vfx.type === 'shadowSmoke') {
-        // Invisibility Smoke Cloak: Dense shadowy dark void puff
+        // Invisibility Smoke Cloak: Dense shadowy dark void puff with ethereal transparency
         const sphereM = this.meshBuffers[0];
         if (sphereM) {
           gl.enable(gl.BLEND);
@@ -34688,7 +35390,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, (1.0 - progress) * 0.75);
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, (1.0 - progress) * 0.38);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.2, 0.06, 0.35]));
           gl.drawElements(gl.TRIANGLES, sphereM.indexCount, gl.UNSIGNED_SHORT, 0);
           if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, 1.0);
@@ -34710,7 +35412,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.48 * (1.0 - progress)));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.03, 0.26 * (1.0 - progress)));
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.2, 0.4, 1.8]));
           gl.drawElements(gl.TRIANGLES, ringM.indexCount, gl.UNSIGNED_SHORT, 0);
@@ -34720,7 +35422,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           gl.disable(gl.BLEND);
         }
       } else if (vfx.type === 'fireTrail') {
-        // Blazing Flame Dash Trail Patch
+        // Blazing Flame Dash Trail Patch with high transparency
         const sphereM = this.meshBuffers[0];
         if (sphereM) {
           gl.enable(gl.BLEND);
@@ -34735,7 +35437,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
           if (progInfo.uNormalMatrix) gl.uniformMatrix3fv(progInfo.uNormalMatrix, false, this.normalMatrix);
-          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.55 * (1.0 - progress)));
+          if (progInfo.uAlpha) gl.uniform1f(progInfo.uAlpha, Math.max(0.04, 0.30 * (1.0 - progress)));
           if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 22);
           if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([1.9, 0.6, 0.1]));
           gl.drawElements(gl.TRIANGLES, sphereM.indexCount, gl.UNSIGNED_SHORT, 0);
@@ -35198,6 +35900,38 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
   }
 
+  spawnSkyBallParticleShower(x, z, radius = 5.2, count = 80, color = [0.35, 0.9, 1.0, 0.45]) {
+    if (!this._gpuParticleSystemInitialized) this.initGpuParticleSystem();
+    if (!this._gpuParticles) return;
+
+    for (let c = 0; c < count; c++) {
+      const p = this._gpuParticles[this._gpuParticleNextIdx];
+      this._gpuParticleNextIdx = (this._gpuParticleNextIdx + 1) % this.MAX_GPU_PARTICLES;
+
+      const r = Math.sqrt(Math.random()) * radius * 0.92;
+      const th = Math.random() * Math.PI * 2;
+      const px = x + Math.cos(th) * r;
+      const pz = z + Math.sin(th) * r;
+      const py = 7.5 + Math.random() * 5.0; // Cascading from high in the sky
+
+      p.active = true;
+      p.x = px;
+      p.y = py;
+      p.z = pz;
+      // Tumbling / cascading down from the sky with soft air turbulence
+      p.vx = (Math.random() - 0.5) * 1.6;
+      p.vy = -5.0 - Math.random() * 4.0;
+      p.vz = (Math.random() - 0.5) * 1.6;
+      p.r = color[0] !== undefined ? color[0] : 0.35;
+      p.g = color[1] !== undefined ? color[1] : 0.9;
+      p.b = color[2] !== undefined ? color[2] : 1.0;
+      p.a = color[3] !== undefined ? Math.min(0.45, color[3]) : 0.40; // High transparency for ethereal magic
+      p.size = 8.0 + Math.random() * 9.0; // Small glowing ball particles
+      p.life = 0.9 + Math.random() * 0.6;
+      p.maxLife = p.life;
+    }
+  }
+
   updateGpuParticles(dt) {
     if (!this._gpuParticles) return;
     const gravity = -3.5;
@@ -35213,6 +35947,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       p.y += p.vy * dt;
       p.z += p.vz * dt;
       p.vy += gravity * dt;
+      if (p.y <= 0.1 && p.vy < 0) {
+        p.y = 0.1;
+        p.vy = -p.vy * 0.22;
+        p.vx *= 1.35;
+        p.vz *= 1.35;
+      }
     }
   }
 
@@ -35951,9 +36691,16 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this._playerRespawnRemaining = 0;
     this._playerDeaths = 0;
 
+    this.mobaState.groupFocusTargets = { RED: null, BLACK: null };
+
     const respOverlay = document.getElementById('moba-respawn-overlay');
     if (respOverlay) {
       respOverlay.classList.add('hidden');
+    }
+    const shameBadge = document.getElementById('moba-shame-badge');
+    if (shameBadge) {
+      shameBadge.classList.add('hidden');
+      shameBadge.classList.remove('flex');
     }
 
     if (this.sceneEntities) {
@@ -35976,6 +36723,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       shield: 0,
       shieldTimer: 0
     };
+    this.mobaState.heroBaseStats = { ...this.mobaState.heroStats, armor: 0, intelligence: 14 };
 
     const startPos = this.mobaState.team === 'RED' ? [-46.5, 0, -46.5] : [46.5, 0, 46.5];
     this.mobaState.currentPos = [...startPos];
@@ -36007,11 +36755,11 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // Bots deployed across Top, Mid, and Bot lanes (scaled up 1.5x)
     this.mobaState.players = [
-      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 680, maxHp: 680, mp: 500, maxMp: 500, damage: 62, speed: 4.2, attackRange: 7.0, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-49.5, 0, -42.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1 },
-      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 950, maxHp: 950, mp: 350, maxMp: 350, damage: 78, speed: 4.0, attackRange: 2.5, attackCooldown: 0.95, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-42.0, 0, -49.5], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1 },
-      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 740, maxHp: 740, mp: 450, maxMp: 450, damage: 65, speed: 4.3, attackRange: 7.2, attackCooldown: 0.82, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [49.5, 0, 42.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1 },
-      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 780, maxHp: 780, mp: 380, maxMp: 380, damage: 72, speed: 4.5, attackRange: 2.5, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [42.0, 0, 49.5], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1 },
-      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 880, maxHp: 880, mp: 450, maxMp: 450, damage: 75, speed: 4.2, attackRange: 2.5, attackCooldown: 0.88, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [48.0, 0, 48.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1 }
+      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 680, maxHp: 680, mp: 500, maxMp: 500, damage: 62, speed: 4.2, baseSpeed: 4.2, attackRange: 7.0, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-49.5, 0, -42.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 2.0 },
+      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 950, maxHp: 950, mp: 350, maxMp: 350, damage: 78, speed: 4.0, baseSpeed: 4.0, attackRange: 2.5, attackCooldown: 0.95, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-42.0, 0, -49.5], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 3.0 },
+      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 740, maxHp: 740, mp: 450, maxMp: 450, damage: 65, speed: 4.3, baseSpeed: 4.3, attackRange: 7.2, attackCooldown: 0.82, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [49.5, 0, 42.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 2.5 },
+      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 780, maxHp: 780, mp: 380, maxMp: 380, damage: 72, speed: 4.5, baseSpeed: 4.5, attackRange: 2.5, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [42.0, 0, 49.5], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 3.5 },
+      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 880, maxHp: 880, mp: 450, maxMp: 450, damage: 75, speed: 4.2, baseSpeed: 4.2, attackRange: 2.5, attackCooldown: 0.88, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [48.0, 0, 48.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 3.0 }
     ];
 
     // Track creep buff multipliers per team & lane (+30% when team destroys a tower on that road)
@@ -36990,18 +37738,19 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     // Execute hero-specific magic for bot:
     if (heroKey === 'arissa') {
-      if (spellIndex === 0) { // Area Blast (Q)
+      if (spellIndex === 0) { // Celestial Starfall (Q)
         this.mobaState.vfxBursts.push({
-          type: 'areaBlast',
-          x: bPos[0],
-          z: bPos[2],
-          radius: 5.2,
-          timer: 0.65,
-          maxTimer: 0.65,
-          color: [0.08, 0.92, 0.98]
+          type: 'arissaStarfall',
+          x: targetPos[0],
+          z: targetPos[2],
+          radius: 5.4,
+          timer: 1.1,
+          maxTimer: 1.1,
+          color: [0.18, 0.92, 1.0]
         });
-        this.mobaDamageInRadius(bPos, 4.8, 140, myTeam, true);
-        this.addMobaCombatText(bPos[0], 2.4, bPos[2], "✨ AREA BLAST!", "#38bdf8");
+        this.spawnSkyBallParticleShower(targetPos[0], targetPos[2], 5.2, 70, [0.35, 0.9, 1.0, 0.7]);
+        this.mobaDamageInRadius(targetPos, 5.2, 145, myTeam, true, false, 'slow', 2.5);
+        this.addMobaCombatText(targetPos[0], 2.6, targetPos[2], "🌟 CELESTIAL STARFALL!", "#38bdf8");
         this.mobaPlaySound('magic');
       } else if (spellIndex === 1) { // Blink Dash (W)
         const dashDist = Math.min(6.0, distToTarget > 0.5 ? distToTarget : 5.5);
@@ -37467,12 +38216,132 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
   }
 
+  executeMobaBotShopping(b) {
+    if (!b || b.hp <= 0) return;
+    if (b.gold === undefined) b.gold = 200;
+    if (!Array.isArray(b.inventory)) b.inventory = [];
+    if (b.inventory.length >= 6) return;
+
+    const MOBA_ITEM_CATALOG = {
+      blade: { key: 'blade', name: 'Blade of Blood', price: 200, strength: 25 },
+      boots: { key: 'boots', name: 'Boots of Speed', price: 160, speed: 1.3 },
+      heart: { key: 'heart', name: 'Heart of Titan', price: 300, hp: 400 },
+      scepter: { key: 'scepter', name: 'Archmage Scepter', price: 240, mp: 300 },
+      shield: { key: 'shield', name: 'Aegis Shield', price: 220, armor: 15 },
+      corona: { key: 'corona', name: 'Corona Ignifera', price: 280, strength: 30, hp: 200 },
+      fulgur: { key: 'fulgur', name: 'Fulgur Stone', price: 240, mp: 250, intelligence: 25 },
+      magic_reborn: { key: 'magic_reborn', name: 'Magic Reborn', price: 300 }
+    };
+
+    const heroKey = (b.selectedHero || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    let buildOrder = ['blade', 'boots', 'corona', 'heart', 'shield', 'magic_reborn'];
+    if (heroKey === 'erika') {
+      buildOrder = ['scepter', 'fulgur', 'boots', 'corona', 'magic_reborn', 'shield'];
+    } else if (heroKey === 'monster' || heroKey === 'warrok') {
+      buildOrder = ['heart', 'shield', 'blade', 'corona', 'boots', 'heart'];
+    } else if (heroKey === 'arissa') {
+      buildOrder = ['blade', 'boots', 'corona', 'heart', 'blade', 'magic_reborn'];
+    } else if (heroKey === 'skeletonz') {
+      buildOrder = ['blade', 'boots', 'blade', 'corona', 'magic_reborn', 'blade'];
+    } else if (heroKey === 'bot' || heroKey === 'steelborn') {
+      buildOrder = ['shield', 'heart', 'blade', 'fulgur', 'corona', 'boots'];
+    }
+
+    let chosenKey = null;
+    for (const key of buildOrder) {
+      const ownedCount = b.inventory.filter(it => it && it.key === key).length;
+      if (ownedCount < 3 && b.gold >= MOBA_ITEM_CATALOG[key].price) {
+        chosenKey = key;
+        break;
+      }
+    }
+
+    if (!chosenKey) return;
+    const item = MOBA_ITEM_CATALOG[chosenKey];
+    b.gold -= item.price;
+    b.inventory.push({ ...item });
+
+    if (item.hp) {
+      b.maxHp += item.hp;
+      b.hp += item.hp;
+    }
+    if (item.mp) {
+      b.maxMp = (b.maxMp || 400) + item.mp;
+      b.mp = (b.mp || 400) + item.mp;
+    }
+    if (item.strength) {
+      b.damage = (b.damage || 60) + item.strength;
+    }
+    if (item.armor) {
+      b.armor = (b.armor || 0) + item.armor;
+    }
+    if (item.speed) {
+      if (!b.baseSpeed) b.baseSpeed = b.speed || 4.2;
+      b.baseSpeed += Math.min(1.3, item.speed);
+      b.speed = b.baseSpeed;
+    }
+
+    // Check for 3x identical item legendary merge!
+    const keyCounts = {};
+    b.inventory.forEach(it => { if (it && it.key) keyCounts[it.key] = (keyCounts[it.key] || 0) + 1; });
+    for (const [k, count] of Object.entries(keyCounts)) {
+      if (count >= 3) {
+        b.inventory = b.inventory.filter(it => it.key !== k);
+        const legendaryBonus = {
+          blade: { name: 'Aether Fortis', bonusDmg: 50, bonusArmor: 15 },
+          boots: { name: 'Caelum Feather', bonusHp: 500, bonusSpeed: 0.5 },
+          heart: { name: 'Sanguis Vita', bonusHp: 800, bonusArmor: 20 },
+          scepter: { name: 'Terra Sanctum', bonusMp: 600, bonusDmg: 40 },
+          shield: { name: 'Aether Scale', bonusArmor: 35, bonusHp: 400 },
+          corona: { name: 'Corona Umbra', bonusDmg: 60, bonusHp: 500 },
+          fulgur: { name: 'Fulgur Mortis', bonusMp: 600, bonusDmg: 45 },
+          magic_reborn: { name: 'Mortis Ultima', bonusHp: 300, bonusMp: 300 }
+        }[k] || { name: 'Legendary Artifact', bonusDmg: 30, bonusHp: 300 };
+
+        b.inventory.push({ key: 'legendary_' + k, name: legendaryBonus.name, isLegendary: true });
+        if (legendaryBonus.bonusHp) { b.maxHp += legendaryBonus.bonusHp; b.hp += legendaryBonus.bonusHp; }
+        if (legendaryBonus.bonusMp) { b.maxMp = (b.maxMp || 400) + legendaryBonus.bonusMp; b.mp += legendaryBonus.bonusMp; }
+        if (legendaryBonus.bonusDmg) b.damage = (b.damage || 60) + legendaryBonus.bonusDmg;
+        if (legendaryBonus.bonusArmor) b.armor = (b.armor || 0) + legendaryBonus.bonusArmor;
+        if (legendaryBonus.bonusSpeed && b.baseSpeed) { b.baseSpeed += legendaryBonus.bonusSpeed; b.speed = b.baseSpeed; }
+
+        this.addMobaCombatText(b.pos[0], 3.2, b.pos[2], `🌟 MERGED ${legendaryBonus.name}!`, '#fbbf24');
+        this.showMobaAlert(`🌟 ${b.name} merged 3x ${k.toUpperCase()} into ${legendaryBonus.name}!`, b.team === this.mobaState.team ? 'text-emerald-400' : 'text-rose-400');
+        break;
+      }
+    }
+
+    this.addMobaCombatText(b.pos[0], 2.6, b.pos[2], `🛍️ +${item.name}`, '#38bdf8');
+    if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
+    this.mobaState.vfxBursts.push({
+      x: b.pos[0],
+      z: b.pos[2],
+      radius: 1.4,
+      timer: 0.35,
+      maxTimer: 0.35,
+      color: [0.2, 0.8, 1.0]
+    });
+    this.showMobaAlert(`🛍️ [Shop] ${b.name} equipped ${item.name}!`, b.team === this.mobaState.team ? 'text-emerald-300' : 'text-amber-400');
+  }
+
   updateMobaBots(dt) {
     if (!this.mobaState || !this.mobaState.playing || this.mobaState.winner || !this.mobaState.players) return;
+
+    if (!this.mobaState.groupFocusTargets) {
+      this.mobaState.groupFocusTargets = { RED: null, BLACK: null };
+    }
 
     this.mobaState.players.forEach(b => {
       if (!b.isBot || b.hp <= 0) return;
       if (!b.pos) b.pos = [0, 0, 0];
+
+      // Bot gold income and item shopping
+      b.gold = (b.gold !== undefined ? b.gold : 200) + dt * 2.5;
+      b.itemBuyCooldown = Math.max(0, (b.itemBuyCooldown || 0) - dt);
+      if (b.itemBuyCooldown <= 0) {
+        b.itemBuyCooldown = 2.5 + Math.random() * 2.0;
+        this.executeMobaBotShopping(b);
+      }
 
       if (b.slowTimer && b.slowTimer > 0) {
         b.slowTimer = Math.max(0, b.slowTimer - dt);
@@ -37566,20 +38435,118 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         return;
       }
 
+      // --- TACTICAL GROUPING & TEAMFIGHT ASSISTANCE EVALUATION ---
+      let allyInCombat = null;
+      let allyCombatEnemy = null;
+      let minAllyCombatDist = 999;
+
+      // 1. Check if human player on same team is in active combat nearby (< 35m)
+      if (this.mobaState.team === b.team && this.mobaState.heroStats.hp > 0) {
+        const pPos = this.mobaState.currentPos;
+        const dP = Math.hypot(pPos[0] - b.pos[0], pPos[2] - b.pos[2]);
+        if (dP < 35.0) {
+          const enemyNearPlayer = this.mobaState.players.find(other => other.team !== b.team && other.hp > 0 && Math.hypot(other.pos[0] - pPos[0], other.pos[2] - pPos[2]) < 16.0);
+          if (enemyNearPlayer) {
+            allyInCombat = { isPlayer: true, pos: pPos, name: 'Hero' };
+            allyCombatEnemy = enemyNearPlayer;
+            minAllyCombatDist = dP;
+          }
+        }
+      }
+
+      // 2. Check other allied bots in combat nearby (< 32m)
+      this.mobaState.players.forEach(otherAlly => {
+        if (otherAlly !== b && otherAlly.team === b.team && otherAlly.hp > 0 && otherAlly.pos) {
+          const dAlly = Math.hypot(otherAlly.pos[0] - b.pos[0], otherAlly.pos[2] - b.pos[2]);
+          if (dAlly < 32.0 && dAlly < minAllyCombatDist) {
+            const enemyFighting = this.mobaState.players.find(other => other.team !== b.team && other.hp > 0 && Math.hypot(other.pos[0] - otherAlly.pos[0], other.pos[2] - otherAlly.pos[2]) < 14.0);
+            if (enemyFighting) {
+              allyInCombat = otherAlly;
+              allyCombatEnemy = enemyFighting;
+              minAllyCombatDist = dAlly;
+            } else if (this.mobaState.team !== b.team && this.mobaState.heroStats.hp > 0) {
+              const dEnemyP = Math.hypot(this.mobaState.currentPos[0] - otherAlly.pos[0], this.mobaState.currentPos[2] - otherAlly.pos[2]);
+              if (dEnemyP < 14.0) {
+                allyInCombat = otherAlly;
+                allyCombatEnemy = { isPlayer: true, pos: this.mobaState.currentPos, hp: this.mobaState.heroStats.hp, maxHp: this.mobaState.heroStats.maxHp };
+                minAllyCombatDist = dAlly;
+              }
+            }
+          }
+        }
+      });
+
+      // 3. Coordinated Tower Siege Check (Group Push)
+      let siegeTowerTarget = null;
+      if (this.mobaState.towers) {
+        this.mobaState.towers.forEach(t => {
+          if (t.team !== b.team && t.hp > 0 && t.pos) {
+            const distTower = Math.hypot(t.pos[0] - b.pos[0], t.pos[2] - b.pos[2]);
+            if (distTower < 32.0) {
+              const friendlyCreepsNear = this.mobaState.creeps && this.mobaState.creeps.filter(c => c.team === b.team && c.hp > 0 && Math.hypot(c.pos[0] - t.pos[0], c.pos[2] - t.pos[2]) < (t.range || 11.25) + 1.0).length;
+              if (friendlyCreepsNear >= 2 || t.hp < (t.maxHp || 1000) * 0.65) {
+                siegeTowerTarget = t;
+              }
+            }
+          }
+        });
+      }
+
+      // 4. Outnumbered Tactical Disengage (Kite back to friendly tower instead of suiciding)
+      let nearbyEnemyHeroes = 0;
+      if (this.mobaState.team !== b.team && this.mobaState.heroStats.hp > 0 && Math.hypot(this.mobaState.currentPos[0] - b.pos[0], this.mobaState.currentPos[2] - b.pos[2]) < 11.0) {
+        nearbyEnemyHeroes++;
+      }
+      this.mobaState.players.forEach(p => {
+        if (p.team !== b.team && p.hp > 0 && p.pos && Math.hypot(p.pos[0] - b.pos[0], p.pos[2] - b.pos[2]) < 11.0) {
+          nearbyEnemyHeroes++;
+        }
+      });
+      const nearbyAllies = this.mobaState.players.filter(p => p !== b && p.team === b.team && p.hp > 0 && p.pos && Math.hypot(p.pos[0] - b.pos[0], p.pos[2] - b.pos[2]) < 12.0).length;
+      if (nearbyEnemyHeroes >= 2 && nearbyAllies === 0 && b.hp < b.maxHp * 0.38) {
+        const nearestAlliedTower = this.mobaState.towers ? this.mobaState.towers.find(t => t.team === b.team && t.hp > 0) : null;
+        const retreatSafePos = nearestAlliedTower ? nearestAlliedTower.pos : basePos;
+        const rDx = retreatSafePos[0] - b.pos[0];
+        const rDz = retreatSafePos[2] - b.pos[2];
+        const rDist = Math.hypot(rDx, rDz) || 1.0;
+        const step = Math.min(2.5, (b.speed || 4.2) * (b.invisibilityTimer > 0 ? 1.35 : 1.0) * dt);
+        b.pos[0] += (rDx / rDist) * step;
+        b.pos[2] += (rDz / rDist) * step;
+        this.resolveMobaCollision(b.pos, 0.65);
+        b.yaw = Math.atan2(rDx, rDz);
+        b.moving = true;
+        if (!b._lastFallbackMsg || performance.now() - b._lastFallbackMsg > 8000) {
+          b._lastFallbackMsg = performance.now();
+          this.addMobaCombatText(b.pos[0], 2.2, b.pos[2], "🛡️ FALLING BACK!", "#94a3b8");
+        }
+        return;
+      }
+
       // --- INTELLIGENT TARGET SCORING & THREAT EVALUATION ---
       let bestTarget = null;
       let bestScore = -9999;
       let closestDist = 999;
 
+      // Shared team focus target
+      const sharedFocus = this.mobaState.groupFocusTargets ? this.mobaState.groupFocusTargets[b.team] : null;
+
       // 1. Check local player (High Priority Champion)
       if (this.mobaState.team !== b.team && this.mobaState.heroStats.hp > 0) {
         const pPos = this.mobaState.currentPos;
         const d = Math.hypot(pPos[0] - b.pos[0], pPos[2] - b.pos[2]);
-        if (d < 16.0) {
-          let score = (16.0 - d) * 2.2;
+        if (d < 24.0) {
+          let score = (24.0 - d) * 2.2;
           // Finish off low-health player
           const pHealthPct = this.mobaState.heroStats.hp / Math.max(1, this.mobaState.heroStats.maxHp);
-          if (pHealthPct < 0.40) score += 20.0;
+          if (pHealthPct < 0.40) score += 25.0;
+          if (allyCombatEnemy && allyCombatEnemy.isPlayer) {
+            score += 35.0; // Assist ally fighting player!
+            if (!b._lastAssistAlert || performance.now() - b._lastAssistAlert > 12000) {
+              b._lastAssistAlert = performance.now();
+              this.showMobaAlert(`⚔️ [TEAM ASSIST] ${b.name} grouping to attack enemy Hero!`, 'text-rose-400');
+            }
+          }
+          if (sharedFocus && sharedFocus.isPlayer) score += 20.0;
           if (score > bestScore) {
             bestScore = score;
             bestTarget = { isPlayer: true, pos: pPos, hp: this.mobaState.heroStats.hp, maxHp: this.mobaState.heroStats.maxHp };
@@ -37592,9 +38559,17 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       this.mobaState.players.forEach(other => {
         if (other.team !== b.team && other.hp > 0 && other.pos) {
           const d = Math.hypot(other.pos[0] - b.pos[0], other.pos[2] - b.pos[2]);
-          if (d < 15.0) {
-            let score = (15.0 - d) * 1.8;
-            if (other.hp < other.maxHp * 0.35) score += 15.0;
+          if (d < 22.0) {
+            let score = (22.0 - d) * 2.0;
+            if (other.hp < other.maxHp * 0.40) score += 25.0; // Focus fire execute
+            if (allyCombatEnemy === other) {
+              score += 35.0; // Grouping attack / assist
+              if (!b._lastAssistAlert || performance.now() - b._lastAssistAlert > 12000) {
+                b._lastAssistAlert = performance.now();
+                this.showMobaAlert(`⚔️ [TEAM ASSIST] ${b.name} rushing to aid in combat!`, b.team === this.mobaState.team ? 'text-emerald-400' : 'text-rose-400');
+              }
+            }
+            if (sharedFocus === other) score += 20.0;
             if (score > bestScore) {
               bestScore = score;
               bestTarget = other;
@@ -37627,8 +38602,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         this.mobaState.towers.forEach(t => {
           if (t.team !== b.team && t.hp > 0 && t.pos) {
             const d = Math.hypot(t.pos[0] - b.pos[0], t.pos[2] - b.pos[2]);
-            if (d < 13.0) {
-              let score = (13.0 - d) * 1.2;
+            if (d < 22.0) {
+              let score = (22.0 - d) * 1.2;
+              if (siegeTowerTarget === t) {
+                score += 30.0; // Group siege priority!
+                if (!b._lastSiegeAlert || performance.now() - b._lastSiegeAlert > 15000) {
+                  b._lastSiegeAlert = performance.now();
+                  this.showMobaAlert(`🏰 [GROUP SIEGE] ${b.name} grouping to siege ${t.lane ? t.lane.toUpperCase() : ''} TOWER!`, b.team === this.mobaState.team ? 'text-emerald-400' : 'text-rose-400');
+                }
+              }
               if (score > bestScore) {
                 bestScore = score;
                 bestTarget = t;
@@ -37639,18 +38621,30 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         });
       }
 
-      // 5. Check enemy Tron
+      // 5. Check enemy Tron (Late-Game All-Out Group Assault)
       const enemyTronTeam = b.team === 'RED' ? 'BLACK' : 'RED';
       const enemyTron = this.mobaState.trons && this.mobaState.trons[enemyTronTeam];
       if (enemyTron && enemyTron.hp > 0 && enemyTron.pos) {
         const d = Math.hypot(enemyTron.pos[0] - b.pos[0], enemyTron.pos[2] - b.pos[2]);
-        if (d < 14.0) {
-          let score = (14.0 - d) * 2.5 + 25.0;
+        const matchSec = Math.floor(this.mobaState.matchTimer || 0);
+        if (d < 28.0 || matchSec > 90) {
+          let score = (30.0 - Math.min(28.0, d)) * 2.5 + 40.0;
           if (score > bestScore) {
             bestScore = score;
             bestTarget = enemyTron;
             closestDist = d;
+            if (!b._lastTronAlert || performance.now() - b._lastTronAlert > 20000) {
+              b._lastTronAlert = performance.now();
+              this.showMobaAlert(`⚡ [GROUP ATTACK] ${b.name} storming the ENEMY TRON!`, b.team === this.mobaState.team ? 'text-emerald-400' : 'text-rose-400');
+            }
           }
+        }
+      }
+
+      // Update team shared focus target if bestTarget is a champion
+      if (bestTarget && (bestTarget.isPlayer || bestTarget.isBot)) {
+        if (this.mobaState.groupFocusTargets) {
+          this.mobaState.groupFocusTargets[b.team] = bestTarget;
         }
       }
 
@@ -37802,6 +38796,37 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           b.pos[0] += (dx / dist) * step;
           b.pos[2] += (dz / dist) * step;
           this.resolveMobaCollision(b.pos, 0.65);
+          b.moving = true;
+        } else {
+          b.moving = false;
+        }
+      } else if (allyCombatEnemy && (!b.rootedTimer || b.rootedTimer <= 0)) {
+        // Grouping move: rush towards active ally combat fight!
+        const targetPos = allyCombatEnemy.pos;
+        const dx = targetPos[0] - b.pos[0];
+        const dz = targetPos[2] - b.pos[2];
+        const dist = Math.hypot(dx, dz);
+        if (dist > 2.0) {
+          const step = Math.min(dist, (b.speed || 4.2) * dt);
+          b.pos[0] += (dx / dist) * step;
+          b.pos[2] += (dz / dist) * step;
+          this.resolveMobaCollision(b.pos, 0.65);
+          b.yaw = Math.atan2(dx, dz);
+          b.moving = true;
+        } else {
+          b.moving = false;
+        }
+      } else if (siegeTowerTarget && (!b.rootedTimer || b.rootedTimer <= 0)) {
+        // Grouping move: rush towards siege tower!
+        const dx = siegeTowerTarget.pos[0] - b.pos[0];
+        const dz = siegeTowerTarget.pos[2] - b.pos[2];
+        const dist = Math.hypot(dx, dz);
+        if (dist > 5.0) {
+          const step = Math.min(dist, (b.speed || 4.2) * dt);
+          b.pos[0] += (dx / dist) * step;
+          b.pos[2] += (dz / dist) * step;
+          this.resolveMobaCollision(b.pos, 0.65);
+          b.yaw = Math.atan2(dx, dz);
           b.moving = true;
         } else {
           b.moving = false;
@@ -38419,8 +39444,15 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.speechAnnouncer.speak("Hero fallen! Respawning at base...", { profileId: 1, introChime: false });
         }
         this._playerDeaths = (this._playerDeaths || 0) + 1;
-        // Base respawn 15.0s, increases by +3s per death
-        const respawnTime = 15.0 + Math.max(0, this._playerDeaths - 1) * 3.0;
+
+        // Check if dead from creep or tower (+2sec penalty and shame label)
+        const isCreepKill = Boolean(attackerEntity && (attackerEntity.isCreep || attackerEntity.type === 'melee' || attackerEntity.type === 'ranged' || (typeof attackerEntity.id === 'string' && attackerEntity.id.startsWith('creep_'))));
+        const isTowerKill = Boolean(attackerEntity === 'tower' || (attackerEntity && (attackerEntity.isTower || (typeof attackerEntity.id === 'string' && attackerEntity.id.includes('tower')))));
+        const isShamefulDeath = isCreepKill || isTowerKill;
+        const shamePenalty = isShamefulDeath ? 2.0 : 0.0;
+
+        // Base respawn 15.0s, increases by +3s per death, plus +2s shame penalty
+        const respawnTime = 15.0 + Math.max(0, this._playerDeaths - 1) * 3.0 + shamePenalty;
         this._playerRespawnRemaining = respawnTime;
         this.mobaState.deathTimestamp = performance.now();
         this.mobaState.corpsePos = [...this.mobaState.currentPos];
@@ -38442,11 +39474,41 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (respCountdown) {
           respCountdown.textContent = `${respawnTime.toFixed(1)}s`;
         }
+
+        // Shame badge label update
+        const shameBadge = document.getElementById('moba-shame-badge');
+        const shameText = document.getElementById('moba-shame-badge-text');
+        if (shameBadge) {
+          if (isShamefulDeath) {
+            shameBadge.classList.remove('hidden');
+            shameBadge.classList.add('flex');
+            if (shameText) {
+              const killerName = isTowerKill ? 'ENEMY TOWER' : 'CREEP MINION';
+              shameText.textContent = `SHAME! EXECUTED BY ${killerName}! (+2s PENALTY)`;
+            }
+          } else {
+            shameBadge.classList.add('hidden');
+            shameBadge.classList.remove('flex');
+          }
+        }
+
         const respPenalty = document.getElementById('moba-respawn-penalty-text');
         if (respPenalty) {
-          respPenalty.textContent = `+3s per death penalty applied (Death #${this._playerDeaths} • ${respawnTime.toFixed(0)}s total)`;
+          if (isShamefulDeath) {
+            const killerName = isTowerKill ? 'Tower' : 'Creep';
+            respPenalty.textContent = `+3s per death & +2s SHAME penalty applied (${killerName} kill • Death #${this._playerDeaths} • ${respawnTime.toFixed(0)}s total)`;
+          } else {
+            respPenalty.textContent = `+3s per death penalty applied (Death #${this._playerDeaths} • ${respawnTime.toFixed(0)}s total)`;
+          }
         }
-        this.showMobaAlert(`💀 HERO FALLEN! Respawning in ${respawnTime.toFixed(0)}s (+3s death penalty)`, 'text-rose-400');
+
+        if (isShamefulDeath) {
+          const killerName = isTowerKill ? 'TOWER' : 'CREEP MINION';
+          this.showMobaAlert(`🤦 SHAME! EXECUTED BY ${killerName}! +2s RESPAWN PENALTY (${respawnTime.toFixed(0)}s)`, 'text-rose-400');
+          this.addMobaCombatText(targetPos[0], 3.2, targetPos[2], "🤦 SHAME! +2s PENALTY", "#ef4444");
+        } else {
+          this.showMobaAlert(`💀 HERO FALLEN! Respawning in ${respawnTime.toFixed(0)}s (+3s death penalty)`, 'text-rose-400');
+        }
       }
       return;
     }
@@ -38511,9 +39573,25 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.showMobaAlert(`💀 ALLY ${target.name} HAS FALLEN!`, 'text-rose-400');
         }
 
-        // Bot respawn with +3s per death penalty
+        // Reward bot attacker with gold
+        if (attackerEntity && attackerEntity.isBot) {
+          attackerEntity.gold = (attackerEntity.gold || 0) + 120;
+          this.addMobaCombatText(attackerEntity.pos ? attackerEntity.pos[0] : targetPos[0], 2.4, attackerEntity.pos ? attackerEntity.pos[2] : targetPos[2], `+120 🪙`, '#fbbf24');
+        }
+
+        // Bot respawn with +3s per death penalty (+2s if creep or tower shame death)
+        const isBotCreepDeath = Boolean(attackerEntity && (attackerEntity.isCreep || attackerEntity.type === 'melee' || attackerEntity.type === 'ranged' || (typeof attackerEntity.id === 'string' && attackerEntity.id.startsWith('creep_'))));
+        const isBotTowerDeath = Boolean(attackerEntity === 'tower' || (attackerEntity && (attackerEntity.isTower || (typeof attackerEntity.id === 'string' && attackerEntity.id.includes('tower')))));
+        const isBotShameDeath = isBotCreepDeath || isBotTowerDeath;
+        const botShamePenalty = isBotShameDeath ? 2000 : 0;
+
         target.deaths = (target.deaths || 0) + 1;
-        const botRespawnDelay = 8000 + (target.deaths * 3000);
+        const botRespawnDelay = 8000 + (target.deaths * 3000) + botShamePenalty;
+        if (isBotShameDeath) {
+          const killerName = isBotTowerDeath ? 'TOWER' : 'CREEP';
+          this.addMobaCombatText(targetPos[0], 2.8, targetPos[2], `🤦 SHAME! +2s PENALTY`, '#ef4444');
+          this.showMobaAlert(`🤦 SHAME! ${target.name} executed by ${killerName}! (+2s respawn penalty)`, 'text-orange-400');
+        }
         setTimeout(() => {
           if (target && this.mobaState && this.mobaState.playing) {
             this.scatterCorpseRavens(target.id || 'bot');
@@ -38541,6 +39619,9 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         if (attackerTeam === this.mobaState.team && isPlayerKill) {
           this.mobaState.gold = (this.mobaState.gold || 0) + 24;
           this.addMobaCombatText(targetPos[0], 2.4, targetPos[2], `+24 🪙`, '#fbbf24');
+        } else if (attackerEntity && attackerEntity.isBot) {
+          attackerEntity.gold = (attackerEntity.gold || 0) + 24;
+          this.addMobaCombatText(targetPos[0], 2.0, targetPos[2], `+24 🪙`, '#fbbf24');
         }
       }
 
@@ -38578,6 +39659,12 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
               });
             }
           });
+        }
+
+        // Reward bot attacker with gold on tower destruction
+        if (attackerEntity && attackerEntity.isBot) {
+          attackerEntity.gold = (attackerEntity.gold || 0) + 180;
+          this.addMobaCombatText(targetPos[0], 2.4, targetPos[2], `+180 🪙`, '#fbbf24');
         }
 
         const laneName = destroyedLane.toUpperCase();

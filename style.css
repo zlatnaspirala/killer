@@ -1643,24 +1643,24 @@ body.roulette-active #joystick-left-container,
 .project-subnav {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 0 16px;
+  padding: 0 14px;
   flex-shrink: 0;
   overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.project-subnav::-webkit-scrollbar {
-  display: none;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  user-select: none;
 }
 
 .proj-subtab-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
@@ -1669,6 +1669,7 @@ body.roulette-active #joystick-left-container,
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.15s ease;
 }
 
