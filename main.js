@@ -8608,9 +8608,9 @@ void main() {
     }
   }
 
-  async loadTowerGLB(customUrl = '/towers/tower.glb') {
+  async loadTowerGLB(customUrl = '/assets/models/towers/tower.glb') {
     if (this.mobaTowerMesh) return this.mobaTowerMesh;
-    const urls = [customUrl, '/towers/tower.glb', '/assets/models/towers/tower.glb', 'towers/tower.glb'];
+    const urls = ['/assets/models/towers/tower.glb', 'assets/models/towers/tower.glb', customUrl, '/towers/tower.glb', 'towers/tower.glb'];
     for (const url of urls) {
       try {
         const res = await fetch(url);
@@ -8622,16 +8622,22 @@ void main() {
         const binChunk = arrayBuffer.slice(20 + jsonLen + 8);
 
         const getAccessorData = (index, type = Float32Array) => {
+          if (index === undefined || !jsonChunk.accessors || !jsonChunk.accessors[index]) return new type(0);
           const accessor = jsonChunk.accessors[index];
           const bufferView = jsonChunk.bufferViews[accessor.bufferView];
-          const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+          const byteOffset = (bufferView ? (bufferView.byteOffset || 0) : 0) + (accessor.byteOffset || 0);
           const count = accessor.count * (accessor.type === "VEC3" ? 3 : accessor.type === "VEC2" ? 2 : 1);
           return new type(binChunk, byteOffset, count);
         };
 
-        const node2 = (jsonChunk.nodes && jsonChunk.nodes[2]) || null;
-        const q = (node2 && node2.rotation) || [0, 0, 0, 1];
-        const t = (node2 && node2.translation) || [0, 0, 0];
+        // Locate mesh node in glTF structure
+        let meshNode = null;
+        if (Array.isArray(jsonChunk.nodes)) {
+          meshNode = jsonChunk.nodes.find(n => n.mesh !== undefined) || jsonChunk.nodes[0];
+        }
+        const q = (meshNode && meshNode.rotation) || [0, 0, 0, 1];
+        const t = (meshNode && meshNode.translation) || [0, 0, 0];
+        const s = (meshNode && meshNode.scale) || [1, 1, 1];
 
         const rotateVec = (v, quat) => {
           const qx = quat[0], qy = quat[1], qz = quat[2], qw = quat[3];
@@ -8646,46 +8652,147 @@ void main() {
           ];
         };
 
-        const rawPos = getAccessorData(0, Float32Array);
-        const rawNorm = getAccessorData(1, Float32Array);
-        const rawUv = getAccessorData(2, Float32Array);
+        const primitives = (jsonChunk.meshes && jsonChunk.meshes[0] && jsonChunk.meshes[0].primitives) || [];
+        const allPositions = [];
+        const allNormals = [];
+        const allUvs = [];
+        const allIndices = [];
+        let vertexOffset = 0;
 
-        let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, minZ = 1e9, maxZ = -1e9;
-        const positions = new Float32Array(rawPos.length);
-        const normals = new Float32Array(rawNorm.length);
+        for (const prim of primitives) {
+          if (prim.attributes.POSITION === undefined) continue;
+          const rawPos = getAccessorData(prim.attributes.POSITION, Float32Array);
+          const rawNorm = prim.attributes.NORMAL !== undefined ? getAccessorData(prim.attributes.NORMAL, Float32Array) : null;
+          const rawUv = prim.attributes.TEXCOORD_0 !== undefined ? getAccessorData(prim.attributes.TEXCOORD_0, Float32Array) : null;
+          const numVerts = rawPos.length / 3;
 
-        for (let i = 0; i < rawPos.length; i += 3) {
-          const v = [rawPos[i], rawPos[i+1], rawPos[i+2]];
-          const rv = rotateVec(v, q);
-          // Flip 180 degrees around X-axis (swap bottom and top so tower stands upright)
-          const fx = rv[0] + t[0];
-          const fy = -(rv[1] + t[1]);
-          const fz = -(rv[2] + t[2]);
-          positions[i] = fx; positions[i+1] = fy; positions[i+2] = fz;
-          minX = Math.min(minX, fx); maxX = Math.max(maxX, fx);
-          minY = Math.min(minY, fy); maxY = Math.max(maxY, fy);
-          minZ = Math.min(minZ, fz); maxZ = Math.max(maxZ, fz);
+          for (let i = 0; i < rawPos.length; i += 3) {
+            const v = [rawPos[i] * s[0], rawPos[i+1] * s[1], rawPos[i+2] * s[2]];
+            const rv = rotateVec(v, q);
+            allPositions.push(rv[0] + t[0], rv[1] + t[1], rv[2] + t[2]);
 
-          const nv = [rawNorm[i], rawNorm[i+1], rawNorm[i+2]];
-          const rnv = rotateVec(nv, q);
-          normals[i] = rnv[0]; normals[i+1] = -rnv[1]; normals[i+2] = -rnv[2];
+            if (rawNorm) {
+              const nv = [rawNorm[i], rawNorm[i+1], rawNorm[i+2]];
+              const rnv = rotateVec(nv, q);
+              allNormals.push(rnv[0], rnv[1], rnv[2]);
+            } else {
+              allNormals.push(0, 1, 0);
+            }
+          }
+
+          if (rawUv) {
+            for (let i = 0; i < rawUv.length; i++) allUvs.push(rawUv[i]);
+          } else {
+            for (let i = 0; i < numVerts * 2; i++) allUvs.push(0);
+          }
+
+          if (prim.indices !== undefined) {
+            const idx = getAccessorData(prim.indices, Uint16Array);
+            for (let j = 0; j < idx.length; j++) {
+              allIndices.push(idx[j] + vertexOffset);
+            }
+          } else {
+            for (let j = 0; j < numVerts; j++) {
+              allIndices.push(vertexOffset + j);
+            }
+          }
+
+          vertexOffset += numVerts;
         }
 
+        // Compute model dimensions and ensure tower is standing vertically upright
+        let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, minZ = 1e9, maxZ = -1e9;
+        for (let i = 0; i < allPositions.length; i += 3) {
+          const x = allPositions[i], y = allPositions[i+1], z = allPositions[i+2];
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+          minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+        }
+
+        let spanX = maxX - minX;
+        let spanY = maxY - minY;
+        let spanZ = maxZ - minZ;
+
+        // Auto-correct if tower was exported lying flat on the floor (wrong by 90 degrees)
+        if (spanZ > spanY && spanZ >= spanX * 0.95) {
+          // Lying horizontally along Z-axis: rotate 90 degrees around X to stand upright along Y
+          for (let i = 0; i < allPositions.length; i += 3) {
+            const y = allPositions[i+1], z = allPositions[i+2];
+            allPositions[i+1] = z;
+            allPositions[i+2] = -y;
+            const ny = allNormals[i+1], nz = allNormals[i+2];
+            allNormals[i+1] = nz;
+            allNormals[i+2] = -ny;
+          }
+        } else if (spanX > spanY && spanX >= spanZ * 0.95) {
+          // Lying horizontally along X-axis: rotate 90 degrees around Z to stand upright along Y
+          for (let i = 0; i < allPositions.length; i += 3) {
+            const x = allPositions[i], y = allPositions[i+1];
+            allPositions[i] = y;
+            allPositions[i+1] = -x;
+            const nx = allNormals[i], ny = allNormals[i+1];
+            allNormals[i] = ny;
+            allNormals[i+1] = -nx;
+          }
+        }
+
+        // Recompute bounds after orientation fix
+        minX = 1e9; maxX = -1e9; minY = 1e9; maxY = -1e9; minZ = 1e9; maxZ = -1e9;
+        for (let i = 0; i < allPositions.length; i += 3) {
+          const x = allPositions[i], y = allPositions[i+1], z = allPositions[i+2];
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+          minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+        }
+
+        // Verify if tower is upside down (a fortress base is wider than its apex pinnacle)
+        let baseRadiusSum = 0, baseCount = 0;
+        let topRadiusSum = 0, topCount = 0;
+        const thresholdY = (maxY - minY) * 0.25;
+        for (let i = 0; i < allPositions.length; i += 3) {
+          const x = allPositions[i], y = allPositions[i+1], z = allPositions[i+2];
+          const r = Math.hypot(x, z);
+          if (y < minY + thresholdY) {
+            baseRadiusSum += r; baseCount++;
+          } else if (y > maxY - thresholdY) {
+            topRadiusSum += r; topCount++;
+          }
+        }
+        const avgBaseR = baseCount > 0 ? baseRadiusSum / baseCount : 1;
+        const avgTopR = topCount > 0 ? topRadiusSum / topCount : 1;
+        if (avgTopR > avgBaseR * 1.6) {
+          // Flip upside down tower so base is at ground level
+          for (let i = 0; i < allPositions.length; i += 3) {
+            allPositions[i+1] = maxY - (allPositions[i+1] - minY);
+            allNormals[i+1] = -allNormals[i+1];
+          }
+          minY = 1e9; maxY = -1e9;
+          for (let i = 1; i < allPositions.length; i += 3) {
+            minY = Math.min(minY, allPositions[i]);
+            maxY = Math.max(maxY, allPositions[i]);
+          }
+        }
+
+        // Center horizontally and seat base flat at ground level Y = 0.0
         const cx = (minX + maxX) / 2;
         const cz = (minZ + maxZ) / 2;
         const by = minY;
-        for (let i = 0; i < positions.length; i += 3) {
-          positions[i] -= cx;
-          positions[i+1] -= by;
-          positions[i+2] -= cz;
+        const positions = new Float32Array(allPositions.length);
+        const normals = new Float32Array(allNormals.length);
+        const uvs = new Float32Array(allUvs.length);
+
+        for (let i = 0; i < allPositions.length; i += 3) {
+          positions[i] = allPositions[i] - cx;
+          positions[i+1] = allPositions[i+1] - by;
+          positions[i+2] = allPositions[i+2] - cz;
+
+          normals[i] = allNormals[i];
+          normals[i+1] = allNormals[i+1];
+          normals[i+2] = allNormals[i+2];
         }
 
-        const allIndices = [];
-        if (jsonChunk.meshes && jsonChunk.meshes[0] && jsonChunk.meshes[0].primitives) {
-          jsonChunk.meshes[0].primitives.forEach(prim => {
-            const idx = getAccessorData(prim.indices, Uint16Array);
-            for (let j = 0; j < idx.length; j++) allIndices.push(idx[j]);
-          });
+        for (let i = 0; i < allUvs.length; i++) {
+          uvs[i] = allUvs[i];
         }
 
         const barys = [];
@@ -8694,7 +8801,7 @@ void main() {
         }
 
         let towerTexture = null;
-        if (jsonChunk.images && jsonChunk.images.length > 1 && binChunk) {
+        if (jsonChunk.images && jsonChunk.images.length > 0 && binChunk) {
           await new Promise(resImg => {
             try {
               const imgDef = jsonChunk.images[1] || jsonChunk.images[0];
@@ -8732,15 +8839,16 @@ void main() {
         const meshData = {
           positions,
           normals,
-          uvs: rawUv,
+          uvs,
           barys,
           indices: allIndices
         };
 
         const mesh = this.buildMeshBuffer(meshData);
+        mesh.height = maxY - by;
         if (towerTexture) mesh.texture = towerTexture;
         this.mobaTowerMesh = mesh;
-        this.log("🏰 3D GLB Tower Model loaded successfully from " + url, "success");
+        this.log("🏰 3D GLB Tower Model loaded and perfectly aligned upright from " + url, "success");
         return mesh;
       } catch (err) {
         console.warn(`[loadTowerGLB] Failed to load from ${url}:`, err);
@@ -34326,7 +34434,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             this.instanceMatrix[0] = cO; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = -sO; this.instanceMatrix[3] = 0;
             this.instanceMatrix[4] = 0; this.instanceMatrix[5] = orbScale; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
             this.instanceMatrix[8] = sO; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = cO; this.instanceMatrix[11] = 0;
-            this.instanceMatrix[12] = t.pos[0]; this.instanceMatrix[13] = 5.2 + bob; this.instanceMatrix[14] = t.pos[2]; this.instanceMatrix[15] = 1.0;
+            const apexY = isGlb ? (towerMesh.height ? towerMesh.height * scale + 0.35 : 4.4) : 5.2;
+            this.instanceMatrix[12] = t.pos[0]; this.instanceMatrix[13] = apexY + bob; this.instanceMatrix[14] = t.pos[2]; this.instanceMatrix[15] = 1.0;
 
           Mat4.normalFromMat4(this.normalMatrix, this.instanceMatrix);
           gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
