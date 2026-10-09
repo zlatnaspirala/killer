@@ -34274,7 +34274,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const isRedTronObj = redMesh === this.mobaTronMesh;
       gl.bindVertexArray(redMesh.vao);
       let sizeRed = isRedTronObj ? (0.46 + Math.sin(timestamp * 0.003) * 0.03) : (1.1 + Math.sin(timestamp * 0.003) * 0.08);
-      const redHpFactor = this.mobaState.trons.RED.hp / 2500;
+      const redMaxHp = (this.mobaState.trons && this.mobaState.trons.RED && this.mobaState.trons.RED.maxHp) || 4500;
+      const redHpFactor = (this.mobaState.trons && this.mobaState.trons.RED ? this.mobaState.trons.RED.hp : 4500) / redMaxHp;
       if (redHpFactor <= 0) sizeRed = 0.0; // Destroyed
 
       if (isRedTronObj) {
@@ -34299,6 +34300,21 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.9, 0.1 * redHpFactor, 0.1 * redHpFactor])); // Shuts down when dying
       gl.drawElements(gl.TRIANGLES, redMesh.indexCount, gl.UNSIGNED_SHORT, 0);
 
+      // Protective Invulnerability Energy Shield around RED Tron while lane towers stand
+      if (baseSphere && !this.isMobaTronVulnerable('RED') && redHpFactor > 0) {
+        gl.bindVertexArray(baseSphere.vao);
+        const shieldPulse = 1.6 + Math.sin(timestamp * 0.003) * 0.06;
+        this.instanceMatrix[0] = shieldPulse; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = shieldPulse; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = shieldPulse; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = redPos[0]; this.instanceMatrix[13] = 0.8; this.instanceMatrix[14] = redPos[2]; this.instanceMatrix[15] = 1.0;
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 15); // Luminous Shield Shader
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.25, 0.65, 1.0])); // Celestial protective cyan-blue
+        gl.drawElements(gl.TRIANGLES, baseSphere.indexCount, gl.UNSIGNED_SHORT, 0);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+      }
+
       // Draw decorative base columns for RED (proportional to scaled-down Tron)
       gl.bindVertexArray(baseCube.vao);
       const redRot = timestamp * 0.001;
@@ -34314,7 +34330,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       const isBlackTronObj = blackMesh === this.mobaTronMesh;
       gl.bindVertexArray(blackMesh.vao);
       let sizeBlack = isBlackTronObj ? (0.46 + Math.sin(timestamp * 0.003 + 2.0) * 0.03) : (1.1 + Math.sin(timestamp * 0.003 + 2.0) * 0.08);
-      const blackHpFactor = this.mobaState.trons.BLACK.hp / 2500;
+      const blackMaxHp = (this.mobaState.trons && this.mobaState.trons.BLACK && this.mobaState.trons.BLACK.maxHp) || 4500;
+      const blackHpFactor = (this.mobaState.trons && this.mobaState.trons.BLACK ? this.mobaState.trons.BLACK.hp : 4500) / blackMaxHp;
       if (blackHpFactor <= 0) sizeBlack = 0.0;
 
       if (isBlackTronObj) {
@@ -34336,6 +34353,21 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
       if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.15 * blackHpFactor, 0.05 * blackHpFactor, 0.9 * blackHpFactor])); // Violet/Black energy core
       gl.drawElements(gl.TRIANGLES, blackMesh.indexCount, gl.UNSIGNED_SHORT, 0);
+
+      // Protective Invulnerability Energy Shield around BLACK Tron while lane towers stand
+      if (baseSphere && !this.isMobaTronVulnerable('BLACK') && blackHpFactor > 0) {
+        gl.bindVertexArray(baseSphere.vao);
+        const shieldPulse = 1.6 + Math.sin(timestamp * 0.003 + 2.0) * 0.06;
+        this.instanceMatrix[0] = shieldPulse; this.instanceMatrix[1] = 0; this.instanceMatrix[2] = 0; this.instanceMatrix[3] = 0;
+        this.instanceMatrix[4] = 0; this.instanceMatrix[5] = shieldPulse; this.instanceMatrix[6] = 0; this.instanceMatrix[7] = 0;
+        this.instanceMatrix[8] = 0; this.instanceMatrix[9] = 0; this.instanceMatrix[10] = shieldPulse; this.instanceMatrix[11] = 0;
+        this.instanceMatrix[12] = blackPos[0]; this.instanceMatrix[13] = 0.8; this.instanceMatrix[14] = blackPos[2]; this.instanceMatrix[15] = 1.0;
+        gl.uniformMatrix4fv(progInfo.uModel, false, this.instanceMatrix);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 15); // Luminous Shield Shader
+        if (progInfo.uBaseColor) gl.uniform3fv(progInfo.uBaseColor, new Float32Array([0.25, 0.65, 1.0])); // Celestial protective cyan-blue
+        gl.drawElements(gl.TRIANGLES, baseSphere.indexCount, gl.UNSIGNED_SHORT, 0);
+        if (progInfo.uMatType) gl.uniform1i(progInfo.uMatType, 0);
+      }
 
       // Draw decorative columns for BLACK
       gl.bindVertexArray(baseCube.vao);
@@ -35862,11 +35894,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (this.mobaState.trons) {
         if (this.mobaState.trons.RED && this.mobaState.trons.RED.hp > 0) {
           const isEnemy = 'RED' !== this.mobaState.team;
-          drawDualBar3D(this.mobaState.trons.RED.pos, 3.8, this.mobaState.trons.RED.hp, 2500, this.mobaState.trons.RED.mp || 1000, 1000, 3.6, 0.20, isEnemy);
+          const maxHpR = this.mobaState.trons.RED.maxHp || 4500;
+          drawDualBar3D(this.mobaState.trons.RED.pos, 3.8, this.mobaState.trons.RED.hp, maxHpR, this.mobaState.trons.RED.mp || 1000, 1000, 3.6, 0.20, isEnemy);
         }
         if (this.mobaState.trons.BLACK && this.mobaState.trons.BLACK.hp > 0) {
           const isEnemy = 'BLACK' !== this.mobaState.team;
-          drawDualBar3D(this.mobaState.trons.BLACK.pos, 3.8, this.mobaState.trons.BLACK.hp, 2500, this.mobaState.trons.BLACK.mp || 1000, 1000, 3.6, 0.20, isEnemy);
+          const maxHpB = this.mobaState.trons.BLACK.maxHp || 4500;
+          drawDualBar3D(this.mobaState.trons.BLACK.pos, 3.8, this.mobaState.trons.BLACK.hp, maxHpB, this.mobaState.trons.BLACK.mp || 1000, 1000, 3.6, 0.20, isEnemy);
         }
       }
     }
@@ -36840,10 +36874,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     this.mobaState.velocity = [0, 0, 0];
     this.mobaState.currentYaw = this.mobaState.team === 'RED' ? Math.PI * 0.25 : -Math.PI * 0.75;
 
-    // Trons with dual HP & Mana energy reservoirs (scaled nicely for enlarged map with calibrated collision radius)
+    // Trons with dual HP & Mana energy reservoirs (fortified to 4500 HP with 35 armor, invulnerable until towers fall)
     this.mobaState.trons = {
-      RED: { id: 'tron_red', team: 'RED', hp: 2500, maxHp: 2500, mp: 1000, maxMp: 1000, pos: [-52.5, 0, -52.5], radius: 2.8 },
-      BLACK: { id: 'tron_black', team: 'BLACK', hp: 2500, maxHp: 2500, mp: 1000, maxMp: 1000, pos: [52.5, 0, 52.5], radius: 2.8 }
+      RED: { id: 'tron_red', team: 'RED', hp: 4500, maxHp: 4500, mp: 1000, maxMp: 1000, pos: [-52.5, 0, -52.5], radius: 2.8, armor: 35 },
+      BLACK: { id: 'tron_black', team: 'BLACK', hp: 4500, maxHp: 4500, mp: 1000, maxMp: 1000, pos: [52.5, 0, 52.5], radius: 2.8, armor: 35 }
     };
 
     // Initialize Procedural Map Layout & 8 Classic Defensive Towers across all 3 lanes (Halved attack radius)
@@ -36862,13 +36896,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       damage: t.damage || 70
     }));
 
-    // Bots deployed across Top, Mid, and Bot lanes (scaled up 1.5x)
+    // Bots deployed across Top, Mid, and Bot lanes (scaled up 1.5x, normalized speeds)
     this.mobaState.players = [
-      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 680, maxHp: 680, mp: 500, maxMp: 500, damage: 62, speed: 4.2, baseSpeed: 4.2, attackRange: 7.0, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-49.5, 0, -42.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 2.0 },
-      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 950, maxHp: 950, mp: 350, maxMp: 350, damage: 78, speed: 4.0, baseSpeed: 4.0, attackRange: 2.5, attackCooldown: 0.95, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-42.0, 0, -49.5], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 3.0 },
-      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 740, maxHp: 740, mp: 450, maxMp: 450, damage: 65, speed: 4.3, baseSpeed: 4.3, attackRange: 7.2, attackCooldown: 0.82, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [49.5, 0, 42.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 2.5 },
-      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 780, maxHp: 780, mp: 380, maxMp: 380, damage: 72, speed: 4.5, baseSpeed: 4.5, attackRange: 2.5, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [42.0, 0, 49.5], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 3.5 },
-      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 880, maxHp: 880, mp: 450, maxMp: 450, damage: 75, speed: 4.2, baseSpeed: 4.2, attackRange: 2.5, attackCooldown: 0.88, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [48.0, 0, 48.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 3.0 }
+      { id: 'bot_ally_1', name: 'Bot-Erika', team: 'RED', lane: 'top', selectedHero: 'Erika', hp: 680, maxHp: 680, mp: 500, maxMp: 500, damage: 62, speed: 4.2, baseSpeed: 4.2, initialSpeed: 4.2, initialDamage: 62, initialMaxHp: 680, initialMaxMp: 500, attackRange: 7.0, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-49.5, 0, -42.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'RED'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 3.5, dashCooldown: 0 },
+      { id: 'bot_ally_2', name: 'Bot-Monster', team: 'RED', lane: 'bot', selectedHero: 'Monster', hp: 950, maxHp: 950, mp: 350, maxMp: 350, damage: 78, speed: 4.0, baseSpeed: 4.0, initialSpeed: 4.0, initialDamage: 78, initialMaxHp: 950, initialMaxMp: 350, attackRange: 2.5, attackCooldown: 0.95, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [-42.0, 0, -49.5], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'RED'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 4.0, dashCooldown: 0 },
+      { id: 'bot_enemy_1', name: 'Bot-Arissa', team: 'BLACK', lane: 'top', selectedHero: 'Arissa', hp: 740, maxHp: 740, mp: 450, maxMp: 450, damage: 65, speed: 4.3, baseSpeed: 4.3, initialSpeed: 4.3, initialDamage: 65, initialMaxHp: 740, initialMaxMp: 450, attackRange: 7.2, attackCooldown: 0.82, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [49.5, 0, 42.0], isBot: true, isRanged: true, waypoints: globalForestLayoutEngine.getCreepWaypoints('top', 'BLACK'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 3.5, dashCooldown: 0 },
+      { id: 'bot_enemy_2', name: 'Bot-Skeletonz', team: 'BLACK', lane: 'bot', selectedHero: 'Skeletonz', hp: 780, maxHp: 780, mp: 380, maxMp: 380, damage: 72, speed: 4.4, baseSpeed: 4.4, initialSpeed: 4.4, initialDamage: 72, initialMaxHp: 780, initialMaxMp: 380, attackRange: 2.5, attackCooldown: 0.85, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [42.0, 0, 49.5], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('bot', 'BLACK'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 4.5, dashCooldown: 0 },
+      { id: 'bot_enemy_3', name: 'Bot-Tactician', team: 'BLACK', lane: 'mid', selectedHero: 'Bot', hp: 880, maxHp: 880, mp: 450, maxMp: 450, damage: 75, speed: 4.2, baseSpeed: 4.2, initialSpeed: 4.2, initialDamage: 75, initialMaxHp: 880, initialMaxMp: 450, attackRange: 2.5, attackCooldown: 0.88, attackTimer: 0, spellsCooldown: [0, 0, 0, 0], pos: [48.0, 0, 48.0], isBot: true, isRanged: false, waypoints: globalForestLayoutEngine.getCreepWaypoints('mid', 'BLACK'), waypointIndex: 1, gold: 200, inventory: [], itemBuyCooldown: 4.0, dashCooldown: 0 }
     ];
 
     // Track creep buff multipliers per team & lane (+30% when team destroys a tower on that road)
@@ -38333,7 +38367,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     const MOBA_ITEM_CATALOG = {
       blade: { key: 'blade', name: 'Blade of Blood', price: 200, strength: 25 },
-      boots: { key: 'boots', name: 'Boots of Speed', price: 160, speed: 1.3 },
+      boots: { key: 'boots', name: 'Boots of Speed', price: 160, speed: 0.65 },
       heart: { key: 'heart', name: 'Heart of Titan', price: 300, hp: 400 },
       scepter: { key: 'scepter', name: 'Archmage Scepter', price: 240, mp: 300 },
       shield: { key: 'shield', name: 'Aegis Shield', price: 220, armor: 15 },
@@ -38358,6 +38392,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
     let chosenKey = null;
     for (const key of buildOrder) {
+      // Disallow stacking boots (only 1 pair of boots per bot)
+      if (key === 'boots' && b.inventory.some(it => it && (it.key === 'boots' || it.key === 'legendary_boots'))) {
+        continue;
+      }
       const ownedCount = b.inventory.filter(it => it && it.key === key).length;
       if (ownedCount < 3 && b.gold >= MOBA_ITEM_CATALOG[key].price) {
         chosenKey = key;
@@ -38370,26 +38408,6 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     b.gold -= item.price;
     b.inventory.push({ ...item });
 
-    if (item.hp) {
-      b.maxHp += item.hp;
-      b.hp += item.hp;
-    }
-    if (item.mp) {
-      b.maxMp = (b.maxMp || 400) + item.mp;
-      b.mp = (b.mp || 400) + item.mp;
-    }
-    if (item.strength) {
-      b.damage = (b.damage || 60) + item.strength;
-    }
-    if (item.armor) {
-      b.armor = (b.armor || 0) + item.armor;
-    }
-    if (item.speed) {
-      if (!b.baseSpeed) b.baseSpeed = b.speed || 4.2;
-      b.baseSpeed += Math.min(1.3, item.speed);
-      b.speed = b.baseSpeed;
-    }
-
     // Check for 3x identical item legendary merge!
     const keyCounts = {};
     b.inventory.forEach(it => { if (it && it.key) keyCounts[it.key] = (keyCounts[it.key] || 0) + 1; });
@@ -38397,28 +38415,52 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (count >= 3) {
         b.inventory = b.inventory.filter(it => it.key !== k);
         const legendaryBonus = {
-          blade: { name: 'Aether Fortis', bonusDmg: 50, bonusArmor: 15 },
-          boots: { name: 'Caelum Feather', bonusHp: 500, bonusSpeed: 0.5 },
-          heart: { name: 'Sanguis Vita', bonusHp: 800, bonusArmor: 20 },
-          scepter: { name: 'Terra Sanctum', bonusMp: 600, bonusDmg: 40 },
-          shield: { name: 'Aether Scale', bonusArmor: 35, bonusHp: 400 },
-          corona: { name: 'Corona Umbra', bonusDmg: 60, bonusHp: 500 },
-          fulgur: { name: 'Fulgur Mortis', bonusMp: 600, bonusDmg: 45 },
-          magic_reborn: { name: 'Mortis Ultima', bonusHp: 300, bonusMp: 300 }
-        }[k] || { name: 'Legendary Artifact', bonusDmg: 30, bonusHp: 300 };
+          blade: { name: 'Aether Fortis', bonusDmg: 45, bonusArmor: 10 },
+          boots: { name: 'Caelum Feather', bonusHp: 350, bonusSpeed: 0.25 },
+          heart: { name: 'Sanguis Vita', bonusHp: 600, bonusArmor: 15 },
+          scepter: { name: 'Terra Sanctum', bonusMp: 450, bonusDmg: 35 },
+          shield: { name: 'Aether Scale', bonusArmor: 25, bonusHp: 300 },
+          corona: { name: 'Corona Umbra', bonusDmg: 45, bonusHp: 350 },
+          fulgur: { name: 'Fulgur Mortis', bonusMp: 450, bonusDmg: 35 },
+          magic_reborn: { name: 'Mortis Ultima', bonusHp: 250, bonusMp: 250 }
+        }[k] || { name: 'Legendary Artifact', bonusDmg: 25, bonusHp: 250 };
 
-        b.inventory.push({ key: 'legendary_' + k, name: legendaryBonus.name, isLegendary: true });
-        if (legendaryBonus.bonusHp) { b.maxHp += legendaryBonus.bonusHp; b.hp += legendaryBonus.bonusHp; }
-        if (legendaryBonus.bonusMp) { b.maxMp = (b.maxMp || 400) + legendaryBonus.bonusMp; b.mp += legendaryBonus.bonusMp; }
-        if (legendaryBonus.bonusDmg) b.damage = (b.damage || 60) + legendaryBonus.bonusDmg;
-        if (legendaryBonus.bonusArmor) b.armor = (b.armor || 0) + legendaryBonus.bonusArmor;
-        if (legendaryBonus.bonusSpeed && b.baseSpeed) { b.baseSpeed += legendaryBonus.bonusSpeed; b.speed = b.baseSpeed; }
-
+        b.inventory.push({ key: 'legendary_' + k, name: legendaryBonus.name, isLegendary: true, ...legendaryBonus });
         this.addMobaCombatText(b.pos[0], 3.2, b.pos[2], `🌟 MERGED ${legendaryBonus.name}!`, '#fbbf24');
         this.showMobaAlert(`🌟 ${b.name} merged 3x ${k.toUpperCase()} into ${legendaryBonus.name}!`, b.team === this.mobaState.team ? 'text-emerald-400' : 'text-rose-400');
         break;
       }
     }
+
+    // Recalculate bot stats cleanly from initial base stats + inventory
+    let extraDamage = 0, extraHp = 0, extraMp = 0, extraArmor = 0, rawItemSpeed = 0;
+    b.inventory.forEach(it => {
+      if (!it) return;
+      if (it.strength) extraDamage += it.strength;
+      if (it.hp) extraHp += it.hp;
+      if (it.mp) extraMp += it.mp;
+      if (it.armor) extraArmor += it.armor;
+      if (it.speed) rawItemSpeed += it.speed;
+      if (it.bonusDmg) extraDamage += it.bonusDmg;
+      if (it.bonusHp) extraHp += it.bonusHp;
+      if (it.bonusMp) extraMp += it.bonusMp;
+      if (it.bonusArmor) extraArmor += it.bonusArmor;
+      if (it.bonusSpeed) rawItemSpeed += it.bonusSpeed;
+    });
+
+    const cappedItemSpeed = Math.min(0.65, rawItemSpeed); // Strictly capped to prevent speed inflation
+    const initSpeed = b.initialSpeed || 4.2;
+    b.baseSpeed = initSpeed + cappedItemSpeed;
+    b.speed = b.baseSpeed;
+    const initDmg = b.initialDamage || 65;
+    b.damage = initDmg + extraDamage;
+    const initHp = b.initialMaxHp || 750;
+    const oldMaxHp = b.maxHp;
+    b.maxHp = initHp + extraHp;
+    b.hp = Math.min(b.maxHp, (b.hp || initHp) + Math.max(0, b.maxHp - oldMaxHp));
+    const initMp = b.initialMaxMp || 400;
+    b.maxMp = initMp + extraMp;
+    b.armor = extraArmor;
 
     this.addMobaCombatText(b.pos[0], 2.6, b.pos[2], `🛍️ +${item.name}`, '#38bdf8');
     if (!this.mobaState.vfxBursts) this.mobaState.vfxBursts = [];
@@ -38444,18 +38486,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       if (!b.isBot || b.hp <= 0) return;
       if (!b.pos) b.pos = [0, 0, 0];
 
-      // Bot gold income and item shopping
-      b.gold = (b.gold !== undefined ? b.gold : 200) + dt * 2.5;
+      // Bot gold income at fair pace & balanced shopping cooldown
+      b.gold = (b.gold !== undefined ? b.gold : 200) + dt * 0.20;
       b.itemBuyCooldown = Math.max(0, (b.itemBuyCooldown || 0) - dt);
       if (b.itemBuyCooldown <= 0) {
-        b.itemBuyCooldown = 2.5 + Math.random() * 2.0;
+        b.itemBuyCooldown = 4.0 + Math.random() * 3.0;
         this.executeMobaBotShopping(b);
+      }
+
+      if (b.dashCooldown && b.dashCooldown > 0) {
+        b.dashCooldown = Math.max(0, b.dashCooldown - dt);
       }
 
       if (b.slowTimer && b.slowTimer > 0) {
         b.slowTimer = Math.max(0, b.slowTimer - dt);
       }
-      if (!b.baseSpeed) b.baseSpeed = b.speed || 4.2;
+      if (!b.initialSpeed) b.initialSpeed = b.speed || 4.2;
+      if (!b.baseSpeed) b.baseSpeed = b.initialSpeed;
       const isSlowed = (b.slowTimer && b.slowTimer > 0);
       b.speed = b.baseSpeed * (isSlowed ? 0.45 : 1.0);
 
@@ -38472,8 +38519,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
 
       b.attackTimer = Math.max(0, (b.attackTimer || 0) - dt);
 
-      // Bot mana regeneration (+12 MP/s for active spell usage)
-      b.mp = Math.min(b.maxMp || 450, (b.mp || 0) + dt * 12);
+      // Bot mana regeneration (+8 MP/s)
+      b.mp = Math.min(b.maxMp || 450, (b.mp || 0) + dt * 8);
 
       // Decrement spell cooldowns
       if (!b.spellsCooldown) b.spellsCooldown = [0, 0, 0, 0];
@@ -38497,9 +38544,10 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
       // Low health tactical retreat to base fountain (< 25% HP), remains retreating until restored to >= 90% HP
       if (b.isRetreating || b.hp < b.maxHp * 0.25) {
         b.isRetreating = true;
-        // If bot has mobility dash or stealth, use it to escape!
+        // If bot has mobility dash, use it with cooldown check
         const heroKey = (b.selectedHero || '').toLowerCase();
-        if ((heroKey === 'arissa' || heroKey === 'erika') && b.spellsCooldown[1] <= 0 && b.mp >= 45) {
+        if ((heroKey === 'arissa' || heroKey === 'erika') && b.spellsCooldown[1] <= 0 && b.mp >= 45 && (!b.dashCooldown || b.dashCooldown <= 0)) {
+          b.dashCooldown = 15.0;
           this.castMobaBotSpell(b, 1, { pos: basePos });
         } else if ((heroKey === 'skeletonz' || heroKey.includes('woman')) && b.spellsCooldown[0] <= 0 && b.mp >= 40) {
           this.castMobaBotSpell(b, 0, null);
@@ -38509,7 +38557,8 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         const dz = basePos[2] - b.pos[2];
         const dist = Math.hypot(dx, dz);
         if (dist > 2.8) {
-          const step = Math.min(dist, (b.speed || 4.2) * (b.invisibilityTimer > 0 ? 1.35 : 1.0) * dt);
+          const retSpeed = Math.min(5.2, (b.speed || 4.2) * (b.invisibilityTimer > 0 ? 1.25 : 1.0));
+          const step = Math.min(dist, retSpeed * dt);
           b.pos[0] += (dx / dist) * step;
           b.pos[2] += (dz / dist) * step;
           this.resolveMobaCollision(b.pos, 0.65);
@@ -38730,21 +38779,23 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         });
       }
 
-      // 5. Check enemy Tron (Late-Game All-Out Group Assault)
+      // 5. Check enemy Tron (ONLY when enemy towers are destroyed and base is vulnerable!)
       const enemyTronTeam = b.team === 'RED' ? 'BLACK' : 'RED';
       const enemyTron = this.mobaState.trons && this.mobaState.trons[enemyTronTeam];
-      if (enemyTron && enemyTron.hp > 0 && enemyTron.pos) {
+      const isTronVulnerable = this.isMobaTronVulnerable(enemyTronTeam);
+
+      if (enemyTron && enemyTron.hp > 0 && enemyTron.pos && isTronVulnerable) {
         const d = Math.hypot(enemyTron.pos[0] - b.pos[0], enemyTron.pos[2] - b.pos[2]);
-        const matchSec = Math.floor(this.mobaState.matchTimer || 0);
-        if (d < 28.0 || matchSec > 90) {
-          let score = (30.0 - Math.min(28.0, d)) * 2.5 + 40.0;
+        const creepsNearBase = this.mobaState.creeps && this.mobaState.creeps.some(c => c.team === b.team && c.hp > 0 && Math.hypot(c.pos[0] - enemyTron.pos[0], c.pos[2] - enemyTron.pos[2]) < 22.0);
+        if (d < 24.0 || creepsNearBase) {
+          let score = (28.0 - Math.min(24.0, d)) * 1.8 + 32.0;
           if (score > bestScore) {
             bestScore = score;
             bestTarget = enemyTron;
             closestDist = d;
-            if (!b._lastTronAlert || performance.now() - b._lastTronAlert > 20000) {
+            if (!b._lastTronAlert || performance.now() - b._lastTronAlert > 25000) {
               b._lastTronAlert = performance.now();
-              this.showMobaAlert(`⚡ [GROUP ATTACK] ${b.name} storming the ENEMY TRON!`, b.team === this.mobaState.team ? 'text-emerald-400' : 'text-rose-400');
+              this.showMobaAlert(`⚡ [BASE ASSAULT] ${b.name} storming the vulnerable ENEMY TRON!`, b.team === this.mobaState.team ? 'text-emerald-400' : 'text-rose-400');
             }
           }
         }
@@ -38770,7 +38821,7 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
             const towDx = b.pos[0] - nearestEnemyTower.pos[0];
             const towDz = b.pos[2] - nearestEnemyTower.pos[2];
             const towLen = Math.hypot(towDx, towDz) || 1.0;
-            const step = Math.min(2.5, (b.speed || 4.2) * dt);
+            const step = Math.min(2.2, (b.speed || 4.2) * dt);
             b.pos[0] += (towDx / towLen) * step;
             b.pos[2] += (towDz / towLen) * step;
             this.resolveMobaCollision(b.pos, 0.65);
@@ -38837,18 +38888,20 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
           this.castMobaBotSpell(b, 0, bestTarget); // Decoy Illusion Clone!
         }
 
-        // E. Gap-Closer Dash / Surge for Ranged / Melee
-        if (dist > 4.5 && dist < 9.5 && isHeroTarget) {
+        // E. Gap-Closer Dash / Surge for Ranged / Melee (with internal cooldown)
+        if (dist > 4.8 && dist < 8.5 && isHeroTarget && (!b.dashCooldown || b.dashCooldown <= 0)) {
           if (heroKey === 'arissa' && b.spellsCooldown[1] <= 0 && b.mp >= 50) {
+            b.dashCooldown = 15.0;
             this.castMobaBotSpell(b, 1, bestTarget); // Blink Dash!
           } else if (heroKey === 'erika' && b.spellsCooldown[1] <= 0 && b.mp >= 45) {
+            b.dashCooldown = 15.0;
             this.castMobaBotSpell(b, 1, bestTarget); // Flame Surge!
           }
         }
 
         // --- 2. MOVEMENT, KITING & AUTO-ATTACK EXECUTION ---
         const effectiveRange = attackRange + targetRad;
-        const currentSpeed = (b.speed || 4.2) * (b.invisibilityTimer > 0 ? 1.35 : 1.0);
+        const currentSpeed = Math.min(5.2, (b.speed || 4.2) * (b.invisibilityTimer > 0 ? 1.25 : 1.0));
 
         if (dist <= effectiveRange) {
           // RANGED KITING: If enemy is too close (< 3.8m), back up slightly to maintain safe firing distance!
@@ -39623,6 +39676,31 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
     }
 
     // 2. Damage to Other Entities (Bots, Creeps, Towers, Tron)
+    if (target.id && target.id.startsWith('tron_')) {
+      const tronTeam = target.team;
+      if (!this.isMobaTronVulnerable(tronTeam)) {
+        const aliveCount = this.mobaState.towers ? this.mobaState.towers.filter(t => t.team === tronTeam && t.hp > 0).length : 0;
+        this.addMobaCombatText(targetPos[0], 2.8, targetPos[2], "🛡️ TRON SHIELDED!", "#38bdf8", true, false);
+        if (isPlayerAttacker && (!this._lastTronShieldMsg || performance.now() - this._lastTronShieldMsg > 4000)) {
+          this._lastTronShieldMsg = performance.now();
+          this.showMobaAlert(`🛡️ Enemy Tron is invulnerable! Destroy remaining ${aliveCount} lane towers first!`, 'text-amber-400');
+          this.mobaPlaySound('back');
+        }
+        return;
+      }
+
+      // Backdoor protection: If vulnerable but no allied creeps near the Tron (< 18m), reduce damage by 65%
+      const friendlyCreepsNearTron = this.mobaState.creeps && this.mobaState.creeps.some(c => c.team === attackerTeam && c.hp > 0 && Math.hypot(c.pos[0] - targetPos[0], c.pos[2] - targetPos[2]) < 18.0);
+      if (!friendlyCreepsNearTron) {
+        finalDmg = Math.max(1, Math.round(finalDmg * 0.35));
+        this.addMobaCombatText(targetPos[0], 2.2, targetPos[2], "🛡️ BACKDOOR ARMOR (-65%)", "#94a3b8");
+      }
+
+      // Tron base armor reduction
+      const tronArmor = target.armor || 35;
+      finalDmg = Math.max(1, Math.round(finalDmg * (100 / (100 + tronArmor))));
+    }
+
     if (target.shield && target.shield > 0) {
       const absorb = Math.min(target.shield, finalDmg);
       target.shield -= absorb;
@@ -39818,6 +39896,13 @@ void TickScene(GameSceneContext& ctx, float dt, const PlayerInput& input) {
         }
       }
     }
+  }
+
+  isMobaTronVulnerable(team) {
+    if (!this.mobaState || !this.mobaState.towers) return true;
+    const aliveTowers = this.mobaState.towers.filter(t => t.team === team && t.hp > 0);
+    // Tron is protected by defensive towers: invulnerable as long as that team has at least 1 alive lane tower
+    return aliveTowers.length === 0;
   }
 
   mobaDamageInRadius(center, radius, damage, myTeam, isSpell = true, isCrit = false, statusType = null, statusDuration = 0, attackerEntity = null) {
