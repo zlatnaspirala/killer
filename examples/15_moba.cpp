@@ -167,3 +167,31 @@ public:
 
 } // namespace MOBA
 } // namespace KillerEngine
+
+int main(int argc, char* argv[]) {
+    (void)argc; (void)argv;
+    std::cout << "================================================\n";
+    std::cout << "  MOBA Engine: Forest of Hollow Blood Core Demo \n";
+    std::cout << "================================================\n";
+
+    KillerEngine::MOBA::ForestLayoutEngine engine;
+    engine.init();
+
+    KillerEngine::MOBA::MobaCreep redCreep;
+    redCreep.id = "Red_Melee_Creep_1";
+    redCreep.team = KillerEngine::MOBA::Team::RED;
+    redCreep.lane = KillerEngine::MOBA::Lane::MID;
+    redCreep.position = KillerEngine::MOBA::Vec3(-14, 0, -14);
+    redCreep.waypoints = engine.midLaneWaypoints;
+
+    std::cout << "Spawning " << redCreep.id << " at (" << redCreep.position.x << ", " << redCreep.position.z << ")\n";
+
+    for (int step = 1; step <= 10; ++step) {
+        redCreep.update(1.0f);
+        std::cout << "Step " << step << " | Position: (" << redCreep.position.x << ", " << redCreep.position.z << ")\n";
+    }
+
+    std::cout << "MOBA core engine simulation completed successfully.\n";
+    return 0;
+}
+
