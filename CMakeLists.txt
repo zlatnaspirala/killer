@@ -19,8 +19,13 @@ else()
     # Build shared engine library (NativeEngine.dll / .so / .dylib)
     add_library(NativeEngine SHARED ${SOURCES})
 
-    # Build desktop standalone executable (killer_app.exe)
+    # Build primary desktop executable (killer_app.exe - 3D MOBA Engine Viewport)
     add_executable(killer_app src/main.cpp ${SOURCES})
     target_include_directories(killer_app PRIVATE include)
+
+    # Build MOBA standalone core example (moba_game.exe)
+    add_executable(moba_game examples/15_moba.cpp)
+    target_include_directories(moba_game PRIVATE include)
 endif()
+
 
