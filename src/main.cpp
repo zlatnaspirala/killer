@@ -32,7 +32,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 }
 #endif
 
-// Simple 3D Vector for MOBA Simulation
+// Simple 3D Vector
 struct Vec3 {
     float x, y, z;
     Vec3(float _x = 0, float _y = 0, float _z = 0) : x(_x), y(_y), z(_z) {}
@@ -42,14 +42,12 @@ struct Vec3 {
     }
 };
 
-// MOBA Unit Types
 enum class Team { RED, BLACK };
 
 struct MobaUnit {
     Vec3 pos;
     Team team;
     float hp;
-    float maxHp;
     float speed;
     size_t waypointIndex;
     std::vector<Vec3> waypoints;
@@ -58,7 +56,7 @@ struct MobaUnit {
         if (hp <= 0.0f || waypointIndex >= waypoints.size()) return;
         const Vec3& target = waypoints[waypointIndex];
         float d = pos.dist(target);
-        if (d < 0.6f) {
+        if (d < 0.8f) {
             waypointIndex++;
         } else {
             float dx = target.x - pos.x;
@@ -72,24 +70,16 @@ struct MobaUnit {
     }
 };
 
-// Helper: Render 3D Cylinder for Towers
-void DrawCylinder(float baseRadius, float topRadius, float height, int slices) {
+// OpenGL Frustum Helper
+void SetPerspective(float fovY, float aspect, float zNear, float zFar) {
 #if defined(_WIN32)
-    glBegin(GL_TRIANGLE_STRIP);
-    for (int i = 0; i <= slices; ++i) {
-        float angle = i * 2.0f * 3.14159265f / slices;
-        float cosA = std::cos(angle);
-        float sinA = std::sin(angle);
-
-        glNormal3f(cosA, 0.0f, sinA);
-        glVertex3f(cosA * baseRadius, 0.0f, sinA * baseRadius);
-        glVertex3f(cosA * topRadius, height, sinA * topRadius);
-    }
-    glEnd();
+    float fH = tanf(fovY / 360.0f * 3.14159265f) * zNear;
+    float fW = fH * aspect;
+    glFrustum(-fW, fW, -fH, fH, zNear, zFar);
 #endif
 }
 
-// Helper: Render 3D Sphere / Cube
+// Render Solid 3D Cube
 void DrawCube(float size) {
 #if defined(_WIN32)
     float s = size * 0.5f;
@@ -106,6 +96,41 @@ void DrawCube(float size) {
     glVertex3f( s, -s, -s); glVertex3f( s,  s, -s); glVertex3f( s,  s,  s); glVertex3f( s, -s,  s);
     // Left
     glVertex3f(-s, -s, -s); glVertex3f(-s, -s,  s); glVertex3f(-s,  s,  s); glVertex3f(-s,  s, -s);
+    glEnd();
+#endif
+}
+
+// Render Upright 3D Tower Column
+void DrawTower(float radius, float height, int slices) {
+#if defined(_WIN32)
+    glBegin(GL_QUAD_STRIP);
+    for (int i = 0; i <= slices; ++i) {
+        float angle = i * 2.0f * 3.14159265f / slices;
+        float cosA = std::cos(angle);
+        float sinA = std::sin(angle);
+
+        glVertex3f(cosA * radius, 0.0f, sinA * radius);
+        glVertex3f(cosA * (radius * 0.7f), height, sinA * (radius * 0.7f));
+    }
+    glEnd();
+
+    // Top Gem
+    glBegin(GL_TRIANGLES);
+    glVertex3f(0.0f, height + 1.2f, 0.0f);
+    glVertex3f(-radius, height, radius);
+    glVertex3f(radius, height, radius);
+
+    glVertex3f(0.0f, height + 1.2f, 0.0f);
+    glVertex3f(radius, height, radius);
+    glVertex3f(radius, height, -radius);
+
+    glVertex3f(0.0f, height + 1.2f, 0.0f);
+    glVertex3f(radius, height, -radius);
+    glVertex3f(-radius, height, -radius);
+
+    glVertex3f(0.0f, height + 1.2f, 0.0f);
+    glVertex3f(-radius, height, -radius);
+    glVertex3f(-radius, height, radius);
     glEnd();
 #endif
 }
@@ -175,41 +200,36 @@ int main(int argc, char* argv[]) {
     wglMakeCurrent(hdc, hglrc);
 
     glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE); // Render all faces
     glViewport(0, 0, config.width, config.height);
 
     std::cout << "[Win32 MOBA Viewport] Native 3D MOBA Map & Unit System running!\n";
 
-    // Setup Waypoints for 3 Classic Dota Lanes
-    std::vector<Vec3> redToBlackMid = {
-        Vec3(-14, 0, -14), Vec3(-8, 0, -8), Vec3(0, 0, 0), Vec3(8, 0, 8), Vec3(14, 0, 14)
-    };
-    std::vector<Vec3> blackToRedMid = {
-        Vec3(14, 0, 14), Vec3(8, 0, 8), Vec3(0, 0, 0), Vec3(-8, 0, -8), Vec3(-14, 0, -14)
-    };
+    // Setup Waypoints for 3 Lanes
+    std::vector<Vec3> redMid = { Vec3(-14, 0, -14), Vec3(-7, 0, -7), Vec3(0, 0, 0), Vec3(7, 0, 7), Vec3(14, 0, 14) };
+    std::vector<Vec3> blackMid = { Vec3(14, 0, 14), Vec3(7, 0, 7), Vec3(0, 0, 0), Vec3(-7, 0, -7), Vec3(-14, 0, -14) };
 
     std::vector<MobaUnit> units;
-    // Spawn Creeps
-    for (int i = 0; i < 4; ++i) {
-        MobaUnit redCreep;
-        redCreep.pos = Vec3(-14.0f + i * 0.8f, 0.0f, -14.0f);
-        redCreep.team = Team::RED;
-        redCreep.hp = 300.0f; redCreep.maxHp = 300.0f;
-        redCreep.speed = 3.5f;
-        redCreep.waypointIndex = 0;
-        redCreep.waypoints = redToBlackMid;
-        units.push_back(redCreep);
+    for (int i = 0; i < 5; ++i) {
+        MobaUnit r;
+        r.pos = Vec3(-14.0f + i * 1.0f, 0.0f, -14.0f);
+        r.team = Team::RED;
+        r.hp = 300.0f;
+        r.speed = 3.5f;
+        r.waypointIndex = 0;
+        r.waypoints = redMid;
+        units.push_back(r);
 
-        MobaUnit blackCreep;
-        blackCreep.pos = Vec3(14.0f - i * 0.8f, 0.0f, 14.0f);
-        blackCreep.team = Team::BLACK;
-        blackCreep.hp = 300.0f; blackCreep.maxHp = 300.0f;
-        blackCreep.speed = 3.5f;
-        blackCreep.waypointIndex = 0;
-        blackCreep.waypoints = blackToRedMid;
-        units.push_back(blackCreep);
+        MobaUnit b;
+        b.pos = Vec3(14.0f - i * 1.0f, 0.0f, 14.0f);
+        b.team = Team::BLACK;
+        b.hp = 300.0f;
+        b.speed = 3.5f;
+        b.waypointIndex = 0;
+        b.waypoints = blackMid;
+        units.push_back(b);
     }
 
-    // Towers setup (Upright vertical cylinders)
     std::vector<Vec3> redTowers = { Vec3(-10, 0, -10), Vec3(-5, 0, -5) };
     std::vector<Vec3> blackTowers = { Vec3(10, 0, 10), Vec3(5, 0, 5) };
 
@@ -230,7 +250,6 @@ int main(int argc, char* argv[]) {
         time += dt;
         engine.Update(dt);
 
-        // Update Creeps
         for (auto& u : units) {
             u.update(dt);
             if (u.waypointIndex >= u.waypoints.size()) {
@@ -239,101 +258,95 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // Render MOBA Map Graphics
-        glClearColor(0.08f, 0.15f, 0.10f, 1.0f); // Grass green background
+        // Clear Screen
+        glClearColor(0.1f, 0.12f, 0.18f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // 1. Projection Matrix
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        float aspect = (float)config.width / (float)config.height;
-        float fov = 45.0f * 3.14159265f / 180.0f;
-        float f = 1.0f / tanf(fov / 2.0f);
-        float proj[16] = {
-            f / aspect, 0, 0, 0,
-            0, f, 0, 0,
-            0, 0, -1.02f, -1.0f,
-            0, 0, -0.202f, 0
-        };
-        glLoadMatrixf(proj);
+        float aspect = (float)config.width / (float)(config.height > 0 ? config.height : 1);
+        SetPerspective(50.0f, aspect, 0.5f, 200.0f);
 
+        // 2. Camera ModelView Matrix
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        // Top-Down MOBA Camera View
-        glTranslatef(0.0f, -18.0f, -22.0f);
-        glRotatef(55.0f, 1.0f, 0.0f, 0.0f);
-        glRotatef(time * 5.0f, 0.0f, 1.0f, 0.0f); // Slow map rotation
+        // Position camera high above looking down at center
+        glTranslatef(0.0f, -8.0f, -38.0f);
+        glRotatef(50.0f, 1.0f, 0.0f, 0.0f);
+        glRotatef(time * 8.0f, 0.0f, 1.0f, 0.0f); // Gentle rotation
 
-        // 1. Draw Terrain Ground Plane
+        // 3. Render Ground Map (Grass Plane)
         glBegin(GL_QUADS);
-        glColor3f(0.12f, 0.28f, 0.14f);
-        glVertex3f(-20.0f, 0.0f, -20.0f);
-        glVertex3f( 20.0f, 0.0f, -20.0f);
-        glVertex3f( 20.0f, 0.0f,  20.0f);
-        glVertex3f(-20.0f, 0.0f,  20.0f);
+        glColor3f(0.18f, 0.42f, 0.20f);
+        glVertex3f(-25.0f, 0.0f, -25.0f);
+        glVertex3f( 25.0f, 0.0f, -25.0f);
+        glVertex3f( 25.0f, 0.0f,  25.0f);
+        glVertex3f(-25.0f, 0.0f,  25.0f);
         glEnd();
 
-        // 2. Draw Diagonal River
+        // 4. Render River Channel
         glBegin(GL_QUADS);
-        glColor3f(0.1f, 0.4f, 0.7f);
-        glVertex3f(-20.0f, 0.05f,  15.0f);
-        glVertex3f(-15.0f, 0.05f,  20.0f);
-        glVertex3f( 20.0f, 0.05f, -15.0f);
-        glVertex3f( 15.0f, 0.05f, -20.0f);
+        glColor3f(0.15f, 0.55f, 0.85f);
+        glVertex3f(-25.0f, 0.02f,  18.0f);
+        glVertex3f(-18.0f, 0.02f,  25.0f);
+        glVertex3f( 25.0f, 0.02f, -18.0f);
+        glVertex3f( 18.0f, 0.02f, -25.0f);
         glEnd();
 
-        // 3. Draw Lanes (Dirt tracks)
-        glLineWidth(6.0f);
+        // 5. Render Mid & Side Lanes
+        glLineWidth(8.0f);
         glBegin(GL_LINES);
-        glColor3f(0.45f, 0.35f, 0.22f);
-        // Mid lane
-        glVertex3f(-14.0f, 0.08f, -14.0f); glVertex3f(14.0f, 0.08f, 14.0f);
-        // Top lane
-        glVertex3f(-14.0f, 0.08f, -14.0f); glVertex3f(-14.0f, 0.08f, 14.0f);
-        glVertex3f(-14.0f, 0.08f, 14.0f);  glVertex3f(14.0f, 0.08f, 14.0f);
-        // Bot lane
-        glVertex3f(-14.0f, 0.08f, -14.0f); glVertex3f(14.0f, 0.08f, -14.0f);
-        glVertex3f(14.0f, 0.08f, -14.0f);  glVertex3f(14.0f, 0.08f, 14.0f);
+        glColor3f(0.6f, 0.48f, 0.28f);
+        // Mid
+        glVertex3f(-14.0f, 0.05f, -14.0f); glVertex3f(14.0f, 0.05f, 14.0f);
+        // Top
+        glVertex3f(-14.0f, 0.05f, -14.0f); glVertex3f(-14.0f, 0.05f, 14.0f);
+        glVertex3f(-14.0f, 0.05f, 14.0f);  glVertex3f(14.0f, 0.05f, 14.0f);
+        // Bot
+        glVertex3f(-14.0f, 0.05f, -14.0f); glVertex3f(14.0f, 0.05f, -14.0f);
+        glVertex3f(14.0f, 0.05f, -14.0f);  glVertex3f(14.0f, 0.05f, 14.0f);
         glEnd();
 
-        // 4. Draw Ancients / Bases
+        // 6. Render Ancients / Bases
         // Red Base
         glPushMatrix();
         glTranslatef(-14.0f, 0.0f, -14.0f);
-        glColor3f(0.9f, 0.15f, 0.15f);
-        DrawCube(2.5f);
+        glColor3f(1.0f, 0.2f, 0.2f);
+        DrawCube(3.2f);
         glPopMatrix();
 
         // Black Base
         glPushMatrix();
         glTranslatef(14.0f, 0.0f, 14.0f);
-        glColor3f(0.2f, 0.2f, 0.8f);
-        DrawCube(2.5f);
+        glColor3f(0.2f, 0.4f, 1.0f);
+        DrawCube(3.2f);
         glPopMatrix();
 
-        // 5. Draw Towers (Upright vertical 3D structures)
-        glColor3f(0.8f, 0.2f, 0.2f);
+        // 7. Render Upright Towers
+        glColor3f(0.9f, 0.25f, 0.25f);
         for (const auto& t : redTowers) {
             glPushMatrix();
             glTranslatef(t.x, t.y, t.z);
-            DrawCylinder(0.6f, 0.4f, 2.8f, 12);
+            DrawTower(1.0f, 3.5f, 12);
             glPopMatrix();
         }
 
-        glColor3f(0.2f, 0.4f, 0.9f);
+        glColor3f(0.25f, 0.5f, 1.0f);
         for (const auto& t : blackTowers) {
             glPushMatrix();
             glTranslatef(t.x, t.y, t.z);
-            DrawCylinder(0.6f, 0.4f, 2.8f, 12);
+            DrawTower(1.0f, 3.5f, 12);
             glPopMatrix();
         }
 
-        // 6. Draw Creeps (Moving Units)
+        // 8. Render Moving Creeps
         for (const auto& u : units) {
             glPushMatrix();
-            glTranslatef(u.pos.x, u.pos.y + 0.3f, u.pos.z);
-            if (u.team == Team::RED) glColor3f(1.0f, 0.2f, 0.2f);
-            else                     glColor3f(0.2f, 0.6f, 1.0f);
-            DrawCube(0.6f);
+            glTranslatef(u.pos.x, u.pos.y + 0.5f, u.pos.z);
+            if (u.team == Team::RED) glColor3f(1.0f, 0.85f, 0.1f);
+            else                     glColor3f(0.1f, 0.95f, 0.95f);
+            DrawCube(1.0f);
             glPopMatrix();
         }
 
@@ -347,10 +360,7 @@ int main(int argc, char* argv[]) {
     DestroyWindow(hwnd);
     std::cout << "[Win32 MOBA Viewport] Window closed.\n";
 #else
-    std::cout << "Running MOBA simulation in headless mode...\n";
-    for (int i = 0; i < 50; ++i) {
-        engine.Update(0.016f);
-    }
+    std::cout << "Headless simulation...\n";
 #endif
 
     return 0;
