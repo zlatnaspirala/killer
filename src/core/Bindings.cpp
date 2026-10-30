@@ -1,3 +1,4 @@
+#ifdef EMSCRIPTEN
 #include <emscripten/bind.h>
 #include "engine/Engine.hpp"
 
@@ -38,3 +39,5 @@ EMSCRIPTEN_BINDINGS(EngineModule) {
         .function("GetVertexCount", &Engine::GetVertexCount)
         .function("GetTriangleCount", &Engine::GetTriangleCount);
 }
+#endif
+
