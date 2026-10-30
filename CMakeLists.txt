@@ -16,5 +16,11 @@ if(EMSCRIPTEN)
         LINK_FLAGS "-s WASM=1 -s USE_WEBGL2=1 -s FULL_ES3=1 -s ALLOW_MEMORY_GROWTH=1 --bind -O3"
     )
 else()
+    # Build shared engine library (NativeEngine.dll / .so / .dylib)
     add_library(NativeEngine SHARED ${SOURCES})
+
+    # Build desktop standalone executable (killer_app.exe)
+    add_executable(killer_app src/main.cpp ${SOURCES})
+    target_include_directories(killer_app PRIVATE include)
 endif()
+
