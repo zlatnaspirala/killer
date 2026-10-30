@@ -205,10 +205,11 @@ chmod +x build_wasm.sh
 3. Desktop Standalone (CMake + SDL2 + Filament)
 
 ```Bash
-mkdir -p build && cd build
+mkdir build
+cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . --parallel $(nproc)
-./killer_app
+cmake --build . --config Release --parallel
+
 ```
 
 4. Android NDK ARM64
