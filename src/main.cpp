@@ -1,10 +1,15 @@
 #include "engine/Engine.hpp"
+#include "engine/Collision.hpp"
+#include "engine/DamageSystem.hpp"
+#include "engine/PlayerController.hpp"
+#include "engine/Camera.hpp"
 #include <iostream>
 #include <chrono>
 #include <thread>
 #include <vector>
 #include <cmath>
 #include <string>
+#include <memory>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -32,55 +37,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 }
 #endif
 
-struct Vec3 {
-    float x, y, z;
-    Vec3(float _x = 0, float _y = 0, float _z = 0) : x(_x), y(_y), z(_z) {}
-    float dist(const Vec3& o) const {
-        float dx = x - o.x, dy = y - o.y, dz = z - o.z;
-        return std::sqrt(dx*dx + dy*dy + dz*dz);
-    }
-};
+using namespace EngineCore;
 
-enum class Team { RED, BLACK };
-
-struct MobaUnit {
-    std::string name;
-    Vec3 pos;
-    Team team;
-    float hp;
-    float maxHp;
-    float speed;
-    float attackRange;
-    float attackCooldown;
-    size_t waypointIndex;
-    std::vector<Vec3> waypoints;
-
-    void update(float dt) {
-        if (hp <= 0.0f || waypointIndex >= waypoints.size()) return;
-        const Vec3& target = waypoints[waypointIndex];
-        float d = pos.dist(target);
-        if (d < 0.8f) {
-            waypointIndex++;
-        } else {
-            float dx = target.x - pos.x;
-            float dz = target.z - pos.z;
-            float len = std::hypot(dx, dz);
-            if (len > 0.001f) {
-                pos.x += (dx / len) * speed * dt;
-                pos.z += (dz / len) * speed * dt;
-            }
-        }
-        if (attackCooldown > 0.0f) attackCooldown -= dt;
-    }
-};
-
-struct Projectile {
-    Vec3 src, dst, current;
-    float progress;
-    Team team;
-};
-
-// OpenGL Rendering Helper Functions
+// OpenGL Helper: Perspective Matrix
 void SetPerspective(float fovY, float aspect, float zNear, float zFar) {
 #if defined(_WIN32)
     float fH = tanf(fovY / 360.0f * 3.14159265f) * zNear;
@@ -89,36 +48,7 @@ void SetPerspective(float fovY, float aspect, float zNear, float zFar) {
 #endif
 }
 
-// Draw 3D Cylinder / Column
-void DrawCylinder(float baseR, float topR, float h, int slices) {
-#if defined(_WIN32)
-    glBegin(GL_QUAD_STRIP);
-    for (int i = 0; i <= slices; ++i) {
-        float a = i * 2.0f * 3.14159265f / slices;
-        float c = std::cos(a), s = std::sin(a);
-        glVertex3f(c * baseR, 0.0f, s * baseR);
-        glVertex3f(c * topR, h, s * topR);
-    }
-    glEnd();
-#endif
-}
-
-// Draw Conical Canopy
-void DrawCone(float r, float h, int slices) {
-#if defined(_WIN32)
-    glBegin(GL_TRIANGLES);
-    for (int i = 0; i < slices; ++i) {
-        float a1 = i * 2.0f * 3.14159265f / slices;
-        float a2 = (i + 1) * 2.0f * 3.14159265f / slices;
-        glVertex3f(0.0f, h, 0.0f);
-        glVertex3f(std::cos(a1) * r, 0.0f, std::sin(a1) * r);
-        glVertex3f(std::cos(a2) * r, 0.0f, std::sin(a2) * r);
-    }
-    glEnd();
-#endif
-}
-
-// Draw 3D Cube
+// 3D Cube
 void DrawCube(float size) {
 #if defined(_WIN32)
     float s = size * 0.5f;
@@ -133,11 +63,39 @@ void DrawCube(float size) {
 #endif
 }
 
-// Draw Floating 3D Health Bar
-void DrawHealthBar(float hpRatio, float width = 1.2f, float height = 0.2f) {
+// 3D Column / Cylinder
+void DrawCylinder(float baseR, float topR, float h, int slices) {
+#if defined(_WIN32)
+    glBegin(GL_QUAD_STRIP);
+    for (int i = 0; i <= slices; ++i) {
+        float a = i * 2.0f * 3.14159265f / slices;
+        float c = std::cos(a), s = std::sin(a);
+        glVertex3f(c * baseR, 0.0f, s * baseR);
+        glVertex3f(c * topR, h, s * topR);
+    }
+    glEnd();
+#endif
+}
+
+// 3D Conical Canopy
+void DrawCone(float r, float h, int slices) {
+#if defined(_WIN32)
+    glBegin(GL_TRIANGLES);
+    for (int i = 0; i < slices; ++i) {
+        float a1 = i * 2.0f * 3.14159265f / slices;
+        float a2 = (i + 1) * 2.0f * 3.14159265f / slices;
+        glVertex3f(0.0f, h, 0.0f);
+        glVertex3f(std::cos(a1) * r, 0.0f, std::sin(a1) * r);
+        glVertex3f(std::cos(a2) * r, 0.0f, std::sin(a2) * r);
+    }
+    glEnd();
+#endif
+}
+
+// Floating 3D Health Bar
+void DrawHealthBar(float hpRatio, float width = 1.4f, float height = 0.22f) {
 #if defined(_WIN32)
     float halfW = width * 0.5f;
-    // Dark Background
     glColor3f(0.1f, 0.1f, 0.1f);
     glBegin(GL_QUADS);
     glVertex3f(-halfW, 0.0f, 0.0f);
@@ -146,8 +104,7 @@ void DrawHealthBar(float hpRatio, float width = 1.2f, float height = 0.2f) {
     glVertex3f(-halfW, height, 0.0f);
     glEnd();
 
-    // Health Fill (Green to Red)
-    float fillW = -halfW + (width * hpRatio);
+    float fillW = -halfW + (width * std::max(0.0f, std::min(1.0f, hpRatio)));
     if (hpRatio > 0.5f) glColor3f(0.2f, 0.9f, 0.3f);
     else if (hpRatio > 0.25f) glColor3f(0.9f, 0.8f, 0.1f);
     else glColor3f(0.9f, 0.2f, 0.2f);
@@ -161,8 +118,8 @@ void DrawHealthBar(float hpRatio, float width = 1.2f, float height = 0.2f) {
 #endif
 }
 
-// Draw Detailed Procedural Tree
-void DrawProceduralTree(float x, float z, float scale = 1.0f) {
+// Detailed Procedural Tree
+void DrawTree(float x, float z, float scale = 1.0f) {
 #if defined(_WIN32)
     glPushMatrix();
     glTranslatef(x, 0.0f, z);
@@ -172,17 +129,16 @@ void DrawProceduralTree(float x, float z, float scale = 1.0f) {
     glColor3f(0.35f, 0.22f, 0.12f);
     DrawCylinder(0.4f, 0.25f, 2.5f, 8);
 
-    // Canopy Tier 1
+    // Leaves
     glPushMatrix();
     glTranslatef(0.0f, 1.8f, 0.0f);
-    glColor3f(0.12f, 0.45f, 0.18f);
-    DrawCone(1.6f, 2.0f, 10);
+    glColor3f(0.12f, 0.48f, 0.18f);
+    DrawCone(1.6f, 2.2f, 10);
     glPopMatrix();
 
-    // Canopy Tier 2
     glPushMatrix();
-    glTranslatef(0.0f, 2.8f, 0.0f);
-    glColor3f(0.18f, 0.55f, 0.22f);
+    glTranslatef(0.0f, 2.9f, 0.0f);
+    glColor3f(0.18f, 0.58f, 0.24f);
     DrawCone(1.2f, 1.8f, 10);
     glPopMatrix();
 
@@ -190,57 +146,149 @@ void DrawProceduralTree(float x, float z, float scale = 1.0f) {
 #endif
 }
 
-// Draw Detailed MOBA Tower Spire
-void DrawMobaTower(float x, float z, Team team, float hpRatio) {
-#if defined(_WIN32)
-    glPushMatrix();
-    glTranslatef(x, 0.0f, z);
+// Full MOBA Game Unit Structure
+struct MobaCreepUnit {
+    uint32_t id;
+    std::string name;
+    Vec3 pos;
+    std::string team; // "Radiant" or "Dire"
+    size_t waypointIndex = 0;
+    std::vector<Vec3> waypoints;
+    float attackCooldown = 0.0f;
+    std::shared_ptr<DamageableActor> damageable;
 
-    // Tower Base
-    glColor3f(0.25f, 0.28f, 0.32f);
-    DrawCylinder(1.2f, 0.9f, 1.5f, 12);
+    void update(float dt, DamageSystem& damageSys, std::vector<MobaCreepUnit>& allCreeps) {
+        if (!damageable || !damageable->IsAlive()) return;
 
-    // Mid Pillar
-    glPushMatrix();
-    glTranslatef(0.0f, 1.5f, 0.0f);
-    glColor3f(0.35f, 0.38f, 0.42f);
-    DrawCylinder(0.9f, 0.6f, 2.2f, 10);
-    glPopMatrix();
+        // Waypoint Movement
+        if (waypointIndex < waypoints.size()) {
+            const Vec3& target = waypoints[waypointIndex];
+            float d = pos.dist(target);
+            if (d < 0.8f) {
+                waypointIndex++;
+            } else {
+                float dx = target.x - pos.x;
+                float dz = target.z - pos.z;
+                float len = std::hypot(dx, dz);
+                if (len > 0.001f) {
+                    pos.x += (dx / len) * 3.6f * dt;
+                    pos.z += (dz / len) * 3.6f * dt;
+                    damageable->position = pos;
+                }
+            }
+        } else {
+            waypointIndex = 0;
+            pos = waypoints[0];
+            damageable->position = pos;
+        }
 
-    // Top Floating Crystal
-    glPushMatrix();
-    glTranslatef(0.0f, 4.2f, 0.0f);
-    if (team == Team::RED) glColor3f(1.0f, 0.2f, 0.2f);
-    else                   glColor3f(0.2f, 0.5f, 1.0f);
-    DrawCube(0.9f);
-    glPopMatrix();
-
-    // Health Bar
-    glPushMatrix();
-    glTranslatef(0.0f, 5.2f, 0.0f);
-    DrawHealthBar(hpRatio, 2.0f, 0.3f);
-    glPopMatrix();
-
-    glPopMatrix();
-#endif
-}
+        // Combat Auto-Attack
+        attackCooldown -= dt;
+        if (attackCooldown <= 0.0f) {
+            for (auto& other : allCreeps) {
+                if (other.id != id && other.damageable && other.damageable->IsAlive() && other.team != team) {
+                    if (pos.dist(other.pos) <= 2.2f) {
+                        damageSys.ApplyDamage(other.id, 25.0f, id, other.pos, Vec3(0, 1, 0));
+                        attackCooldown = 1.2f;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+};
 
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
-    std::cout << "===========================================================\n";
-    std::cout << "  Killer App C++ MOBA Engine: Forest of Hollow Blood View  \n";
-    std::cout << "===========================================================\n";
+    std::cout << "=================================================================\n";
+    std::cout << "  Killer App Native C++ MOBA Engine: Integrated Multi-System Core \n";
+    std::cout << "=================================================================\n";
 
-    EngineCore::EngineConfig config;
+    EngineConfig config;
     config.width = 1280;
     config.height = 720;
-    config.enableDepthTest = true;
 
-    EngineCore::Engine engine;
+    Engine engine;
     if (!engine.Init(config)) {
-        std::cerr << "Failed to initialize Killer App C++ Engine!" << std::endl;
+        std::cerr << "Failed to initialize C++ Engine Core!" << std::endl;
         return 1;
     }
+
+    // Initialize Engine Core Subsystems
+    CollisionWorld collisionWorld;
+    DamageSystem damageSystem;
+    PlayerController playerHeroController;
+
+    // 1. Setup Collision World Floor & Obstacles
+    collisionWorld.AddAABB("Terrain_Floor", Vec3(0, -0.5f, 0), Vec3(30.0f, 0.5f, 30.0f), Layer_Ground);
+    collisionWorld.AddAABB("Radiant_Ancient", Vec3(-14.0f, 1.5f, -14.0f), Vec3(2.5f, 1.5f, 2.5f), Layer_Obstacle);
+    collisionWorld.AddAABB("Dire_Ancient", Vec3(14.0f, 1.5f, 14.0f), Vec3(2.5f, 1.5f, 2.5f), Layer_Obstacle);
+
+    // 2. Setup Damage System Event Callbacks
+    int totalGold = 0;
+    int totalKills = 0;
+
+    damageSystem.AddOnDamageListener([](const DamageEvent& evt) {
+        std::cout << "[Combat Event] " << evt.targetName << " took " << evt.damageAmount 
+                  << " damage! Remaining HP: " << evt.remainingHealth << "/" << evt.maxHealth << "\n";
+    });
+
+    damageSystem.AddOnDestroyedListener([&totalGold, &totalKills](const DamageEvent& evt) {
+        totalKills++;
+        totalGold += 45;
+        std::cout << "[Kill Notification] " << evt.targetName << " DESTROYED! +45 Gold Awarded! Total Gold: " 
+                  << totalGold << " | Kills: " << totalKills << "\n";
+    });
+
+    // 3. Register Tower Damageable Actors
+    auto radiantTower1 = std::make_shared<DamageableActor>(101, "Radiant_Mid_Tower_1", "Towers", 800.0f, Vec3(-10, 0, -10));
+    auto radiantTower2 = std::make_shared<DamageableActor>(102, "Radiant_Mid_Tower_2", "Towers", 800.0f, Vec3(-5, 0, -5));
+    auto direTower1    = std::make_shared<DamageableActor>(201, "Dire_Mid_Tower_1", "Towers", 800.0f, Vec3(10, 0, 10));
+    auto direTower2    = std::make_shared<DamageableActor>(202, "Dire_Mid_Tower_2", "Towers", 800.0f, Vec3(5, 0, 5));
+
+    damageSystem.RegisterActor(radiantTower1);
+    damageSystem.RegisterActor(radiantTower2);
+    damageSystem.RegisterActor(direTower1);
+    damageSystem.RegisterActor(direTower2);
+
+    // 4. Setup Creep Waypoints & Units
+    std::vector<Vec3> redMidWaypoints = { Vec3(-14, 0, -14), Vec3(-7, 0, -7), Vec3(0, 0, 0), Vec3(7, 0, 7), Vec3(14, 0, 14) };
+    std::vector<Vec3> blackMidWaypoints = { Vec3(14, 0, 14), Vec3(7, 0, 7), Vec3(0, 0, 0), Vec3(-7, 0, -7), Vec3(-14, 0, -14) };
+
+    std::vector<MobaCreepUnit> creeps;
+    uint32_t creepIdCounter = 1;
+
+    for (int i = 0; i < 4; ++i) {
+        MobaCreepUnit r;
+        r.id = creepIdCounter++;
+        r.name = "Radiant_Creep_" + std::to_string(i + 1);
+        r.pos = Vec3(-14.0f + i * 1.0f, 0.0f, -14.0f);
+        r.team = "Radiant";
+        r.waypoints = redMidWaypoints;
+        r.damageable = std::make_shared<DamageableActor>(r.id, r.name, "Creeps", 320.0f, r.pos);
+        damageSystem.RegisterActor(r.damageable);
+        creeps.push_back(r);
+
+        MobaCreepUnit b;
+        b.id = creepIdCounter++;
+        b.name = "Dire_Creep_" + std::to_string(i + 1);
+        b.pos = Vec3(14.0f - i * 1.0f, 0.0f, 14.0f);
+        b.team = "Dire";
+        b.waypoints = blackMidWaypoints;
+        b.damageable = std::make_shared<DamageableActor>(b.id, b.name, "Creeps", 320.0f, b.pos);
+        damageSystem.RegisterActor(b.damageable);
+        creeps.push_back(b);
+    }
+
+    // 5. Setup Hero Controller
+    playerHeroController.SetPosition(Vec3(-8.0f, 0.0f, -8.0f));
+    playerHeroController.walkSpeed = 5.0f;
+
+    // Jungle Trees
+    std::vector<Vec3> jungleTrees = {
+        Vec3(-10, 0, -2), Vec3(-12, 0, 2), Vec3(-8, 0, 5), Vec3(-4, 0, 8),
+        Vec3(2, 0, -10), Vec3(5, 0, -12), Vec3(8, 0, -6), Vec3(10, 0, -2)
+    };
 
 #if defined(_WIN32)
     HINSTANCE hInstance = GetModuleHandle(NULL);
@@ -250,7 +298,7 @@ int main(int argc, char* argv[]) {
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.lpszClassName = "MobaHighResWindowClass";
+    wc.lpszClassName = "MobaNativeFullEngineClass";
 
     if (!RegisterClassExA(&wc)) return 1;
 
@@ -258,7 +306,7 @@ int main(int argc, char* argv[]) {
     AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
 
     HWND hwnd = CreateWindowExA(
-        0, wc.lpszClassName, "MOBA: Forest of Hollow Blood - Native C++ 3D Engine",
+        0, wc.lpszClassName, "Killer App - C++ Native Multiplatform MOBA Engine",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         CW_USEDEFAULT, CW_USEDEFAULT, wr.right - wr.left, wr.bottom - wr.top,
         NULL, NULL, hInstance, NULL
@@ -286,50 +334,7 @@ int main(int argc, char* argv[]) {
     glDisable(GL_CULL_FACE);
     glViewport(0, 0, config.width, config.height);
 
-    std::cout << "[Native C++ MOBA Viewport] High-fidelity 3D map, trees, towers & units rendering!\n";
-
-    // Setup Waypoints for 3 Classic Dota Lanes
-    std::vector<Vec3> redMid = { Vec3(-14, 0, -14), Vec3(-7, 0, -7), Vec3(0, 0, 0), Vec3(7, 0, 7), Vec3(14, 0, 14) };
-    std::vector<Vec3> blackMid = { Vec3(14, 0, 14), Vec3(7, 0, 7), Vec3(0, 0, 0), Vec3(-7, 0, -7), Vec3(-14, 0, -14) };
-
-    std::vector<MobaUnit> units;
-    // Spawn Creeps
-    for (int i = 0; i < 4; ++i) {
-        MobaUnit r;
-        r.name = "Radiant_Melee_Creep";
-        r.pos = Vec3(-14.0f + i * 1.0f, 0.0f, -14.0f);
-        r.team = Team::RED;
-        r.hp = 300.0f; r.maxHp = 300.0f;
-        r.speed = 3.6f;
-        r.waypointIndex = 0;
-        r.waypoints = redMid;
-        units.push_back(r);
-
-        MobaUnit b;
-        b.name = "Dire_Melee_Creep";
-        b.pos = Vec3(14.0f - i * 1.0f, 0.0f, 14.0f);
-        b.team = Team::BLACK;
-        b.hp = 300.0f; b.maxHp = 300.0f;
-        b.speed = 3.6f;
-        b.waypointIndex = 0;
-        b.waypoints = blackMid;
-        units.push_back(b);
-    }
-
-    // Hero Unit (Dragon Knight / Juggernaut)
-    MobaUnit playerHero;
-    playerHero.name = "Dragon_Knight_Hero";
-    playerHero.pos = Vec3(-10.0f, 0.0f, -10.0f);
-    playerHero.team = Team::RED;
-    playerHero.hp = 850.0f; playerHero.maxHp = 850.0f;
-    playerHero.speed = 4.2f;
-
-    // Jungle Trees Positions
-    std::vector<Vec3> treesList = {
-        Vec3(-10, 0, -2), Vec3(-12, 0, 2), Vec3(-8, 0, 5), Vec3(-4, 0, 8),
-        Vec3(2, 0, -10), Vec3(5, 0, -12), Vec3(8, 0, -6), Vec3(10, 0, -2),
-        Vec3(-6, 0, -10), Vec3(2, 0, 10), Vec3(6, 0, 12), Vec3(10, 0, 4)
-    };
+    std::cout << "[Native C++ Engine] Full MOBA combat loop, collision world & damage system initialized!\n";
 
     MSG msg = {};
     bool running = true;
@@ -346,38 +351,38 @@ int main(int argc, char* argv[]) {
 
         float dt = 0.016f;
         time += dt;
-        engine.Update(dt);
 
-        for (auto& u : units) {
-            u.update(dt);
-            if (u.waypointIndex >= u.waypoints.size()) {
-                u.waypointIndex = 0;
-                u.pos = u.waypoints[0];
-            }
+        // Subsystems Tick
+        engine.Update(dt);
+        damageSystem.Update(dt);
+
+        for (auto& creep : creeps) {
+            creep.update(dt, damageSystem, creeps);
         }
 
-        // Hero Movement
-        playerHero.pos.x = -10.0f + std::sin(time * 0.8f) * 6.0f;
-        playerHero.pos.z = -10.0f + std::cos(time * 0.8f) * 6.0f;
+        // Hero Movement Tick
+        playerHeroController.SetPosition(Vec3(
+            -8.0f + std::sin(time * 0.7f) * 5.0f,
+            0.0f,
+            -8.0f + std::cos(time * 0.7f) * 5.0f
+        ));
 
-        // Clear Color (Dark Jungle Environment)
+        // Render Frame
         glClearColor(0.08f, 0.12f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // 1. Perspective Matrix
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
         float aspect = (float)config.width / (float)(config.height > 0 ? config.height : 1);
         SetPerspective(48.0f, aspect, 0.5f, 200.0f);
 
-        // 2. Camera View Matrix (Top-Down MOBA Perspective)
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         glTranslatef(0.0f, -8.0f, -38.0f);
         glRotatef(52.0f, 1.0f, 0.0f, 0.0f);
-        glRotatef(time * 6.0f, 0.0f, 1.0f, 0.0f); // Map rotation
+        glRotatef(time * 5.0f, 0.0f, 1.0f, 0.0f);
 
-        // 3. Ground Terrain
+        // Terrain
         glBegin(GL_QUADS);
         glColor3f(0.14f, 0.32f, 0.16f);
         glVertex3f(-25.0f, 0.0f, -25.0f);
@@ -386,7 +391,7 @@ int main(int argc, char* argv[]) {
         glVertex3f(-25.0f, 0.0f,  25.0f);
         glEnd();
 
-        // 4. River Water Channel
+        // River
         glBegin(GL_QUADS);
         glColor3f(0.12f, 0.48f, 0.78f);
         glVertex3f(-25.0f, 0.02f,  18.0f);
@@ -395,83 +400,100 @@ int main(int argc, char* argv[]) {
         glVertex3f( 18.0f, 0.02f, -25.0f);
         glEnd();
 
-        // 5. Dirt Lane Paths
+        // Dirt Lanes
         glLineWidth(8.0f);
         glBegin(GL_LINES);
         glColor3f(0.55f, 0.42f, 0.25f);
-        // Mid Lane
         glVertex3f(-14.0f, 0.05f, -14.0f); glVertex3f(14.0f, 0.05f, 14.0f);
-        // Top Lane
         glVertex3f(-14.0f, 0.05f, -14.0f); glVertex3f(-14.0f, 0.05f, 14.0f);
         glVertex3f(-14.0f, 0.05f, 14.0f);  glVertex3f(14.0f, 0.05f, 14.0f);
-        // Bot Lane
         glVertex3f(-14.0f, 0.05f, -14.0f); glVertex3f(14.0f, 0.05f, -14.0f);
         glVertex3f(14.0f, 0.05f, -14.0f);  glVertex3f(14.0f, 0.05f, 14.0f);
         glEnd();
 
-        // 6. Jungle Trees
-        for (const auto& treePos : treesList) {
-            DrawProceduralTree(treePos.x, treePos.z, 1.0f);
+        // Jungle Trees
+        for (const auto& tp : jungleTrees) {
+            DrawTree(tp.x, tp.z, 1.0f);
         }
 
-        // 7. MOBA Towers
-        DrawMobaTower(-10.0f, -10.0f, Team::RED, 1.0f);
-        DrawMobaTower(-5.0f, -5.0f, Team::RED, 0.75f);
-        DrawMobaTower(10.0f, 10.0f, Team::BLACK, 1.0f);
-        DrawMobaTower(5.0f, 5.0f, Team::BLACK, 0.60f);
+        // Towers with Damage System Health
+        auto drawTowerActor = [](std::shared_ptr<DamageableActor> tower, bool isRadiant) {
+            if (!tower) return;
+            glPushMatrix();
+            glTranslatef(tower->position.x, 0.0f, tower->position.z);
 
-        // 8. Ancient Bases
-        // Radiant Base
+            glColor3f(0.3f, 0.3f, 0.35f);
+            DrawCylinder(1.2f, 0.8f, 2.5f, 10);
+
+            glPushMatrix();
+            glTranslatef(0.0f, 2.5f, 0.0f);
+            if (isRadiant) glColor3f(0.9f, 0.2f, 0.2f);
+            else           glColor3f(0.2f, 0.5f, 0.9f);
+            DrawCube(0.9f);
+            glPopMatrix();
+
+            glPushMatrix();
+            glTranslatef(0.0f, 3.8f, 0.0f);
+            DrawHealthBar(tower->health / tower->maxHealth, 1.8f, 0.25f);
+            glPopMatrix();
+
+            glPopMatrix();
+        };
+
+        drawTowerActor(radiantTower1, true);
+        drawTowerActor(radiantTower2, true);
+        drawTowerActor(direTower1, false);
+        drawTowerActor(direTower2, false);
+
+        // Ancients
         glPushMatrix();
         glTranslatef(-14.0f, 0.0f, -14.0f);
         glColor3f(0.9f, 0.15f, 0.15f);
         DrawCylinder(2.2f, 0.2f, 3.5f, 8);
         glPopMatrix();
 
-        // Dire Base
         glPushMatrix();
         glTranslatef(14.0f, 0.0f, 14.0f);
         glColor3f(0.15f, 0.35f, 0.95f);
         DrawCylinder(2.2f, 0.2f, 3.5f, 8);
         glPopMatrix();
 
-        // 9. Moving Creeps with Health Bars
-        for (const auto& u : units) {
-            glPushMatrix();
-            glTranslatef(u.pos.x, u.pos.y, u.pos.z);
+        // Creep Units
+        for (const auto& creep : creeps) {
+            if (!creep.damageable || !creep.damageable->IsAlive()) continue;
 
-            // Creep Body
+            glPushMatrix();
+            glTranslatef(creep.pos.x, creep.pos.y, creep.pos.z);
+
             glPushMatrix();
             glTranslatef(0.0f, 0.5f, 0.0f);
-            if (u.team == Team::RED) glColor3f(0.95f, 0.75f, 0.15f);
-            else                     glColor3f(0.15f, 0.85f, 0.95f);
+            if (creep.team == "Radiant") glColor3f(0.95f, 0.8f, 0.1f);
+            else                         glColor3f(0.1f, 0.85f, 0.95f);
             DrawCube(0.8f);
             glPopMatrix();
 
-            // Health Bar Above Head
             glPushMatrix();
             glTranslatef(0.0f, 1.4f, 0.0f);
-            DrawHealthBar(u.hp / u.maxHp, 1.0f, 0.18f);
+            DrawHealthBar(creep.damageable->health / creep.damageable->maxHealth, 1.0f, 0.18f);
             glPopMatrix();
 
             glPopMatrix();
         }
 
-        // 10. Hero Unit (Dragon Knight) with Gold/HP Bar
+        // Hero Unit
+        Vec3 heroPos = playerHeroController.GetPosition();
         glPushMatrix();
-        glTranslatef(playerHero.pos.x, playerHero.pos.y, playerHero.pos.z);
+        glTranslatef(heroPos.x, heroPos.y, heroPos.z);
 
-        // Hero Mesh (Body + Armor Top)
         glPushMatrix();
         glTranslatef(0.0f, 0.8f, 0.0f);
-        glColor3f(1.0f, 0.55f, 0.0f); // Gold Hero Armor
+        glColor3f(1.0f, 0.55f, 0.0f); // Gold Hero
         DrawCylinder(0.6f, 0.4f, 1.6f, 10);
         glPopMatrix();
 
-        // Hero Health Bar
         glPushMatrix();
         glTranslatef(0.0f, 2.8f, 0.0f);
-        DrawHealthBar(playerHero.hp / playerHero.maxHp, 1.8f, 0.25f);
+        DrawHealthBar(1.0f, 1.8f, 0.25f);
         glPopMatrix();
 
         glPopMatrix();
@@ -484,7 +506,9 @@ int main(int argc, char* argv[]) {
     wglDeleteContext(hglrc);
     ReleaseDC(hwnd, hdc);
     DestroyWindow(hwnd);
-    std::cout << "[Native C++ MOBA Viewport] Window closed.\n";
+    std::cout << "[Native C++ Engine] Window closed.\n";
+#else
+    std::cout << "Headless C++ engine simulation...\n";
 #endif
 
     return 0;
