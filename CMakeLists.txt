@@ -23,9 +23,24 @@ else()
     add_executable(killer_app src/main.cpp ${SOURCES})
     target_include_directories(killer_app PRIVATE include)
 
+    # Automatically copy Assets, Maps, and Shaders next to killer_app.exe after build
+    add_custom_command(TARGET killer_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+            "$<TARGET_FILE_DIR:killer_app>/assets"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/maps"
+            "$<TARGET_FILE_DIR:killer_app>/maps"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+            "$<TARGET_FILE_DIR:killer_app>/shaders"
+        COMMENT "Copying 3D models, textures, audio, shaders and map assets to Release directory..."
+    )
+
     # Build MOBA standalone core example (moba_game.exe)
     add_executable(moba_game examples/15_moba.cpp)
     target_include_directories(moba_game PRIVATE include)
 endif()
+
 
 
