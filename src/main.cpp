@@ -43,7 +43,53 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
 using namespace EngineCore;
 
-// OpenGL Helper: Perspective Matrix
+// Game State Machine
+enum class GameState {
+    MainMenu,
+    HeroSelect,
+    ItemShop,
+    Playing,
+    Paused
+};
+
+static GameState g_gameState = GameState::MainMenu;
+static int g_selectedHeroIndex = 0;
+static int g_playerGold = 600;
+static int g_playerKills = 0;
+static float g_cameraX = 0.0f;
+static float g_cameraZ = -38.0f;
+static float g_cameraYaw = 0.0f;
+
+struct HeroClass {
+    std::string name;
+    std::string role;
+    float hp;
+    float attackDamage;
+    float moveSpeed;
+    std::string ability;
+};
+
+static std::vector<HeroClass> g_heroes = {
+    { "Dragon Knight", "Strength / Tank", 850.0f, 62.0f, 4.2f, "Breathe Fire" },
+    { "Juggernaut", "Agility / Carry", 650.0f, 75.0f, 4.8f, "Blade Fury" },
+    { "Crystal Maiden", "Intelligence / Support", 520.0f, 48.0f, 3.8f, "Freezing Field" },
+    { "Sniper", "Agility / Ranged", 580.0f, 82.0f, 4.0f, "Assassinate" }
+};
+
+struct ShopItem {
+    std::string name;
+    int cost;
+    std::string effect;
+};
+
+static std::vector<ShopItem> g_shopItems = {
+    { "Small Health Vial", 100, "+150 HP Restore" },
+    { "Yellow Combat Armor", 250, "+75 Armor Defense" },
+    { "Quad Damage Rune", 500, "4x Damage Multiplier" },
+    { "Blink Dagger", 400, "Instant Teleportation" }
+};
+
+// OpenGL Perspective Projection
 void SetPerspective(float fovY, float aspect, float zNear, float zFar) {
 #if defined(_WIN32)
     float fH = tanf(fovY / 360.0f * 3.14159265f) * zNear;
@@ -52,7 +98,7 @@ void SetPerspective(float fovY, float aspect, float zNear, float zFar) {
 #endif
 }
 
-// 3D Cube
+// 3D Geometry Helpers
 void DrawCube(float size) {
 #if defined(_WIN32)
     float s = size * 0.5f;
@@ -67,7 +113,6 @@ void DrawCube(float size) {
 #endif
 }
 
-// 3D Column / Cylinder
 void DrawCylinder(float baseR, float topR, float h, int slices) {
 #if defined(_WIN32)
     glBegin(GL_QUAD_STRIP);
@@ -81,7 +126,6 @@ void DrawCylinder(float baseR, float topR, float h, int slices) {
 #endif
 }
 
-// 3D Conical Canopy
 void DrawCone(float r, float h, int slices) {
 #if defined(_WIN32)
     glBegin(GL_TRIANGLES);
@@ -96,7 +140,6 @@ void DrawCone(float r, float h, int slices) {
 #endif
 }
 
-// Floating 3D Health Bar
 void DrawHealthBar(float hpRatio, float width = 1.4f, float height = 0.22f) {
 #if defined(_WIN32)
     float halfW = width * 0.5f;
@@ -124,18 +167,15 @@ void DrawHealthBar(float hpRatio, float width = 1.4f, float height = 0.22f) {
 #endif
 }
 
-// Detailed Procedural Tree
 void DrawTree(float x, float z, float scale = 1.0f) {
 #if defined(_WIN32)
     glPushMatrix();
     glTranslatef(x, 0.0f, z);
     glScalef(scale, scale, scale);
 
-    // Trunk
     glColor3f(0.35f, 0.22f, 0.12f);
     DrawCylinder(0.4f, 0.25f, 2.5f, 8);
 
-    // Leaves
     glPushMatrix();
     glTranslatef(0.0f, 1.8f, 0.0f);
     glColor3f(0.12f, 0.48f, 0.18f);
@@ -152,12 +192,11 @@ void DrawTree(float x, float z, float scale = 1.0f) {
 #endif
 }
 
-// Full MOBA Game Unit Structure
 struct MobaCreepUnit {
     uint32_t id;
     std::string name;
     Vec3 pos;
-    std::string team; // "Radiant" or "Dire"
+    std::string team;
     size_t waypointIndex = 0;
     std::vector<Vec3> waypoints;
     float attackCooldown = 0.0f;
@@ -166,7 +205,6 @@ struct MobaCreepUnit {
     void update(float dt, DamageSystem& damageSys, std::vector<MobaCreepUnit>& allCreeps) {
         if (!damageable || !damageable->IsAlive()) return;
 
-        // Waypoint Movement
         if (waypointIndex < waypoints.size()) {
             const Vec3& target = waypoints[waypointIndex];
             float d = (pos - target).Length();
@@ -188,7 +226,6 @@ struct MobaCreepUnit {
             damageable->position = pos;
         }
 
-        // Combat Auto-Attack
         attackCooldown -= dt;
         if (attackCooldown <= 0.0f) {
             for (auto& other : allCreeps) {
@@ -207,7 +244,11 @@ struct MobaCreepUnit {
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
     std::cout << "=================================================================\n";
-    std::cout << "  MOBA: Forest of Hollow Blood - Pure C++ Native Game Engine      \n";
+    std::cout << "  MOBA: Forest of Hollow Blood - Native C++ Game Application      \n";
+    std::cout << "=================================================================\n";
+    std::cout << "Controls:\n";
+    std::cout << "  [1] Start Match   [2] Hero Select   [3] Item Shop   [M] Menu\n";
+    std::cout << "  [WASD / Arrow Keys] Move Camera View   [SPACE] Reset Camera\n";
     std::cout << "=================================================================\n";
 
     EngineConfig config;
@@ -220,33 +261,26 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Initialize Engine Core Subsystems
     CollisionWorld collisionWorld;
     DamageSystem damageSystem;
     PlayerController playerHeroController;
 
-    // 1. Setup Collision World Floor & Obstacles
     collisionWorld.AddAABB("Terrain_Floor", Vec3(0, -0.5f, 0), Vec3(30.0f, 0.5f, 30.0f), Layer_Ground);
     collisionWorld.AddAABB("Radiant_Ancient", Vec3(-14.0f, 1.5f, -14.0f), Vec3(2.5f, 1.5f, 2.5f), Layer_Obstacle);
     collisionWorld.AddAABB("Dire_Ancient", Vec3(14.0f, 1.5f, 14.0f), Vec3(2.5f, 1.5f, 2.5f), Layer_Obstacle);
 
-    // 2. Setup Damage System Event Callbacks
-    int totalGold = 0;
-    int totalKills = 0;
-
     damageSystem.AddOnDamageListener([](const DamageEvent& evt) {
-        std::cout << "[MOBA Combat Event] " << evt.targetName << " took " << evt.damageAmount 
+        std::cout << "[Combat Event] " << evt.targetName << " took " << evt.damageAmount 
                   << " damage! Remaining HP: " << evt.remainingHealth << "/" << evt.maxHealth << "\n";
     });
 
-    damageSystem.AddOnDestroyedListener([&totalGold, &totalKills](const DamageEvent& evt) {
-        totalKills++;
-        totalGold += 45;
-        std::cout << "[MOBA Kill Award] " << evt.targetName << " DESTROYED! +45 Gold Awarded! Total Gold: " 
-                  << totalGold << " | Kills: " << totalKills << "\n";
+    damageSystem.AddOnDestroyedListener([](const DamageEvent& evt) {
+        g_playerKills++;
+        g_playerGold += 45;
+        std::cout << "[Kill Ticker] " << evt.targetName << " DESTROYED! +45 Gold Awarded! Total Gold: " 
+                  << g_playerGold << " | Kills: " << g_playerKills << "\n";
     });
 
-    // 3. Register Tower Damageable Actors
     auto radiantTower1 = std::make_shared<DamageableActor>(101, "Radiant_Mid_Tower_1", "Towers", 800.0f, Vec3(-10, 0, -10));
     auto radiantTower2 = std::make_shared<DamageableActor>(102, "Radiant_Mid_Tower_2", "Towers", 800.0f, Vec3(-5, 0, -5));
     auto direTower1    = std::make_shared<DamageableActor>(201, "Dire_Mid_Tower_1", "Towers", 800.0f, Vec3(10, 0, 10));
@@ -257,7 +291,6 @@ int main(int argc, char* argv[]) {
     damageSystem.RegisterActor(direTower1);
     damageSystem.RegisterActor(direTower2);
 
-    // 4. Setup Creep Waypoints & Units
     std::vector<Vec3> redMidWaypoints = { Vec3(-14, 0, -14), Vec3(-7, 0, -7), Vec3(0, 0, 0), Vec3(7, 0, 7), Vec3(14, 0, 14) };
     std::vector<Vec3> blackMidWaypoints = { Vec3(14, 0, 14), Vec3(7, 0, 7), Vec3(0, 0, 0), Vec3(-7, 0, -7), Vec3(-14, 0, -14) };
 
@@ -286,11 +319,9 @@ int main(int argc, char* argv[]) {
         creeps.push_back(b);
     }
 
-    // 5. Setup Hero Controller
     playerHeroController.position = Vec3(-8.0f, 0.0f, -8.0f);
     playerHeroController.walkSpeed = 5.0f;
 
-    // Jungle Trees
     std::vector<Vec3> jungleTrees = {
         Vec3(-10, 0, -2), Vec3(-12, 0, 2), Vec3(-8, 0, 5), Vec3(-4, 0, 8),
         Vec3(2, 0, -10), Vec3(5, 0, -12), Vec3(8, 0, -6), Vec3(10, 0, -2)
@@ -312,7 +343,7 @@ int main(int argc, char* argv[]) {
     AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
 
     HWND hwnd = CreateWindowExA(
-        0, wc.lpszClassName, "MOBA: Forest of Hollow Blood - Pure C++ Native Engine",
+        0, wc.lpszClassName, "MOBA: Forest of Hollow Blood - Native C++ Game",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         CW_USEDEFAULT, CW_USEDEFAULT, wr.right - wr.left, wr.bottom - wr.top,
         NULL, NULL, hInstance, NULL
@@ -340,7 +371,12 @@ int main(int argc, char* argv[]) {
     glDisable(GL_CULL_FACE);
     glViewport(0, 0, config.width, config.height);
 
-    std::cout << "[Pure C++ Native Engine] 3D MOBA Viewport, Creep AI & Damage System initialized!\n";
+    std::cout << "\n======================================================\n";
+    std::cout << "  MAIN MENU ACTIVE\n";
+    std::cout << "  Press [1] to START MATCH\n";
+    std::cout << "  Press [2] for HERO SELECTION\n";
+    std::cout << "  Press [3] for ITEM SHOP\n";
+    std::cout << "======================================================\n";
 
     MSG msg = {};
     bool running = true;
@@ -349,6 +385,44 @@ int main(int argc, char* argv[]) {
     while (running) {
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) running = false;
+            
+            if (msg.message == WM_KEYDOWN) {
+                WPARAM vk = msg.wParam;
+                if (vk == '1') {
+                    g_gameState = GameState::Playing;
+                    std::cout << "\n>>> [MATCH STARTED] Entering Forest of Hollow Blood battlefield! Selected Hero: " 
+                              << g_heroes[g_selectedHeroIndex].name << "\n";
+                } else if (vk == '2') {
+                    g_gameState = GameState::HeroSelect;
+                    g_selectedHeroIndex = (g_selectedHeroIndex + 1) % g_heroes.size();
+                    std::cout << "\n>>> [HERO SELECT] Selected Hero: " << g_heroes[g_selectedHeroIndex].name 
+                              << " (" << g_heroes[g_selectedHeroIndex].role << ") | Ability: " 
+                              << g_heroes[g_selectedHeroIndex].ability << "\n";
+                } else if (vk == '3') {
+                    g_gameState = GameState::ItemShop;
+                    std::cout << "\n>>> [ITEM SHOP] Current Gold: " << g_playerGold << " Gold\n";
+                    for (size_t i = 0; i < g_shopItems.size(); ++i) {
+                        std::cout << "    [" << (i + 1) << "] " << g_shopItems[i].name << " - " 
+                                  << g_shopItems[i].cost << " Gold (" << g_shopItems[i].effect << ")\n";
+                    }
+                } else if (vk == 'M' || vk == 'm') {
+                    g_gameState = GameState::MainMenu;
+                    std::cout << "\n>>> [MAIN MENU] Returned to Main Menu. Press [1] to Play.\n";
+                } else if (vk == 'W' || vk == 'w' || vk == VK_UP) {
+                    g_cameraZ += 1.2f;
+                } else if (vk == 'S' || vk == 's' || vk == VK_DOWN) {
+                    g_cameraZ -= 1.2f;
+                } else if (vk == 'A' || vk == 'a' || vk == VK_LEFT) {
+                    g_cameraX -= 1.2f;
+                } else if (vk == 'D' || vk == 'd' || vk == VK_RIGHT) {
+                    g_cameraX += 1.2f;
+                } else if (vk == VK_SPACE) {
+                    g_cameraX = 0.0f;
+                    g_cameraZ = -38.0f;
+                    std::cout << ">>> Camera reset to center.\n";
+                }
+            }
+
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
@@ -358,20 +432,20 @@ int main(int argc, char* argv[]) {
         float dt = 0.016f;
         time += dt;
 
-        // Subsystems Tick
-        engine.Update(dt);
-        damageSystem.Update(dt);
+        if (g_gameState == GameState::Playing) {
+            engine.Update(dt);
+            damageSystem.Update(dt);
 
-        for (auto& creep : creeps) {
-            creep.update(dt, damageSystem, creeps);
+            for (auto& creep : creeps) {
+                creep.update(dt, damageSystem, creeps);
+            }
+
+            playerHeroController.position = Vec3(
+                -8.0f + std::sin(time * 0.7f) * 5.0f,
+                0.0f,
+                -8.0f + std::cos(time * 0.7f) * 5.0f
+            );
         }
-
-        // Hero Movement Tick
-        playerHeroController.position = Vec3(
-            -8.0f + std::sin(time * 0.7f) * 5.0f,
-            0.0f,
-            -8.0f + std::cos(time * 0.7f) * 5.0f
-        );
 
         // Render Frame
         glClearColor(0.08f, 0.12f, 0.15f, 1.0f);
@@ -384,11 +458,11 @@ int main(int argc, char* argv[]) {
 
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        glTranslatef(0.0f, -8.0f, -38.0f);
+        // Camera with WASD Panning
+        glTranslatef(g_cameraX, -8.0f, g_cameraZ);
         glRotatef(52.0f, 1.0f, 0.0f, 0.0f);
-        glRotatef(time * 5.0f, 0.0f, 1.0f, 0.0f);
 
-        // Terrain
+        // Render Battlefield Terrain
         glBegin(GL_QUADS);
         glColor3f(0.14f, 0.32f, 0.16f);
         glVertex3f(-25.0f, 0.0f, -25.0f);
@@ -422,7 +496,7 @@ int main(int argc, char* argv[]) {
             DrawTree(tp.x, tp.z, 1.0f);
         }
 
-        // Towers with Damage System Health
+        // Towers
         auto drawTowerActor = [](std::shared_ptr<DamageableActor> tower, bool isRadiant) {
             if (!tower) return;
             glPushMatrix();
@@ -464,7 +538,7 @@ int main(int argc, char* argv[]) {
         DrawCylinder(2.2f, 0.2f, 3.5f, 8);
         glPopMatrix();
 
-        // Creep Units
+        // Creeps
         for (const auto& creep : creeps) {
             if (!creep.damageable || !creep.damageable->IsAlive()) continue;
 
@@ -486,14 +560,14 @@ int main(int argc, char* argv[]) {
             glPopMatrix();
         }
 
-        // Hero Unit
+        // Player Hero
         Vec3 heroPos = playerHeroController.position;
         glPushMatrix();
         glTranslatef(heroPos.x, heroPos.y, heroPos.z);
 
         glPushMatrix();
         glTranslatef(0.0f, 0.8f, 0.0f);
-        glColor3f(1.0f, 0.55f, 0.0f); // Gold Hero
+        glColor3f(1.0f, 0.55f, 0.0f);
         DrawCylinder(0.6f, 0.4f, 1.6f, 10);
         glPopMatrix();
 
