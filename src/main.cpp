@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <filesystem>
+#include <algorithm>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -13,9 +14,9 @@
 #include <ole2.h>
 #include <exdisp.h>
 #include <olectl.h>
-#include <shwbdisp.h>
+#include <shellapi.h>
 
-// Win32 Standalone Native Window Host with Embedded WebEngine
+// Win32 Standalone Native Window Host
 static HWND g_hwnd = NULL;
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -107,6 +108,7 @@ int main(int argc, char* argv[]) {
 
     // Run embedded host window process
     SHELLEXECUTEINFOA sei = { sizeof(sei) };
+    sei.cbSize = sizeof(sei);
     sei.lpVerb = "open";
     sei.lpFile = fileUrl.c_str();
     sei.nShow = SW_SHOWNORMAL;
