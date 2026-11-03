@@ -10,10 +10,14 @@
 #include <cmath>
 #include <string>
 #include <memory>
+#include <algorithm>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
 #endif
 #include <windows.h>
 #include <gl/GL.h>
@@ -96,6 +100,8 @@ void DrawCone(float r, float h, int slices) {
 void DrawHealthBar(float hpRatio, float width = 1.4f, float height = 0.22f) {
 #if defined(_WIN32)
     float halfW = width * 0.5f;
+    float clampedHp = std::max(0.0f, std::min(1.0f, hpRatio));
+
     glColor3f(0.1f, 0.1f, 0.1f);
     glBegin(GL_QUADS);
     glVertex3f(-halfW, 0.0f, 0.0f);
@@ -104,9 +110,9 @@ void DrawHealthBar(float hpRatio, float width = 1.4f, float height = 0.22f) {
     glVertex3f(-halfW, height, 0.0f);
     glEnd();
 
-    float fillW = -halfW + (width * std::max(0.0f, std::min(1.0f, hpRatio)));
-    if (hpRatio > 0.5f) glColor3f(0.2f, 0.9f, 0.3f);
-    else if (hpRatio > 0.25f) glColor3f(0.9f, 0.8f, 0.1f);
+    float fillW = -halfW + (width * clampedHp);
+    if (clampedHp > 0.5f) glColor3f(0.2f, 0.9f, 0.3f);
+    else if (clampedHp > 0.25f) glColor3f(0.9f, 0.8f, 0.1f);
     else glColor3f(0.9f, 0.2f, 0.2f);
 
     glBegin(GL_QUADS);
@@ -163,7 +169,7 @@ struct MobaCreepUnit {
         // Waypoint Movement
         if (waypointIndex < waypoints.size()) {
             const Vec3& target = waypoints[waypointIndex];
-            float d = pos.dist(target);
+            float d = (pos - target).Length();
             if (d < 0.8f) {
                 waypointIndex++;
             } else {
@@ -187,7 +193,7 @@ struct MobaCreepUnit {
         if (attackCooldown <= 0.0f) {
             for (auto& other : allCreeps) {
                 if (other.id != id && other.damageable && other.damageable->IsAlive() && other.team != team) {
-                    if (pos.dist(other.pos) <= 2.2f) {
+                    if ((pos - other.pos).Length() <= 2.2f) {
                         damageSys.ApplyDamage(other.id, 25.0f, id, other.pos, Vec3(0, 1, 0));
                         attackCooldown = 1.2f;
                         break;
@@ -281,7 +287,7 @@ int main(int argc, char* argv[]) {
     }
 
     // 5. Setup Hero Controller
-    playerHeroController.SetPosition(Vec3(-8.0f, 0.0f, -8.0f));
+    playerHeroController.position = Vec3(-8.0f, 0.0f, -8.0f);
     playerHeroController.walkSpeed = 5.0f;
 
     // Jungle Trees
@@ -361,11 +367,11 @@ int main(int argc, char* argv[]) {
         }
 
         // Hero Movement Tick
-        playerHeroController.SetPosition(Vec3(
+        playerHeroController.position = Vec3(
             -8.0f + std::sin(time * 0.7f) * 5.0f,
             0.0f,
             -8.0f + std::cos(time * 0.7f) * 5.0f
-        ));
+        );
 
         // Render Frame
         glClearColor(0.08f, 0.12f, 0.15f, 1.0f);
@@ -481,7 +487,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Hero Unit
-        Vec3 heroPos = playerHeroController.GetPosition();
+        Vec3 heroPos = playerHeroController.position;
         glPushMatrix();
         glTranslatef(heroPos.x, heroPos.y, heroPos.z);
 
