@@ -34,7 +34,28 @@ else()
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
             "$<TARGET_FILE_DIR:killer_app>/shaders"
-        COMMENT "Copying 3D models, textures, audio, shaders and map assets to Release directory..."
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+            "$<TARGET_FILE_DIR:killer_app>/src"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/build_wasm"
+            "$<TARGET_FILE_DIR:killer_app>/build_wasm"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/index.html"
+            "$<TARGET_FILE_DIR:killer_app>/index.html"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/main.js"
+            "$<TARGET_FILE_DIR:killer_app>/main.js"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/style.css"
+            "$<TARGET_FILE_DIR:killer_app>/style.css"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/sw.js"
+            "$<TARGET_FILE_DIR:killer_app>/sw.js"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/physics-worker.js"
+            "$<TARGET_FILE_DIR:killer_app>/physics-worker.js"
+        COMMENT "Copying full web game files, scripts, assets, maps, and WebAssembly binaries to Release directory..."
     )
 
     # Build MOBA standalone core example (moba_game.exe)
