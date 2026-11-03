@@ -3,7 +3,7 @@
 #include "engine/Engine.hpp"
 #include <cmath>
 #include <iostream>
-#include <algorithm>
+#include <vector>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -19,12 +19,28 @@
 
 namespace EngineCore {
 
+struct ItemPickup {
+    std::string key;
+    std::string name;
+    float pos[3];
+    float color[3];
+    bool active = true;
+    float respawnTimer = 0.0f;
+};
+
+static std::vector<ItemPickup> g_items = {
+    { "health_small", "Small Health Vial", {-10.0f, 0.5f, -5.0f}, {0.15f, 0.95f, 0.65f}, true, 0.0f },
+    { "megahealth", "MegaHealth Sphere", {0.0f, 0.8f, 0.0f}, {0.06f, 0.92f, 0.95f}, true, 0.0f },
+    { "armor_yellow", "Yellow Combat Armor", {10.0f, 0.5f, -5.0f}, {0.95f, 0.80f, 0.15f}, true, 0.0f },
+    { "powerup_quad", "Quad Damage Rune", {0.0f, 1.0f, 10.0f}, {0.20f, 0.55f, 1.0f}, true, 0.0f },
+    { "powerup_haste", "Haste Speed Rune", {-8.0f, 0.6f, 8.0f}, {0.95f, 0.85f, 0.15f}, true, 0.0f }
+};
+
 Renderer::Renderer() = default;
 Renderer::~Renderer() = default;
 
 bool Renderer::Init(const EngineConfig& config) {
     (void)config;
-    // Set identity model matrix
     for (int i = 0; i < 16; ++i) m_modelMatrix[i] = (i % 5 == 0) ? 1.0f : 0.0f;
 
 #if defined(_WIN32)
@@ -63,12 +79,11 @@ void Renderer::BeginFrame(const float clearColor[4]) {
 
 void Renderer::DrawScene(const CameraController& camera, float time, const float baseColor[3], float roughness) {
     (void)camera;
-    (void)time;
     (void)baseColor;
     (void)roughness;
 
 #if defined(_WIN32)
-    // 1. Setup Camera Projection
+    // 1. Camera Projection
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     float aspect = 1280.0f / 720.0f;
@@ -76,23 +91,23 @@ void Renderer::DrawScene(const CameraController& camera, float time, const float
     float fW = fH * aspect;
     glFrustum(-fW, fW, -fH, fH, 0.5f, 200.0f);
 
-    // 2. Setup Camera View Transformation
+    // 2. Camera View Transformation
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     glTranslatef(0.0f, -8.0f, -38.0f);
     glRotatef(52.0f, 1.0f, 0.0f, 0.0f);
     glRotatef(time * 5.0f, 0.0f, 1.0f, 0.0f);
 
-    // 3. Render Ground Terrain
+    // 3. Render Arena Ground Plane (Basalt PBR)
     glBegin(GL_QUADS);
-    glColor3f(0.14f, 0.32f, 0.16f);
+    glColor3f(0.18f, 0.22f, 0.26f);
     glVertex3f(-25.0f, 0.0f, -25.0f);
     glVertex3f( 25.0f, 0.0f, -25.0f);
     glVertex3f( 25.0f, 0.0f,  25.0f);
     glVertex3f(-25.0f, 0.0f,  25.0f);
     glEnd();
 
-    // 4. Render River
+    // 4. Render Diagonal River Channel
     glBegin(GL_QUADS);
     glColor3f(0.12f, 0.48f, 0.78f);
     glVertex3f(-25.0f, 0.02f,  18.0f);
@@ -112,9 +127,35 @@ void Renderer::DrawScene(const CameraController& camera, float time, const float
     glVertex3f(14.0f, 0.05f, -14.0f);  glVertex3f(14.0f, 0.05f, 14.0f);
     glEnd();
 
-    m_drawCalls += 5;
-    m_vertexCount += 48;
-    m_triangleCount += 24;
+    // 6. Render Floating Elemental Items & Runes Catalog
+    for (auto& item : g_items) {
+        if (!item.active) continue;
+
+        glPushMatrix();
+        float hoverY = item.pos[1] + std::sin(time * 3.0f + item.pos[0]) * 0.2f;
+        glTranslatef(item.pos[0], hoverY, item.pos[2]);
+        glRotatef(time * 60.0f, 0.0f, 1.0f, 0.0f);
+
+        // Glowing Rune/Item Core
+        glColor3f(item.color[0], item.color[1], item.color[2]);
+        
+        float s = 0.5f;
+        glBegin(GL_QUADS);
+        glVertex3f(-s, -s,  s); glVertex3f( s, -s,  s); glVertex3f( s,  s,  s); glVertex3f(-s,  s,  s);
+        glVertex3f(-s, -s, -s); glVertex3f(-s,  s, -s); glVertex3f( s,  s, -s); glVertex3f( s, -s, -s);
+        glVertex3f(-s,  s, -s); glVertex3f(-s,  s,  s); glVertex3f( s,  s,  s); glVertex3f( s,  s, -s);
+        glVertex3f(-s, -s, -s); glVertex3f( s, -s, -s); glVertex3f( s, -s,  s); glVertex3f(-s, -s,  s);
+        glVertex3f( s, -s, -s); glVertex3f( s,  s, -s); glVertex3f( s,  s,  s); glVertex3f( s, -s,  s);
+        glVertex3f(-s, -s, -s); glVertex3f(-s, -s,  s); glVertex3f(-s,  s,  s); glVertex3f(-s,  s, -s);
+        glEnd();
+
+        glPopMatrix();
+        m_drawCalls++;
+    }
+
+    m_drawCalls += 10;
+    m_vertexCount += 120;
+    m_triangleCount += 60;
 #endif
 }
 
