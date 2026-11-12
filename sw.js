@@ -91,21 +91,12 @@ self.addEventListener('fetch', event => {
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(request);
-
-    // Large engine assets are cache-first; code and styles refresh in the background.
-    const isCode = /\\.(?:js|mjs|css)$/i.test(url.pathname);
-    if (cached && !isCode) return cached;
-
-    const networkRequest = fetch(request).then(response => cacheResponse(cache, request, response));
-    if (cached && isCode) {
-      event.waitUntil(networkRequest.then(() => trimCache(cache)).catch(() => {}));
-      return cached;
-    }
+    if (cached) return cached;
 
     try {
-      return await networkRequest;
+      const response = await fetch(request);
+      return await cacheResponse(cache, request, response);
     } catch (error) {
-      if (cached) return cached;
       return new Response('', { status: 504, statusText: 'Asset unavailable offline' });
     }
   })());
