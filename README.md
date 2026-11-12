@@ -282,7 +282,7 @@ _This project is an independent, open source focused workbench and is not affili
 
 MIT License.
 
-Built with Google Filament PBR principles and modern C++17.
+Built with Google Filament PBR principles from webworkers.
 
 ### 🎬 Credits
 
