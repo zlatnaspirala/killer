@@ -1,76 +1,112 @@
+/* Killer Engine PWA Service Worker */
 'use strict';
 
-/**
- * @description cacheVersion
- * Increment this version number when assets or code are updated to automatically
- * flush the client browser's stale cache and fetch fresh copies.
- */
-var cacheVersion = 205;
-var prefix = 'moba-assets-cache-v';
-var cacheName = prefix + cacheVersion;
+const CACHE_PREFIX = 'killer-engine-pwa-v';
+const CACHE_VERSION = 206;
+const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
+const MAX_RUNTIME_ENTRIES = 300;
+const SHELL_URLS = ['/', '/index.html', '/style.css'];
 
-// Cleanup old caches automatically on service worker registration
-try {
-  for (var j = 0; j < cacheVersion; j++) {
-    var oldCacheName = prefix + j;
-    caches.delete(oldCacheName);
-  }
-  for (var j = 220; j > cacheVersion; j--) {
-    var oldCacheName = prefix + j;
-    caches.delete(oldCacheName);
-  }
-} catch (e) {
-  console.error("Cache cleanup error:", e);
+function isSameOrigin(url) {
+  return url.origin === self.location.origin;
 }
 
-self.addEventListener('install', function(event) {
-  self.skipWaiting();
+function isApiRequest(url) {
+  return url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/ws') ||
+    url.pathname.startsWith('/socket.io/');
+}
+
+function isStaticAsset(url) {
+  return /\\.(?:js|mjs|css|wasm|glb|gltf|bin|data|png|jpe?g|webp|gif|svg|ico|ktx2?|basis|hdr|mp3|wav|ogg|mp4|woff2?|ttf|otf)$/i.test(url.pathname);
+}
+
+async function trimCache(cache) {
+  const keys = await cache.keys();
+  if (keys.length > MAX_RUNTIME_ENTRIES) {
+    await Promise.all(keys.slice(0, keys.length - MAX_RUNTIME_ENTRIES).map(key => cache.delete(key)));
+  }
+}
+
+async function cacheResponse(cache, request, response) {
+  if (!response || response.status !== 200 || response.type === 'opaque' ||
+      response.headers.get('Cache-Control')?.includes('no-store')) return response;
+  await cache.put(request, response.clone());
+  await trimCache(cache);
+  return response;
+}
+
+self.addEventListener('install', event => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.all(SHELL_URLS.map(async url => {
+      try {
+        const response = await fetch(url, { cache: 'reload' });
+        if (response.ok) await cache.put(url, response);
+      } catch (error) {
+        console.warn('[Killer PWA] Precache skipped:', url, error);
+      }
+    }));
+    await self.skipWaiting();
+  })());
 });
 
-self.addEventListener('activate', function(event) {
-  event.waitUntil(self.clients.claim());
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(names.map(name => {
+      if ((name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME) ||
+          name.startsWith('moba-assets-cache-v')) return caches.delete(name);
+    }));
+    await self.clients.claim();
+  })());
 });
 
-self.addEventListener('fetch', function(event) {
-  // Never cache POST requests or non-HTTP endpoints (like chrome-extension:// or ws://)
-  if (event.request.method !== 'GET' || !event.request.url.startsWith('http')) {
+self.addEventListener('fetch', event => {
+  const request = event.request;
+  if (request.method !== 'GET' || request.headers.has('range')) return;
+
+  const url = new URL(request.url);
+  if (!isSameOrigin(url) || isApiRequest(url) || request.headers.has('authorization')) return;
+
+  if (request.mode === 'navigate') {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      try {
+        const response = await fetch(request);
+        if (response.ok) await cache.put('/index.html', response.clone());
+        return response;
+      } catch (error) {
+        return (await cache.match(request)) || (await cache.match('/index.html')) ||
+          new Response('Killer is offline. Reconnect and reload to continue.', {
+            status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+          });
+      }
+    })());
     return;
   }
 
-  const url = event.request.url.toLowerCase();
-  
-  // High-performance selective caching rules for heavy static web assets:
-  // .glb models, .mp3 music files, and .wasm binaries.
-  const isCacheableAsset = url.endsWith('.glb') || 
-                           url.endsWith('.gltf') ||
-                           url.endsWith('.mp3') || 
-                           url.endsWith('.wasm') || 
-                           url.includes('/assets/audio/') ||
-                           url.includes('/assets/models/');
+  if (!isStaticAsset(url)) return;
 
-  if (!isCacheableAsset) {
-    return; // Pass-through directly to network (no cache pollution)
-  }
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(request);
 
-  event.respondWith(
-    caches.open(cacheName).then(function(cache) {
-      return cache.match(event.request).then(function(cachedResponse) {
-        if (cachedResponse) {
-          // Cache hit: Serve immediately for instant loading
-          return cachedResponse;
-        }
-        
-        // Cache miss: Fetch from network and put a cloned copy into the cache
-        return fetch(event.request).then(function(networkResponse) {
-          if (networkResponse && networkResponse.status === 200) {
-            // Put cloned response in cache
-            cache.put(event.request, networkResponse.clone());
-          }
-          return networkResponse;
-        }).catch(function(err) {
-          console.error("Fetch failed for cacheable asset:", url, err);
-        });
-      });
-    })
-  );
+    // Large engine assets are cache-first; code and styles refresh in the background.
+    const isCode = /\\.(?:js|mjs|css)$/i.test(url.pathname);
+    if (cached && !isCode) return cached;
+
+    const networkRequest = fetch(request).then(response => cacheResponse(cache, request, response));
+    if (cached && isCode) {
+      event.waitUntil(networkRequest.then(() => trimCache(cache)).catch(() => {}));
+      return cached;
+    }
+
+    try {
+      return await networkRequest;
+    } catch (error) {
+      if (cached) return cached;
+      return new Response('', { status: 504, statusText: 'Asset unavailable offline' });
+    }
+  })());
 });
